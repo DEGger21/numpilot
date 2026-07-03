@@ -5,6 +5,33 @@ from numpilot.contracts import OffloadPlan
 from numpilot.engines.base import MigrationEngine
 
 
+def count_ap_calls(source: str) -> dict:
+    """统计迁移后源码中 `ap.<op>(...)` 的调用点计数 {op: n}。
+
+    引擎无关:AST / LLM 引擎的产物都能用它得到"真的替换到 ap 的算子清单"。
+    仅计入 ap 别名的属性调用(如 import asnumpy as ap 后的 ap.matmul(...))。
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return {}
+    ap_aliases = {
+        a.asname or a.name
+        for node in ast.walk(tree) if isinstance(node, ast.Import)
+        for a in node.names if a.name == "asnumpy"
+    } or {"ap"}
+    counts = {}
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id in ap_aliases
+        ):
+            counts[node.func.attr] = counts.get(node.func.attr, 0) + 1
+    return counts
+
+
 class _Rewriter(ast.NodeTransformer):
     def __init__(self, np_aliases, npu_ops):
         self.np_aliases = np_aliases        # {"np"}

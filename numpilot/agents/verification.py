@@ -70,6 +70,10 @@ class VerificationAgent:
 
         # ── 迁移 asnumpy@后端 侧 ────────────────────────────
         ap_module = self.backend.get_module()
+        # 执行证据:迁移侧 import asnumpy 命中的实际模块路径与版本。
+        # npu 后端下这是真机 asnumpy wheel;shim 下是仿真模块(version 为 None)。
+        backend_module = getattr(ap_module, "__file__", None)
+        backend_version = getattr(ap_module, "__version__", None)
         saved = sys.modules.get("asnumpy")
         sys.modules["asnumpy"] = ap_module
         try:
@@ -103,4 +107,6 @@ class VerificationAgent:
             t_orig_ms=t_orig * 1e3,
             t_mig_ms=t_mig * 1e3,
             n_elements=int(out_orig.size),
+            backend_module=backend_module,
+            backend_version=backend_version,
         )

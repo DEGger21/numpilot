@@ -29,6 +29,11 @@ class OffloadPlan:
 class MigrationResult:
     engine: str                     # "ast" | "llm"
     migrated_source: str
+    rewrites: dict = field(default_factory=dict)  # 迁移后 ap.<op> 调用计数 {op: n}
+
+    @property
+    def total_rewrites(self) -> int:
+        return sum(self.rewrites.values())
 
 
 @dataclass
@@ -43,3 +48,5 @@ class VerificationReport:
     t_orig_ms: Optional[float] = None   # 原始 numpy@CPU 单次耗时(ms)
     t_mig_ms: Optional[float] = None    # 迁移 asnumpy@后端 单次耗时(ms)
     n_elements: Optional[int] = None    # 主要输出规模(元素数), 供报告展示
+    backend_module: Optional[str] = None    # 迁移侧实际命中的 asnumpy 模块路径(__file__), 证明真机
+    backend_version: Optional[str] = None   # 该模块 __version__, shim 仿真时为 None
