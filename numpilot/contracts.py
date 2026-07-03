@@ -39,3 +39,7 @@ class VerificationReport:
     speedup: Optional[float]
     per_op: list = field(default_factory=list)
     status: str = "pass"            # "pass" | "fail" | "unsupported"
+    backend: str = "shim"           # 迁移侧执行后端
+    t_orig_ms: Optional[float] = None   # 原始 numpy@CPU 单次耗时(ms)
+    t_mig_ms: Optional[float] = None    # 迁移 asnumpy@后端 单次耗时(ms)
+    n_elements: Optional[int] = None    # 主要输出规模(元素数), 供报告展示

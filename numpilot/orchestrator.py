@@ -77,6 +77,10 @@ class Orchestrator:
             "max_rel_diff": getattr(rep, "max_rel_diff", None),
             "tol": getattr(rep, "tol", None),
             "speedup": getattr(rep, "speedup", None),
+            "backend": getattr(rep, "backend", None),
+            "t_orig_ms": getattr(rep, "t_orig_ms", None),
+            "t_mig_ms": getattr(rep, "t_mig_ms", None),
+            "n_elements": getattr(rep, "n_elements", None),
         }
         with open(os.path.join(out_dir, "report.json"), "w", encoding="utf-8") as f:
             json.dump(summary, f, ensure_ascii=False, indent=2)
@@ -92,8 +96,23 @@ def _render_md(summary, result) -> str:
         lines.append(f"- 缺口算子(未迁移):{', '.join(summary['unsupported'])}")
         return "\n".join(lines) + "\n"
     lines.append(f"- 数值一致:{summary['numerically_consistent']}(max_rel_diff={summary['max_rel_diff']:.2e}, tol={summary['tol']:.0e})")
-    if summary["speedup"] is not None:
+
+    # 性能对比:numpy@CPU vs asnumpy@后端 并列 + 加速比
+    t_o, t_m = summary.get("t_orig_ms"), summary.get("t_mig_ms")
+    if t_o is not None and t_m is not None:
+        backend = summary.get("backend") or "?"
+        lines.append("")
+        lines.append("## 性能对比(单次前向, 中位耗时)")
+        if summary.get("n_elements") is not None:
+            lines.append(f"- 输出规模:{summary['n_elements']:,} 元素")
+        lines.append(f"- numpy@CPU:**{t_o:.3f} ms**")
+        lines.append(f"- asnumpy@{backend}:**{t_m:.3f} ms**")
+        if summary["speedup"] is not None:
+            faster = "asnumpy 更快" if summary["speedup"] > 1 else "numpy 更快"
+            lines.append(f"- 加速比(CPU/{backend}):**{summary['speedup']:.4f}x**({faster})")
+    elif summary["speedup"] is not None:
         lines.append(f"- 加速比(当前后端):{summary['speedup']:.4f}x")
+
     plan = result.get("plan")
     if plan is not None:
         lines.append("")

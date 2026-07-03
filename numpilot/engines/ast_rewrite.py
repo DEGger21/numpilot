@@ -11,6 +11,55 @@ class _Rewriter(ast.NodeTransformer):
         self.npu_ops = npu_ops              # set[str], 需改到 ap 的算子
         self.used_ap = False
 
+    def visit_Call(self, node):
+        # relu 模式:np.maximum(x, 0) / np.maximum(0, x) → ap.relu(x)
+        # asnumpy 的二元算子要求两侧都是 NPUArray,不接受标量 0;而 relu 在覆盖集内,
+        # 语义等价且真机可用。故把这一 numpy 惯用法识别改写为 ap.relu。
+        relu = self._as_relu(node)
+        if relu is not None:
+            return relu
+        self.generic_visit(node)
+        return node
+
+    def _as_relu(self, node):
+        func = node.func
+        if not (
+            isinstance(func, ast.Attribute)
+            and func.attr == "maximum"
+            and "maximum" in self.npu_ops
+            and isinstance(func.value, ast.Name)
+            and func.value.id in self.np_aliases
+        ):
+            return None
+        if len(node.args) != 2 or node.keywords:
+            return None
+        a, b = node.args
+        if self._is_zero(b):
+            x = a
+        elif self._is_zero(a):
+            x = b
+        else:
+            return None
+        self.used_ap = True
+        new_x = self.visit(x)                 # 递归改写内部(matmul/add 等)
+        return ast.copy_location(
+            ast.Call(
+                func=ast.Attribute(value=ast.Name(id="ap", ctx=ast.Load()),
+                                   attr="relu", ctx=ast.Load()),
+                args=[new_x], keywords=[],
+            ),
+            node,
+        )
+
+    @staticmethod
+    def _is_zero(n):
+        # 匹配字面量 0 / 0.0,排除 bool(False == 0 在 Python 里为真)
+        return (
+            isinstance(n, ast.Constant)
+            and not isinstance(n.value, bool)
+            and n.value == 0
+        )
+
     def visit_Attribute(self, node):
         self.generic_visit(node)
         if (
