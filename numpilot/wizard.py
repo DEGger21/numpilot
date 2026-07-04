@@ -139,18 +139,36 @@ def _ask_engine(engine):
     return engine
 
 
-def _resolve_backend(backend, interactive):
-    """npu 后端做前置环境自检;不满足时(交互)询问降级 shim,(非交互)直接失败。"""
-    if backend != "npu":
-        return backend
-    rep = Env.check(backend="npu")
-    if not rep.errors:
-        return "npu"
-    console.print(Panel(rep.render(), title="[red]环境自检未通过[/]", border_style="red"))
-    if interactive and Confirm.ask("是否降级到 shim 仿真后端继续?[dim](无真机性能,仅演示流程)[/]",
-                                    default=False):
-        return "shim"
-    return None
+def _startup_check(backend, interactive):
+    """进入系统即自检本机环境(asnumpy/CANN/NPU 是否就绪),快速失败。
+
+    npu 后端:缺硬依赖(尤其 asnumpy)→ 交互询问降级 shim,非交互直接失败(返回 None)。
+    shim 后端:缺失只是 warn,照常返回 shim。返回生效后端名或 None(终止)。
+    """
+    console.print("[bold]系统自检[/] · 检查本机 asnumpy / CANN / NPU 环境…")
+    rep = Env.check(backend=backend)
+    _COLOR = {"ok": "green", "warn": "yellow", "error": "red"}
+    _MARK = {"ok": "✓", "warn": "⚠", "error": "✗"}
+    tb = Table(box=box.SIMPLE, show_header=False)
+    tb.add_column(no_wrap=True)
+    tb.add_column()
+    for it in rep.items:
+        c = _COLOR.get(it.status, "white")
+        tb.add_row(f"[{c}]{_MARK.get(it.status, '?')} {it.name}[/]", f"[dim]{it.detail}[/]")
+    border = "red" if rep.errors else ("yellow" if rep.warnings else "green")
+    console.print(Panel(tb, title="环境自检", border_style=border))
+
+    if rep.errors:
+        names = ", ".join(i.name for i in rep.errors)
+        console.print(f"[red]✗ 环境不满足 {backend} 硬依赖:{names}"
+                      + ("(asnumpy 未就绪则无法在真机 NPU 上执行)" if any(
+                          i.name == "asnumpy" for i in rep.errors) else "") + "[/]")
+        if backend == "npu" and interactive and Confirm.ask(
+                "是否降级到 shim 仿真后端继续?[dim](无真机性能,仅演示流程)[/]", default=False):
+            return "shim"
+        return None
+    console.print(f"[green]✓ 环境就绪[/](后端={backend})")
+    return backend
 
 
 def _run_pipeline(source, path, engine_name, backend_name):
@@ -336,16 +354,17 @@ def _report_info(data):
 def run_wizard(file=None, engine=None, backend="npu"):
     interactive = file is None or engine is None
     _banner()
+    # 一进系统先做环境自检:asnumpy / CANN / NPU 装好没,没装好当场失败
+    backend_name = _startup_check(backend, interactive)
+    if backend_name is None:
+        console.print("[red]✗ 环境不满足且未降级,向导终止。[/]")
+        return 3
     path = _ask_file(file)
     if path is None:
         return 1
     engine_name = _ask_engine(engine)
     if engine_name is None:
         return 1
-    backend_name = _resolve_backend(backend, interactive)
-    if backend_name is None:
-        console.print("[red]✗ 环境不满足且未降级,向导终止。[/]")
-        return 3
 
     _print_roster(engine_name)      # 让用户看清 5 个智能体各自用什么模型/引擎
     source = open(path, encoding="utf-8").read()

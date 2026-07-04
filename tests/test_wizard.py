@@ -61,3 +61,19 @@ def test_wizard_noninteractive_shim_e2e():
 def test_wizard_unsupported_returns_1():
     rc = run_wizard(file="examples/unsupported_demo.py", engine="ast", backend="shim")
     assert rc == 1
+
+
+def test_wizard_startup_check_aborts_when_asnumpy_missing(monkeypatch):
+    # 启动即自检:npu 后端 asnumpy 缺失 → 非交互直接终止(rc=3), 不进入选文件/迁移
+    from numpilot import wizard
+    from numpilot.env_check import ERROR, EnvReport
+
+    def fake_check(backend="npu"):
+        rep = EnvReport(backend=backend)
+        rep.add("numpy", "ok", "x")
+        rep.add("asnumpy", ERROR, "未安装(模拟)")
+        return rep
+
+    monkeypatch.setattr(wizard.Env, "check", staticmethod(fake_check))
+    rc = run_wizard(file="examples/mlp_forward.py", engine="ast", backend="npu")
+    assert rc == 3
