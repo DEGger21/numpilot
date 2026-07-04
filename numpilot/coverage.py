@@ -36,6 +36,16 @@ SUPPORTED_OPS = frozenset({
 })
 
 
+# asnumpy 提供的"自定义 / 非 numpy 原生"算子:relu/gelu/softmax 是 numpy 没有的 nn 算子,
+# angle 在 asnumpy 里走 custom_ops。迁移时命中这些即"接入了自定义 NPU 算子"。
+CUSTOM_OPS = frozenset({"relu", "gelu", "softmax", "angle"})
+
+
 def is_supported(name: str) -> bool:
     """判断某 numpy 函数名是否被 AsNumpy 覆盖。"""
     return name in SUPPORTED_OPS
+
+
+def is_custom(name: str) -> bool:
+    """判断某算子是否为 asnumpy 自定义 / 非 numpy 原生算子(relu/gelu/softmax/angle)。"""
+    return name in CUSTOM_OPS

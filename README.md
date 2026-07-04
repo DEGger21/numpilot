@@ -25,8 +25,21 @@ python -m numpilot migrate examples/unsupported_demo.py
 测试:
 
 ```bash
-python -m pytest -q          # 32 passed
+python -m pytest -q          # 41 passed
 ```
+
+---
+
+## 交互式迁移向导(`wizard`)
+
+面向演示的**交互式终端向导**:启动界面 → 输入待迁移程序路径 → 选引擎 → 带进度条与实时解释跑迁移 → 输出迁移反馈(算子替换、**接入多少自定义 NPU 算子**、数值校验、**整网性能对比**)。
+
+```bash
+python -m numpilot wizard                    # 交互:提示输入路径 + 选引擎
+python -m numpilot wizard <file> --engine ast --backend npu   # 非交互(带参跳过提问)
+```
+
+向导依次跑 5 步(rich 进度条 + 每步一句解释):`分析算子 → 决策卸载 → 迁移改写 → 真机校验+NPU测速 → numpy 单核基线`,最后给出反馈表 + 性能面板。性能用**公平口径**:子进程 `bench-cpu` 把 numpy 钉 1 核,向导进程内测 asnumpy@NPU,`加速比 = numpy@1核 / asnumpy@NPU`。反馈里的"自定义 NPU 算子"指迁移后命中 asnumpy 自定义算子(`relu/softmax/gelu/angle`——numpy 没有、由 NPU 提供)的数量。选 `--engine llm` 走 glm-5.1 智能体,失败按 strict 终止。
 
 ---
 
@@ -149,7 +162,8 @@ numpilot/
 ├── coverage.py          # AsNumpy 覆盖集快照(来自 asnumpy _LAZY_MAPPING)
 ├── orchestrator.py      # 编排智能体 + report.md/report.json 落盘
 ├── bench.py             # 两个独立性能程序:bench-cpu(numpy 限核基线) / bench-npu(NPU 对比)
-├── __main__.py          # CLI:migrate / bench-cpu / bench-npu / doctor
+├── wizard.py            # 交互式迁移向导(rich:启动界面→选码→进度迁移→反馈)
+├── __main__.py          # CLI:wizard / migrate / bench-cpu / bench-npu / doctor
 ├── agents/              # analysis / decision / migration / verification
 ├── engines/             # 迁移引擎策略:base / ast_rewrite(默认) / llm(provider 无关, 可回退)
 └── backends/            # 执行后端端口:base / shim(默认) / npu

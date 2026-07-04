@@ -189,12 +189,22 @@ def main(argv=None):
     bn.add_argument("--threshold", type=int, default=1_000_000)
     bn.add_argument("--skip-env-check", action="store_true")
 
+    wiz = sub.add_parser("wizard", help="交互式迁移向导(启动界面→选代码→进度迁移→反馈)")
+    wiz.add_argument("file", nargs="?", default=None,
+                     help="待迁移程序路径(省略则进入交互提示)")
+    wiz.add_argument("--engine", choices=["ast", "llm"], default=None,
+                     help="迁移引擎(省略则交互选择)")
+    wiz.add_argument("--backend", choices=["shim", "npu"], default="npu")
+
     doc = sub.add_parser("doctor", help="环境自检:检查 Python/numpy/CANN/NPU/asnumpy")
     doc.add_argument("--backend", choices=["shim", "npu"], default=None,
                      help="以指定后端语义评估硬依赖(npu 更严格)")
 
     args = parser.parse_args(argv)
     try:
+        if args.cmd == "wizard":
+            from numpilot.wizard import run_wizard
+            return run_wizard(file=args.file, engine=args.engine, backend=args.backend)
         if args.cmd == "doctor":
             return _cmd_doctor(args)
         if args.cmd == "bench-cpu":
