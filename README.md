@@ -41,7 +41,9 @@ python -m numpilot wizard <file> --engine ast --backend npu   # 非交互(带参
 
 向导依次跑 5 步(rich 进度条 + 每步一句解释):`分析算子 → 决策卸载 → 迁移改写 → 真机校验+NPU测速 → numpy 单核基线`,最后给出反馈表 + 性能面板。性能用**公平口径**:子进程 `bench-cpu` 把 numpy 钉 1 核,向导进程内测 asnumpy@NPU,`加速比 = numpy@1核 / asnumpy@NPU`。反馈里的"自定义 NPU 算子"指迁移后命中 asnumpy 自定义算子(`relu/softmax/gelu/angle`——numpy 没有、由 NPU 提供)的数量。选 `--engine llm` 走 glm-5.1 智能体,失败按 strict 终止。
 
-**每次迁移都会落地一份带时间戳的 Markdown 报告**到 `reports/migration_<网络>_<YYYYMMDD_HHMMSS>.md`(`wizard` 与 `migrate` 都会写;`reports/` 已 gitignore)。
+**多智能体透明化**:向导开头打印"多智能体阵容"表(5 个智能体各自的职责与**所用模型/引擎**),迁移过程中每一步都标注是哪个智能体在动作。如实体现架构——只有**迁移智能体**(选 `llm` 时)用大模型 glm-5.1,分析/决策/验证/编排都是确定性规则(无模型)。
+
+**每次迁移都会落地一份带时间戳的 Markdown 报告**到 `reports/migration_<网络>_<YYYYMMDD_HHMMSS>.md`(含多智能体阵容;`wizard` 与 `migrate` 都会写;`reports/` 已 gitignore)。
 
 ---
 

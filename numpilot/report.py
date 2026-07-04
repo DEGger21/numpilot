@@ -19,6 +19,13 @@ def build_report_md(info: dict) -> str:
     lines.append(f"- 执行后端:{info.get('backend', '?')}")
     lines.append(f"- 状态:**{info.get('status', '?')}**")
 
+    # 多智能体阵容(每个智能体用什么模型/引擎)
+    agents = info.get("agents")
+    if agents:
+        lines += ["", "## 多智能体阵容", "", "| 智能体 | 职责 | 模型 / 引擎 |", "|---|---|---|"]
+        for name, role, model in agents:
+            lines.append(f"| {name} | {role} | {model} |")
+
     if info.get("unsupported"):
         lines += ["", "## 缺口算子(无法迁移)",
                   "- " + ", ".join(info["unsupported"]),

@@ -172,9 +172,11 @@ def _cmd_migrate(args):
 
 def _migrate_report_info(res):
     """把 migrate 结果规范化为 report.build_report_md 的 info dict(无性能字段)。"""
+    from numpilot.wizard import agent_roster
     net = _net_name(res.get("source_path", "task"))
     info = {"net": net, "source_path": res.get("source_path"),
-            "engine": res.get("engine"), "status": res["status"]}
+            "engine": res.get("engine"), "status": res["status"],
+            "agents": agent_roster(res.get("engine"))}
     a = res.get("analysis")
     if res["status"] == "unsupported":
         info["unsupported"] = res.get("unsupported", [])

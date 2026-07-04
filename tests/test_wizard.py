@@ -2,8 +2,8 @@
 """交互式向导:helper 单测 + 非交互端到端(shim, CI 安全)。"""
 import os
 
-from numpilot.wizard import (custom_op_breakdown, load_env_llm, run_wizard,
-                             validate_task_file)
+from numpilot.wizard import (agent_roster, custom_op_breakdown, load_env_llm,
+                             run_wizard, validate_task_file)
 
 
 def test_validate_ok():
@@ -39,6 +39,17 @@ def test_load_env_llm_missing_file():
 def test_custom_op_breakdown():
     assert custom_op_breakdown({"matmul": 2, "relu": 3, "softmax": 1}) == {"relu": 3, "softmax": 1}
     assert custom_op_breakdown({"matmul": 2, "add": 1}) == {}
+
+
+def test_agent_roster_migration_model_follows_engine():
+    ast_roster = agent_roster("ast")
+    llm_roster = agent_roster("llm")
+    assert len(ast_roster) == 5
+    # 迁移智能体是唯一(可选)用大模型的;其余无模型
+    ast_mig = [m for n, r, m in ast_roster if "Migration" in n][0]
+    llm_mig = [m for n, r, m in llm_roster if "Migration" in n][0]
+    assert "无模型" in ast_mig and "glm-5.1" in llm_mig
+    assert all("无模型" in m for n, r, m in ast_roster if "Migration" not in n)
 
 
 def test_wizard_noninteractive_shim_e2e():

@@ -75,6 +75,31 @@ def custom_op_breakdown(rewrites):
     return {op: n for op, n in rewrites.items() if is_custom(op)}
 
 
+def agent_roster(engine_name):
+    """返回 5 智能体阵容 [(名称, 职责, 模型/引擎)]。只有迁移智能体(可选)用大模型。"""
+    mig_model = ("glm-5.1 大模型" if engine_name == "llm"
+                 else "AST 确定性改写(规则,无模型)")
+    return [
+        ("编排智能体 Orchestrator", "统筹流水线 · 传递上下文 · 汇总报告", "规则编排(无模型)"),
+        ("分析智能体 Analysis", "AST 静态解析算子 · 比对覆盖集", "Python AST(规则,无模型)"),
+        ("决策智能体 Decision", "按张量规模阈值定 CPU/NPU 卸载", "规则成本模型(无模型)"),
+        ("迁移智能体 Migration", "np.* → ap.* 代码改写", mig_model),
+        ("验证智能体 Verification", "双端执行 · 数值对比 · 测速", "数值对比 + 真机执行(无模型)"),
+    ]
+
+
+def _print_roster(engine_name):
+    tb = Table(title="多智能体阵容(本次任务)", box=box.SIMPLE_HEAVY, title_style="bold cyan")
+    tb.add_column("智能体", style="bold")
+    tb.add_column("职责")
+    tb.add_column("模型 / 引擎", style="magenta")
+    for name, role, model in agent_roster(engine_name):
+        hi = "[bold magenta]" if "glm" in model else ""
+        end = "[/]" if hi else ""
+        tb.add_row(name, role, f"{hi}{model}{end}")
+    console.print(tb)
+
+
 # ───────────────────────── 各步骤 ─────────────────────────
 def _banner():
     console.print(Panel.fit(
@@ -131,14 +156,26 @@ def _resolve_backend(backend, interactive):
 def _run_pipeline(source, path, engine_name, backend_name):
     """跑 分析→决策→迁移→校验→CPU基线,返回收集的数据 dict。中途失败抛异常。"""
     data = {"path": path, "engine": engine_name, "backend": backend_name}
-    steps = ["分析算子", "决策卸载", "迁移改写", "真机校验 + NPU 测速", "numpy 单核基线"]
+    mig_tag = "glm-5.1" if engine_name == "llm" else "AST"
+    # 每步归属的智能体(名称, 该步用的模型/引擎), 让用户看清是谁在动作
+    steps = [
+        ("分析智能体", "分析算子", "规则AST"),
+        ("决策智能体", "决策卸载", "规则阈值"),
+        ("迁移智能体", "迁移改写", mig_tag),
+        ("验证智能体", "真机校验 + NPU 测速", "数值对比"),
+        ("验证智能体", "numpy 单核基线", "测速"),
+    ]
+    def sdesc(i, extra=""):
+        a, act, m = steps[i]
+        return f"[{i+1}/5] {a} · {act}({m}){extra}"
+
     with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
                   BarColumn(bar_width=24), TextColumn("{task.completed}/{task.total}"),
                   TimeElapsedColumn(), console=console) as prog:
         t = prog.add_task("准备中", total=len(steps))
 
-        # [1] 分析
-        prog.update(t, description=f"[1/5] {steps[0]}")
+        # [1] 分析智能体
+        prog.update(t, description=sdesc(0))
         analysis = AnalysisAgent().analyze(source, path)
         data["analysis"] = analysis
         distinct = sorted({o.name for o in analysis.op_uses})
@@ -148,20 +185,19 @@ def _run_pipeline(source, path, engine_name, backend_name):
             prog.advance(t)
             data["stopped"] = "unsupported"
             return data
-        prog.console.print(f"   ↳ {len(analysis.op_uses)} 处 numpy 调用 · {len(distinct)} 个算子 · 全部在覆盖集 ✓")
+        prog.console.print(f"   ↳ [cyan]分析智能体[/] {len(analysis.op_uses)} 处 numpy 调用 · {len(distinct)} 个算子 · 全部在覆盖集 ✓")
         prog.advance(t)
 
-        # [2] 决策
-        prog.update(t, description=f"[2/5] {steps[1]}")
+        # [2] 决策智能体
+        prog.update(t, description=sdesc(1))
         plan = DecisionAgent().plan(analysis)
         data["plan"] = plan
         npu_ops = sorted(o for o, p in plan.placement.items() if p == "NPU")
-        prog.console.print(f"   ↳ 按规模阈值卸载:NPU {len(npu_ops)} 个算子,其余留 CPU")
+        prog.console.print(f"   ↳ [cyan]决策智能体[/] 按规模阈值卸载:NPU {len(npu_ops)} 个算子,其余留 CPU")
         prog.advance(t)
 
-        # [3] 迁移(LLM 时较慢)
-        prog.update(t, description=f"[3/5] {steps[2]}"
-                    + (" · 请求 glm-5.1…" if engine_name == "llm" else ""))
+        # [3] 迁移智能体(LLM 时较慢)
+        prog.update(t, description=sdesc(2, " · 请求中…" if engine_name == "llm" else ""))
         migration = MigrationAgent(_make_engine(engine_name)).migrate(source, plan)
         data["migration"] = migration
         os.makedirs(_OUT_DIR, exist_ok=True)
@@ -169,25 +205,26 @@ def _run_pipeline(source, path, engine_name, backend_name):
         with open(mig_path, "w", encoding="utf-8") as f:
             f.write(migration.migrated_source)
         data["migrated_path"] = mig_path
-        prog.console.print(f"   ↳ 引擎={migration.engine} · 替换 {migration.total_rewrites} 处 np.* → ap.*")
+        model_tag = "glm-5.1 大模型" if migration.engine == "llm" else "AST 规则改写"
+        prog.console.print(f"   ↳ [magenta]迁移智能体·{model_tag}[/] 替换 {migration.total_rewrites} 处 np.* → ap.*")
         prog.advance(t)
 
-        # [4] 校验 + NPU 测速
-        prog.update(t, description=f"[4/5] {steps[3]}")
+        # [4] 验证智能体:校验 + NPU 测速
+        prog.update(t, description=sdesc(3))
         report = VerificationAgent(select_backend(backend_name)).verify(
             source, migration.migrated_source, measure=True)
         data["report"] = report
         mark = "✓" if report.numerically_consistent else "✗"
-        prog.console.print(f"   ↳ 数值一致 {mark} max_rel_diff={report.max_rel_diff:.2e} · "
+        prog.console.print(f"   ↳ [cyan]验证智能体[/] 数值一致 {mark} max_rel_diff={report.max_rel_diff:.2e} · "
                            f"asnumpy@{report.backend} 时延 {report.t_mig_ms:.1f} ms")
         prog.advance(t)
 
-        # [5] numpy 单核基线(子进程, 干净钉 1 核)
-        prog.update(t, description=f"[5/5] {steps[4]}")
+        # [5] 验证智能体:numpy 单核基线(子进程, 干净钉 1 核)
+        prog.update(t, description=sdesc(4))
         t_cpu = _cpu_baseline_subprocess(path)
         data["t_cpu_ms"] = t_cpu
         if t_cpu is not None:
-            prog.console.print(f"   ↳ numpy@CPU(1 核)基线 {t_cpu:.1f} ms")
+            prog.console.print(f"   ↳ [cyan]验证智能体[/] numpy@CPU(1 核)基线 {t_cpu:.1f} ms")
         else:
             prog.console.print("   ↳ [yellow]CPU 基线获取失败,跳过加速比[/]")
         prog.advance(t)
@@ -266,7 +303,8 @@ def _report_info(data):
     """把向导 data 规范化为 report.build_report_md 需要的 info dict。"""
     net = os.path.splitext(os.path.basename(data["path"]))[0]
     info = {"net": net, "source_path": data["path"], "engine": data["engine"],
-            "backend": data["backend"], "status": "unsupported" if data.get("stopped") else None}
+            "backend": data["backend"], "status": "unsupported" if data.get("stopped") else None,
+            "agents": agent_roster(data["engine"])}
     a = data.get("analysis")
     if data.get("stopped") == "unsupported":
         info["unsupported"] = a.unsupported
@@ -309,6 +347,7 @@ def run_wizard(file=None, engine=None, backend="npu"):
         console.print("[red]✗ 环境不满足且未降级,向导终止。[/]")
         return 3
 
+    _print_roster(engine_name)      # 让用户看清 5 个智能体各自用什么模型/引擎
     source = open(path, encoding="utf-8").read()
     try:
         data = _run_pipeline(source, path, engine_name, backend_name)
