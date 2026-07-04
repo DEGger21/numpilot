@@ -29,6 +29,7 @@ from numpilot.coverage import is_custom
 from numpilot.engines.llm import LlmError
 from numpilot.env_check import Env
 from numpilot.orchestrator import _make_engine
+from numpilot.report import save_migration_report
 
 console = Console()
 _OUT_DIR = "out_wizard"
@@ -261,6 +262,38 @@ def _feedback(data):
     console.print(f"[dim]迁移代码已写入:{data['migrated_path']}[/]")
 
 
+def _report_info(data):
+    """把向导 data 规范化为 report.build_report_md 需要的 info dict。"""
+    net = os.path.splitext(os.path.basename(data["path"]))[0]
+    info = {"net": net, "source_path": data["path"], "engine": data["engine"],
+            "backend": data["backend"], "status": "unsupported" if data.get("stopped") else None}
+    a = data.get("analysis")
+    if data.get("stopped") == "unsupported":
+        info["unsupported"] = a.unsupported
+        return info
+    plan, mig, rep = data["plan"], data["migration"], data["report"]
+    info["status"] = "pass" if rep.numerically_consistent else "fail"
+    info["n_calls"] = len(a.op_uses)
+    info["n_ops"] = len({o.name for o in a.op_uses})
+    info["rewrites"] = mig.rewrites
+    info["total_rewrites"] = mig.total_rewrites
+    info["custom"] = custom_op_breakdown(mig.rewrites)
+    info["npu_ops"] = sorted(o for o, p in plan.placement.items() if p == "NPU")
+    info["cpu_ops"] = sorted(o for o, p in plan.placement.items() if p == "CPU")
+    info["backend_version"] = rep.backend_version
+    info["backend_module"] = rep.backend_module
+    info["numerically_consistent"] = rep.numerically_consistent
+    info["max_rel_diff"] = rep.max_rel_diff
+    info["tol"] = rep.tol
+    info["migrated_path"] = data.get("migrated_path")
+    t_cpu, t_npu = data.get("t_cpu_ms"), rep.t_mig_ms
+    if data["backend"] == "npu" and t_cpu and t_npu:
+        info["t_cpu_ms"], info["t_npu_ms"] = t_cpu, t_npu
+        info["speedup"] = t_cpu / t_npu
+        info["n_elements"] = rep.n_elements
+    return info
+
+
 # ───────────────────────── 入口 ─────────────────────────
 def run_wizard(file=None, engine=None, backend="npu"):
     interactive = file is None or engine is None
@@ -283,6 +316,12 @@ def run_wizard(file=None, engine=None, backend="npu"):
         console.print(Panel(f"{e}", title="[red]LLM 迁移终止(strict)[/]", border_style="red"))
         return 4
     _feedback(data)
+    # 每次迁移落地一份带时间戳的 Markdown 报告(默认 reports/ 目录)
+    try:
+        report_path = save_migration_report(_report_info(data))
+        console.print(f"[green]✓[/] 迁移报告已落盘:[bold]{report_path}[/]")
+    except Exception as e:
+        console.print(f"[yellow]⚠ 报告落盘失败(不影响迁移):{e}[/]")
     if data.get("stopped"):
         return 1
     return 0 if data["report"].numerically_consistent else 2

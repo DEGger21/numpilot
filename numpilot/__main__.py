@@ -46,9 +46,11 @@ _early_pin_for_bench_cpu()                # 在下面 import numpy(经 numpilot 
 
 from numpilot.backends.base import select_backend            # noqa: E402
 from numpilot.bench import run_cpu_baseline, run_npu_compare  # noqa: E402
+from numpilot.coverage import is_custom                       # noqa: E402
 from numpilot.engines.llm import LlmError                     # noqa: E402
 from numpilot.env_check import Env                            # noqa: E402
 from numpilot.orchestrator import Orchestrator, _make_engine  # noqa: E402
+from numpilot.report import save_migration_report            # noqa: E402
 
 
 def _net_name(path):
@@ -158,9 +160,44 @@ def _cmd_migrate(args):
     res = orch.run(args.file, out_dir=args.out)
 
     print(_render_terminal(res))
+    try:
+        rp = save_migration_report(_migrate_report_info(res))
+        print(f"[报告] 迁移报告已落盘:{rp}")
+    except Exception as e:
+        print(f"[报告] 落盘失败(不影响迁移):{e}")
     if res["status"] == "unsupported":
         return 1
     return 0 if res["status"] == "pass" else 2
+
+
+def _migrate_report_info(res):
+    """把 migrate 结果规范化为 report.build_report_md 的 info dict(无性能字段)。"""
+    net = _net_name(res.get("source_path", "task"))
+    info = {"net": net, "source_path": res.get("source_path"),
+            "engine": res.get("engine"), "status": res["status"]}
+    a = res.get("analysis")
+    if res["status"] == "unsupported":
+        info["unsupported"] = res.get("unsupported", [])
+        return info
+    rep = res["report"]
+    plan = res.get("plan")
+    rewrites = res.get("rewrites") or {}
+    info["backend"] = rep.backend
+    info["n_calls"] = len(a.op_uses) if a else None
+    info["n_ops"] = len({o.name for o in a.op_uses}) if a else None
+    info["rewrites"] = rewrites
+    info["total_rewrites"] = sum(rewrites.values())
+    info["custom"] = {op: n for op, n in rewrites.items() if is_custom(op)}
+    if plan:
+        info["npu_ops"] = sorted(o for o, p in plan.placement.items() if p == "NPU")
+        info["cpu_ops"] = sorted(o for o, p in plan.placement.items() if p == "CPU")
+    info["backend_version"] = rep.backend_version
+    info["backend_module"] = rep.backend_module
+    info["numerically_consistent"] = rep.numerically_consistent
+    info["max_rel_diff"] = rep.max_rel_diff
+    info["tol"] = rep.tol
+    info["migrated_path"] = res.get("migrated_path")
+    return info
 
 
 def main(argv=None):
