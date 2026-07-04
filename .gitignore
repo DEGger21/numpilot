@@ -5,6 +5,8 @@ __pycache__/
 build/
 dist/
 .superpowers/
-.env.llm
 out*/
 reports/
+*.log
+.env*
+RUN_LLM_TEMP.md
