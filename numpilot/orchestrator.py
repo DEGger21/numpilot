@@ -15,7 +15,8 @@ def _make_engine(name):
     if name in (None, "ast"):
         return AstRewriteEngine()
     if name == "llm":
-        return LlmEngine()
+        # CLI 显式选 llm → strict:失败直接终止, 不回退 AST(用智能体迁移, 失败即暴露)
+        return LlmEngine(strict=True)
     raise ValueError(f"未知引擎: {name!r}(可选 ast | llm)")
 
 

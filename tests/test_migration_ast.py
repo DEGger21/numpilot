@@ -1,5 +1,7 @@
+import pytest
+
 from numpilot.engines.ast_rewrite import AstRewriteEngine
-from numpilot.engines.llm import LlmEngine
+from numpilot.engines.llm import LlmEngine, LlmError
 from numpilot.contracts import OffloadPlan
 
 SRC = "import numpy as np\ndef f(x, w):\n    return np.matmul(x, w)\n"
@@ -24,5 +26,13 @@ def test_llm_falls_back_to_ast_when_unconfigured(monkeypatch):
     for k in ["NUMPILOT_LLM_BASE_URL", "NUMPILOT_LLM_AUTH_TOKEN", "NUMPILOT_LLM_MODEL"]:
         monkeypatch.delenv(k, raising=False)
     plan = OffloadPlan(placement={"matmul": "NPU"}, threshold_elements=1_000_000)
-    out = LlmEngine().rewrite(SRC, plan)
+    out = LlmEngine().rewrite(SRC, plan)                 # 默认非 strict
     assert "ap.matmul(" in out          # 未配置 → 回退 AST 引擎, 结果等价
+
+
+def test_llm_strict_raises_when_unconfigured(monkeypatch):
+    for k in ["NUMPILOT_LLM_BASE_URL", "NUMPILOT_LLM_AUTH_TOKEN", "NUMPILOT_LLM_MODEL"]:
+        monkeypatch.delenv(k, raising=False)
+    plan = OffloadPlan(placement={"matmul": "NPU"}, threshold_elements=1_000_000)
+    with pytest.raises(LlmError):       # strict → 未配置直接终止, 不回退
+        LlmEngine(strict=True).rewrite(SRC, plan)

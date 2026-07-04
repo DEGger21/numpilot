@@ -46,6 +46,7 @@ _early_pin_for_bench_cpu()                # 在下面 import numpy(经 numpilot 
 
 from numpilot.backends.base import select_backend            # noqa: E402
 from numpilot.bench import run_cpu_baseline, run_npu_compare  # noqa: E402
+from numpilot.engines.llm import LlmError                     # noqa: E402
 from numpilot.env_check import Env                            # noqa: E402
 from numpilot.orchestrator import Orchestrator, _make_engine  # noqa: E402
 
@@ -193,15 +194,20 @@ def main(argv=None):
                      help="以指定后端语义评估硬依赖(npu 更严格)")
 
     args = parser.parse_args(argv)
-    if args.cmd == "doctor":
-        return _cmd_doctor(args)
-    if args.cmd == "bench-cpu":
-        return run_cpu_baseline(args.file, args.out, parse_cpu_threads(args.cpu_threads))
-    if args.cmd == "bench-npu":
-        _preflight("npu", args.skip_env_check)
-        return run_npu_compare(args.file, args.out, engine=_make_engine(args.engine),
-                               threshold=args.threshold)
-    return _cmd_migrate(args)
+    try:
+        if args.cmd == "doctor":
+            return _cmd_doctor(args)
+        if args.cmd == "bench-cpu":
+            return run_cpu_baseline(args.file, args.out, parse_cpu_threads(args.cpu_threads))
+        if args.cmd == "bench-npu":
+            _preflight("npu", args.skip_env_check)
+            return run_npu_compare(args.file, args.out, engine=_make_engine(args.engine),
+                                   threshold=args.threshold)
+        return _cmd_migrate(args)
+    except LlmError as e:
+        print(f"\n[LLM] 迁移终止:{e}", file=sys.stderr)
+        print("[LLM] 已按 strict 语义直接终止(未回退 AST)。", file=sys.stderr)
+        return 4
 
 
 if __name__ == "__main__":
