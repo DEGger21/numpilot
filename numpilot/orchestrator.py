@@ -50,7 +50,8 @@ class Orchestrator:
             with open(migrated_path, "w", encoding="utf-8") as f:
                 f.write(migration.migrated_source)
 
-        report = VerificationAgent(self.backend).verify(source, migration.migrated_source)
+        report = VerificationAgent(self.backend).verify(
+            source, migration.migrated_source, measure=False)
         result = {
             "status": report.status,
             "report": report,
@@ -86,6 +87,7 @@ class Orchestrator:
             "backend": getattr(rep, "backend", None),
             "backend_module": getattr(rep, "backend_module", None),
             "backend_version": getattr(rep, "backend_version", None),
+            "cpu_threads": getattr(rep, "cpu_threads", None),
             "t_orig_ms": getattr(rep, "t_orig_ms", None),
             "t_mig_ms": getattr(rep, "t_mig_ms", None),
             "n_elements": getattr(rep, "n_elements", None),
@@ -127,21 +129,14 @@ def _render_md(summary, result) -> str:
     if not mod and not ver:
         lines.append("- 仿真后端(shim):离线用 numpy 承载 asnumpy 语义,数值恒等,非真机")
 
-    # 性能对比:numpy@CPU vs asnumpy@后端 并列 + 加速比
-    t_o, t_m = summary.get("t_orig_ms"), summary.get("t_mig_ms")
-    if t_o is not None and t_m is not None:
-        backend = summary.get("backend") or "?"
-        lines.append("")
-        lines.append("## 性能对比(单次前向, 中位耗时)")
-        if summary.get("n_elements") is not None:
-            lines.append(f"- 输出规模:{summary['n_elements']:,} 元素")
-        lines.append(f"- numpy@CPU:**{t_o:.3f} ms**")
-        lines.append(f"- asnumpy@{backend}:**{t_m:.3f} ms**")
-        if summary["speedup"] is not None:
-            faster = "asnumpy 更快" if summary["speedup"] > 1 else "numpy 更快"
-            lines.append(f"- 加速比(CPU/{backend}):**{summary['speedup']:.4f}x**({faster})")
-    elif summary["speedup"] is not None:
-        lines.append(f"- 加速比(当前后端):{summary['speedup']:.4f}x")
+    # 性能对比交给两个独立 bench 程序(公平口径:numpy 单核 vs NPU 满线程)
+    src = summary.get("source_path", "<file>")
+    lines.append("")
+    lines.append("## 性能对比")
+    lines.append("本机 numpy=scipy-openblas 默认吃满全核(640),与单卡 NPU 不对等。"
+                 "故性能对比拆成两个独立进程,避免线程设置互相污染:")
+    lines.append(f"1. `python -m numpilot bench-cpu {src} --out out_demo`(numpy 钉 1 核)")
+    lines.append(f"2. `python -m numpilot bench-npu {src} --out out_demo`(NPU 满线程,读 1 的基线算加速比)")
 
     plan = result.get("plan")
     if plan is not None:

@@ -58,3 +58,30 @@ def test_render_terminal_unsupported_shows_gap():
     res = Orchestrator(backend=ShimBackend()).run("examples/unsupported_demo.py")
     text = _render_terminal(res)
     assert "[缺口]" in text and "fft" in text
+
+
+def test_render_terminal_points_to_bench_commands():
+    res = Orchestrator(backend=ShimBackend()).run("examples/mlp_forward.py")
+    text = _render_terminal(res)
+    assert "bench-cpu" in text and "bench-npu" in text
+
+
+def test_bench_cpu_writes_baseline(tmp_path):
+    import json
+    from numpilot.bench import run_cpu_baseline
+    rc = run_cpu_baseline("examples/mlp_forward.py", str(tmp_path), cpu_threads=1)
+    assert rc == 0
+    meta = json.loads((tmp_path / "cpu_baseline.json").read_text())
+    assert meta["net"] == "mlp_forward"
+    assert meta["n_elements"] == 640
+    assert meta["t_cpu_ms"] > 0
+    assert (tmp_path / "cpu_baseline.npy").exists()
+
+
+def test_parse_cpu_threads():
+    from numpilot.__main__ import parse_cpu_threads
+    assert parse_cpu_threads(None) == 1
+    assert parse_cpu_threads("1") == 1
+    assert parse_cpu_threads("8") == 8
+    assert parse_cpu_threads("0") is None
+    assert parse_cpu_threads("all") is None

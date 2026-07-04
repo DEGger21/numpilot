@@ -1,11 +1,53 @@
-"""CLI: python -m numpilot migrate <file> [选项] | python -m numpilot doctor [选项]"""
+"""CLI: python -m numpilot <migrate|bench-cpu|bench-npu|doctor> ...
+
+演示三步:
+  1) bench-cpu <file>   纯 numpy 基线,进程内钉死 1 核(公平对比 NPU 单卡)
+  2) bench-npu <file>   放开所有限制,迁移到 asnumpy 在 NPU 上跑,读 1) 的基线算加速比
+  migrate <file>        迁移 + 正确性 + "真用了 asnumpy" 叙事(不做性能对比)
+"""
 import argparse
 import os
 import sys
 
-from numpilot.backends.base import select_backend
-from numpilot.env_check import Env
-from numpilot.orchestrator import Orchestrator, _make_engine
+
+def parse_cpu_threads(val):
+    """1(默认, 单核) / 0|all|max|full(全核, 不限制)→ int 或 None。"""
+    if val is None:
+        return 1
+    if str(val).lower() in ("0", "all", "max", "full"):
+        return None
+    n = int(val)
+    return n if n > 0 else None
+
+
+def _early_pin_for_bench_cpu():
+    """bench-cpu 是纯 numpy 进程(不碰 NPU/CANN),可安全地全局钉核。
+
+    ⚠️ 必须在 import numpy 之前设置:本机 numpy=scipy-openblas(OpenMP 线程后端),
+    默认吃满全部 640 核。只有在加载前设好 *_NUM_THREADS,OpenBLAS 才会真正限核。
+    bench-npu / migrate 不走这里(它们要 NPU 满线程),故只对 bench-cpu 生效。
+    """
+    argv = sys.argv[1:]
+    if not argv or argv[0] != "bench-cpu":
+        return
+    n = "1"
+    if "--cpu-threads" in argv:
+        i = argv.index("--cpu-threads")
+        n = argv[i + 1] if i + 1 < len(argv) else "1"
+    if parse_cpu_threads(n) is None:
+        return                            # 0/all → 不限制
+    n = str(parse_cpu_threads(n))
+    for k in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS",
+              "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
+        os.environ[k] = n
+
+
+_early_pin_for_bench_cpu()                # 在下面 import numpy(经 numpilot 传递)前完成
+
+from numpilot.backends.base import select_backend            # noqa: E402
+from numpilot.bench import run_cpu_baseline, run_npu_compare  # noqa: E402
+from numpilot.env_check import Env                            # noqa: E402
+from numpilot.orchestrator import Orchestrator, _make_engine  # noqa: E402
 
 
 def _net_name(path):
@@ -60,20 +102,16 @@ def _render_terminal(res):
     mark = "✓" if rep.numerically_consistent else "✗"
     out.append(f"[校验] 数值一致 {mark}  max_rel_diff={rep.max_rel_diff:.2e}  (tol={rep.tol:.0e})")
 
-    # [性能] 整网单次前向 numpy@CPU vs asnumpy@后端
-    if rep.t_orig_ms is not None and rep.t_mig_ms is not None:
-        n = f"{rep.n_elements:,} 元素   " if rep.n_elements is not None else ""
-        line = (f"[性能] {n}numpy@CPU {rep.t_orig_ms:.3f}ms   "
-                f"asnumpy@{rep.backend} {rep.t_mig_ms:.3f}ms")
-        if rep.speedup is not None:
-            faster = "asnumpy 更快" if rep.speedup > 1 else "numpy 更快"
-            line += f"   {rep.speedup:.2f}x ({faster})"
-        out.append(line)
-
     # [产物]
     arts = [res["migrated_path"]] if res.get("migrated_path") else []
     if arts:
         out.append("[产物] " + " · ".join(arts))
+
+    # [性能] 交给两个独立 bench 程序(公平口径:numpy 单核 vs NPU 满线程)
+    src = res.get("source_path", "<file>")
+    out.append("[性能] 公平对比请分两步跑(见下):")
+    out.append(f"       ① python -m numpilot bench-cpu {src} --out out_demo")
+    out.append(f"       ② python -m numpilot bench-npu {src} --out out_demo")
     return "\n".join(out)
 
 
@@ -137,6 +175,19 @@ def main(argv=None):
     mig.add_argument("--skip-env-check", action="store_true",
                      help="跳过 migrate 前置环境自检(缺依赖也强制继续)")
 
+    bc = sub.add_parser("bench-cpu", help="① 纯 numpy 基线, 进程内钉 1 核, 存基线供对比")
+    bc.add_argument("file")
+    bc.add_argument("--out", default="out_demo", help="基线文件输出目录")
+    bc.add_argument("--cpu-threads", default="1",
+                    help="numpy BLAS 线程数(默认 1=单核公平对比;0/all=吃满全核对照)")
+
+    bn = sub.add_parser("bench-npu", help="② 迁移到 asnumpy 在 NPU 上跑(满线程), 读 ① 基线算加速比")
+    bn.add_argument("file")
+    bn.add_argument("--out", default="out_demo", help="读取 ① 基线 / 写迁移代码的目录")
+    bn.add_argument("--engine", choices=["ast", "llm"], default=None)
+    bn.add_argument("--threshold", type=int, default=1_000_000)
+    bn.add_argument("--skip-env-check", action="store_true")
+
     doc = sub.add_parser("doctor", help="环境自检:检查 Python/numpy/CANN/NPU/asnumpy")
     doc.add_argument("--backend", choices=["shim", "npu"], default=None,
                      help="以指定后端语义评估硬依赖(npu 更严格)")
@@ -144,6 +195,12 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.cmd == "doctor":
         return _cmd_doctor(args)
+    if args.cmd == "bench-cpu":
+        return run_cpu_baseline(args.file, args.out, parse_cpu_threads(args.cpu_threads))
+    if args.cmd == "bench-npu":
+        _preflight("npu", args.skip_env_check)
+        return run_npu_compare(args.file, args.out, engine=_make_engine(args.engine),
+                               threshold=args.threshold)
     return _cmd_migrate(args)
 
 

@@ -64,3 +64,32 @@
 - `--backend shim` 离线:`mlp_forward`、`big_gemm`、`unsupported_demo` 三个 example 输出符合分段格式。
 - `--backend npu` 真机:`mlp_forward`、`big_gemm` 跑通,`[执行]` 段显示真实 asnumpy 版本与路径、数值一致。
 - 现有 23 个 pytest 全过;新增测试:替换计数(`rewrites` 内容)、`ap_call_sites` 计数、终端渲染不抛异常。
+
+---
+
+## 追加(2026-07-04):性能对比拆成两个独立程序
+
+### 动机(实测根因)
+本机 numpy=**scipy-openblas**(OpenMP 线程后端),`matmul` 默认吃满全部 **640 核**:
+同一 2048³ matmul,1 线程 370ms → 640 线程 15.8ms(23×)。原始"numpy@CPU 0.29×"
+几乎全部来自 640 核堆料,不是 NPU 慢——限 1 核后 NPU 反而快 8.45×。**这修正了之前
+"910c 未适配所以打不过 numpy"的归因:真正主因是 CPU 基线被 640 核 OpenBLAS 加持。**
+
+### 为什么必须分进程
+单进程内用环境变量限核会**互相污染**:scipy-openblas 的 `OPENBLAS_NUM_THREADS` 会调
+`omp_set_num_threads()` 改全进程 OpenMP,而 CANN 主机侧也用同一 OpenMP,导致设 1 核时
+NPU 也被拖慢 10×(133ms→1239ms)。故把两次测量拆到**两个独立进程**,各设各的线程,互不干扰。
+
+### 设计
+- `bench-cpu <file> --out DIR`:纯 numpy 进程,`__main__` 早期(import numpy 前)全局钉
+  1 核(此进程不碰 NPU,钉核安全);跑原始 forward 计时,存 `cpu_baseline.{npy,json}`。
+  `--cpu-threads N`(默认 1;0/all=全核对照)。
+- `bench-npu <file> --out DIR`:放开所有限制,迁移→NPU 上跑 asnumpy 计时;就地用 numpy
+  满线程参考做数值校验;读 `cpu_baseline.json` 算 加速比=t_cpu(1核)/t_npu(满线程),打印 asnumpy 真机证据。
+- `migrate`:回归"迁移证明"职责(分析/迁移/正确性/asnumpy 证据),不再自测性能;
+  `[性能]` 段与 report.md 改为指向上面两条 bench 命令。`VerificationAgent.verify(measure=False)`。
+- 新模块 `numpilot/bench.py`;新增 bench-cpu/parse_cpu_threads 测试;32 pytest 全过。
+
+### 实测(big_gemm 2048³,真机)
+`bench-cpu` numpy@1核 1543ms;`bench-npu` asnumpy@npu 182ms(未被拖慢)→ **8.45× asnumpy 更快**,数值 0.00e+00。
+mlp_forward(640 元素)0.44×(小负载 NPU 启动开销占主导,诚实边界)。

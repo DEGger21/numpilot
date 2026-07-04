@@ -50,3 +50,4 @@ class VerificationReport:
     n_elements: Optional[int] = None    # 主要输出规模(元素数), 供报告展示
     backend_module: Optional[str] = None    # 迁移侧实际命中的 asnumpy 模块路径(__file__), 证明真机
     backend_version: Optional[str] = None   # 该模块 __version__, shim 仿真时为 None
+    cpu_threads: Optional[int] = None        # numpy@CPU 基线实际使用的 BLAS 线程数(公平对比口径)

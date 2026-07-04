@@ -11,6 +11,7 @@
 2. **计时内同步**:NPU 执行异步,`perf_counter` 裸测测不到真实计算。每次迭代末尾
    调用 backend.to_host() 强制 completion,才是"numpy@CPU vs asnumpy@NPU"的真时间。
 """
+import os
 import sys
 import time
 
@@ -25,6 +26,15 @@ _TOL = {"float32": 1e-4, "float16": 1e-2}
 
 def _tol_for(dtype) -> float:
     return _TOL.get(np.dtype(dtype).name, 0.0)
+
+
+def _blas_threads():
+    """返回 numpy@CPU 基线当前生效的 BLAS 线程上限(未显式限制则为 None=全核)。"""
+    for k in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
+        v = os.environ.get(k)
+        if v and v.isdigit() and int(v) > 0:
+            return int(v)
+    return None
 
 
 def _load_namespace(source: str) -> dict:
@@ -59,14 +69,16 @@ class VerificationAgent:
         self.backend = backend or ShimBackend()
 
     def verify(self, orig_source: str, migrated_source: str,
-               dtype=np.float32) -> VerificationReport:
+               dtype=np.float32, measure: bool = True) -> VerificationReport:
+        """measure=True 时顺带测速(供直接调用者/测试);migrate 流程传 False,
+        性能对比交给独立的 bench-cpu / bench-npu 两个程序做公平口径,不在此重复。"""
         tol = _tol_for(dtype)
 
         # ── 原始 numpy@CPU 侧 ───────────────────────────────
         orig_ns = _load_namespace(orig_source)
         inputs = orig_ns["build_inputs"]()
         out_orig = _to_numpy(orig_ns["forward"](*inputs))
-        t_orig = _time_call(orig_ns["forward"], inputs)   # numpy 本身同步
+        t_orig = _time_call(orig_ns["forward"], inputs) if measure else None
 
         # ── 迁移 asnumpy@后端 侧 ────────────────────────────
         ap_module = self.backend.get_module()
@@ -83,7 +95,7 @@ class VerificationAgent:
             forward = mig_ns["forward"]
             out_mig = self.backend.to_host(forward(*dev_inputs))
             # 计时:每次迭代 to_host 强制设备完成(真时间)
-            t_mig = _time_call(forward, dev_inputs, sync=self.backend.to_host)
+            t_mig = _time_call(forward, dev_inputs, sync=self.backend.to_host) if measure else None
         finally:
             if saved is not None:
                 sys.modules["asnumpy"] = saved
@@ -94,7 +106,7 @@ class VerificationAgent:
         denom = np.max(np.abs(out_orig))
         max_rel = float(np.max(np.abs(out_orig - out_mig)) / denom) if denom > 0 else 0.0
         consistent = max_rel <= tol
-        speedup = float(t_orig / t_mig) if t_mig > 0 else None
+        speedup = float(t_orig / t_mig) if (measure and t_mig and t_mig > 0) else None
 
         return VerificationReport(
             numerically_consistent=consistent,
@@ -104,9 +116,10 @@ class VerificationAgent:
             per_op=[],
             status="pass" if consistent else "fail",
             backend=self.backend.name,
-            t_orig_ms=t_orig * 1e3,
-            t_mig_ms=t_mig * 1e3,
+            t_orig_ms=t_orig * 1e3 if t_orig is not None else None,
+            t_mig_ms=t_mig * 1e3 if t_mig is not None else None,
             n_elements=int(out_orig.size),
             backend_module=backend_module,
             backend_version=backend_version,
+            cpu_threads=_blas_threads() if measure else None,
         )
