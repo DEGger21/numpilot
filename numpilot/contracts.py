@@ -9,6 +9,7 @@ class OpUse:
     lineno: int
     supported: bool                 # 是否在覆盖集
     est_elements: Optional[int] = None  # 估计张量规模(决策用), 未知为 None
+    reason: Optional[str] = None        # capability/signature 不满足时的原因
 
 
 @dataclass
@@ -23,6 +24,24 @@ class AnalysisResult:
 class OffloadPlan:
     placement: dict                 # op name -> "NPU" | "CPU"
     threshold_elements: int
+    strategy: Optional[str] = None
+
+    def __post_init__(self):
+        invalid = {
+            target for target in self.placement.values() if target not in {"CPU", "NPU"}
+        }
+        if invalid:
+            raise ValueError(f"非法 placement: {sorted(invalid)}")
+        if self.strategy is None:
+            self.strategy = (
+                "whole_forward_npu"
+                if self.placement and set(self.placement.values()) == {"NPU"}
+                else "legacy_mixed"
+            )
+        if self.strategy == "whole_forward_npu" and any(
+            target != "NPU" for target in self.placement.values()
+        ):
+            raise ValueError("whole_forward_npu 不能包含 CPU placement")
 
 
 @dataclass
@@ -30,10 +49,15 @@ class MigrationResult:
     engine: str                     # "ast" | "llm"
     migrated_source: str
     rewrites: dict = field(default_factory=dict)  # 迁移后 ap.<op> 调用计数 {op: n}
+    expected_rewrites: dict = field(default_factory=dict)  # 原始 forward + plan 推导的期望清单
 
     @property
     def total_rewrites(self) -> int:
         return sum(self.rewrites.values())
+
+    @property
+    def rewrite_integrity(self) -> bool:
+        return self.rewrites == self.expected_rewrites
 
 
 @dataclass
@@ -51,3 +75,19 @@ class VerificationReport:
     backend_module: Optional[str] = None    # 迁移侧实际命中的 asnumpy 模块路径(__file__), 证明真机
     backend_version: Optional[str] = None   # 该模块 __version__, shim 仿真时为 None
     cpu_threads: Optional[int] = None        # numpy@CPU 基线实际使用的 BLAS 线程数(公平对比口径)
+    max_abs_diff: float = 0.0
+    atol: float = 0.0
+    rtol: float = 0.0
+    failure_path: Optional[str] = None
+    failure_index: Optional[str] = None
+    failure_reason: Optional[str] = None
+    exception_phase: Optional[str] = None
+    exception_type: Optional[str] = None
+    exception_message: Optional[str] = None
+    traceback: Optional[str] = None
+    artifact_inputs_executed: bool = False
+    backend_provenance: dict = field(default_factory=dict)
+    input_consistent: Optional[bool] = None
+    kernel_consistent: Optional[bool] = None
+    artifact_consistent: Optional[bool] = None
+    comparisons: dict = field(default_factory=dict)

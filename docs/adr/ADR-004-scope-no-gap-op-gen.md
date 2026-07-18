@@ -1,6 +1,6 @@
 # ADR-004:裁掉缺口算子自动生成(仅标记并终止)
 
-- 状态:已接受(Accepted)
+- 状态:已接受，2026-07-18 修订
 - 日期:2026-07-02
 - 相关:[quality-scenarios.md](../quality-scenarios.md) QA-5、`NumPilot20260615-v1.pdf`
 
@@ -10,10 +10,10 @@
 
 ## 决策(Decision)
 
-**本 demo 明确不做缺口算子生成**。分析智能体基于覆盖集快照(`coverage.py`)判定:
+**本 demo 明确不做缺口算子生成**。分析智能体基于覆盖集快照和当前已建模调用签名判定:
 
-- 源码算子全部 ∈ 覆盖集 → `migratable=True`,进入迁移。
-- 出现覆盖集外算子 → `unsupported` 列出该算子,`migratable=False`;编排器立即返回 `status="unsupported"` 并在报告中列明,**不迁移、不验证、不尝试补齐**。
+- 顶层同步 `forward` 的调用全部通过名称与签名门禁 → `migratable=True`，进入迁移。
+- 覆盖集外 API、未验证 keyword/标量签名、Python ndarray dunder 或无法建模结构 → `unsupported` 携带原因；编排器立即返回，**不迁移、不验证、不伪造补齐结果**。
 
 ## 后果(Consequences)
 
@@ -33,4 +33,4 @@
 
 ## 升级路径(Future)
 
-缺口算子生成可作为 Migration 阶段之外的**新智能体**接入:分析阶段把 `unsupported` 交给"缺口算子生成智能体"(复用既有 triton-op-generator 流水线),生成并验证通过后再回到主迁移流程。契约(`AnalysisResult.unsupported`)已为此预留接口。
+缺口算子生成可作为 Migration 阶段之外的**新智能体**接入。下一步应把简单字符串升级为 `GapSpec`，至少包含 qualified API、callsite、签名、shape/dtype/layout、目标 SoC/CANN、参考实现和验收规则；只有 `OperatorArtifact` 通过 build、UT、真机 ST、性能和版本化注册门禁后，才能回流 capability registry。

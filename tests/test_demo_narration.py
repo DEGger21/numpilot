@@ -17,7 +17,7 @@ SRC = ("import numpy as np\n"
 
 def test_count_ap_calls_counts_per_op():
     migrated = ("import numpy as np\nimport asnumpy as ap\n"
-                "def f(x):\n    return ap.relu(ap.matmul(ap.matmul(x, x), x))\n")
+                "def forward(x):\n    return ap.relu(ap.matmul(ap.matmul(x, x), x))\n")
     assert count_ap_calls(migrated) == {"relu": 1, "matmul": 2}
 
 

@@ -37,7 +37,8 @@ SUPPORTED_OPS = frozenset({
 
 
 # asnumpy 提供的"自定义 / 非 numpy 原生"算子:relu/gelu/softmax 是 numpy 没有的 nn 算子,
-# angle 在 asnumpy 里走 custom_ops。迁移时命中这些即"接入了自定义 NPU 算子"。
+# 历史分类名保留兼容：这些是已有 AsNumpy 扩展 API，不代表本次迁移新生成了
+# Ascend C 自定义算子；真实实现来源仍以 capability/provenance manifest 为准。
 CUSTOM_OPS = frozenset({"relu", "gelu", "softmax", "angle"})
 
 

@@ -3,9 +3,13 @@
 import numpy as np
 
 
-def spectrum(x):
+def build_inputs():
+    return (np.ones(8, dtype=np.float32),)
+
+
+def forward(x):
     return np.fft.fft(x)
 
 
 if __name__ == "__main__":
-    print(spectrum(np.ones(8)))
+    print(forward(*build_inputs()))

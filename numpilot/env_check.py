@@ -11,6 +11,7 @@ NumPilot 真正需要的东西:Python 版本、numpy、CANN Toolkit(set_env)、N
   shim 后端同样缺失只软告警(warn),不阻断。
 """
 import os
+import importlib.util
 import shutil
 import subprocess
 import sys
@@ -104,7 +105,22 @@ class Env:
         except ImportError:
             rep.add("numpy", ERROR, "未安装 numpy(迁移/验证均依赖)")
 
-        # 3) CANN Toolkit(仅 npu 后端为硬依赖)
+        # shim 不触碰 CANN/NPU/asnumpy 运行时，避免离线测试仅因探测而初始化 ACL。
+        if not hard:
+            rep.add("CANN Toolkit", OK, "shim 后端不需要")
+            rep.add("NPU 设备", OK, "shim 后端不访问设备")
+            try:
+                installed = importlib.util.find_spec("asnumpy") is not None
+            except (ImportError, ValueError):
+                installed = False
+            rep.add(
+                "asnumpy",
+                OK if installed else WARN,
+                "已安装但 shim 不加载" if installed else "未安装；shim 后端不需要",
+            )
+            return rep
+
+        # 3) CANN Toolkit(npu 后端硬依赖)
         toolkit = os.getenv("ASCEND_TOOLKIT_HOME") or os.getenv("ASCEND_HOME_PATH")
         if toolkit and os.path.isdir(toolkit):
             rep.add("CANN Toolkit", OK, toolkit)
@@ -124,7 +140,6 @@ class Env:
         if smi:
             code, out = _run([smi, "info"])
             if code == 0 and "Ascend" in out:
-                n = out.count("Ascend910") or out.count("Ascend")
                 rep.add("NPU 设备", OK, "npu-smi 可用,检测到 Ascend 设备")
             else:
                 rep.add("NPU 设备", miss, "npu-smi 存在但未返回设备信息")
@@ -133,17 +148,23 @@ class Env:
 
         # 5) asnumpy 可导入性(npu 后端的关键硬依赖)
         try:
-            import asnumpy as _ap  # noqa: F401
+            import asnumpy as _ap
             ver = getattr(_ap, "__version__", "unknown")
             # 真正触发一次 ap.ones,确认运行期(而非仅 import)可用
             try:
-                _ap.ones((2, 2), dtype=_ap.float32)
+                probe = _ap.ones((2, 2), dtype=_ap.float32)
+                probe.to_numpy()
+                del probe
                 rep.add("asnumpy", OK, "可导入且可运行(version=%s)" % ver)
             except Exception as e:  # noqa: BLE001
                 rep.add("asnumpy", miss,
                         "可 import 但运行期报错:%s" % (str(e).splitlines()[0][:120]))
-        except ImportError:
-            rep.add("asnumpy", miss,
-                    "未安装 asnumpy;npu 后端需先 build/install(见 asnumpy README)")
+        except Exception as e:  # import 本身也可能因 Python/ACL/二进制不兼容失败
+            rep.add(
+                "asnumpy",
+                miss,
+                "导入失败:%s: %s"
+                % (type(e).__name__, str(e).splitlines()[0][:120]),
+            )
 
         return rep

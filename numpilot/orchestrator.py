@@ -52,7 +52,11 @@ class Orchestrator:
                 f.write(migration.migrated_source)
 
         report = VerificationAgent(self.backend).verify(
-            source, migration.migrated_source, measure=False)
+            source,
+            migration.migrated_source,
+            measure=False,
+            required_ops=migration.expected_rewrites,
+        )
         result = {
             "status": report.status,
             "report": report,
@@ -60,6 +64,8 @@ class Orchestrator:
             "plan": plan,
             "engine": migration.engine,
             "rewrites": migration.rewrites,
+            "expected_rewrites": migration.expected_rewrites,
+            "rewrite_integrity": migration.rewrite_integrity,
             "migrated_source": migration.migrated_source,
             "migrated_path": migrated_path,
             "source_path": source_path,
@@ -74,16 +80,34 @@ class Orchestrator:
         os.makedirs(out_dir, exist_ok=True)
         rep = result.get("report")
         rewrites = result.get("rewrites", {}) or {}
+        expected_rewrites = result.get("expected_rewrites", {}) or {}
         summary = {
             "status": result["status"],
             "source_path": result["source_path"],
             "unsupported": result.get("unsupported", []),
             "engine": result.get("engine"),
             "rewrites": rewrites,
+            "expected_rewrites": expected_rewrites,
+            "rewrite_integrity": result.get("rewrite_integrity"),
             "total_rewrites": sum(rewrites.values()),
             "numerically_consistent": getattr(rep, "numerically_consistent", None),
             "max_rel_diff": getattr(rep, "max_rel_diff", None),
+            "max_abs_diff": getattr(rep, "max_abs_diff", None),
             "tol": getattr(rep, "tol", None),
+            "atol": getattr(rep, "atol", None),
+            "rtol": getattr(rep, "rtol", None),
+            "failure_path": getattr(rep, "failure_path", None),
+            "failure_index": getattr(rep, "failure_index", None),
+            "failure_reason": getattr(rep, "failure_reason", None),
+            "exception_phase": getattr(rep, "exception_phase", None),
+            "exception_type": getattr(rep, "exception_type", None),
+            "exception_message": getattr(rep, "exception_message", None),
+            "artifact_inputs_executed": getattr(rep, "artifact_inputs_executed", False),
+            "input_consistent": getattr(rep, "input_consistent", None),
+            "kernel_consistent": getattr(rep, "kernel_consistent", None),
+            "artifact_consistent": getattr(rep, "artifact_consistent", None),
+            "comparisons": getattr(rep, "comparisons", {}),
+            "backend_provenance": getattr(rep, "backend_provenance", {}),
             "speedup": getattr(rep, "speedup", None),
             "backend": getattr(rep, "backend", None),
             "backend_module": getattr(rep, "backend_module", None),
@@ -92,6 +116,7 @@ class Orchestrator:
             "t_orig_ms": getattr(rep, "t_orig_ms", None),
             "t_mig_ms": getattr(rep, "t_mig_ms", None),
             "n_elements": getattr(rep, "n_elements", None),
+            "strategy": getattr(result.get("plan"), "strategy", None),
         }
         with open(os.path.join(out_dir, "report.json"), "w", encoding="utf-8") as f:
             json.dump(summary, f, ensure_ascii=False, indent=2)
@@ -106,7 +131,38 @@ def _render_md(summary, result) -> str:
     if summary["status"] == "unsupported":
         lines.append(f"- 缺口算子(未迁移):{', '.join(summary['unsupported'])}")
         return "\n".join(lines) + "\n"
-    lines.append(f"- 数值一致:{summary['numerically_consistent']}(max_rel_diff={summary['max_rel_diff']:.2e}, tol={summary['tol']:.0e})")
+    lines.append(f"- 数值一致:{summary['numerically_consistent']}")
+    if summary.get("exception_type"):
+        lines.append(
+            f"- 执行异常:`{summary['exception_phase']}` / "
+            f"`{summary['exception_type']}: {summary['exception_message']}`"
+        )
+    else:
+        lines.append(
+            "- 差值:"
+            f"max_abs={summary['max_abs_diff']:.2e}, "
+            f"max_rel={summary['max_rel_diff']:.2e}, "
+            f"atol={summary['atol']:.0e}, rtol={summary['rtol']:.0e}"
+        )
+        if summary.get("failure_reason"):
+            location = summary.get("failure_path") or "?"
+            if summary.get("failure_index"):
+                location += summary["failure_index"]
+            lines.append(f"- 首个失败:`{location}`，{summary['failure_reason']}")
+    lines.append(
+        "- 迁移产物自身 build_inputs 已执行:"
+        + ("是" if summary.get("artifact_inputs_executed") else "否")
+    )
+    comparisons = summary.get("comparisons") or {}
+    if comparisons:
+        lines.append("- 三层门禁:")
+        for key, label in (
+            ("inputs", "输入生成"),
+            ("kernel", "同一规范输入 forward"),
+            ("artifact", "产物 build_inputs + forward"),
+        ):
+            if key in comparisons:
+                lines.append(f"  - {label}:{comparisons[key].get('consistent')}")
 
     # 替换算子清单(迁移后真实调用的 ap.* 算子)
     rewrites = summary.get("rewrites") or {}
@@ -129,20 +185,32 @@ def _render_md(summary, result) -> str:
         lines.append(f"- asnumpy 版本:`{ver}`(真机 wheel)")
     if not mod and not ver:
         lines.append("- 仿真后端(shim):离线用 numpy 承载 asnumpy 语义,数值恒等,非真机")
+    provenance = summary.get("backend_provenance") or {}
+    if provenance:
+        lines.append(f"- capability audit:`{provenance.get('audit_id', '?')}`")
+        if provenance.get("strict_npu") is True:
+            lines.append(f"- strict-NPU 门禁:{provenance.get('ok')}")
+        else:
+            lines.append("- strict-NPU 门禁:未执行（shim/非 strict）")
+        if provenance.get("missing"):
+            lines.append(f"- 缺失 API:{', '.join(provenance['missing'])}")
+        if provenance.get("non_strict"):
+            lines.append(f"- 非严格 NPU:{', '.join(provenance['non_strict'])}")
 
-    # 性能对比交给两个独立 bench 程序(公平口径:numpy 单核 vs NPU 满线程)
+    # 性能对比交给两个独立 bench 程序，并由 provenance gate 决定是否可发布。
     src = summary.get("source_path", "<file>")
     lines.append("")
     lines.append("## 性能对比")
-    lines.append("本机 numpy=scipy-openblas 默认吃满全核(640),与单卡 NPU 不对等。"
-                 "故性能对比拆成两个独立进程,避免线程设置互相污染:")
-    lines.append(f"1. `python -m numpilot bench-cpu {src} --out out_demo`(numpy 钉 1 核)")
-    lines.append(f"2. `python -m numpilot bench-npu {src} --out out_demo`(NPU 满线程,读 1 的基线算加速比)")
+    lines.append("性能对比拆成两个独立进程，记录实际 BLAS 线程并避免设置互相污染。"
+                 "只有 strict-NPU provenance 通过时才发布加速比:")
+    lines.append(f"1. `python -m numpilot bench-cpu {src} --out out_demo`")
+    lines.append(f"2. `python -m numpilot bench-npu {src} --out out_demo`")
 
     plan = result.get("plan")
     if plan is not None:
         lines.append("")
         lines.append("## 卸载方案")
+        lines.append(f"- 策略:`{getattr(plan, 'strategy', 'unknown')}`")
         for op, place in sorted(plan.placement.items()):
             lines.append(f"- `{op}` → {place}")
     return "\n".join(lines) + "\n"

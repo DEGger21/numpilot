@@ -1,15 +1,15 @@
-"""决策智能体:规则版成本模型,按张量规模阈值决定 CPU/NPU 卸载。"""
+"""决策智能体:单设备边界 MVP,默认将完整 forward 放到 NPU。"""
 from numpilot.contracts import AnalysisResult, OffloadPlan
 
 
 class DecisionAgent:
-    """规则基成本模型:按操作数规模决定卸载位置。"""
+    """为可迁移 forward 生成统一 NPU 放置,避免逐算子跨设备往返。"""
 
     def __init__(self, threshold_elements: int = 1_000_000):
         """初始化决策智能体。
 
         Args:
-            threshold_elements: 决策阈值,超过此值的操作卸载到NPU。
+            threshold_elements: 保留在计划中的兼容字段;单设备 MVP 不按它拆分 forward。
         """
         self.threshold = threshold_elements
 
@@ -17,9 +17,9 @@ class DecisionAgent:
         """根据分析结果生成卸载计划。
 
         规则:
-        - 若某操作任一调用点 est_elements 为 None → "NPU" (规模未知,保守上NPU)
-        - 若某操作任一调用点 est_elements >= threshold → "NPU"
-        - 否则 → "CPU"
+        - 分析阶段确认可迁移后,forward 涉及的算子全部放到 NPU。
+        - 不在同一个 forward 内按规模混合 CPU/NPU,避免隐式 H2D/D2H 往返。
+        - unsupported 仍由编排器在调用本方法前提前终止。
 
         Args:
             analysis: 分析结果,包含操作使用列表
@@ -27,22 +27,6 @@ class DecisionAgent:
         Returns:
             卸载计划,包含每个操作的目标位置(CPU/NPU)
         """
-        # 将操作按名称分组,收集所有调用点的规模
-        by_op = {}
-        for op in analysis.op_uses:
-            by_op.setdefault(op.name, []).append(op.est_elements)
-
-        # 为每个操作决策位置
-        placement = {}
-        for name, sizes in by_op.items():
-            if any(s is None for s in sizes):
-                # 规模未知,保守上NPU
-                placement[name] = "NPU"
-            elif any(s >= self.threshold for s in sizes):
-                # 任一调用点超过阈值,上NPU
-                placement[name] = "NPU"
-            else:
-                # 所有调用点都已知且都小于阈值,留在CPU
-                placement[name] = "CPU"
+        placement = {op.name: "NPU" for op in analysis.op_uses}
 
         return OffloadPlan(placement=placement, threshold_elements=self.threshold)

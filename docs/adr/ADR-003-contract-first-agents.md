@@ -15,9 +15,9 @@ NumPilot 是多智能体系统(分析 / 决策 / 迁移 / 验证 / 编排)。若
 | 契约 | 生产者 → 消费者 |
 |------|----------------|
 | `AnalysisResult`(含 `op_uses` / `unsupported` / `migratable`) | Analysis → Decision / Orchestrator |
-| `OffloadPlan`(`placement` / `threshold_elements`) | Decision → Migration |
-| `MigrationResult`(`engine` / `migrated_source`) | Migration → Verification |
-| `VerificationReport`(`numerically_consistent` / `max_rel_diff` / `tol` / `speedup` / `status`) | Verification → Orchestrator |
+| `OffloadPlan`(`placement` / `strategy` / `threshold_elements`) | Decision → Migration |
+| `MigrationResult`(`engine` / `migrated_source` / `rewrites`) | Migration → Verification |
+| `VerificationReport`(三层比较 / 异常 / backend provenance / `status`) | Verification → Orchestrator |
 
 "组件边界 = 契约边界":智能体内部实现可自由替换,只要契约不变。
 
@@ -26,7 +26,7 @@ NumPilot 是多智能体系统(分析 / 决策 / 迁移 / 验证 / 编排)。若
 **正向**
 - **可测试**:测试构造契约实例即可驱动单个智能体,无需拉起整条流水线或真实 NPU/LLM(见 QA-4,8 个组件测试文件 + e2e)。
 - **可替换**:配合 ADR-001/002 的策略与端口,替换实现不破坏边界。
-- 数据形状显式、可审计;`VerificationReport` 直接携带判定所需数值字段。
+- 数据形状显式、可审计；`VerificationReport` 直接携带输入、同一规范输入 forward、独立产物三层结果，不再用单个相对误差猜测结论。
 
 **负向 / 权衡**
 - 契约演进需同步所有生产者/消费者;字段增删是跨组件改动。

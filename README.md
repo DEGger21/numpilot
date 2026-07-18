@@ -1,189 +1,145 @@
-# NumPilot(最简可运行 demo)
+# NumPilot demo
 
-**面向科学智能的昇腾 NPU 代码自动迁移智能体** —— 把只使用 [AsNumpy](https://gitcode.com/) 覆盖集算子的 NumPy 程序,自动迁移为昇腾 NPU 版本(`np.* → ap.*`),并做数值一致性校验与加速比评测。
+NumPilot 是一个面向科学计算程序的 NumPy → AsNumpy/Ascend NPU 自动迁移原型。当前版本强调“结果与证据可信”：它把顶层 `forward()` 作为一个完整 NPU 岛，在函数边界上传 NumPy 数组，运行迁移产物自己的 `build_inputs + forward`，并在发布性能数字前检查实际 AsNumpy wheel 的 capability/provenance。
 
-> 本仓库是 NumPilot 完整系统(见 `NumPilot20260615-v1.pdf`)的**最简可运行子集**,用作*高级软件体系结构*课程作业与后续参赛的技术骨架。完整系统含"缺口算子 Ascend C 自动生成"等环节;**本 demo 刻意不做缺口算子补充**——发现不在覆盖集的算子,仅标记并终止迁移。
+完整愿景见 `NumPilot20260615-v1.pdf`；本仓库尚未实现通用数据流图划分和自动生成 Ascend C 缺口算子的完整闭环。
 
----
+继续开发或交给新的 AI 前，请先读 [`docs/AI-HANDOFF.md`](docs/AI-HANDOFF.md)。它记录当前工作树、已完成门禁、裸金属证据、未完成项和续接命令。
 
-## 一键运行(零外部依赖,离线可跑)
+## 当前可信边界
 
-默认使用 **AST 改写引擎 + numpy-shim 后端**,无需 asnumpy / NPU:
+- 只分析和改写顶层 `forward()`；`build_inputs()` 与顶层展示代码保留在 CPU。
+- 默认采用 `whole_forward_npu`，暂不宣称支持逐算子 CPU/NPU 混合卸载。
+- AST 引擎在 `forward` 入口对 NumPy ndarray 做一次幂等 H2D；设备数组和标量保持原样。
+- 验证先检查嵌套结构、shape、dtype，再按实际浮点 dtype 使用 `atol + rtol`；整数/布尔精确比较，显式处理零值、NaN 和 Inf。
+- 真机 capability 绑定 AsNumpy 版本和运行环境；CPU fallback、版本未知或 API 缺失时 fail closed。
+- strict `forward` 禁止残留 NumPy/host escape、未建模 helper/控制流、全局预计算和丢弃的设备结果；两条验证路径都记录实际 `ap.*` callsite 次数。
+- `bench-npu` 仅在 strict-NPU、数值和 CPU 基线一致性门禁全部通过后计算 speedup。
+- `--allow-cpu-fallback` 只用于诊断，报告始终为 `performance_valid=false`，不会发布 NPU 加速比。
 
-```bash
-# 正例:MLP 前向 → 迁移 + 验证
-python -m numpilot migrate examples/mlp_forward.py --out /tmp/numpilot_out
-cat /tmp/numpilot_out/report.md
+已知重要事实：当前审计的 AsNumpy `0.3.1.dev4+g1929a3ba4` 中，`matmul` 会回到 host 调用 NumPy。因此 `mlp_forward.py` 和 `big_gemm.py` 可用于迁移/诊断展示，但不能作为 NPU GEMM 加速证据。
 
-# 负例:含缺口算子 np.fft.fft → 标记 unsupported 并终止
-python -m numpilot migrate examples/unsupported_demo.py
-```
+## 快速运行
 
-正例预期输出:`状态: pass`、`数值一致: True`、`report.md` 含逐算子卸载方案。
-负例预期输出:`状态: unsupported`、`缺口算子: fft`(退出码 1)。
-
-测试:
-
-```bash
-python -m pytest -q          # 41 passed
-```
-
----
-
-## 交互式迁移向导(`wizard`)
-
-面向演示的**交互式终端向导**:启动界面 → 输入待迁移程序路径 → 选引擎 → 带进度条与实时解释跑迁移 → 输出迁移反馈(算子替换、**接入多少自定义 NPU 算子**、数值校验、**整网性能对比**)。
+离线 CI 使用 numpy shim，不需要 NPU：
 
 ```bash
-python -m numpilot wizard                    # 交互:提示输入路径 + 选引擎
-python -m numpilot wizard <file> --engine ast --backend npu   # 非交互(带参跳过提问)
+python -m numpilot migrate examples/mlp_forward.py \
+  --backend shim --out /tmp/numpilot-shim
+python -m pytest -q
 ```
 
-向导依次跑 5 步(rich 进度条 + 每步一句解释):`分析算子 → 决策卸载 → 迁移改写 → 真机校验+NPU测速 → numpy 单核基线`,最后给出反馈表 + 性能面板。性能用**公平口径**:子进程 `bench-cpu` 把 numpy 钉 1 核,向导进程内测 asnumpy@NPU,`加速比 = numpy@1核 / asnumpy@NPU`。反馈里的"自定义 NPU 算子"指迁移后命中 asnumpy 自定义算子(`relu/softmax/gelu/angle`——numpy 没有、由 NPU 提供)的数量。选 `--engine llm` 走 glm-5.1 智能体,失败按 strict 终止。
-
-**多智能体透明化**:向导开头打印"多智能体阵容"表(5 个智能体各自的职责与**所用模型/引擎**),迁移过程中每一步都标注是哪个智能体在动作。如实体现架构——只有**迁移智能体**(选 `llm` 时)用大模型 glm-5.1,分析/决策/验证/编排都是确定性规则(无模型)。
-
-**每次迁移都会落地一份带时间戳的 Markdown 报告**到 `reports/migration_<网络>_<YYYYMMDD_HHMMSS>.md`(含多智能体阵容;`wizard` 与 `migrate` 都会写;`reports/` 已 gitignore)。
-
----
-
-## 真机 NPU 演示(一键脚本)
-
-前置:CANN 环境 + 真机 `asnumpy`(本机 venv `/home/lixing/np310`)。一条命令跑完整流程:
+裸金属 NPU 上，建议先使用没有已知 fallback 的逐元素 smoke：
 
 ```bash
-./run_demo.sh                          # 默认演示 big_gemm(4 层 2048 宽 GEMM 网络), 引擎=AST
-./run_demo.sh examples/mlp_forward.py  # 换一个网络
-./run_demo.sh --full                   # 额外跑"numpy 吃满全核"对照, 展示 640 核作弊效果
-./run_demo.sh --llm                    # 迁移改用真·大模型智能体(glm-5.1, 读 .env.llm), 失败即终止
+python -m numpilot doctor --backend npu
+python -m numpilot migrate examples/elementwise_forward.py \
+  --backend npu --out /tmp/numpilot-npu
+
+python -m numpilot bench-cpu examples/elementwise_forward.py \
+  --out /tmp/numpilot-bench --cpu-threads 1
+python -m numpilot bench-npu examples/elementwise_forward.py \
+  --out /tmp/numpilot-bench
 ```
 
-脚本依次执行 **4 步**:环境自检 → 迁移证明 → CPU 基线(numpy 限 1 核)→ NPU 对比(算加速比)。
-（非本机运行改 `NUMPILOT_PY=<你的python> ./run_demo.sh`。)
+性能结论只读取：
 
-### 演示用的网络
+- `/tmp/numpilot-bench/npu_benchmark.json`
+- `/tmp/numpilot-bench/benchmark_report.md`
 
-| 文件 | 网络 | 用途 |
-|------|------|------|
-| `examples/big_gemm.py` | **4 层全连接(堆叠 GEMM)**:每层 2048×2048 matmul + ReLU,末层不接 ReLU;类 He 初始化 | 矩阵乘密集,NPU Cube 单元发力场景 → **性能演示** |
-| `examples/mlp_forward.py` | 小型 2 层 MLP 分类器:784→256(ReLU)→10→softmax,batch 64 | 规模小(输出 640 元素)→ **正确性演示**,不比性能 |
+其中必须满足 `performance_valid=true`，才可以引用 `speedup`。
 
-### 四个命令各司其职
-
-| 命令 | 作用 |
-|------|------|
-| `numpilot doctor --backend npu` | 环境证据:Python / numpy / CANN / NPU / asnumpy 是否就位 |
-| `numpilot migrate <file> --backend npu` | 迁移证明:`np.*→ap.*` 替换计数、真机 asnumpy 命中(版本+路径)、数值一致 |
-| `numpilot bench-cpu <file> --out D` | ① numpy 基线,进程内**钉 1 核**,把输出+耗时存到 `D/cpu_baseline.*` |
-| `numpilot bench-npu <file> --out D` | ② NPU **满线程**跑,读 ① 基线算 **加速比 = numpy@1核 / asnumpy@NPU** |
-
-> `bench-cpu` 与 `bench-npu` 必须用**同一 `--out` 目录**:前者写基线,后者读基线。
-
-### 为什么性能要分两步、CPU 还限 1 核
-
-本机 numpy = **scipy-openblas**,`matmul` 默认吃满全部 **640 核**,与单卡 NPU 严重不对等(不限核时 numpy 虚快)。限 numpy 到 1 核(单计算流 vs 单卡)后,big_gemm 上 **asnumpy@NPU 反超 ~8×**。而单进程内用环境变量限核会经 OpenMP **污染 CANN**(NPU 也被拖慢 ~10×),故必须拆成**两个独立进程**各设线程。预期头条:
-
-```
-[对比] numpy@CPU(1 核) ~1500 ms  vs  asnumpy@npu ~180 ms  → 加速比 ~8x (asnumpy 更快)
-```
-
-### 迁移引擎(当前用的是哪个)
-
-- **`--engine ast`(默认,不经任何大模型)**:基于 Python `ast` + 覆盖集把 `np.<op>` 改写成 `ap.<op>`,并识别 `np.maximum(x,0)→ap.relu(x)`。结果确定、可复现,`run_demo.sh` 默认走它。
-- **`--engine llm`(真·大模型智能体,`.env.llm` 当前配 `glm-5.1`)**:把源码交给大模型做迁移。系统提示已注入 asnumpy 硬约束(二元算子两侧须 NPUArray、`maximum(x,0)→relu`、只迁 `forward`),glm-5.1 已在真机 NPU 上跑通、数值一致。**CLI 显式选 llm 为 strict 语义:模型未配置/无响应/返回非法 → 直接终止(exit 4),不回退 AST**——保证"用智能体迁移"名副其实。`./run_demo.sh --llm` 一键体验。
-
-> LLM 引擎相关环境变量见下节;凭据写在 `.env.llm`(已被 `.gitignore` 忽略,不入库)。
-
----
-
-## 架构一图
-
-```
-   source.py ─► ┌──────────── Orchestrator 编排智能体 ────────────┐
-                │       驱动流水线 · 传递上下文 · 汇总报告           │
-                └──┬─────────┬──────────┬───────────┬────────────┘
-                   ▼         ▼          ▼           ▼
-              [Analysis] [Decision] [Migration] [Verification]
-                 分析       决策        迁移          验证
-                   │         │          │            │
-           AnalysisResult OffloadPlan MigrationResult VerificationReport
-                   └─────────┴───► contracts.py ◄─────┘   (dataclass 契约)
-
-  可替换构件:
-    MigrationEngine(策略):  AstRewriteEngine(默认) | LlmEngine(provider 无关, 自动回退)
-    ExecutionBackend(端口):  ShimBackend(numpy 支撑, 默认) | NpuBackend(真实 asnumpy/NPU)
-```
-
-流水线:**分析 → 决策 → 迁移 → 验证**,由编排器统筹。每个智能体只认输入/输出 dataclass 契约(`numpilot/contracts.py`),内部实现可独立替换与单测。详见 [`docs/architecture.md`](docs/architecture.md)。
-
----
-
-## 后端 / 引擎切换
-
-| 维度 | 选项 | 说明 |
-|------|------|------|
-| 后端 `--backend` | `shim`(默认) / `npu` | shim 用 numpy 假模块,处处可跑;npu 导入真实 `asnumpy`。也可用环境变量 `NUMPILOT_BACKEND` |
-| 引擎 `--engine` | `ast`(默认) / `llm` | ast 基于 Python `ast` + 覆盖集确定性改写;llm 走 OpenAI 兼容协议,未配置或失败时**自动回退 ast** |
-| 阈值 `--threshold` | 整数(默认 1_000_000) | 决策智能体按张量元素数阈值决定算子 CPU/NPU 卸载 |
+也可直接运行裸金属演示脚本：
 
 ```bash
-python -m numpilot migrate examples/mlp_forward.py --backend shim --engine ast --threshold 500000 --out out/
+NUMPILOT_PY=/home/lixing/np310/bin/python ./run_demo.sh
 ```
 
-### 启用真·LLM 引擎(`--engine llm`)
+脚本使用 `set -euo pipefail`；任何 doctor、迁移或 strict-NPU 门禁失败都会停止，不会继续打印“演示成功”。默认不使用 Docker。
 
-`LlmEngine` 是 provider 无关的 OpenAI 兼容客户端。启用需 **3 个必填环境变量**(第 4 个可选):
+## 示例
 
-| 环境变量 | 必填 | 含义 |
-|----------|------|------|
-| `NUMPILOT_LLM_BASE_URL` | ✅ | OpenAI 兼容 endpoint,例:`https://.../v1` |
-| `NUMPILOT_LLM_AUTH_TOKEN` | ✅ | 鉴权 token,以 `Authorization: Bearer <token>` 发送 |
-| `NUMPILOT_LLM_MODEL` | ✅ | 模型名 |
-| `NUMPILOT_LLM_PROVIDER` | ⬜ | 仅作标签,例:`pangu` \| `glm` \| `openai` \| `deepseek` |
+| 文件 | 用途 | strict-NPU 预期 |
+|---|---|---|
+| `examples/elementwise_forward.py` | square/add/sqrt/tanh 的裸金属 smoke | 当前审计无已知 fallback，仍以运行时 manifest 为准 |
+| `examples/mlp_forward.py` | 两层 MLP 的迁移与正确性示例 | 因 `matmul` CPU fallback 被拒绝性能发布 |
+| `examples/big_gemm.py` | 历史 GEMM 压测输入 | 只允许诊断，不是 NPU GEMM 加速证据 |
+| `examples/unsupported_demo.py` | `np.fft.fft` 缺口负例 | 分析阶段 early stop |
+
+## 交互向导
 
 ```bash
-# 示例:盘古 / GLM(任意 OpenAI 兼容网关)
+python -m numpilot wizard
+python -m numpilot wizard examples/elementwise_forward.py --engine ast --backend npu
+```
+
+向导展示分析、整段 NPU 岛决策、迁移、产物级语义校验和 capability 证据门禁。它不在交互进程内顺手计算加速比，而是给出独立 `bench-cpu`/`bench-npu` 命令。
+
+界面中的“命中 AsNumpy 扩展 API”表示复用了已有 API，不等于本次新生成了自定义算子。新生成算子数必须由独立的 OperatorArtifact、构建和测试证据统计。
+
+## CodeArts 多智能体接入
+
+仓库已按华为云码道项目级格式提供：
+
+```text
+.codeartsdoer/
+├── agents/
+│   ├── numpilot-orchestrator.md
+│   ├── numpilot-analyzer.md
+│   ├── numpilot-operator-engineer.md
+│   └── numpilot-evidence-auditor.md
+└── skills/
+    └── numpilot-migration-gate/SKILL.md
+```
+
+建议让 CodeArts AgentTeam 负责角色协作、任务可视化和人工确认，让 NumPilot CLI/contract/capability registry 负责确定性执行与证据落盘。完整映射、官方资料链接和比赛演示脚本见 [`docs/codearts-integration.md`](docs/codearts-integration.md)。
+
+## 架构
+
+```text
+CodeArts AgentTeam / 项目级 Agents / Skill
+                      │
+                      ▼
+Orchestrator
+  ├─ AnalysisAgent      只分析 forward 调用点
+  ├─ DecisionAgent      whole_forward_npu
+  ├─ MigrationAgent     AST（默认）或 strict LLM
+  └─ VerificationAgent  artifact execution + strict comparison
+                      │
+       ExecutionBackend + CapabilityManifest
+             ├─ ShimBackend（离线语义仿真）
+             └─ NpuBackend（真实 AsNumpy/CANN/NPU）
+```
+
+核心结构：
+
+- `numpilot/contracts.py`：智能体之间的数据契约；
+- `numpilot/capabilities.py`：可序列化 capability/provenance；
+- `numpilot/comparison.py`：统一严格比较规则；
+- `numpilot/engines/`：AST/LLM 迁移策略；
+- `numpilot/backends/`：shim/NPU 端口适配器；
+- `numpilot/bench.py`：独立进程基线与 fail-closed NPU 评测；
+- `docs/numpilot-technical-review.md`：完整技术评审和分阶段计划。
+
+当前保留 `--threshold` 仅为 CLI/契约兼容；`whole_forward_npu` 策略不会再用它制造不完整的逐算子混合 placement。
+
+## LLM 引擎
+
+```bash
 export NUMPILOT_LLM_BASE_URL="https://your-gateway/v1"
-export NUMPILOT_LLM_AUTH_TOKEN="sk-..."
-export NUMPILOT_LLM_MODEL="glm-4"          # 或 pangu-* / deepseek-chat
-export NUMPILOT_LLM_PROVIDER="glm"          # 可选
-python -m numpilot migrate examples/mlp_forward.py --engine llm
+export NUMPILOT_LLM_AUTH_TOKEN="..."
+export NUMPILOT_LLM_MODEL="..."
+python -m numpilot migrate examples/elementwise_forward.py --engine llm
 ```
 
-可选环境变量:`NUMPILOT_LLM_MAX_TOKENS`(默认 8192,部分网关强制要求)、`NUMPILOT_LLM_INSECURE`(默认 `1`,跳过自签证书校验)、`NUMPILOT_LLM_TIMEOUT`(默认 120s)。
+CLI 显式选择 `--engine llm` 时使用 strict 语义：未配置、调用失败或返回非法代码会退出，不回退 AST。TLS 证书默认校验；只有受信内网自签网关才应显式设置 `NUMPILOT_LLM_INSECURE=1`。凭据只通过环境变量注入，不得入库。
 
-> ⚠️ **凭据仅经环境变量注入,切勿写入代码或提交入库。** `base_url` 务必带 `/v1`。
-> CLI 显式 `--engine llm` 为 **strict 语义**:未配置/无响应/返回非法 → **直接终止(exit 4),不回退 AST**。仅当以库形式 `LlmEngine()`(非 strict)调用时,才会在失败时回退 AST。
+## 仍未完成
 
----
+- callsite/value 级 IR、动态 shape guard 和真正的 CPU/NPU 子图划分；
+- OS 级用户代码隔离与完整网络/文件权限收敛；
+- H2D/D2H 字节数、kernel trace 和 profiler 自动采集；
+- 从 GapSpec 到 Ascend C 生成、构建、UT/ST、安装、注册和回滚的自动闭环；
+- 通用 ndarray 结构语义、异步 stream、内存池以及 AsNumpy 插件 ABI。
 
-## 目录导航
-
-```
-run_demo.sh              # 一键演示:doctor → migrate → bench-cpu → bench-npu
-numpilot/
-├── contracts.py         # dataclass 契约:AnalysisResult / OffloadPlan / MigrationResult / VerificationReport
-├── coverage.py          # AsNumpy 覆盖集快照(来自 asnumpy _LAZY_MAPPING)
-├── orchestrator.py      # 编排智能体 + report.md/report.json 落盘
-├── bench.py             # 两个独立性能程序:bench-cpu(numpy 限核基线) / bench-npu(NPU 对比)
-├── wizard.py            # 交互式迁移向导(rich:启动界面→选码→进度迁移→反馈)
-├── __main__.py          # CLI:wizard / migrate / bench-cpu / bench-npu / doctor
-├── agents/              # analysis / decision / migration / verification
-├── engines/             # 迁移引擎策略:base / ast_rewrite(默认) / llm(provider 无关, 可回退)
-└── backends/            # 执行后端端口:base / shim(默认) / npu
-examples/
-├── mlp_forward.py       # 小型 2 层 MLP 分类器(正确性演示)
-├── big_gemm.py          # 4 层 2048 宽 GEMM 网络(性能演示, NPU 发力)
-└── unsupported_demo.py  # 负例:np.fft.fft 缺口算子
-docs/
-├── architecture.md      # 4+1 视图 + C4(Context/Container/Component)
-├── quality-scenarios.md # 质量属性场景
-└── adr/                 # ADR-001..004 架构决策记录
-tests/                   # 单元 + 端到端
-```
-
----
-
-## 与 NumPilot PDF 的关系
-
-`NumPilot20260615-v1.pdf` 描述的是含缺口算子生成、复杂数据流图、AOT/JIT 双模的完整愿景。本 demo 取其**迁移流水线主干**(分析→决策→迁移→验证)做最简可运行落地,聚焦**可清晰讲清的软件体系结构**:多智能体分工、策略模式、端口-适配器、契约先行。缺口算子生成被明确裁剪(见 [ADR-004](docs/adr/ADR-004-scope-no-gap-op-gen.md)),留待完整系统。
+这些边界不会被 shim 通过率或“替换了多少 API”掩盖。

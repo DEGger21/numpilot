@@ -1,8 +1,8 @@
 """CLI: python -m numpilot <migrate|bench-cpu|bench-npu|doctor> ...
 
 演示三步:
-  1) bench-cpu <file>   纯 numpy 基线,进程内钉死 1 核(公平对比 NPU 单卡)
-  2) bench-npu <file>   放开所有限制,迁移到 asnumpy 在 NPU 上跑,读 1) 的基线算加速比
+  1) bench-cpu <file>   纯 NumPy 基线，默认请求 BLAS 1 线程并记录实际线程池
+  2) bench-npu <file>   审计迁移算子执行来源；仅严格 NPU 结果可与 1) 计算加速比
   migrate <file>        迁移 + 正确性 + "真用了 asnumpy" 叙事(不做性能对比)
 """
 import argparse
@@ -23,9 +23,10 @@ def parse_cpu_threads(val):
 def _early_pin_for_bench_cpu():
     """bench-cpu 是纯 numpy 进程(不碰 NPU/CANN),可安全地全局钉核。
 
-    ⚠️ 必须在 import numpy 之前设置:本机 numpy=scipy-openblas(OpenMP 线程后端),
-    默认吃满全部 640 核。只有在加载前设好 *_NUM_THREADS,OpenBLAS 才会真正限核。
-    bench-npu / migrate 不走这里(它们要 NPU 满线程),故只对 bench-cpu 生效。
+    必须在 import numpy 之前设置线程环境变量；它们只是请求值，实际生效线程数
+    由 benchmark 在 NumPy 加载后通过 threadpoolctl 观测并写入证据。
+    bench-npu / migrate 不走这里，故只对 bench-cpu 生效。bench-npu 会另行记录
+    自身进程中真实可观测的 BLAS 线程池，避免把“未限制”误写成“全线程”。
     """
     argv = sys.argv[1:]
     if not argv or argv[0] != "bench-cpu":
@@ -89,21 +90,48 @@ def _render_terminal(res):
     if plan is not None and plan.placement:
         npu = sorted(o for o, p in plan.placement.items() if p == "NPU")
         cpu = sorted(o for o, p in plan.placement.items() if p == "CPU")
-        out.append(f"[卸载] NPU: {', '.join(npu) or '—'}   CPU: {', '.join(cpu) or '—'}")
+        out.append(
+            f"[卸载] 策略={plan.strategy} · NPU: {', '.join(npu) or '—'}   "
+            f"CPU: {', '.join(cpu) or '—'}"
+        )
 
     rep = res["report"]
 
-    # [执行] 证明真的用了 asnumpy
+    # [执行] 模块命中不等于 strict NPU；必须同时展示 capability provenance。
     if rep.backend_version:
         loc = rep.backend_module or "?"
-        out.append(f"[执行] 后端={rep.backend} · asnumpy {rep.backend_version} ✓ 真机")
+        out.append(f"[执行] 后端={rep.backend} · 已加载 asnumpy {rep.backend_version}")
         out.append(f"       {loc}")
     else:
         out.append(f"[执行] 后端={rep.backend} · shim 仿真(numpy 承载 asnumpy 语义,数值恒等)")
+    provenance = rep.backend_provenance or {}
+    if provenance:
+        if provenance.get("strict_npu"):
+            gate = "通过 ✓" if provenance.get("ok") else "失败 ✗"
+        else:
+            gate = "未执行(shim/非 strict)"
+        out.append(
+            f"       capability audit={provenance.get('audit_id', '?')} · "
+            f"strict-NPU={gate}"
+        )
 
     # [校验] 数值一致性
     mark = "✓" if rep.numerically_consistent else "✗"
-    out.append(f"[校验] 数值一致 {mark}  max_rel_diff={rep.max_rel_diff:.2e}  (tol={rep.tol:.0e})")
+    if rep.exception_type:
+        out.append(
+            f"[校验] 失败 ✗  {rep.exception_phase}: "
+            f"{rep.exception_type}: {rep.exception_message}"
+        )
+    else:
+        out.append(
+            f"[校验] 数值一致 {mark}  max_abs={rep.max_abs_diff:.2e}  "
+            f"max_norm={rep.max_rel_diff:.2e}  "
+            f"(atol={rep.atol:.0e}, rtol={rep.rtol:.0e})"
+        )
+        out.append(
+            "       同输入计算主体=%s · 产物输入=%s · 产物端到端=%s"
+            % (rep.kernel_consistent, rep.input_consistent, rep.artifact_consistent)
+        )
 
     # [产物]
     arts = [res["migrated_path"]] if res.get("migrated_path") else []
@@ -112,7 +140,7 @@ def _render_terminal(res):
 
     # [性能] 交给两个独立 bench 程序(公平口径:numpy 单核 vs NPU 满线程)
     src = res.get("source_path", "<file>")
-    out.append("[性能] 公平对比请分两步跑(见下):")
+    out.append("[性能] 本命令不发布加速比；请运行独立、fail-closed 的两步评测:")
     out.append(f"       ① python -m numpilot bench-cpu {src} --out out_demo")
     out.append(f"       ② python -m numpilot bench-npu {src} --out out_demo")
     return "\n".join(out)
@@ -180,6 +208,10 @@ def _migrate_report_info(res):
     a = res.get("analysis")
     if res["status"] == "unsupported":
         info["unsupported"] = res.get("unsupported", [])
+        info["unsupported_details"] = [
+            {"name": op.name, "lineno": op.lineno, "reason": op.reason}
+            for op in (a.op_uses if a else []) if not op.supported
+        ]
         return info
     rep = res["report"]
     plan = res.get("plan")
@@ -189,15 +221,32 @@ def _migrate_report_info(res):
     info["n_ops"] = len({o.name for o in a.op_uses}) if a else None
     info["rewrites"] = rewrites
     info["total_rewrites"] = sum(rewrites.values())
-    info["custom"] = {op: n for op, n in rewrites.items() if is_custom(op)}
+    info["extension_apis"] = {op: n for op, n in rewrites.items() if is_custom(op)}
     if plan:
+        info["strategy"] = plan.strategy
         info["npu_ops"] = sorted(o for o, p in plan.placement.items() if p == "NPU")
         info["cpu_ops"] = sorted(o for o, p in plan.placement.items() if p == "CPU")
     info["backend_version"] = rep.backend_version
     info["backend_module"] = rep.backend_module
     info["numerically_consistent"] = rep.numerically_consistent
     info["max_rel_diff"] = rep.max_rel_diff
+    info["max_abs_diff"] = rep.max_abs_diff
     info["tol"] = rep.tol
+    info["atol"] = rep.atol
+    info["rtol"] = rep.rtol
+    info["failure_path"] = rep.failure_path
+    info["failure_index"] = rep.failure_index
+    info["failure_reason"] = rep.failure_reason
+    info["exception_phase"] = rep.exception_phase
+    info["exception_type"] = rep.exception_type
+    info["exception_message"] = rep.exception_message
+    info["artifact_inputs_executed"] = rep.artifact_inputs_executed
+    info["input_consistent"] = rep.input_consistent
+    info["kernel_consistent"] = rep.kernel_consistent
+    info["artifact_consistent"] = rep.artifact_consistent
+    info["comparisons"] = rep.comparisons
+    info["backend_provenance"] = rep.backend_provenance
+    info["performance_valid"] = False
     info["migrated_path"] = res.get("migrated_path")
     return info
 
@@ -219,14 +268,18 @@ def main(argv=None):
     bc.add_argument("file")
     bc.add_argument("--out", default="out_demo", help="基线文件输出目录")
     bc.add_argument("--cpu-threads", default="1",
-                    help="numpy BLAS 线程数(默认 1=单核公平对比;0/all=吃满全核对照)")
+                    help="请求的 NumPy BLAS 线程数(默认 1；0/all 表示不主动限制)")
 
-    bn = sub.add_parser("bench-npu", help="② 迁移到 asnumpy 在 NPU 上跑(满线程), 读 ① 基线算加速比")
+    bn = sub.add_parser(
+        "bench-npu", help="② 审计并评测 asnumpy；仅严格 NPU 路径发布加速比")
     bn.add_argument("file")
     bn.add_argument("--out", default="out_demo", help="读取 ① 基线 / 写迁移代码的目录")
     bn.add_argument("--engine", choices=["ast", "llm"], default=None)
     bn.add_argument("--threshold", type=int, default=1_000_000)
     bn.add_argument("--skip-env-check", action="store_true")
+    bn.add_argument(
+        "--allow-cpu-fallback", action="store_true",
+        help="仅供诊断：允许已知 CPU fallback/来源未知路径继续运行，但不发布 NPU 加速比")
 
     wiz = sub.add_parser("wizard", help="交互式迁移向导(启动界面→选代码→进度迁移→反馈)")
     wiz.add_argument("file", nargs="?", default=None,
@@ -251,7 +304,8 @@ def main(argv=None):
         if args.cmd == "bench-npu":
             _preflight("npu", args.skip_env_check)
             return run_npu_compare(args.file, args.out, engine=_make_engine(args.engine),
-                                   threshold=args.threshold)
+                                   threshold=args.threshold,
+                                   allow_cpu_fallback=args.allow_cpu_fallback)
         return _cmd_migrate(args)
     except LlmError as e:
         print(f"\n[LLM] 迁移终止:{e}", file=sys.stderr)

@@ -6,7 +6,7 @@
   NUMPILOT_LLM_MODEL       模型名, 例: glm-5.1
   NUMPILOT_LLM_PROVIDER    (可选)仅作标签, 例: pangu | glm | openai | deepseek
   NUMPILOT_LLM_MAX_TOKENS  (可选)生成上限, 默认 8192(部分网关强制要求此字段)
-  NUMPILOT_LLM_INSECURE    (可选)"1"=跳过 TLS 证书校验(自签网关用), 默认 "1"
+  NUMPILOT_LLM_INSECURE    (可选)"1"=显式跳过 TLS 证书校验(仅限受信内网), 默认 "0"
   NUMPILOT_LLM_TIMEOUT     (可选)单次请求超时秒, 默认 120
 
 两种模式(见 __init__ strict):
@@ -45,7 +45,9 @@ _SYSTEM_PROMPT = (
     "不能写成 `ap.maximum(x, 0)`(会因标量 0 报错)。\n"
     "3) 其余 `np.<op>(...)` 直接改为 `ap.<op>(...)`;`np` 命名空间的 import 保留。\n"
     "4) 只迁移 `forward(...)` 计算主体;`build_inputs()` 保持用 numpy 构造(它产出 CPU 输入)。\n"
-    "5) 不改变计算逻辑、函数名与签名, 保证与原程序数值等价。\n"
+    "5) 在 forward 入口为每个数组参数加入幂等边界:`if isinstance(x, np.ndarray): "
+    "x = ap.ndarray.from_numpy(x)`。设备数组和标量必须保持原样。\n"
+    "6) 不改变计算逻辑、函数名与签名, 保证与原程序数值等价。\n"
     "只输出完整的迁移后 Python 源码, 用 ```python 代码块包裹, 不要任何解释文字。"
 )
 
@@ -102,9 +104,9 @@ class LlmEngine(MigrationEngine):
         req = urllib.request.Request(url, data=body, method="POST")
         req.add_header("Content-Type", "application/json")
         req.add_header("Authorization", "Bearer " + os.environ["NUMPILOT_LLM_AUTH_TOKEN"])
-        # 自签网关默认跳过证书校验(NUMPILOT_LLM_INSECURE=0 可强制校验)
+        # 默认校验证书；只有受信内网自签网关才可显式选择 insecure。
         ctx = (ssl._create_unverified_context()
-               if os.getenv("NUMPILOT_LLM_INSECURE", "1") == "1" else None)
+               if os.getenv("NUMPILOT_LLM_INSECURE", "0") == "1" else None)
         timeout = float(os.getenv("NUMPILOT_LLM_TIMEOUT", "120"))
         with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
             data = json.loads(resp.read().decode("utf-8"))

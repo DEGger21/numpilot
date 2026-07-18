@@ -1,16 +1,12 @@
 """交互式迁移向导:启动界面 → 选代码 → 选引擎 → 进度迁移 → 迁移反馈。
 
-依赖 rich 做终端交互(进度条/彩框/表格)。核心步骤复用已有智能体与 bench:
-- 迁移/校验在向导进程内跑(满线程, 用于正确性 + asnumpy 真机证据 + NPU 测速);
-- numpy 单核基线用**子进程** `python -m numpilot bench-cpu`(进程隔离, 干净钉 1 核, 不污染 CANN);
-- speedup = t_cpu(numpy@1核) / t_npu(asnumpy@NPU)。
+依赖 rich 做终端交互(进度条/彩框/表格)。向导只负责迁移、产物级正确性和
+capability provenance；性能必须通过独立的 ``bench-cpu`` / ``bench-npu``
+严格门禁发布，避免在交互流程中形成不可审计的加速比。
 """
 import ast
-import json
 import os
 import re
-import subprocess
-import sys
 
 from rich.console import Console
 from rich.panel import Panel
@@ -71,7 +67,7 @@ def load_env_llm(path=".env.llm"):
 
 
 def custom_op_breakdown(rewrites):
-    """从 {op:count} 里挑出 asnumpy 自定义 NPU 算子(relu/softmax/gelu/angle)。"""
+    """挑出 AsNumpy 的扩展 API；这不代表本次新生成了自定义算子。"""
     return {op: n for op, n in rewrites.items() if is_custom(op)}
 
 
@@ -82,7 +78,7 @@ def agent_roster(engine_name):
     return [
         ("编排智能体 Orchestrator", "统筹流水线 · 传递上下文 · 汇总报告", "规则编排(无模型)"),
         ("分析智能体 Analysis", "AST 静态解析算子 · 比对覆盖集", "Python AST(规则,无模型)"),
-        ("决策智能体 Decision", "按张量规模阈值定 CPU/NPU 卸载", "规则成本模型(无模型)"),
+        ("决策智能体 Decision", "把整个 forward 划为单一 NPU 岛", "确定性边界规则(无模型)"),
         ("迁移智能体 Migration", "np.* → ap.* 代码改写", mig_model),
         ("验证智能体 Verification", "双端执行 · 数值对比 · 测速", "数值对比 + 真机执行(无模型)"),
     ]
@@ -172,16 +168,16 @@ def _startup_check(backend, interactive):
 
 
 def _run_pipeline(source, path, engine_name, backend_name):
-    """跑 分析→决策→迁移→校验→CPU基线,返回收集的数据 dict。中途失败抛异常。"""
+    """跑分析→整段决策→迁移→产物校验→证据门禁。"""
     data = {"path": path, "engine": engine_name, "backend": backend_name}
     mig_tag = "glm-5.1" if engine_name == "llm" else "AST"
     # 每步归属的智能体(名称, 该步用的模型/引擎), 让用户看清是谁在动作
     steps = [
         ("分析智能体", "分析算子", "规则AST"),
-        ("决策智能体", "决策卸载", "规则阈值"),
+        ("决策智能体", "划分 NPU 岛", "整段 forward"),
         ("迁移智能体", "迁移改写", mig_tag),
-        ("验证智能体", "真机校验 + NPU 测速", "数值对比"),
-        ("验证智能体", "numpy 单核基线", "测速"),
+        ("验证智能体", "产物级语义校验", "严格比较"),
+        ("验证智能体", "capability 证据门禁", "provenance"),
     ]
     def sdesc(i, extra=""):
         a, act, m = steps[i]
@@ -211,7 +207,10 @@ def _run_pipeline(source, path, engine_name, backend_name):
         plan = DecisionAgent().plan(analysis)
         data["plan"] = plan
         npu_ops = sorted(o for o, p in plan.placement.items() if p == "NPU")
-        prog.console.print(f"   ↳ [cyan]决策智能体[/] 按规模阈值卸载:NPU {len(npu_ops)} 个算子,其余留 CPU")
+        prog.console.print(
+            f"   ↳ [cyan]决策智能体[/] 策略={plan.strategy}:"
+            f"forward 内 {len(npu_ops)} 个算子统一进入 NPU 岛"
+        )
         prog.advance(t)
 
         # [3] 迁移智能体(LLM 时较慢)
@@ -227,37 +226,47 @@ def _run_pipeline(source, path, engine_name, backend_name):
         prog.console.print(f"   ↳ [magenta]迁移智能体·{model_tag}[/] 替换 {migration.total_rewrites} 处 np.* → ap.*")
         prog.advance(t)
 
-        # [4] 验证智能体:校验 + NPU 测速
+        # [4] 验证智能体：运行迁移产物自己的 build_inputs + forward。
         prog.update(t, description=sdesc(3))
         report = VerificationAgent(select_backend(backend_name)).verify(
-            source, migration.migrated_source, measure=True)
+            source,
+            migration.migrated_source,
+            measure=False,
+            required_ops=migration.expected_rewrites,
+        )
         data["report"] = report
         mark = "✓" if report.numerically_consistent else "✗"
-        prog.console.print(f"   ↳ [cyan]验证智能体[/] 数值一致 {mark} max_rel_diff={report.max_rel_diff:.2e} · "
-                           f"asnumpy@{report.backend} 时延 {report.t_mig_ms:.1f} ms")
+        detail = (
+            f"异常 {report.exception_phase}/{report.exception_type}: {report.exception_message}"
+            if report.exception_type
+            else f"max_abs={report.max_abs_diff:.2e}, max_rel={report.max_rel_diff:.2e}"
+        )
+        prog.console.print(
+            f"   ↳ [cyan]验证智能体[/] 产物级数值一致 {mark} · {detail} · "
+            f"自身 build_inputs={'是' if report.artifact_inputs_executed else '否'}"
+        )
         prog.advance(t)
 
-        # [5] 验证智能体:numpy 单核基线(子进程, 干净钉 1 核)
+        # [5] capability/provenance 只判资格，不在向导中顺手发布性能。
         prog.update(t, description=sdesc(4))
-        t_cpu = _cpu_baseline_subprocess(path)
-        data["t_cpu_ms"] = t_cpu
-        if t_cpu is not None:
-            prog.console.print(f"   ↳ [cyan]验证智能体[/] numpy@CPU(1 核)基线 {t_cpu:.1f} ms")
+        provenance = report.backend_provenance or {}
+        data["performance_valid"] = False
+        if provenance:
+            ok = provenance.get("ok")
+            audit_id = provenance.get("audit_id", "?")
+            gate = (
+                ("通过" if ok else "未通过")
+                if provenance.get("strict_npu")
+                else "未执行(shim/非 strict)"
+            )
+            prog.console.print(
+                f"   ↳ [cyan]验证智能体[/] capability audit={audit_id} · "
+                f"strict-NPU 门禁={gate}"
+            )
         else:
-            prog.console.print("   ↳ [yellow]CPU 基线获取失败,跳过加速比[/]")
+            prog.console.print("   ↳ [yellow]无 capability provenance，不具备性能发布资格[/]")
         prog.advance(t)
     return data
-
-
-def _cpu_baseline_subprocess(path):
-    """子进程跑 bench-cpu(钉 1 核), 读 cpu_baseline.json 取 t_cpu_ms。失败返回 None。"""
-    try:
-        subprocess.run([sys.executable, "-m", "numpilot", "bench-cpu", path, "--out", _OUT_DIR],
-                       capture_output=True, text=True, timeout=600, check=True)
-        with open(os.path.join(_OUT_DIR, "cpu_baseline.json"), encoding="utf-8") as f:
-            return json.load(f)["t_cpu_ms"]
-    except Exception:
-        return None
 
 
 def _feedback(data):
@@ -280,40 +289,46 @@ def _feedback(data):
     tb.add_row("网络", net)
     tb.add_row("源程序", data["path"])
     tb.add_row("迁移引擎", data["engine"] + (" (glm-5.1 智能体)" if data["engine"] == "llm" else " (确定性改写)"))
-    tb.add_row("算子分析", f"{len(a.op_uses)} 处调用 · {len({o.name for o in a.op_uses})} 个算子 · 全部在覆盖集 ✓")
+    tb.add_row(
+        "算子分析",
+        f"{len(a.op_uses)} 处 forward 调用 · {len({o.name for o in a.op_uses})} 个算子 · "
+        "静态名称/签名门禁通过",
+    )
     replaced = "  ".join(f"{op}×{n}" for op, n in
                          sorted(mig.rewrites.items(), key=lambda kv: (-kv[1], kv[0])))
     tb.add_row("算子替换", f"共 [bold]{mig.total_rewrites}[/] 处 np.* → ap.*\n{replaced}")
     if custom:
         clist = "  ".join(f"{op}×{n}" for op, n in sorted(custom.items(), key=lambda kv: (-kv[1], kv[0])))
-        tb.add_row("自定义 NPU 算子", f"接入 [bold green]{len(custom)}[/] 种 / {sum(custom.values())} 处:{clist}\n"
-                                  "[dim](relu/softmax/gelu/angle 等 numpy 没有、由 NPU 提供的算子)[/]")
+        tb.add_row("AsNumpy 扩展 API", f"命中 [bold green]{len(custom)}[/] 种 / {sum(custom.values())} 处:{clist}\n"
+                                  "[dim](表示复用已有扩展 API，不等于本次新生成自定义算子)[/]")
     else:
-        tb.add_row("自定义 NPU 算子", "无(本网络未用到 relu/softmax/gelu/angle)")
-    tb.add_row("卸载方案", f"NPU: {', '.join(npu_ops) or '—'}\nCPU: {', '.join(cpu_ops) or '—'}")
+        tb.add_row("AsNumpy 扩展 API", "无(本网络未命中 relu/softmax/gelu/angle)")
+    tb.add_row(
+        "卸载方案",
+        f"策略: {plan.strategy}\nNPU: {', '.join(npu_ops) or '—'}\nCPU: {', '.join(cpu_ops) or '—'}",
+    )
     if rep.backend_version:
         tb.add_row("执行证据", f"[green]真机 asnumpy {rep.backend_version}[/]\n{rep.backend_module}")
     else:
         tb.add_row("执行证据", "shim 仿真(numpy 承载,非真机)")
     cmark = "[green]一致 ✓[/]" if rep.numerically_consistent else "[red]不一致 ✗[/]"
-    tb.add_row("数值校验", f"{cmark}  max_rel_diff={rep.max_rel_diff:.2e}  (tol={rep.tol:.0e})")
+    if rep.exception_type:
+        tb.add_row("数值校验", f"{cmark}  {rep.exception_phase}: {rep.exception_type}: {rep.exception_message}")
+    else:
+        tb.add_row(
+            "数值校验",
+            f"{cmark}  max_abs={rep.max_abs_diff:.2e}, max_rel={rep.max_rel_diff:.2e}  "
+            f"(atol={rep.atol:.0e}, rtol={rep.rtol:.0e})",
+        )
     console.print(tb)
 
-    # 性能高亮
-    t_cpu, t_npu = data.get("t_cpu_ms"), rep.t_mig_ms
-    if data["backend"] == "npu" and t_cpu and t_npu:
-        speedup = t_cpu / t_npu
-        color = "green" if speedup > 1 else "yellow"
-        verdict = "asnumpy@NPU 更快" if speedup > 1 else "numpy 更快"
-        console.print(Panel(
-            f"numpy@CPU(1 核)  [bold]{t_cpu:.1f} ms[/]\n"
-            f"asnumpy@NPU(单卡) [bold]{t_npu:.1f} ms[/]\n"
-            f"加速比  [bold {color}]{speedup:.2f}×[/]  ({verdict})\n"
-            f"[dim]{rep.n_elements:,} 元素 · 公平口径:CPU 限 1 核 vs NPU 单卡[/]",
-            title="[bold]整网性能对比[/]", border_style=color))
-    else:
-        console.print(Panel("[dim]未做真机性能对比(非 npu 后端或基线缺失)[/]",
-                            title="整网性能对比", border_style="dim"))
+    console.print(Panel(
+        "向导不发布加速比。请在独立进程依次运行:\n"
+        f"python -m numpilot bench-cpu {data['path']} --out out_demo\n"
+        f"python -m numpilot bench-npu {data['path']} --out out_demo\n"
+        "[dim]只有 strict-NPU capability、数值和基线一致性门禁全部通过，"
+        "benchmark_report.md 才会给出合格加速比。[/]",
+        title="性能证据", border_style="cyan"))
     console.print(f"[dim]迁移代码已写入:{data['migrated_path']}[/]")
 
 
@@ -333,20 +348,32 @@ def _report_info(data):
     info["n_ops"] = len({o.name for o in a.op_uses})
     info["rewrites"] = mig.rewrites
     info["total_rewrites"] = mig.total_rewrites
-    info["custom"] = custom_op_breakdown(mig.rewrites)
+    info["extension_apis"] = custom_op_breakdown(mig.rewrites)
+    info["strategy"] = plan.strategy
     info["npu_ops"] = sorted(o for o, p in plan.placement.items() if p == "NPU")
     info["cpu_ops"] = sorted(o for o, p in plan.placement.items() if p == "CPU")
     info["backend_version"] = rep.backend_version
     info["backend_module"] = rep.backend_module
     info["numerically_consistent"] = rep.numerically_consistent
     info["max_rel_diff"] = rep.max_rel_diff
+    info["max_abs_diff"] = rep.max_abs_diff
     info["tol"] = rep.tol
+    info["atol"] = rep.atol
+    info["rtol"] = rep.rtol
+    info["failure_path"] = rep.failure_path
+    info["failure_index"] = rep.failure_index
+    info["failure_reason"] = rep.failure_reason
+    info["exception_phase"] = rep.exception_phase
+    info["exception_type"] = rep.exception_type
+    info["exception_message"] = rep.exception_message
+    info["artifact_inputs_executed"] = rep.artifact_inputs_executed
+    info["input_consistent"] = rep.input_consistent
+    info["kernel_consistent"] = rep.kernel_consistent
+    info["artifact_consistent"] = rep.artifact_consistent
+    info["comparisons"] = rep.comparisons
+    info["backend_provenance"] = rep.backend_provenance
+    info["performance_valid"] = False
     info["migrated_path"] = data.get("migrated_path")
-    t_cpu, t_npu = data.get("t_cpu_ms"), rep.t_mig_ms
-    if data["backend"] == "npu" and t_cpu and t_npu:
-        info["t_cpu_ms"], info["t_npu_ms"] = t_cpu, t_npu
-        info["speedup"] = t_cpu / t_npu
-        info["n_elements"] = rep.n_elements
     return info
 
 
