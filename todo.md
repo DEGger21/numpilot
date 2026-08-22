@@ -23,12 +23,15 @@
 - [x] 私有 OPP 与 AsNumpy public API 接入，不修改系统安装
 - [x] 将通过完整证据复验的 overlay 接入 profile-aware runtime capability 解析
 - [x] qualified + activated 后完成迁移、完整动态一轮和 250 轮数值回归
-- [ ] profiler、放大规模与重复性能样本通过后再发布性能结论
+- [x] Poisson 缩小案例的 profiler、已知方向探针、包装层复制定位与消除后重采
+- [ ] 放大规模、预热与重复性能样本通过后再发布性能结论
 
 ## 当前证据边界
 
-- Poisson 的 `apply_gradient_descent` 与 `smooth_l1_loss` 已通过 v5 六门资格化和显式
+- Poisson 的 `apply_gradient_descent` 与 `smooth_l1_loss` 已通过 move wheel 对应的 v6 六门资格化和显式
   overlay 激活；这个结论只覆盖证据中声明的 profile，不代表任意输入都合格。
+- 修复后同一 10 轮 workload 保持 1,170 条 kernel，`aclrtMemcpy` 从 1,235 降为 runner
+  边界传输对应的 35 次；这是复制闭环证据，不是耗时或加速比结论。
 - 2026-08-13 已在隔离 AsNumpy wheel 上完成真实 910B4 ACLNN **复合** `cbrt`
   探针：200,015 个 float32 NumPy oracle case、特殊值/signbit 与边界长度通过；这不是
   Ascend C custom OPP，也不是 qualification 六门报告，不能把 `cbrt` 提升为

@@ -60,6 +60,12 @@ P0_LINALG_AUDITED_NATIVE_OPS = frozenset(
         "subtract",
     }
 )
+P0_MOVE_ASNUMPY_VERSION = "0.1.dev106+g21368abf9.d20260822"
+P0_MOVE_ASNUMPY_AUDIT_ID = (
+    "asnumpy-0.1.dev106-g21368abf9-poisson-move-"
+    "init4f4e8083-math62e0ba09-direct4479c588-"
+    "utils1b298145-core4465ce6e-v1"
+)
 _P0_SCOPED_MATH_SIGNATURES = {
     "divide": 2,
     "exp": 1,
@@ -72,6 +78,13 @@ _P0_LINALG_RUNTIME_FILE_SHA256 = {
     "math.py": "62e0ba09576ead5d3b44f6b0b33311e849efd47ab0bb11f7875c0a43f499085c",
     "linalg/direct.py": "4479c588c57705e229611a44844b6c7497deb6d97a7f067155f645b1f2913dbf",
     "_core": "d3ccb39f23a24611d4e5f0f34605fdf6825c74a11ef8a1aa4dac498a0ff38821",
+}
+_P0_MOVE_RUNTIME_FILE_SHA256 = {
+    "__init__.py": "4f4e8083755dde87bd6f0dc8c765da71984cb1346c97e8b6dbb97d714be34c04",
+    "math.py": "62e0ba09576ead5d3b44f6b0b33311e849efd47ab0bb11f7875c0a43f499085c",
+    "linalg/direct.py": "4479c588c57705e229611a44844b6c7497deb6d97a7f067155f645b1f2913dbf",
+    "utils.py": "1b2981456b2e4258b2f3f9611a07c98dc5a79acb8d67d35e3f2595af13911435",
+    "_core": "4465ce6e0589eb000d450a49c15488a4d2d9f211fa7867646992c56e7c040747",
 }
 _MAX_AUDITED_RUNTIME_FILE_BYTES = 64 * 1024 * 1024
 
@@ -265,6 +278,32 @@ def _p0_linalg_runtime_identity_matches(module):
     return observed == _P0_LINALG_RUNTIME_FILE_SHA256
 
 
+def _p0_move_runtime_identity_matches(module):
+    """Bind the copy-elision wheel to Python wrappers and its native module."""
+
+    raw_path = getattr(module, "__file__", None)
+    if not isinstance(raw_path, str) or not raw_path:
+        return False
+    init_path = Path(raw_path)
+    if init_path.is_symlink() or init_path.name != "__init__.py":
+        return False
+    parent = init_path.parent
+    linalg_dir = parent / "linalg"
+    if linalg_dir.is_symlink() or not linalg_dir.is_dir():
+        return False
+    core_paths = tuple(parent.glob("_core*.so"))
+    if len(core_paths) != 1 or core_paths[0].is_symlink():
+        return False
+    observed = {
+        "__init__.py": _sha256_private_regular_file(init_path),
+        "math.py": _sha256_private_regular_file(parent / "math.py"),
+        "linalg/direct.py": _sha256_private_regular_file(linalg_dir / "direct.py"),
+        "utils.py": _sha256_private_regular_file(parent / "utils.py"),
+        "_core": _sha256_private_regular_file(core_paths[0]),
+    }
+    return observed == _P0_MOVE_RUNTIME_FILE_SHA256
+
+
 def _runtime_audit_id(module, version):
     if version == AUDITED_ASNUMPY_VERSION:
         return ASNUMPY_AUDIT_ID
@@ -273,6 +312,11 @@ def _runtime_audit_id(module, version):
             return P0_LINALG_ASNUMPY_AUDIT_ID
         if _p0_runtime_identity_matches(module):
             return P0_ASNUMPY_AUDIT_ID
+    if (
+        version == P0_MOVE_ASNUMPY_VERSION
+        and _p0_move_runtime_identity_matches(module)
+    ):
+        return P0_MOVE_ASNUMPY_AUDIT_ID
     return "unaudited-asnumpy-version"
 
 
@@ -289,7 +333,7 @@ def _provenance_profile(name, version, audit_id):
             ("requires an operator-specific source audit",),
         )
     if (
-        audit_id == P0_LINALG_ASNUMPY_AUDIT_ID
+        audit_id in {P0_LINALG_ASNUMPY_AUDIT_ID, P0_MOVE_ASNUMPY_AUDIT_ID}
         and name not in P0_LINALG_AUDITED_NATIVE_OPS
     ):
         return (
@@ -304,6 +348,7 @@ def _provenance_profile(name, version, audit_id):
         ASNUMPY_AUDIT_ID,
         P0_ASNUMPY_AUDIT_ID,
         P0_LINALG_ASNUMPY_AUDIT_ID,
+        P0_MOVE_ASNUMPY_AUDIT_ID,
     }:
         return (
             ExecutionProvenance.UNKNOWN,
@@ -325,7 +370,10 @@ def _provenance_profile(name, version, audit_id):
             ),
             ("requires an operator-specific source audit",),
         )
-    if audit_id == P0_LINALG_ASNUMPY_AUDIT_ID and name in {"outer", "matmul"}:
+    if (
+        audit_id in {P0_LINALG_ASNUMPY_AUDIT_ID, P0_MOVE_ASNUMPY_AUDIT_ID}
+        and name in {"outer", "matmul"}
+    ):
         return (
             ExecutionProvenance.NATIVE_NPU,
             "asnumpy P0 hash-bound linalg audit: float32 rank-1/2 public path delegates to ACLNN",
@@ -337,7 +385,10 @@ def _provenance_profile(name, version, audit_id):
                 "numel>=1",
             ),
         )
-    if audit_id == P0_LINALG_ASNUMPY_AUDIT_ID and name in _P0_SCOPED_MATH_SIGNATURES:
+    if (
+        audit_id in {P0_LINALG_ASNUMPY_AUDIT_ID, P0_MOVE_ASNUMPY_AUDIT_ID}
+        and name in _P0_SCOPED_MATH_SIGNATURES
+    ):
         return (
             ExecutionProvenance.NATIVE_NPU,
             "asnumpy P0 hash-bound math audit: float32 public path delegates to ACLNN",
@@ -356,7 +407,10 @@ def _provenance_profile(name, version, audit_id):
             "asnumpy P0 hash-bound source/binary audit: public wrapper delegates "
             "to ACLNN"
             if audit_id == P0_ASNUMPY_AUDIT_ID
-            or audit_id == P0_LINALG_ASNUMPY_AUDIT_ID
+            or audit_id in {
+                P0_LINALG_ASNUMPY_AUDIT_ID,
+                P0_MOVE_ASNUMPY_AUDIT_ID,
+            }
             else "asnumpy@1929a3ba4 source audit: public wrapper delegates to an NPU binding"
         ),
         (),
@@ -364,9 +418,15 @@ def _provenance_profile(name, version, audit_id):
 
 
 def _signature_variants(name, audit_id):
-    if audit_id == P0_LINALG_ASNUMPY_AUDIT_ID and name in {"outer", "matmul"}:
+    if (
+        audit_id in {P0_LINALG_ASNUMPY_AUDIT_ID, P0_MOVE_ASNUMPY_AUDIT_ID}
+        and name in {"outer", "matmul"}
+    ):
         return (OperatorSignature(positional_args=2),)
-    if audit_id == P0_LINALG_ASNUMPY_AUDIT_ID and name in _P0_SCOPED_MATH_SIGNATURES:
+    if (
+        audit_id in {P0_LINALG_ASNUMPY_AUDIT_ID, P0_MOVE_ASNUMPY_AUDIT_ID}
+        and name in _P0_SCOPED_MATH_SIGNATURES
+    ):
         return (
             OperatorSignature(positional_args=_P0_SCOPED_MATH_SIGNATURES[name]),
         )

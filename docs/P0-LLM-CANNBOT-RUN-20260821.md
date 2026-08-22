@@ -39,7 +39,8 @@ NumPilot 的 P0 主链路已经跑到“真实模型生成 → 编译/运行诊�
 - 完整动态训练轮 strict-NPU：已通过，117 个调用点全部命中 NPU；
 - 250 轮确定性缩小案例：已通过，29,250 次实际调用零 profile 拒绝，最终 CPU/NPU
   最大绝对误差 `4.76837158203125e-07`；
-- 比赛级 profiler、原始大配置、重复性能样本与性能结论：未完成。
+- 缩小案例 profiler、已知方向 memcpy 探针、包装层复制定位和消除后重采：已完成；
+- 原始大配置、预热、重复性能样本与性能结论：未完成。
 
 因此可以写“两个自定义算子已通过正式资格化，并在一个包含 RBF、Laplacian、损失、解析
 梯度和更新的动态训练轮中显式激活；确定性缩小案例又完成了 250 轮设备驻留对拍”。不能把
@@ -245,7 +246,7 @@ smooth:
 .../direct-local-v5/private-opp-v4/vendors/smooth_l1_loss_custom
 ```
 
-当前固定 AsNumpy wheel：
+v9 阶段固定 AsNumpy wheel：
 
 ```text
 .../direct-local-v5/asnumpy-p0-wheel-v9/
@@ -270,13 +271,15 @@ Smooth abs error:      0.0
 Smooth output shape:   []
 ```
 
-当前 v9 新增 `outer`/`matmul` 公共路径的 NPU 修复，选定 linalg 测试结果为
-`14 passed, 26 deselected`，并重新执行 v5 六门资格化与完整动态样例。
+v9 新增 `outer`/`matmul` 公共路径的 NPU 修复，选定 linalg 测试结果为
+`14 passed, 26 deselected`，并重新执行 v5 六门资格化与完整动态样例。后续 move wheel
+消除 private native result 到 public wrapper 的深拷贝，选定真机测试 `19 passed`，再以
+新基础身份执行 v6 六门资格化、10 轮 profiler 和 250 轮回归。
 
 NumPilot 仓库回归：
 
 ```text
-355 passed
+369 passed
 python -m compileall -q numpilot tests examples  # passed
 git diff --check                                # passed
 ```
@@ -296,7 +299,7 @@ NPU 7, 910B4, Health OK, HBM 2898/32768 MB
 CPU fallback。
 
 qualification 只接受带签名 `operator-artifact.json` 的封存 Artifact，不直接信任可变 repair
-candidate。权威资格化目录为：
+candidate。v9 阶段权威资格化目录为：
 
 ```text
 .../direct-local-v5/qualification-evidence-v5
@@ -315,7 +318,7 @@ artifact 测试、public AsNumpy API 和真实 NPU numerical worker，再生成�
 `qualification-evidence-v5/overlay/capability-overlay.json`，SHA-256 为
 `08625ef3704db848281cab041e1a7da7d69777b1d425a329c6c43cea45ff1b6e`。v1/v2 失败关闭，
 v3/v4 被后续基础 manifest 取代；旧 v4 overlay 与 v9 wheel 组合会被 base drift 正确拒绝。
-它们均保留作审计记录，当前只能将 v9 wheel 与 v5 evidence 成对使用。
+它们均保留作审计记录；在该阶段只能将 v9 wheel 与 v5 evidence 成对使用。
 
 旧预计算梯度单步在 v9/v5 下仍通过，目录为 `poisson-strict-npu-v2`。随后新增
 `examples/poisson_ritz_iteration.py`，把 RBF、Laplacian、损失、解析梯度和更新全部纳入
@@ -336,6 +339,14 @@ profile 零拒绝。CPU loss 从 `9.948076248168945` 降至 `6.602624893188477`�
 为 `6.602625370025635`，最终状态最大绝对误差 `4.76837158203125e-07`。权威目录为
 `poisson-multiround-strict-npu-v3`；该版 receipt 还绑定了 evidence runner 自身的 SHA-256。
 本次仍没有采集或发布性能数字。
+
+Profiler 首轮记录 1,235 次 `aclrtMemcpy`。已知方向探针确认 compact 方向字段无法区分
+H2D/D2D/D2H；源码和调用账目定位到每个 private native 返回值的 public 包装深拷贝。
+显式 one-shot move 修复后重新资格化，同一 10 轮 workload 保持 1,170 条 kernel，复制降到
+恰好 30 H2D + 5 D2H 的 35 次；机器审计 10 项检查全部通过。新 wheel SHA-256 为
+`afe845c45d17e7f5cd619831f555fba3c2344296ffe02f1d251017b04cf0282d`，v6 overlay SHA-256 为
+`1c5aa2ae5c4ebf2db8d542f24defd9c7ca42ccc4d87b6e10fafc60c4eb708789`。同一 move wheel 的
+250 轮回归目录为 `poisson-multiround-strict-npu-v4-move`，29,250 次调用再次通过。
 
 动态样例扫描没有发现第三个缺口；两个领域算子已经由本地 v5 overlay 准入，因此本阶段
 没有再次调用 LLM，也没有拉取 `ops-nn`。只有遇到未封存/未资格化的新缺口时才应重新进入
@@ -379,11 +390,13 @@ profile 零拒绝。CPU loss 从 `9.948076248168945` 降至 `6.602624893188477`�
 
 ## 9. 下一步优先级
 
-1. 对当前 v9/v5 动态迁移产物运行 profiler，保存 kernel timeline 与隐式传输证据；
-2. 选择接近原始案例的更大规模，运行重复样本与收敛/数值门禁；
+1. **已完成**：对动态迁移产物运行 profiler，以已知方向探针验证采集字段，定位并消除
+   private native result 到 public `ndarray` 的逐返回值深拷贝；同一 10 轮 workload 的
+   `aclrtMemcpy` 从 1,235 降至 35，1,170 条 kernel 不变；
+2. 选择接近原始案例的更大规模，运行预热、重复样本与收敛/数值门禁；
 3. 只在数值、fallback、传输和 profiler 门通过后生成性能结论；
-5. 将当前 Poisson 专用可信 harness 收敛成可复用的多算子 qualification runner；
-6. CodeArts 保持后置；用户决定切换时，再保留需求、生成、调试、测试和 Diff 证据。
+4. 将当前 Poisson 专用可信 harness 收敛成可复用的多算子 qualification runner；
+5. CodeArts 保持后置；用户决定切换时，再保留需求、生成、调试、测试和 Diff 证据。
 
 ## 10. 复现入口
 

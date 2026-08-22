@@ -54,7 +54,7 @@ Poisson Ritz 科学计算需求
 
 - 当前分支：`feat/numpilot-demo`。
 - 已跟踪文件约有 4,500 行净新增尚未提交，另有缺口补全、资格化、LLM 配置、测试和证据文档尚未跟踪。
-- 当前全量测试结果：`355 passed`。
+- 当前全量测试结果：`369 passed`。
 - `git diff --check` 通过。
 - `bash -n run_demo.sh` 通过。
 - Python `compileall` 通过。
@@ -179,7 +179,7 @@ python -m numpilot migrate \
 - 来源、许可证、目标 SoC/CANN；
 - `direct_generation` 主路由及后续复用/对照扩展点。
 
-AnalysisAgent、AST rewrite、GapSpec 和 qualification 已能保留 `operator.<name>` 身份，而不是把 helper 伪造成 NumPy API。编译/运行诊断回传、逐文件 repair、父候选哈希接力、不可变 Artifact 封存、kernel 编译、私有 OPP 安装、public AsNumpy 接线、正式六门 evidence、overlay 激活、完整动态一轮和 250 轮驻留设备对拍均已完成。当前未完成的是原始大配置的 profiler、重复性能样本与发布门禁。
+AnalysisAgent、AST rewrite、GapSpec 和 qualification 已能保留 `operator.<name>` 身份，而不是把 helper 伪造成 NumPy API。编译/运行诊断回传、逐文件 repair、父候选哈希接力、不可变 Artifact 封存、kernel 编译、私有 OPP 安装、public AsNumpy 接线、正式六门 evidence、overlay 激活、完整动态一轮、250 轮驻留设备对拍，以及缩小案例的 profiler/包装层复制闭环均已完成。当前未完成的是接近原始规模的预热、重复性能样本与发布门禁。
 
 ### 3.3 当前 Poisson 性能结论存在真实性风险
 
@@ -333,9 +333,11 @@ AnalysisAgent、AST rewrite、GapSpec 和 qualification 已能保留 `operator.<
 5. **完成两个算子的六门资格化和 Poisson 单步激活（已完成）**  
    外部可信 harness 从封存 Artifact 重新构建，在新私有 OPP 中执行 artifact、build、UT、NumPy oracle、AsNumpy public API 和真实 NPU runtime 门，生成 schema v2 evidence 并原子发布 overlay。旧预计算梯度单步的 9 次调用已通过；当前完整动态一轮的 117 个调用点及 250 轮累计 29,250 次调用也已通过 runtime trace/profile/目标身份和数值门。
 
-6. **消除当前 Poisson 路径的已知 Host fallback（已完成限定范围）**  
+6. **消除当前 Poisson 路径的已知 Host fallback 与包装层深拷贝（已完成限定范围）**
    `outer`、`matmul` 已在哈希绑定的 v9 wheel 中走 ACLNN；完整动态一轮和 250 轮设备状态
-   接力已通过。当前证据仅覆盖声明的 float32/rank profile，且还需要 profiler 核验 timeline。
+   接力已通过。随后用哈希绑定的 move wheel 重新资格化并采集同一 10 轮 workload：
+   1,170 条 kernel 保持一致，`aclrtMemcpy` 从 1,235 降到 35。当前证据仅覆盖声明的
+   float32/rank profile，且不构成性能结论。
 
 7. **重做真实性能测试**  
    使用独立 CPU/NPU 进程、固定线程、warmup、重复样本、中位数、原始样本、数值门禁、源码哈希、fallback 和 profiler。
@@ -354,7 +356,8 @@ AnalysisAgent、AST rewrite、GapSpec 和 qualification 已能保留 `operator.<
 - 增加真实工程数据与明确受益方；
 - 增加 CodeArts MCP 控制层；
 - 增加只读证据看板或轻量 Web 展示；
-- 保存 kernel timeline、H2D/D2H 字节和原始 profiler artifact；
+- 将缩小案例已经保存的 kernel timeline、传输字节和原始 profiler artifact 扩展到更大
+  规模、通用采集器与重复样本；
 - 增加第三方依赖清单、SBOM、许可证和来源说明；
 - 增加 OS 级不受信代码隔离。
 
@@ -394,7 +397,8 @@ AnalysisAgent、AST rewrite、GapSpec 和 qualification 已能保留 `operator.<
 - 已修复并哈希绑定本例限定 profile 的 `outer`/`matmul` NPU 路径；
 - 已以 250 轮设备状态接力移除逐轮显式 D2H；
 - 已保存 117×250 次调用、profile、传输阶段和 CPU/NPU 收敛数值证据；
-- 保存 profiler、原始样本与数值报告；
+- 已保存缩小案例修复前后 profiler、原始数据库、复制审计与数值报告；
+- 为更大规模保存预热和重复原始样本；
 - 不满足门禁时明确显示 `performance_valid=false`。
 
 ### 阶段 D：CodeArts 与交付
@@ -447,7 +451,8 @@ AnalysisAgent、AST rewrite、GapSpec 和 qualification 已能保留 `operator.<
 
 下一轮应直接实施：
 
-> 对当前 v9/v5 的完整动态迁移产物运行 profiler，保存 kernel timeline、传输、重复原始
-> 样本和环境身份；再选择接近原始案例的规模做数值/收敛门禁，决定能否发布性能结论。
+> 在缩小案例复制闭环已经通过的基础上，选择接近原始案例的规模，固定 CPU 线程与运行
+> 身份，执行预热和重复原始样本，并同时守住数值、fallback、传输与 profiler 门，决定
+> 能否发布性能结论。
 
 这是当前距离比赛级真实性能闭环最近的修改方向；CodeArts 仍按用户决定后置。

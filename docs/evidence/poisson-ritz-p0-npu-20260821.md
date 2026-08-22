@@ -18,6 +18,8 @@ NumPilot 已按比赛框架完成一条不依赖 `ops-nn` 启动的 P0 纵向链
 → capability overlay 显式激活
 → 一轮完整动态训练 strict-NPU
 → 250 轮参数驻留设备的确定性缩小案例
+→ profiler 定位并消除逐返回值包装深拷贝
+→ 重新资格化、同负载 profiler 与 250 轮回归
 ```
 
 两个缺口是：
@@ -34,10 +36,12 @@ NumPilot 已按比赛框架完成一条不依赖 `ops-nn` 启动的 P0 纵向链
 损失、解析梯度和参数更新的完整动态训练轮已通过 strict-NPU；该迁移产物又完成了 250 轮
 参数驻留设备的 CPU/NPU 收敛对拍。
 
-首轮 10 轮 CANN profiler 已完成，并逐项确认 1,170 条设备算子任务；它同时暴露了
-1,235 次尚待完成方向归类和来源审计的 `aclrtMemcpy`。当前仍不能证明比赛级性能收益，
-也不能把 8×8 内部点、9 个 RBF 的确定性缩小案例扩大表述为原始 48×48、49 个 RBF、
-3000 轮配置已经完成性能验收。
+首轮 10 轮 CANN profiler 逐项确认 1,170 条设备算子任务，同时暴露了 1,235 次
+`aclrtMemcpy`。已知方向探针证明当前 compact profiler 方向字段不具区分力；源码与精确
+账目进一步定位到 public wrapper 对每个 private native 结果的深拷贝。显式 one-shot move
+修复后，同负载仍有 1,170 条 kernel，复制降为恰好 30 H2D + 5 D2H 的 35 次，并再次通过
+六门资格化和 250 轮回归。当前仍不能证明比赛级性能收益，也不能把 8×8 内部点、9 个 RBF
+的确定性缩小案例扩大表述为原始 48×48、49 个 RBF、3000 轮配置已经完成性能验收。
 
 ## 生成来源与封存
 
@@ -60,7 +64,7 @@ run root: /home/ma-user/work/numpilot-gap-runs/poisson-ritz-p0-20260821/direct-l
 Artifact 状态仍为 `generated_unverified`；是否可执行由外部 qualification evidence 与
 overlay 决定，不能靠回写生成物状态绕过门禁。
 
-## AsNumpy v9 与基础能力审计
+## AsNumpy v9 基线与基础能力审计
 
 权威 wheel：
 
@@ -81,7 +85,20 @@ Python wrapper、`linalg/direct.py` 与 `_core` 二进制均由精确 SHA-256 �
 `outer`/`matmul`。选定 linalg 测试结果为 `14 passed, 26 deselected`。这不是对 AsNumpy
 全部 dtype、rank 或 linalg API 的泛化背书。
 
-## v5 正式六门资格化
+基于 profiler 定位的包装层修复继续保留上述限定能力，并新增 private native 临时返回值到
+public `ndarray` 的显式 one-shot move；公开数组构造仍保持深拷贝语义。当前权威 wheel 为：
+
+```text
+asnumpy-p0-wheel-v10-move-oplogin/
+  asnumpy-0.1.dev106+g21368abf9.d20260822-cp310-cp310-linux_aarch64.whl
+SHA-256: afe845c45d17e7f5cd619831f555fba3c2344296ffe02f1d251017b04cf0282d
+```
+
+其 `__init__.py`、`math.py`、`linalg/direct.py`、`utils.py` 和 `_core` 二进制均由 capability
+manifest 精确绑定，选定真机测试为 `19 passed`。可应用的最小生产补丁保存在
+[`integrations/asnumpy/`](../../integrations/asnumpy/)，完整外部工作树仍单独保留。
+
+## v5 历史六门资格化
 
 权威证据根：
 
@@ -107,8 +124,25 @@ smooth qualification:         fdaf5604fb24c033b919148ff294f212e8187f0d2ae2198c79
 capability overlay:            08625ef3704db848281cab041e1a7da7d69777b1d425a329c6c43cea45ff1b6e
 ```
 
-旧 v4 overlay 会因 v9 基础 manifest 变化被 `base manifest drift` 正确拒绝；当前只能将
-v9 wheel 与 v5 overlay/evidence 成对使用。更早失败或被替代的目录均保留用于审计。
+旧 v4 overlay 会因 v9 基础 manifest 变化被 `base manifest drift` 正确拒绝；v9 wheel
+只能与 v5 overlay/evidence 成对使用。更早失败或被替代的目录均保留用于审计。
+
+## move wheel 对应的 v6 正式资格化
+
+包装层修复改变了基础运行时二进制身份，因此 NumPilot 没有复用 v5 overlay，而是从封存
+Artifact 重新执行全部六门资格化并发布 v6 overlay：
+
+| 算子 | Qualification ID | 测试 | 数值 case | kernel launch | 最大绝对误差 |
+|---|---|---:|---:|---:|---:|
+| `apply_gradient_descent` | `qual-d5c4c3bd44db3cc4301f` | 13 passed | 3 | 3 | `0.0` |
+| `smooth_l1_loss` | `qual-82672ac622245bfa6fe3` | 13 passed | 3 | 3 | `5.960464477539063e-08` |
+
+```text
+qualification-summary.json: 3935bf9b2d8d3712eb48aef71eda91ad79fa71f2591827da4ea06e2f7139d68a
+runtime/base manifest:        a334e5186b40a4598d5246b3e319fda7811837f32042bfb84ea4018c9a61207c
+runtime/opp manifest:         2fec30e42fd0ad5baa35db2d4dab2613dbf39f97926796be551f6a9bfe42fd24
+capability overlay:           1c5aa2ae5c4ebf2db8d542f24defd9c7ca42ccc4d87b6e10fafc60c4eb708789
+```
 
 ## 完整动态一轮 strict-NPU
 
@@ -171,7 +205,7 @@ report.json SHA-256: 1d8634f652cfe4815cb10cb15ce1b5abb26343ac3e71cd114a6334c3cea
 权威结果：
 
 ```text
-directory: poisson-multiround-strict-npu-v3
+directory: poisson-multiround-strict-npu-v4-move
 status: pass
 iterations: 250
 actual public API calls: 29,250 (= 117 × 250)
@@ -181,42 +215,44 @@ D2H: 5, after loop
 CPU loss: 9.948076248168945 → 6.602624893188477
 NPU final loss: 6.602625370025635
 final CPU/NPU max_abs_diff: 4.76837158203125e-07
-final CPU/NPU max_rel_diff: 1.9883130164544127e-07
+final CPU/NPU max_rel_diff: 8.621329783409237e-08
 strict_npu/runtime profile/target identity: all true
 performance: not measured/published
 runner SHA-256: 0a60b2202d012aa60d7700cc7c356f2d07f2e14a7b917d74d33fed8ec9627e6d
-evidence.json SHA-256: 9f726a7a293f2822b68f029ac6d5e39f58eff7ff7b543cad8f9d391a51a399fd
+evidence.json SHA-256: cc4e7de121b9ffb94e7cb2ae052d75f64f5d3fa42ae6926f80e74d699a881139
 ```
 
-这里的 30/5 是证据 runner 自己执行的显式边界传输次数，不代表 ACL/包装层内的全部
-复制。首轮 profiler 已记录 1,235 次 `aclrtMemcpy`，方向编码和来源仍待专项审计；因此
-不能把这一节表述成“循环内零复制”。其间所用公开 API 还受 v9 的 source/binary 哈希审计
-约束。10 轮先导证据保留在 `poisson-multiround-strict-npu-v1`，未绑定 runner 哈希的
-250 轮 v2 也保留作前序记录，v3 才是当前权威版本。
+这里的 30/5 是证据 runner 自己执行的显式边界传输次数。修复后的 10 轮 profiler 已独立
+确认运行期复制恰好等于这 35 次边界传输，但该结论只覆盖当前 workload 和哈希绑定的 move
+wheel，不能泛化成 AsNumpy 所有程序“循环内零复制”。10 轮先导证据保留在
+`poisson-multiround-strict-npu-v1`，未绑定 runner 哈希的 250 轮 v2 与 v9 wheel 的 v3
+也保留作前序记录，v4-move 才是当前权威版本。
 
-## 首轮 CANN profiler
+## CANN profiler 与复制闭环
 
 独立记录见 [`poisson-ritz-profiler-p0-20260822.md`](poisson-ritz-profiler-p0-20260822.md)。
 10 轮 strict-NPU 采集成功完成：`op_summary` 的 1,170 条记录与 117 × 10 个迁移调用点逐项
 一致，其中 `ApplyGradientDescent` 40 次、`NumPilotSmoothMeanLoss` 20 次，证明两个定向
 补充算子形成了真实 kernel 任务。
 
-同时，runtime 数据库记录 1,235 次 `aclrtMemcpy`、总计 1,594,076 bytes。原始
-`memcpy_direction` 字段本次全部为 `0`，但当前没有足够证据把 profiler 采集编码直接解释为
-ACL 公共枚举方向，因此尚不发布 H2D/D2H/D2D 分类。此次采集只用于正确性、kernel 身份和
-调用次数核验；没有发布性能结论。
+首轮 runtime 数据库记录 1,235 次 `aclrtMemcpy`、总计 1,594,076 bytes。随后用唯一大小的
+H2D/D2D/D2H 最小探针确认：三种已知方向的 compact `memcpy_direction` 均为 `0`，不能按
+ACL 公共枚举解释。源码和精确调用账目定位到 AsNumpy public wrapper 对 private native
+结果的深拷贝；显式 move 修复并重新资格化后，同一 workload 的 kernel 仍为 1,170 条，
+复制降为 35 次、13,472 bytes，恰等于 runner 的 30 H2D + 5 D2H。机器审计的 10 项检查
+全部通过。两轮采集都只用于正确性、kernel 身份、调用与复制核验；没有发布性能结论。
 
 ## 当前边界与下一步
 
 当前可准确表述为：“NumPilot 先扫描接口，只定向补齐两个缺失领域算子；两算子经真实 LLM、
 CANNBot Skill、封存和六门资格化后显式激活；确定性缩小 Poisson/RBF 案例已完成完整动态
-单轮和 250 轮参数驻留设备的 strict-NPU 数值对拍。”
+单轮和 250 轮参数驻留设备的 strict-NPU 数值对拍；同一 10 轮 profiler 已定位并消除
+1,200 次包装层深拷贝，修复后 1,170 条 kernel 不变，只剩 35 次边界复制。”
 
 仍待完成：
 
-1. 用已知方向最小探针解释首轮 profiler 的 1,235 次 `aclrtMemcpy`，并定位包装层复制；
-2. 消除不必要复制后重采 10 轮基线，再为更大配置保留 kernel timeline 与原始样本；
-3. 只有数值、fallback、传输与重复样本门全部通过后才发布性能；
-4. 将 Poisson 专用 qualification/evidence harness 泛化为产品级 runner；
-5. 发布包、许可证/SBOM、演示视频和普通用户可复现环境；
-6. CodeArts 继续按用户决定后置，本阶段不把它当作 LLM 链路前置条件。
+1. 为更大配置保留 kernel timeline、预热与重复原始样本；
+2. 只有数值、fallback、传输与统计门全部通过后才发布性能；
+3. 将 Poisson 专用 qualification/evidence harness 泛化为产品级 runner；
+4. 发布包、许可证/SBOM、演示视频和普通用户可复现环境；
+5. CodeArts 继续按用户决定后置，本阶段不把它当作 LLM 链路前置条件。

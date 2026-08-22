@@ -38,9 +38,12 @@ wheel 的 capability/provenance。
 
 已知重要事实：通用基线审计的 AsNumpy `0.3.1.dev4+g1929a3ba4` 中，`matmul` 会回到
 host 调用 NumPy。因此 `mlp_forward.py` 和 `big_gemm.py` 仍只能用于迁移/诊断展示，不能
-作为 NPU GEMM 加速证据。Poisson P0 另有一个文件与二进制哈希绑定的 v9 wheel：它只在
-float32、非空、rank 1/2 的已测范围内放行修复后的 `outer`/`matmul` ACLNN 路径，不能
-反向扩大通用基线能力声明。
+作为 NPU GEMM 加速证据。Poisson P0 另有一个文件与二进制哈希绑定的 move wheel：它只在
+float32、非空、rank 1/2 的已测范围内放行修复后的 `outer`/`matmul` ACLNN 路径，并把
+私有 native 返回值以显式 one-shot move 包装成公开 `ndarray`。同一 10 轮 profiler 的
+kernel 数保持 1,170，`aclrtMemcpy` 从 1,235 降到 35；这仍不能反向扩大通用基线能力声明，
+也不是性能结论。详见
+[`docs/evidence/poisson-ritz-profiler-p0-20260822.md`](docs/evidence/poisson-ritz-profiler-p0-20260822.md)。
 
 ## 快速运行
 
@@ -310,7 +313,8 @@ python -m numpilot seal-repair \
 
 - callsite/value 级 IR、动态 shape guard 和真正的 CPU/NPU 子图划分；
 - OS 级用户代码隔离与完整网络/文件权限收敛；
-- H2D/D2H 字节数、kernel trace 和 profiler 自动采集；
+- 通用 H2D/D2H 字节数、kernel trace 和 profiler 自动采集；Poisson P0 的定向采集、复制
+  审计与消除已完成；
 - 通用化的多算子 qualification runner、安装事务与自动回滚；Poisson P0 已有受信外部 harness 完成构建、UT、NPU 数值、私有安装和 overlay 激活闭环；
 - 通用 ndarray 结构语义、异步 stream、内存池以及 AsNumpy 插件 ABI。
 

@@ -1,0 +1,27 @@
+{
+  "acl_library": "libascendcl.so",
+  "allocation_bytes": 4096,
+  "copies": [
+    {
+      "acl_kind": 1,
+      "bytes": 4093,
+      "direction": "host_to_device"
+    },
+    {
+      "acl_kind": 3,
+      "bytes": 2053,
+      "direction": "device_to_device"
+    },
+    {
+      "acl_kind": 2,
+      "bytes": 1021,
+      "direction": "device_to_host"
+    }
+  ],
+  "device": 0,
+  "payload_verified": true,
+  "producer": "numpilot-acl-memcpy-direction-probe-v1",
+  "schema_version": "1.0",
+  "script_sha256": "deeb05e795a41164e3e5dd2bbfd8a29725bf20ae388a7b620d7621708b00f4d4",
+  "status": "pass"
+}

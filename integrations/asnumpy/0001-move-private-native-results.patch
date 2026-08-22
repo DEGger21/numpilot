@@ -1,0 +1,82 @@
+diff --git a/bindings/python/bind_utils.cpp b/bindings/python/bind_utils.cpp
+index f774c09..0ff284a 100644
+--- a/bindings/python/bind_utils.cpp
++++ b/bindings/python/bind_utils.cpp
+@@ -20,0 +21,2 @@
++#include <stdexcept>
++#include <utility>
+@@ -25,0 +28 @@
++        // One-argument construction remains an explicit deep copy.
+@@ -26,0 +30,13 @@
++        // Internal Python wrappers may consume a private one-shot native
++        // result.  Keep the marker required and keyword-only so normal
++        // ndarray(existing_array) calls cannot select this overload.
++        .def(
++            py::init([](NPUArray& other, bool move) {
++                if (!move) {
++                    throw std::invalid_argument(
++                        "_move must be true for the internal consuming constructor");
++                }
++                return NPUArray(std::move(other));
++            }),
++            py::arg("other"), py::kw_only(), py::arg("_move"),
++            "Internal consuming constructor; the source must not be used afterwards")
+diff --git a/src/asnumpy/utils.py b/src/asnumpy/utils.py
+index 0854b36..97f7272 100644
+--- a/src/asnumpy/utils.py
++++ b/src/asnumpy/utils.py
+@@ -36,2 +36,9 @@
+-        if isinstance(shape_or_array, _ndarray):
++        if isinstance(shape_or_array, ndarray):
++            # Public construction preserves NumPy-style copy semantics and
++            # must never consume the caller's live array.
+             super().__init__(shape_or_array)
++        elif isinstance(shape_or_array, _ndarray):
++            # Native operators return a private, one-shot _core.ndarray.
++            # Transfer its allocation into the public wrapper instead of
++            # performing a second device-to-device copy for every result.
++            super().__init__(shape_or_array, _move=True)
+diff --git a/tests/asnumpy_tests/creation_tests/test_move_wrapper.py b/tests/asnumpy_tests/creation_tests/test_move_wrapper.py
+new file mode 100644
+--- /dev/null
++++ b/tests/asnumpy_tests/creation_tests/test_move_wrapper.py
+@@ -0,0 +1,39 @@
++"""Regression tests for moving private native results into public ndarrays."""
++
++import numpy
++import pytest
++
++import asnumpy
++from asnumpy import _core
++
++
++def test_operator_and_upload_results_are_public_ndarrays():
++    host = numpy.arange(6, dtype=numpy.float32).reshape(2, 3)
++
++    uploaded = asnumpy.ndarray.from_numpy(host)
++    result = asnumpy.add(uploaded, uploaded)
++
++    assert type(uploaded) is asnumpy.ndarray
++    assert type(result) is asnumpy.ndarray
++    numpy.testing.assert_array_equal(uploaded.to_numpy(), host)
++    numpy.testing.assert_array_equal(result.to_numpy(), host + host)
++
++
++def test_public_ndarray_constructor_keeps_deep_copy_semantics():
++    expected = numpy.array([1.0, 2.0, 3.0], dtype=numpy.float32)
++    source = asnumpy.ndarray.from_numpy(expected)
++
++    copied = asnumpy.ndarray(source)
++
++    numpy.testing.assert_array_equal(source.to_numpy(), expected)
++    numpy.testing.assert_array_equal(copied.to_numpy(), expected)
++
++
++def test_internal_move_constructor_rejects_false_marker():
++    expected = numpy.array([1.0, 2.0, 3.0], dtype=numpy.float32)
++    raw = _core.ndarray.from_numpy(expected)
++
++    with pytest.raises(ValueError, match="_move must be true"):
++        _core.ndarray(raw, _move=False)
++
++    numpy.testing.assert_array_equal(raw.to_numpy(), expected)

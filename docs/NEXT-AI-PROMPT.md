@@ -1,11 +1,12 @@
 # NumPilot 下一次 AI 接入 Prompt
 
-> **已过时（2026-08-21）**：不要照搬下方 `/home/lixing` 路径、106 tests 或旧 matmul
-> 结论。当前工作树位于 `/home/ma-user/work/numpilot`，全量回归为 `355 passed`；权威续接
+> **已过时（2026-08-22）**：不要照搬下方 `/home/lixing` 路径、106 tests 或旧 matmul
+> 结论。当前工作树位于 `/home/ma-user/work/numpilot`；权威续接
 > 入口是 `docs/P0-LLM-CANNBOT-RUN-20260821.md`、
 > `docs/evidence/poisson-ritz-p0-npu-20260821.md` 和
-> `docs/COMPETITION-GAP-REVIEW-20260821.md`。当前下一优先级是 profiler、放大规模和重复
-> 样本，CodeArts 按用户决定后置。
+> `docs/COMPETITION-GAP-REVIEW-20260821.md`。缩小案例的 profiler 与包装层复制闭环已经
+> 完成；当前全量回归为 `369 passed`，下一优先级是放大规模、预热和重复样本，CodeArts
+> 按用户决定后置。
 
 > 用法：将本文从“你现在接手 NumPilot 项目”开始完整复制给下一次接入的 AI。
 

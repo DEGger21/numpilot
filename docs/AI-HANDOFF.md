@@ -1,14 +1,16 @@
 # NumPilot AI 续接手册
 
-> **当前续接提示（2026-08-21）**：下方 `/home/lixing`、106 tests 和旧 capability 内容是
-> 历史设计背景，不是当前状态。权威目录是 `/home/ma-user/work/numpilot`，全量回归为
-> `355 passed`。Poisson 两个缺口算子已由用户 LLM + 固定 CANNBot Skill 定向生成、repair、
-> 封存并通过 v5 六门资格化；限定 profile 的 AsNumpy v9 `outer/matmul` 已走 NPU；完整动态
-> 一轮 117 个调用点和 250 轮设备驻留对拍均通过 strict-NPU。先读
+> **当前续接提示（2026-08-22）**：下方 `/home/lixing`、106 tests 和旧 capability 内容是
+> 历史设计背景，不是当前状态。权威目录是 `/home/ma-user/work/numpilot`。Poisson 两个
+> 缺口算子已由用户 LLM + 固定 CANNBot Skill 定向生成、repair、封存并通过
+> 六门资格化；限定 profile 的 AsNumpy `outer/matmul` 已走 NPU；完整动态一轮 117 个调用点
+> 和 250 轮设备驻留对拍均通过 strict-NPU。包装层逐返回值深拷贝也已定位并消除，同一
+> 10 轮 profiler 的 `aclrtMemcpy` 从 1,235 降到 35，kernel 数保持 1,170。先读
 > [`P0-LLM-CANNBOT-RUN-20260821.md`](P0-LLM-CANNBOT-RUN-20260821.md)、
 > [`evidence/poisson-ritz-p0-npu-20260821.md`](evidence/poisson-ritz-p0-npu-20260821.md) 和
 > [`COMPETITION-GAP-REVIEW-20260821.md`](COMPETITION-GAP-REVIEW-20260821.md)。下一优先级是
-> profiler/放大规模/重复样本，不能先发布性能；CodeArts 仍按用户决定后置。
+> 放大规模、预热和重复样本，不能先发布性能；当前全量回归为 `369 passed`，CodeArts
+> 仍按用户决定后置。
 
 > 最后更新：2026-07-18（Asia/Shanghai）  
 > 权威工作目录：`/home/lixing/numpilot`  

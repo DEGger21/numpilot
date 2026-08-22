@@ -1,0 +1,112 @@
+{
+  "accounting": {
+    "expected_after": "h2d + d2h = 35",
+    "expected_before": "runtime_calls + 2*h2d + d2h = 1235",
+    "expected_eliminated": "runtime_calls + h2d = 1200"
+  },
+  "after": {
+    "bytes": 13472,
+    "max_bytes": 2304,
+    "min_bytes": 4,
+    "profiler_direction_codes": [
+      0
+    ],
+    "rows": 35,
+    "size_histogram": {
+      "1152": 1,
+      "128": 7,
+      "2304": 4,
+      "256": 7,
+      "36": 11,
+      "4": 5
+    }
+  },
+  "artifacts": {
+    "after_runtime_db_sha256": "6283c653c63d4ca5726515330a736a0e9cf8dfe895f710f4c3ca81b8a594ed65",
+    "after_task_db_sha256": "8319903565f7ebe8470b5cbfeada73f5c5a5f1c0af82f85bd790b2c47de0d077",
+    "after_utils_sha256": "1b2981456b2e4258b2f3f9611a07c98dc5a79acb8d67d35e3f2595af13911435",
+    "before_runtime_db_sha256": "fe2e13e11a6a206f8c8b3d61d554fe5bb8ed544655f8ed7b0f690f78369dd006",
+    "before_utils_sha256": "fd94c0254d9b02dbd55510e88e345606e69a84903a4aceeb238b435bea14beed",
+    "direction_probe_analysis_sha256": "6144b0ff80f2edae6d5d8f266f0b6f9df500bdeab82d8729a9c1390c5ffed316",
+    "iteration_evidence_sha256": "77165cd7535f2a7cdfae39eea88d1c0989483d6b42ca3ccf96117275516d4a8c",
+    "wheel_sha256": "afe845c45d17e7f5cd619831f555fba3c2344296ffe02f1d251017b04cf0282d"
+  },
+  "before": {
+    "bytes": 1594076,
+    "max_bytes": 2304,
+    "min_bytes": 4,
+    "profiler_direction_codes": [
+      0
+    ],
+    "rows": 1235,
+    "size_histogram": {
+      "1152": 262,
+      "128": 44,
+      "2304": 548,
+      "256": 54,
+      "36": 278,
+      "4": 49
+    }
+  },
+  "capability_audit_id": "asnumpy-0.1.dev106-g21368abf9-poisson-move-init4f4e8083-math62e0ba09-direct4479c588-utils1b298145-core4465ce6e-v1+qualification-1c5aa2ae5c4ebf2d",
+  "checks": {
+    "after_boundary_copy_accounting": true,
+    "before_copy_accounting": true,
+    "eliminated_copy_accounting": true,
+    "kernel_api_counts_match_runtime_trace": true,
+    "kernel_total_matches_runtime_calls": true,
+    "no_unknown_kernel_prefixes": true,
+    "numerical_comparison_ok": true,
+    "profiler_direction_field_nondiscriminating": true,
+    "runtime_profile_ok": true,
+    "runtime_target_integrity_ok": true
+  },
+  "direction_probe_conclusion": "compact profiler direction field is not sufficient to distinguish H2D/D2D/D2H",
+  "eliminated": {
+    "bytes": 1580604,
+    "copies": 1200,
+    "copy_reduction_ratio": 0.97165991902834
+  },
+  "explicit_boundary_transfers": {
+    "d2h": 5,
+    "h2d": 30
+  },
+  "iterations": 10,
+  "kernel_tasks": {
+    "by_api": {
+      "add": 110,
+      "apply_gradient_descent": 40,
+      "clip": 30,
+      "divide": 140,
+      "exp": 20,
+      "matmul": 100,
+      "multiply": 430,
+      "negative": 50,
+      "outer": 140,
+      "smooth_l1_loss": 20,
+      "sqrt": 20,
+      "subtract": 70
+    },
+    "total": 1170,
+    "unknown_prefixes": {}
+  },
+  "numerical": {
+    "atol": 1e-05,
+    "consistent": true,
+    "failure_index": null,
+    "failure_path": null,
+    "max_abs_diff": 2.2351741790771484e-08,
+    "max_rel_diff": 1.844382381932519e-06,
+    "n_elements": 37,
+    "reason": null,
+    "rtol": 0.0001
+  },
+  "performance": {
+    "published": false,
+    "reason": "copy-elimination correctness audit; not a repeated performance benchmark"
+  },
+  "producer": "numpilot-poisson-profiler-copy-audit-v1",
+  "runtime_calls": 1170,
+  "schema_version": "1.0",
+  "status": "pass"
+}

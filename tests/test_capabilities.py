@@ -12,6 +12,8 @@ from numpilot.backends.npu import (
     P0_ASNUMPY_AUDIT_ID,
     P0_ASNUMPY_VERSION,
     P0_LINALG_ASNUMPY_AUDIT_ID,
+    P0_MOVE_ASNUMPY_AUDIT_ID,
+    P0_MOVE_ASNUMPY_VERSION,
 )
 from numpilot.capabilities import (
     AnalysisCallsiteProfile,
@@ -158,6 +160,46 @@ def test_p0_linalg_wheel_is_hash_bound_and_profile_scoped(monkeypatch):
     assert not subtract.strict_npu
     assert subtract.signature_variants == (OperatorSignature(positional_args=2),)
     assert "numel>=1" in subtract.constraints
+
+
+def test_p0_move_wheel_is_hash_bound_and_keeps_linalg_scope(monkeypatch):
+    from numpilot.backends import npu
+
+    monkeypatch.setattr(
+        npu, "_p0_move_runtime_identity_matches", lambda module: True
+    )
+    backend = NpuBackend(_fake_asnumpy(
+        version=P0_MOVE_ASNUMPY_VERSION,
+        add=_callable,
+        outer=_callable,
+        matmul=_callable,
+        subtract=_callable,
+    ))
+
+    manifest = backend.capability_manifest(["add", "outer", "matmul", "subtract"])
+
+    assert manifest.audit_id == P0_MOVE_ASNUMPY_AUDIT_ID
+    assert manifest.operators["add"].strict_npu
+    for name in ("outer", "matmul", "subtract"):
+        capability = manifest.operators[name]
+        assert capability.provenance is ExecutionProvenance.NATIVE_NPU
+        assert not capability.strict_npu
+        assert capability.signature_variants == (OperatorSignature(positional_args=2),)
+
+
+def test_p0_move_version_without_exact_runtime_hashes_remains_unaudited(monkeypatch):
+    from numpilot.backends import npu
+
+    monkeypatch.setattr(
+        npu, "_p0_move_runtime_identity_matches", lambda module: False
+    )
+    manifest = NpuBackend(_fake_asnumpy(
+        version=P0_MOVE_ASNUMPY_VERSION,
+        add=_callable,
+    )).capability_manifest(["add"])
+
+    assert manifest.audit_id == "unaudited-asnumpy-version"
+    assert manifest.operators["add"].provenance is ExecutionProvenance.UNKNOWN
 
 
 def test_matmul_fallback_profile_survives_runtime_lookup_failure():

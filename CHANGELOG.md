@@ -6,6 +6,8 @@
 - 新增 `numpilot paths` 与 `NUMPILOT_STATE_HOME`、`NUMPILOT_RUNS_DIR`、
   `NUMPILOT_REPORTS_DIR` 覆盖；
 - 整理可公开的 heat-diffusion 与 Poisson strict-NPU 精选证据；
+- 增加 CANN memcpy 方向探针、Poisson profiler 复制审计和哈希绑定的 AsNumpy move wheel
+  capability；同一 10 轮 workload 的 `aclrtMemcpy` 从 1,235 降至 35；
 - 增加开源许可证、贡献、安全、第三方依赖和证据存储说明。
 
 ## 0.1.0

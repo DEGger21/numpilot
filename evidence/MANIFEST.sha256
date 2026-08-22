@@ -1,5 +1,5 @@
 51b0708c0e0542f36fc4a04629c446174d467f41b6f7527e37b2deb6ba343929  evidence/ARCHIVE_MANIFEST.sha256
-cd5197e7429946b1d92dfa0729410585b6afd121bbfaf3f3537277f6c3746674  evidence/README.md
+620fa09c2ffd5e4d0e9c46e331671a321e95fc9635d255c6f74872c1738099c4  evidence/README.md
 4454626f1f497beeac7684086da48d2e039ce34ffbd5798a2fb8b63714531fcf  evidence/heat-diffusion-20260813/bench/benchmark_report.md
 d23ab39bde510ec3bb47b198a1e03b3107e556d9e08b365e71b9150fc407f89f  evidence/heat-diffusion-20260813/bench/cpu_baseline.json
 2614bb2fa529c84ab355ba9d445c1527d8aee0fb752dfcae1162935f23b1e440  evidence/heat-diffusion-20260813/bench/cpu_baseline.npy
@@ -11,6 +11,19 @@ f1713c39aa9865b781dd0cb53dcab3c83e3278b9cb833936e491a36571f1b2bf  evidence/heat-
 2bb8661b996102c931fb94801347cc7615f6e98880e1a5a95f8bd9629013b06e  evidence/heat-diffusion-20260813/shim/report.md
 cb282ac2b66d7d6734c3fb354db792b28cf23ab29fbc16d5cfd8bd542bedeb1e  evidence/poisson-ritz-p0-20260821/LICENSE
 d20b44373fbe259568f2988df34ccd59d73082226ffbc3a5a4071b99e8d9050b  evidence/poisson-ritz-p0-20260821/NOTICE.md
+45e5b4fb9e12fac5a6bff2b31d5179d8acf621358014402ae1b1bd9ce47d76be  evidence/poisson-ritz-p0-20260821/profiler-copy-elision/after/README.md
+77165cd7535f2a7cdfae39eea88d1c0989483d6b42ca3ccf96117275516d4a8c  evidence/poisson-ritz-p0-20260821/profiler-copy-elision/after/evidence.json
+8319903565f7ebe8470b5cbfeada73f5c5a5f1c0af82f85bd790b2c47de0d077  evidence/poisson-ritz-p0-20260821/profiler-copy-elision/after/rts_track.db
+6283c653c63d4ca5726515330a736a0e9cf8dfe895f710f4c3ca81b8a594ed65  evidence/poisson-ritz-p0-20260821/profiler-copy-elision/after/runtime.db
+2022d4c036cc8816c30bb292f7c6e8aa2c32d96c449cab319c17e8003c4407d1  evidence/poisson-ritz-p0-20260821/profiler-copy-elision/after/sample.json
+77664cdfa2bb89b895427820c539e95fc9d3e64046e981ef7433f45f8171beaa  evidence/poisson-ritz-p0-20260821/profiler-copy-elision/audit/README.md
+1ed5e2771549c55fcd29d327c26c8fc89e6434ea68705a5b5eaf8a503a24a48a  evidence/poisson-ritz-p0-20260821/profiler-copy-elision/audit/evidence.json
+6144b0ff80f2edae6d5d8f266f0b6f9df500bdeab82d8729a9c1390c5ffed316  evidence/poisson-ritz-p0-20260821/profiler-copy-elision/direction-probe/analysis.json
+a69f4728d535b6ccf1fc5bf4b5ba91cae5cecb03040ef09f3d6dcd93c9a3bf22  evidence/poisson-ritz-p0-20260821/profiler-copy-elision/direction-probe/probe-evidence.json
+c4904ca4ebee37909ff9a9da56fa3427a34df274548cc62e3c6ccb4aa0c455ac  evidence/poisson-ritz-p0-20260821/profiler-copy-elision/direction-probe/runtime.db
+3935bf9b2d8d3712eb48aef71eda91ad79fa71f2591827da4ea06e2f7139d68a  evidence/poisson-ritz-p0-20260821/profiler-copy-elision/qualification-v6-move/qualification-summary.json
+a334e5186b40a4598d5246b3e319fda7811837f32042bfb84ea4018c9a61207c  evidence/poisson-ritz-p0-20260821/profiler-copy-elision/qualification-v6-move/runtime/base-capability-manifest.json
+2fec30e42fd0ad5baa35db2d4dab2613dbf39f97926796be551f6a9bfe42fd24  evidence/poisson-ritz-p0-20260821/profiler-copy-elision/qualification-v6-move/runtime/opp-manifest.json
 00a29d59ca814972882ef583f9815a8c65898b7bc89351a5ebfe9b35a22af9fe  evidence/poisson-ritz-p0-20260821/profiler/evidence-run/README.md
 f8b286799feebf1c4540871064574a93fe28b6cd1b518b620e1440b6c0601256  evidence/poisson-ritz-p0-20260821/profiler/evidence-run/evidence.json
 26e7b060f0ba2ac482ae54e36a6397d1120d7b310007e7764df01d3365d20c86  evidence/poisson-ritz-p0-20260821/profiler/mindstudio_profiler_output/README.txt
@@ -92,3 +105,5 @@ a73216d5dc4b6d787f5e90f140df0802436f3997fd258bde0506afafd6aa6767  evidence/poiss
 db0d7b82536e2725c2caa38e4ef9b489d14c0c1c54f19774a8c90f8721ad9410  evidence/poisson-ritz-p0-20260821/runs/poisson-full-iteration-strict-npu-v2/report.md
 6d8f3df9782ee97a4f72ac8e932bf86a4549deca77928e27858b8d025d58375d  evidence/poisson-ritz-p0-20260821/runs/poisson-multiround-strict-npu-v3/README.md
 9f726a7a293f2822b68f029ac6d5e39f58eff7ff7b543cad8f9d391a51a399fd  evidence/poisson-ritz-p0-20260821/runs/poisson-multiround-strict-npu-v3/evidence.json
+64cf2b21b406570033b97aecdfe464735866ac79aefe463315b39218eb069eda  evidence/poisson-ritz-p0-20260821/runs/poisson-multiround-strict-npu-v4-move/README.md
+cc4e7de121b9ffb94e7cb2ae052d75f64f5d3fa42ae6926f80e74d699a881139  evidence/poisson-ritz-p0-20260821/runs/poisson-multiround-strict-npu-v4-move/evidence.json

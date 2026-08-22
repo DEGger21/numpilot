@@ -65,3 +65,21 @@ def test_curated_evidence_preserves_fail_closed_verdicts():
     assert profiler["strict_npu"] is True
     assert profiler["iterations"] == 10
     assert profiler["total_runtime_calls"] == 1170
+
+    move_multiround = _json(
+        "poisson-ritz-p0-20260821/runs/"
+        "poisson-multiround-strict-npu-v4-move/evidence.json"
+    )
+    assert move_multiround["status"] == "pass"
+    assert move_multiround["strict_npu"] is True
+    assert move_multiround["iterations"] == 250
+    assert move_multiround["total_runtime_calls"] == 29250
+
+    copy_audit = _json(
+        "poisson-ritz-p0-20260821/profiler-copy-elision/audit/evidence.json"
+    )
+    assert copy_audit["status"] == "pass"
+    assert copy_audit["before"]["rows"] == 1235
+    assert copy_audit["after"]["rows"] == 35
+    assert copy_audit["eliminated"]["copies"] == 1200
+    assert all(copy_audit["checks"].values())

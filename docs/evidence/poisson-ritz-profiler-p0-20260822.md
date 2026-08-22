@@ -1,4 +1,4 @@
-# Poisson Ritz P0：首轮 CANN profiler 记录
+# Poisson Ritz P0：CANN profiler 与包装层复制闭环
 
 日期：2026-08-22 UTC
 
@@ -6,7 +6,51 @@
 > [`evidence/poisson-ritz-p0-20260821/profiler/`](../../evidence/poisson-ritz-p0-20260821/profiler/)；
 > 文中的绝对路径是原始裸金属运行身份。
 
-## 结论快照
+> 修复后公开证据：
+> [`evidence/poisson-ritz-p0-20260821/profiler-copy-elision/`](../../evidence/poisson-ritz-p0-20260821/profiler-copy-elision/)；
+> `profiler/` 保留修复前基线，不覆盖历史证据。
+
+## 更新结论：复制问题已闭环
+
+已知方向探针、AsNumpy 源码定位、one-shot move 修复、重新资格化和同一 10 轮 profiler
+重采均已完成。修复前后使用相同迁移源码、117 次/轮公开 API 调用和数值门：
+
+| 项目 | 修复前 | 修复后 |
+|---|---:|---:|
+| 迭代 | 10 | 10 |
+| 公开 API / kernel tasks | 1,170 / 1,170 | 1,170 / 1,170 |
+| `aclrtMemcpy` | 1,235 | 35 |
+| 复制字节 | 1,594,076 | 13,472 |
+| CPU/NPU 最大绝对误差 | `2.2351741790771484e-08` | `2.2351741790771484e-08` |
+| strict-NPU / profile / target identity | 全部通过 | 全部通过 |
+
+修复后的 35 次复制恰等于 runner 循环前 30 次 H2D 与循环后 5 次 D2H。被消除的 1,200 次
+由每次 1,170 个 native 算子结果包装时的深拷贝，以及 30 个上传结果由 private native
+对象包装为 public `ndarray` 时的深拷贝组成；总计减少 1,580,604 bytes。
+
+最小探针分别执行了大小唯一的 4,093-byte H2D、2,053-byte D2D 和 1,021-byte D2H，回传
+字节逐项一致，但 compact `MemcpyInfo.memcpy_direction` 三条记录仍全部为 `0`。因此该字段
+在当前 CANN 9.0 采集格式中不具方向区分力；本次闭环依赖精确大小、调用账目和修复前后
+差分，不把 profiler 的 `0` 强行映射成 ACL 公共枚举。
+
+修复保持 public `ndarray(existing_public_array)` 的深拷贝语义，只允许 Python 包装层以
+必需且 keyword-only 的 `_move=True` 消费 private `_core.ndarray` 临时结果。新 wheel 又通过
+19 个选定真机测试、v6 六门资格化、10 轮重采和 250 轮 29,250 次调用回归。
+
+关键身份：
+
+```text
+AsNumpy wheel SHA-256: afe845c45d17e7f5cd619831f555fba3c2344296ffe02f1d251017b04cf0282d
+capability overlay SHA-256: 1c5aa2ae5c4ebf2db8d542f24defd9c7ca42ccc4d87b6e10fafc60c4eb708789
+10-round evidence SHA-256: 77165cd7535f2a7cdfae39eea88d1c0989483d6b42ca3ccf96117275516d4a8c
+after runtime.db SHA-256: 6283c653c63d4ca5726515330a736a0e9cf8dfe895f710f4c3ca81b8a594ed65
+after rts_track.db SHA-256: 8319903565f7ebe8470b5cbfeada73f5c5a5f1c0af82f85bd790b2c47de0d077
+```
+
+机器审计的 10 项账目、kernel、数值和身份检查全部为 `true`。这是一份复制消除正确性
+证据，不包含预热或重复耗时样本，`performance.published` 明确为 `false`。
+
+## 首轮基线结论快照（修复前）
 
 首轮 `msprof` 采集和文本导出已成功完成。采集对象不是性能发布配置，而是 10 轮
 确定性缩小 Poisson/RBF strict-NPU 正确性运行；对应 evidence 状态为 `pass`，10 轮共
@@ -21,8 +65,9 @@
 35 次复制。CANN 原始 `MemcpyInfo.memcpy_direction` 在本次采集中全部为数值 `0`；在没有
 把这个采集字段的编码与具体 H2D/D2H/D2D 语义可靠闭环前，本记录不猜测其方向。
 
-因此当前可以证明“117 个调用点每轮均形成设备 kernel，两个补充算子真实执行，10 轮数值
-对拍通过”；仍不能据此发布端到端性能、零隐式复制或设备驻留零复制结论。
+因此这份修复前基线可以证明“117 个调用点每轮均形成设备 kernel，两个补充算子真实执行，
+10 轮数值对拍通过”；它本身不能证明端到端性能、零隐式复制或设备驻留零复制。本文开头
+的修复后证据完成了复制闭环，但仍不发布性能结论。
 
 ## 证据位置与采集身份
 
@@ -133,7 +178,7 @@ ACL API 汇总还记录：
 
 这里的 ACL API 时间与 kernel task time 属于不同统计层级，不能相加当作端到端时间。
 
-## Memcpy 事实与未决边界
+## 修复前 Memcpy 事实与当时的未决边界
 
 原始 `host/sqlite/runtime.db` 的 `MemcpyInfo` 表记录：
 
@@ -159,11 +204,11 @@ distinct memcpy_direction: {0}
 ACL 头文件中的 `aclrtMemcpyKind` 确实按 HostToHost、HostToDevice、DeviceToHost、
 DeviceToDevice 顺序定义；但 profiler 的 compact `MemcpyInfo` 解析器只是原样保存采集字段，
 没有在本次导出中给出方向文字。不能仅凭两个不同接口都出现数值 `0` 就认定语义相同。
-下一步需要用一个已知单次 H2D/D2H/D2D 的最小探针，或找到对应采集协议的权威枚举映射，
-再对 1,235 条复制分类。
+后续已用已知单次 H2D/D2D/D2H 探针确认三者仍全部记录为 `0`，因此该字段不能承担方向
+分类；详见本文开头的更新结论。
 
 无论最终方向如何，1,235 已显著大于 runner 的 35 次显式边界传输，说明包装层/ACLNN
-调用链中的复制必须被继续审计。它是当前性能发布前的高优先级问题。
+调用链中存在额外复制。后续精确定位与重采已完成，这一高优先级问题现已闭环。
 
 ## 原始文件哈希
 
@@ -184,8 +229,8 @@ runtime.db:        fe2e13e11a6a206f8c8b3d61d554fe5bb8ed544655f8ed7b0f690f78369dd
 
 ## 后续门槛
 
-1. 完成已知方向的 memcpy 最小探针，解释 1,235 条复制的方向和来源；
-2. 审计 AsNumpy `ndarray` 包装/构造是否在每个返回值上产生 D2D 深拷贝；
-3. 若确认，消除不必要复制后重新采集同一 10 轮基线；
+1. ~~完成已知方向的 memcpy 最小探针，解释采集字段边界~~（已完成）；
+2. ~~审计 AsNumpy `ndarray` 包装/构造的逐返回值深拷贝~~（已完成）；
+3. ~~消除不必要复制后重新采集同一 10 轮基线~~（已完成，1,235 → 35）；
 4. 再扩到合理规模、预热和多次重复样本；
 5. 数值、fallback、传输和统计门都通过后，才形成性能结论。

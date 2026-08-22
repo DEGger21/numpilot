@@ -21,7 +21,12 @@
   构建/测试日志、资格化 JSON、overlay 和 OPP manifest；不包含可重建二进制运行树；
 - `runs/poisson-full-iteration-strict-npu-v2/`：117 调用点完整动态一轮；
 - `runs/poisson-multiround-strict-npu-v3/`：250 轮、29,250 次公开 API 调用的数值证据；
-- `profiler/`：10 轮 profiler 的配置、导出 CSV、`runtime.db` 和同轮数值证据。
+- `runs/poisson-multiround-strict-npu-v4-move/`：消除包装层深拷贝后重新执行的 250 轮
+  strict-NPU 数值与对象生命周期回归；
+- `profiler/`：修复前 10 轮 profiler 的配置、导出 CSV、`runtime.db` 和同轮数值证据；
+- `profiler-copy-elision/`：已知方向最小探针、修复后 `runtime.db`/`rts_track.db`、新轮
+  qualification 身份和机器可审计的修复前后对比。1,170 条 kernel 保持不变，
+  `aclrtMemcpy` 从 1,235 降至 35；本证据不发布性能结果。
 
 完整解释见 [`docs/evidence/poisson-ritz-p0-npu-20260821.md`](../docs/evidence/poisson-ritz-p0-npu-20260821.md)
 和 [`docs/evidence/poisson-ritz-profiler-p0-20260822.md`](../docs/evidence/poisson-ritz-profiler-p0-20260822.md)。
