@@ -1,0 +1,18 @@
+{
+  "base_manifest_sha256": "57dcdc3b2557fb633ca745cd9b83b3411c5b44691e80fb8d4e8229a97878271f",
+  "entries": [
+    {
+      "evidence_path": "apply_gradient_descent/qualification.json",
+      "evidence_sha256": "18c1ddc1674f734ab7efb4cf86e056d3904375750b50bf20c676851e03043723",
+      "registry_key": "apply_gradient_descent"
+    },
+    {
+      "evidence_path": "smooth_l1_loss/qualification.json",
+      "evidence_sha256": "fdaf5604fb24c033b919148ff294f212e8187f0d2ae2198c791d370c85dc0b08",
+      "registry_key": "smooth_l1_loss"
+    }
+  ],
+  "parent_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "revision": 1,
+  "schema_version": 1
+}

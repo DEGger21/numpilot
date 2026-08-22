@@ -9,6 +9,7 @@ from numpilot.agents.verification import VerificationAgent
 from numpilot.backends.base import select_backend
 from numpilot.engines.ast_rewrite import AstRewriteEngine
 from numpilot.engines.llm import LlmEngine
+from numpilot.paths import default_benchmark_dir
 
 
 def _make_engine(name):
@@ -217,12 +218,13 @@ def _render_md(summary, result) -> str:
 
     # 性能对比交给两个独立 bench 程序，并由 provenance gate 决定是否可发布。
     src = summary.get("source_path", "<file>")
+    bench_dir = default_benchmark_dir()
     lines.append("")
     lines.append("## 性能对比")
     lines.append("性能对比拆成两个独立进程，记录实际 BLAS 线程并避免设置互相污染。"
                  "只有 strict-NPU provenance 通过时才发布加速比:")
-    lines.append(f"1. `python -m numpilot bench-cpu {src} --out out_demo`")
-    lines.append(f"2. `python -m numpilot bench-npu {src} --out out_demo`")
+    lines.append(f"1. `python -m numpilot bench-cpu {src} --out {bench_dir}`")
+    lines.append(f"2. `python -m numpilot bench-npu {src} --out {bench_dir}`")
 
     plan = result.get("plan")
     if plan is not None:

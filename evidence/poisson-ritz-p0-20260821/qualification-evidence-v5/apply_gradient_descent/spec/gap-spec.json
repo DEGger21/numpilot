@@ -1,0 +1,74 @@
+{
+  "api_name": "apply_gradient_descent",
+  "asnumpy_api": "asnumpy.apply_gradient_descent",
+  "callsites": [
+    {
+      "call_expr": "operator.apply_gradient_descent(<arg0>, <arg1>, <arg2>)",
+      "col_offset": 18,
+      "lineno": 253,
+      "qualified_api": "operator.apply_gradient_descent",
+      "reason": "explicit OperatorSpec requires six-gate qualification"
+    },
+    {
+      "call_expr": "operator.apply_gradient_descent(<arg0>, <arg1>, <arg2>)",
+      "col_offset": 20,
+      "lineno": 254,
+      "qualified_api": "operator.apply_gradient_descent",
+      "reason": "explicit OperatorSpec requires six-gate qualification"
+    },
+    {
+      "call_expr": "operator.apply_gradient_descent(<arg0>, <arg1>, <arg2>)",
+      "col_offset": 20,
+      "lineno": 259,
+      "qualified_api": "operator.apply_gradient_descent",
+      "reason": "explicit OperatorSpec requires six-gate qualification"
+    },
+    {
+      "call_expr": "operator.apply_gradient_descent(<arg0>, <arg1>, <arg2>)",
+      "col_offset": 16,
+      "lineno": 264,
+      "qualified_api": "operator.apply_gradient_descent",
+      "reason": "explicit OperatorSpec requires six-gate qualification"
+    }
+  ],
+  "cann_version": "9.0.0",
+  "dtype_rules": [
+    "float32"
+  ],
+  "gap_id": "apply_gradient_descent-60faa0867f07e18d",
+  "qualified_api": "operator.apply_gradient_descent",
+  "reference_cases": [],
+  "route": "ascendc_registry_candidate",
+  "route_decisions": [
+    {
+      "reason": "explicit OperatorSpec route; execution remains gated",
+      "route": "ascendc_registry_candidate",
+      "status": "selected_for_qualification"
+    },
+    {
+      "reason": "numpilot://local-llm-generation/operator/apply_gradient_descent",
+      "route": "direct_generation",
+      "status": "custom_generation_candidate"
+    },
+    {
+      "reason": "CANN-Open-Software-License-Agreement-2.0",
+      "route": "license_review",
+      "status": "declared"
+    }
+  ],
+  "schema_version": 1,
+  "semantic_source": "operator-spec:apply_gradient_descent@1;oracle=apply_gradient_descent_oracle",
+  "shape_rules": [
+    "rank>=1",
+    "contiguous"
+  ],
+  "signature_variants": [
+    {
+      "keyword_args": [],
+      "positional_args": 3
+    }
+  ],
+  "source_path": "examples/poisson_ritz_step.py",
+  "source_sha256": "771fc8b5f0853454a17aadfdcfccb5da8162a42491ad06502a3a3493a736d0d3",
+  "target_soc": "ascend910b"
+}

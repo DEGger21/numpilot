@@ -12,7 +12,7 @@ set -euo pipefail
 
 # ── 参数解析 ──────────────────────────────────────────────
 FILE="examples/elementwise_forward.py"
-OUT="out_demo"
+OUT_OVERRIDE="${NUMPILOT_DEMO_OUT:-}"
 FULL=0
 ENGINE_ARGS=()
 ENGINE_LABEL="ast(确定性改写)"
@@ -28,6 +28,15 @@ done
 PY="${NUMPILOT_PY:-python3}"
 PROJECT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 cd "$PROJECT_DIR" || exit 1
+
+# 默认写到仓库外的 NumPilot 状态目录；显式 NUMPILOT_DEMO_OUT 可覆盖。
+if [ -n "$OUT_OVERRIDE" ]; then
+  DEMO_ROOT="$OUT_OVERRIDE"
+else
+  DEMO_ROOT="$("$PY" -m numpilot paths --get demo)"
+fi
+MIGRATION_OUT="$DEMO_ROOT/migration"
+BENCH_OUT="$DEMO_ROOT/benchmark"
 
 # 自定义 OPP 的 op_api 动态库只注入本进程，不修改系统配置。
 CUSTOM_OP_API_LIB="${ASCEND_OPP_PATH:-/usr/local/Ascend/cann/opp}/vendors/customize/op_api/lib"
@@ -52,7 +61,7 @@ echo "NumPilot 一键演示"
 echo "  python : $PY"
 echo "  网络   : $FILE"
 echo "  引擎   : $ENGINE_LABEL"
-echo "  输出   : $OUT/"
+echo "  输出   : $DEMO_ROOT/"
 
 # ── 1) 环境自检:证明真机 asnumpy / CANN / NPU 就位 ──────────
 banner "1/4 环境自检 (doctor)"
@@ -60,25 +69,25 @@ run "$PY" -m numpilot doctor --backend npu
 
 # ── 2) 迁移证明:np.* → ap.*, 真机跑通, 数值一致, asnumpy 证据 ─
 banner "2/4 迁移证明 (migrate, 引擎=$ENGINE_LABEL)"
-run "$PY" -m numpilot migrate "$FILE" --backend npu --out out_npu "${ENGINE_ARGS[@]}"
+run "$PY" -m numpilot migrate "$FILE" --backend npu --out "$MIGRATION_OUT" "${ENGINE_ARGS[@]}"
 
 # ── 3) CPU 基线：固定 1 线程，并由报告记录真实线程池。────────
 banner "3/4 CPU 基线 (bench-cpu, BLAS 线程=1)"
-run "$PY" -m numpilot bench-cpu "$FILE" --out "$OUT"
+run "$PY" -m numpilot bench-cpu "$FILE" --out "$BENCH_OUT"
 
 # ── 4) strict-NPU：fallback/unknown 直接失败，不发布加速比。──
 banner "4/4 strict-NPU 对比 (引擎=$ENGINE_LABEL)"
-run "$PY" -m numpilot bench-npu "$FILE" --out "$OUT" "${ENGINE_ARGS[@]}"
+run "$PY" -m numpilot bench-npu "$FILE" --out "$BENCH_OUT" "${ENGINE_ARGS[@]}"
 
 # ── 可选：保存不限制 BLAS 的第二种 CPU 口径。────────────────
 if [ "$FULL" -eq 1 ]; then
   banner "附加 numpy 不主动限制 BLAS 的对照 (--cpu-threads 0)"
-  run "$PY" -m numpilot bench-cpu "$FILE" --out "${OUT}_full" --cpu-threads 0
-  run "$PY" -m numpilot bench-npu "$FILE" --out "${OUT}_full"
+  run "$PY" -m numpilot bench-cpu "$FILE" --out "$DEMO_ROOT/benchmark-full" --cpu-threads 0
+  run "$PY" -m numpilot bench-npu "$FILE" --out "$DEMO_ROOT/benchmark-full"
   echo
   echo "对照说明:报告会记录实际 BLAS 线程；不要用逻辑 CPU 数推测线程池大小。"
 fi
 
 echo
-echo "✅ 演示完成。请以 $OUT/npu_benchmark.json 与 benchmark_report.md 为准；"
+echo "✅ 演示完成。请以 $BENCH_OUT/npu_benchmark.json 与 benchmark_report.md 为准；"
 echo "   只有 performance_valid=true 时才能引用其中的 NPU 加速比。"

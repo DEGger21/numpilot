@@ -1,0 +1,124 @@
+{
+  "capability_audit_id": "asnumpy-0.1.dev106-g21368abf9-poisson-linalg-init4f4e8083-math62e0ba09-direct4479c588-cored3ccb39f-v1+qualification-08625ef3704db848",
+  "comparison": {
+    "atol": 1e-05,
+    "consistent": true,
+    "failure_index": null,
+    "failure_path": null,
+    "max_abs_diff": 2.2351741790771484e-08,
+    "max_rel_diff": 1.844382381932519e-06,
+    "n_elements": 37,
+    "reason": null,
+    "rtol": 0.0001
+  },
+  "cpu_loss": {
+    "final": 9.38313102722168,
+    "initial": 9.948076248168945
+  },
+  "iterations": 10,
+  "migrated_path": "/home/ma-user/work/numpilot-gap-runs/poisson-ritz-p0-20260821/direct-local-v5/poisson-full-iteration-strict-npu-v2/migrated.py",
+  "migrated_sha256": "49779934abf65eececc5dac074d6ab858ef63ad23999052e531f25069248f195",
+  "migration_report_path": "/home/ma-user/work/numpilot-gap-runs/poisson-ritz-p0-20260821/direct-local-v5/poisson-full-iteration-strict-npu-v2/report.json",
+  "migration_report_sha256": "1d8634f652cfe4815cb10cb15ce1b5abb26343ac3e71cd114a6334c3ceaf4591",
+  "npu_final_loss": 9.38313102722168,
+  "overlay_path": "/home/ma-user/work/numpilot-gap-runs/poisson-ritz-p0-20260821/direct-local-v5/qualification-evidence-v5/overlay/capability-overlay.json",
+  "overlay_sha256": "08625ef3704db848281cab041e1a7da7d69777b1d425a329c6c43cea45ff1b6e",
+  "per_iteration_calls": {
+    "add": 11,
+    "apply_gradient_descent": 4,
+    "clip": 3,
+    "divide": 14,
+    "exp": 2,
+    "matmul": 10,
+    "multiply": 43,
+    "negative": 5,
+    "outer": 14,
+    "smooth_l1_loss": 2,
+    "sqrt": 2,
+    "subtract": 7
+  },
+  "performance": {
+    "measured": false,
+    "published": false,
+    "reason": "correctness/residency evidence only"
+  },
+  "producer": "numpilot-poisson-iteration-evidence-v1",
+  "profile_checks": {
+    "apply_gradient_descent": {
+      "checks": 40,
+      "matched": 40,
+      "rejected": 0
+    },
+    "divide": {
+      "checks": 140,
+      "matched": 140,
+      "rejected": 0
+    },
+    "exp": {
+      "checks": 20,
+      "matched": 20,
+      "rejected": 0
+    },
+    "matmul": {
+      "checks": 100,
+      "matched": 100,
+      "rejected": 0
+    },
+    "negative": {
+      "checks": 50,
+      "matched": 50,
+      "rejected": 0
+    },
+    "outer": {
+      "checks": 140,
+      "matched": 140,
+      "rejected": 0
+    },
+    "smooth_l1_loss": {
+      "checks": 20,
+      "matched": 20,
+      "rejected": 0
+    },
+    "sqrt": {
+      "checks": 20,
+      "matched": 20,
+      "rejected": 0
+    },
+    "subtract": {
+      "checks": 70,
+      "matched": 70,
+      "rejected": 0
+    }
+  },
+  "qualification_evidence_root": "/home/ma-user/work/numpilot-gap-runs/poisson-ritz-p0-20260821/direct-local-v5/qualification-evidence-v5",
+  "runner_path": "/home/ma-user/work/numpilot/tools/poisson_iteration_evidence.py",
+  "runner_sha256": "0a60b2202d012aa60d7700cc7c356f2d07f2e14a7b917d74d33fed8ec9627e6d",
+  "runtime_call_counts": {
+    "add": 110,
+    "apply_gradient_descent": 40,
+    "clip": 30,
+    "divide": 140,
+    "exp": 20,
+    "matmul": 100,
+    "multiply": 430,
+    "negative": 50,
+    "outer": 140,
+    "smooth_l1_loss": 20,
+    "sqrt": 20,
+    "subtract": 70
+  },
+  "runtime_profile_ok": true,
+  "runtime_target_integrity_ok": true,
+  "schema_version": "1.0",
+  "source_path": "/home/ma-user/work/numpilot/examples/poisson_ritz_iteration.py",
+  "source_sha256": "1deeeec0e5c32c96c4a33467687ce5181a6c8d2c018c6b81b3dc066e3e8beb1a",
+  "status": "pass",
+  "strict_npu": true,
+  "total_runtime_calls": 1170,
+  "transfers": {
+    "d2h": 5,
+    "d2h_phase": "after_loop",
+    "h2d": 30,
+    "h2d_phase": "before_loop"
+  }
+}

@@ -2,6 +2,9 @@
 
 日期：2026-08-21 UTC
 
+> 公开精选证据：[`evidence/poisson-ritz-p0-20260821/`](../../evidence/poisson-ritz-p0-20260821/)；
+> 文中的 `/home/ma-user/work/...` 是原始裸金属运行身份，保留用于审计。
+
 ## 当前结论
 
 NumPilot 已按比赛框架完成一条不依赖 `ops-nn` 启动的 P0 纵向链路：

@@ -27,10 +27,10 @@ from numpilot.env_check import Env
 from numpilot.llm_config import (LlmConfigError, configure_llm_interactive,
                                  load_llm_config)
 from numpilot.orchestrator import _make_engine
+from numpilot.paths import default_benchmark_dir, default_wizard_dir
 from numpilot.report import save_migration_report
 
 console = Console()
-_OUT_DIR = "out_wizard"
 
 
 # ───────────────────────── helper ─────────────────────────
@@ -163,7 +163,7 @@ def _startup_check(backend, interactive):
     return backend
 
 
-def _run_pipeline(source, path, engine_name, backend_name):
+def _run_pipeline(source, path, engine_name, backend_name, out_dir):
     """跑分析→整段决策→迁移→产物校验→证据门禁。"""
     data = {"path": path, "engine": engine_name, "backend": backend_name}
     mig_tag = os.getenv("NUMPILOT_LLM_MODEL", "LLM") if engine_name == "llm" else "AST"
@@ -213,8 +213,8 @@ def _run_pipeline(source, path, engine_name, backend_name):
         prog.update(t, description=sdesc(2, " · 请求中…" if engine_name == "llm" else ""))
         migration = MigrationAgent(_make_engine(engine_name)).migrate(source, plan)
         data["migration"] = migration
-        os.makedirs(_OUT_DIR, exist_ok=True)
-        mig_path = os.path.join(_OUT_DIR, "migrated.py")
+        os.makedirs(out_dir, exist_ok=True)
+        mig_path = os.path.join(out_dir, "migrated.py")
         with open(mig_path, "w", encoding="utf-8") as f:
             f.write(migration.migrated_source)
         data["migrated_path"] = mig_path
@@ -323,8 +323,8 @@ def _feedback(data):
 
     console.print(Panel(
         "向导不发布加速比。请在独立进程依次运行:\n"
-        f"python -m numpilot bench-cpu {data['path']} --out out_demo\n"
-        f"python -m numpilot bench-npu {data['path']} --out out_demo\n"
+        f"python -m numpilot bench-cpu {data['path']} --out {data['benchmark_dir']}\n"
+        f"python -m numpilot bench-npu {data['path']} --out {data['benchmark_dir']}\n"
         "[dim]只有 strict-NPU capability、数值和基线一致性门禁全部通过，"
         "benchmark_report.md 才会给出合格加速比。[/]",
         title="性能证据", border_style="cyan"))
@@ -377,7 +377,13 @@ def _report_info(data):
 
 
 # ───────────────────────── 入口 ─────────────────────────
-def run_wizard(file=None, engine=None, backend="npu"):
+def run_wizard(
+    file=None,
+    engine=None,
+    backend="npu",
+    out_dir=None,
+    reports_dir=None,
+):
     interactive = file is None or engine is None
     _banner()
     # 一进系统先做环境自检:asnumpy / CANN / NPU 装好没,没装好当场失败
@@ -399,14 +405,23 @@ def run_wizard(file=None, engine=None, backend="npu"):
     _print_roster(engine_name)      # 让用户看清 5 个智能体各自用什么模型/引擎
     source = open(path, encoding="utf-8").read()
     try:
-        data = _run_pipeline(source, path, engine_name, backend_name)
+        data = _run_pipeline(
+            source,
+            path,
+            engine_name,
+            backend_name,
+            out_dir or str(default_wizard_dir()),
+        )
     except LlmError as e:
         console.print(Panel(f"{e}", title="[red]LLM 迁移终止(strict)[/]", border_style="red"))
         return 4
+    data["benchmark_dir"] = str(default_benchmark_dir())
     _feedback(data)
-    # 每次迁移落地一份带时间戳的 Markdown 报告(默认 reports/ 目录)
+    # 每次迁移落地一份带时间戳的 Markdown 报告。
     try:
-        report_path = save_migration_report(_report_info(data))
+        report_path = save_migration_report(
+            _report_info(data), reports_dir=reports_dir
+        )
         console.print(f"[green]✓[/] 迁移报告已落盘:[bold]{report_path}[/]")
     except Exception as e:
         console.print(f"[yellow]⚠ 报告落盘失败(不影响迁移):{e}[/]")

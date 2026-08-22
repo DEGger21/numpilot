@@ -2,6 +2,10 @@
 
 日期：2026-08-22 UTC
 
+> 公开精选 profiler 证据：
+> [`evidence/poisson-ritz-p0-20260821/profiler/`](../../evidence/poisson-ritz-p0-20260821/profiler/)；
+> 文中的绝对路径是原始裸金属运行身份。
+
 ## 结论快照
 
 首轮 `msprof` 采集和文本导出已成功完成。采集对象不是性能发布配置，而是 10 轮

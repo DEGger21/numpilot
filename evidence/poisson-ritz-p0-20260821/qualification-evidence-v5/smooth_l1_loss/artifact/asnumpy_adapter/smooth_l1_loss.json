@@ -1,0 +1,76 @@
+{
+  "schema_version": "1.0",
+  "api_name": "smooth_l1_loss",
+  "gap_id": "smooth_l1_loss-24f3ad9ce1bdc667",
+  "public_api": "asnumpy.smooth_l1_loss",
+  "source_api": "operator.smooth_l1_loss",
+  "cpp_op_type": "NumPilotSmoothMeanLoss",
+  "file_stem": "smooth_l1_loss",
+  "pybind_module": "asnumpy._ext.smooth_l1_loss",
+  "pybind_function": "smooth_l1_loss",
+  "aclnn": {
+    "l2_header": "aclnn_smooth_l1_loss.h",
+    "l2_function": "aclnnSmoothL1Loss",
+    "workspace_size_function": "aclnnSmoothL1LossGetWorkspaceSize",
+    "l0_header": "smooth_l1_loss.h",
+    "l0_function": "l0op::SmoothL1Loss"
+  },
+  "signature": {
+    "positional": [
+      {
+        "name": "predict",
+        "position": 0,
+        "kind": "input",
+        "dtypes": ["float32"],
+        "shape_rule": "rank>=1, contiguous"
+      },
+      {
+        "name": "label",
+        "position": 1,
+        "kind": "input",
+        "dtypes": ["float32"],
+        "shape_rule": "rank>=1, contiguous"
+      }
+    ],
+    "keywords": [],
+    "outputs": [
+      {
+        "name": "loss",
+        "position": 0,
+        "kind": "output",
+        "dtypes": ["float32"],
+        "shape": "scalar"
+      }
+    ]
+  },
+  "semantics": {
+    "reduction": "mean",
+    "beta": 1.0,
+    "oracle": "smooth_l1_loss_v2_mean_beta1",
+    "description": "mean(0.5*min(|p-l|,1)^2 + (|p-l| - min(|p-l|,1))) computed in float32; returns a scalar float32 value"
+  },
+  "dtype_rules": {
+    "admitted": ["float32"],
+    "promotion": "none",
+    "reject_others": true
+  },
+  "shape_rules": {
+    "min_rank": 1,
+    "require_contiguous": true,
+    "broadcast": "none",
+    "inputs_same_shape": true
+  },
+  "validation": {
+    "check_dtype": true,
+    "check_rank": true,
+    "check_contiguous": true,
+    "check_same_shape": true
+  },
+  "device": {
+    "soc": "ascend910b",
+    "cann": "9.0.0"
+  },
+  "tests": [
+    "tests/test_asnumpy_smooth_l1_loss.py"
+  ]
+}

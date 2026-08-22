@@ -1,21 +1,40 @@
 [build-system]
-requires = ["setuptools>=61"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "numpilot"
 version = "0.1.0"
-description = "面向科学智能的昇腾 NPU 代码自动迁移智能体(最简 demo)"
+description = "面向科学计算的 NumPy 到 Ascend NPU 可审计迁移工具"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 requires-python = ">=3.9"
 dependencies = ["numpy", "rich>=13"]
+keywords = ["numpy", "ascend", "npu", "migration", "scientific-computing"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Topic :: Scientific/Engineering",
+]
+
+[project.urls]
+Repository = "https://gitcode.com/li-xingHIT/numpilot"
+Documentation = "https://gitcode.com/li-xingHIT/numpilot/tree/feat/numpilot-demo/docs"
 
 [project.scripts]
 numpilot = "numpilot.__main__:main"
 
 [project.optional-dependencies]
-dev = ["pytest"]
+dev = ["pytest>=7", "build>=1"]
 # 真机可选:asnumpy(NPU 后端)、threadpoolctl(备用 BLAS 限核)
 npu = ["threadpoolctl"]
 
 [tool.setuptools.packages.find]
 include = ["numpilot*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

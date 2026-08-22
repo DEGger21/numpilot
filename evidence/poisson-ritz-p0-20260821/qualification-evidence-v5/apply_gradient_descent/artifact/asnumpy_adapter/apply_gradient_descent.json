@@ -1,0 +1,69 @@
+{
+  "api_name": "apply_gradient_descent",
+  "python_name": "asnumpy.apply_gradient_descent",
+  "cpp_op_type": "ApplyGradientDescent",
+  "aclnn_symbol": "aclnnApplyGradientDescent",
+  "aclnn_header": "aclnn_apply_gradient_descent.h",
+  "l0_symbol": "l0op::ApplyGradientDescent",
+  "l0_header": "apply_gradient_descent.h",
+  "kernel_name": "ApplyGradientDescent",
+  "gap_id": "apply_gradient_descent-60faa0867f07e18d",
+  "soc": "ascend910b",
+  "cann_version": "9.0.0",
+  "call": {
+    "positional": ["var", "alpha", "delta"],
+    "keywords": [],
+    "nargs": 3
+  },
+  "params": [
+    {
+      "name": "var",
+      "kind": "input",
+      "index": 0,
+      "dtypes": ["float32"],
+      "shape_rule": "rank>=1",
+      "contiguous": true
+    },
+    {
+      "name": "alpha",
+      "kind": "input",
+      "index": 1,
+      "dtypes": ["float32"],
+      "shape_rule": "rank>=1",
+      "contiguous": true
+    },
+    {
+      "name": "delta",
+      "kind": "input",
+      "index": 2,
+      "dtypes": ["float32"],
+      "shape_rule": "rank>=1",
+      "contiguous": true
+    },
+    {
+      "name": "output",
+      "kind": "output",
+      "index": 0,
+      "dtypes": ["float32"],
+      "shape_rule": "same_as:var",
+      "contiguous": true
+    }
+  ],
+  "semantics": {
+    "oracle": "np.subtract(var, np.multiply(alpha, delta))",
+    "inplace": false,
+    "broadcast": "numpy_broadcasting"
+  },
+  "validation": {
+    "dtype_check": "strict",
+    "shape_check": "rank>=1",
+    "contiguity_check": true,
+    "device_check": true
+  },
+  "workspace": {
+    "two_stage": true,
+    "get_workspace_size": "aclnnApplyGradientDescentGetWorkspaceSize",
+    "execute": "aclnnApplyGradientDescent",
+    "sync": "aclrtSynchronizeStream"
+  }
+}

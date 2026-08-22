@@ -1,0 +1,20 @@
+{
+  "file": "examples/heat_diffusion_forward.py",
+  "source_sha256": "6f83b11ae500b2201b6bd1e416f1b67e935bf8d147d80a385f8c2eb605e2bc9f",
+  "net": "heat_diffusion_forward",
+  "t_cpu_ms": 15.552298980765045,
+  "n_elements": 1048576,
+  "output_shape": [
+    1024,
+    1024
+  ],
+  "cpu_threads": 1,
+  "cpu_threads_requested": 1,
+  "blas": {
+    "source": "environment",
+    "effective_threads": 1,
+    "environment_key": "OPENBLAS_NUM_THREADS",
+    "pools": []
+  },
+  "dtype": "float32"
+}

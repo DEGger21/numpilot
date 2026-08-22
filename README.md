@@ -1,10 +1,16 @@
-# NumPilot demo
+# NumPilot
 
-NumPilot 是一个面向科学计算程序的 NumPy → AsNumpy/Ascend NPU 自动迁移原型。当前版本强调“结果与证据可信”：它把顶层 `forward()` 作为一个完整 NPU 岛，在函数边界上传 NumPy 数组，运行迁移产物自己的 `build_inputs + forward`，并在发布性能数字前检查实际 AsNumpy wheel 的 capability/provenance。
+NumPilot 是一个面向科学计算程序的 NumPy → AsNumpy/Ascend NPU 可审计迁移工具。当前版本
+强调“结果与证据可信”：它把顶层 `forward()` 作为一个完整 NPU 岛，在函数边界上传 NumPy
+数组，运行迁移产物自己的 `build_inputs + forward`，并在发布性能数字前检查实际 AsNumpy
+wheel 的 capability/provenance。
 
 完整愿景见 `NumPilot20260615-v1.pdf`。仓库现已实现缺口 API → GapSpec → 真实 LLM Ascend C 隔离草稿的安全纵切；编译、NPU 数值校验和激活仍受独立门禁约束，不会把“生成了源码”冒充成“算子已经可用”。
 
-继续开发或交给新的 AI 前，请先读 [`docs/AI-HANDOFF.md`](docs/AI-HANDOFF.md)。它记录当前工作树、已完成门禁、裸金属证据、未完成项和续接命令。
+开发者从 [贡献指南](CONTRIBUTING.md) 开始，评委可直接查看
+[证据索引](evidence/README.md) 与 [可信边界](#当前可信边界)；完整文档导航见
+[`docs/README.md`](docs/README.md)。项目源码采用 [Apache-2.0](LICENSE)，第三方工具链与
+生成算子的许可证边界见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
 ## 当前可信边界
 
@@ -38,6 +44,14 @@ float32、非空、rank 1/2 的已测范围内放行修复后的 `outer`/`matmul
 
 ## 快速运行
 
+安装开发版本：
+
+```bash
+python -m venv .venv
+. .venv/bin/activate
+python -m pip install -e '.[dev]'
+```
+
 离线 CI 使用 numpy shim，不需要 NPU：
 
 ```bash
@@ -65,6 +79,17 @@ python -m numpilot bench-npu examples/elementwise_forward.py \
 - `/tmp/numpilot-bench/benchmark_report.md`
 
 其中必须满足 `performance_valid=true`，才可以引用 `speedup`。
+
+默认运行产物不会写入 Git 工作树。执行以下命令查看配置、缓存、报告和运行目录：
+
+```bash
+python -m numpilot paths
+```
+
+默认状态根为 `$XDG_STATE_HOME/numpilot`（通常是 `~/.local/state/numpilot`）；可用
+`NUMPILOT_STATE_HOME`、`NUMPILOT_RUNS_DIR`、`NUMPILOT_REPORTS_DIR` 覆盖。所有原有
+`--out` 参数继续有效，适合 CI 和比赛评测显式指定一次性目录。详细策略见
+[`docs/artifact-storage.md`](docs/artifact-storage.md)。
 
 真实科学计算网络的完整一次实测见
 [`docs/evidence/heat-diffusion-npu-20260813.md`](docs/evidence/heat-diffusion-npu-20260813.md)：
@@ -194,22 +219,20 @@ commit 和被选文件是否有本地修改。离线环境使用 `--offline-skil
 固定官方 commit；完全离线时加 `--offline-skills`）：
 
 ```bash
-source /home/ma-user/work/.codex-env.sh
-cd /home/ma-user/work/numpilot
+GAP_RUNS="$(python -m numpilot paths --get gaps)"
 python -m numpilot complete-gaps examples/gap_cbrt.py \
-  --out /home/ma-user/work/numpilot-gap-runs/cbrt \
-  --target-soc ascend910b --cann-version 9.0.0 \
-  --asnumpy-reference /home/ma-user/work/numpyexample
+  --out "$GAP_RUNS/cbrt" \
+  --target-soc ascend910b --cann-version 9.0.0
 ```
 
 显式增加 `--provider llm` 才会调用已配置的大模型：
 
 ```bash
+GAP_RUNS="$(python -m numpilot paths --get gaps)"
 python -m numpilot complete-gaps examples/gap_cbrt.py \
-  --out /home/ma-user/work/numpilot-gap-runs/cbrt \
+  --out "$GAP_RUNS/cbrt" \
   --target-soc ascend910b --cann-version 9.0.0 \
-  --provider llm --max-attempts 3 \
-  --asnumpy-reference /home/ma-user/work/numpyexample
+  --provider llm --max-attempts 3
 ```
 
 当前远端草稿协议使用 `NUMPILOT_BUNDLE_V1` 行式信封承载原始 C++/Python 内容，避免部分

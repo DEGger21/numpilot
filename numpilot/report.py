@@ -1,11 +1,12 @@
-"""迁移报告落盘:把一次迁移的结果渲染成带时间戳的 Markdown, 存到默认 reports/ 目录。
+"""迁移报告落盘:把一次迁移的结果渲染成带时间戳的 Markdown。
 
-wizard 与 migrate 复用同一渲染, 保证报告口径一致。时间戳用系统时间(datetime.now)。
+wizard 与 migrate 复用同一渲染, 保证报告口径一致。默认目录位于仓库外的
+用户状态目录，可用 ``NUMPILOT_REPORTS_DIR`` 或 CLI 参数覆盖。
 """
 import os
 from datetime import datetime
 
-DEFAULT_REPORTS_DIR = "reports"
+from numpilot.paths import reports_dir as default_reports_dir
 
 
 def _scientific(value) -> str:
@@ -321,8 +322,9 @@ def build_benchmark_report_md(result: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-def save_migration_report(info: dict, reports_dir=DEFAULT_REPORTS_DIR) -> str:
+def save_migration_report(info: dict, reports_dir=None) -> str:
     """渲染并落盘带时间戳的报告, 返回绝对路径。文件名 migration_<net>_<时间戳>.md。"""
+    reports_dir = reports_dir or default_reports_dir()
     os.makedirs(reports_dir, exist_ok=True)
     stamp = datetime.now()
     info = dict(info)

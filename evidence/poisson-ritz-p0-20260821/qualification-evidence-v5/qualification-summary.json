@@ -1,0 +1,25 @@
+{
+  "operators": {
+    "apply_gradient_descent": {
+      "artifact_id": "draft-d124f69b25efd0696161",
+      "kernel_launches": 3,
+      "max_abs_error": 0.0,
+      "numerical_cases": 3,
+      "qualification_id": "qual-1479c0f3e8ad5fadb6f1",
+      "tests_passed": 13
+    },
+    "smooth_l1_loss": {
+      "artifact_id": "draft-d3a03b173efd34240c66",
+      "kernel_launches": 3,
+      "max_abs_error": 5.960464477539063e-08,
+      "numerical_cases": 3,
+      "qualification_id": "qual-b0233d6345dab583d8a0",
+      "tests_passed": 13
+    }
+  },
+  "overlay_path": "overlay/capability-overlay.json",
+  "overlay_sha256": "08625ef3704db848281cab041e1a7da7d69777b1d425a329c6c43cea45ff1b6e",
+  "producer": "numpilot-qualification-harness-v1",
+  "schema_version": 1,
+  "status": "qualified_and_overlay_published"
+}

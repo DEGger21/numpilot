@@ -1,7 +1,8 @@
 # NumPilot 二维热扩散 strict-NPU 实测留档
 
 > 实验时间：2026-08-13 UTC；归档时间：2026-08-14 UTC。未使用 Docker。
-> 主证据目录：`/home/ma-user/work/numpilot-runs/heat-diffusion-20260813/`。
+> 公开精选证据：[`evidence/heat-diffusion-20260813/`](../../evidence/heat-diffusion-20260813/)；
+> 历史完整运行根：`/home/ma-user/work/numpilot-runs/heat-diffusion-20260813/`。
 
 ## 1. 结论
 
@@ -175,7 +176,7 @@ surface、运行时 callsite、target integrity、数值或 fallback 门禁。�
 
 ```text
 6f83b11ae500b2201b6bd1e416f1b67e935bf8d147d80a385f8c2eb605e2bc9f  examples/heat_diffusion_forward.py
-68ea47d6d0f7ac8e2a96081a6cbc58f860d4e9764ed253f81c858651918c2997  reports/migration_heat_diffusion_forward_20260813_232210.md
+68ea47d6d0f7ac8e2a96081a6cbc58f860d4e9764ed253f81c858651918c2997  evidence/heat-diffusion-20260813/migration_report.md
 ```
 
 持久证据根：`/home/ma-user/work/numpilot-runs/heat-diffusion-20260813/`

@@ -8,5 +8,9 @@ dist/
 out*/
 reports/
 *.log
+*.orig
 .env*
 RUN_LLM_TEMP.md
+
+# 精选公开证据中有经过脱敏审查的日志与历史 reports 子目录。
+!evidence/**

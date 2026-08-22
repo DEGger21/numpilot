@@ -1,0 +1,20 @@
+[ops_custom] [2026-08-21 23:37:38] [INFO] create /home/ma-user/work/numpilot-gap-runs/poisson-ritz-p0-20260821/direct-local-v5/qualification-evidence-v5/runtime/private-opp/vendors/smooth_l1_loss_custom.
+[ops_custom] [2026-08-21 23:37:38] [INFO] upgrade framework
+[ops_custom] [2026-08-21 23:37:38] [INFO] create /home/ma-user/work/numpilot-gap-runs/poisson-ritz-p0-20260821/direct-local-v5/qualification-evidence-v5/runtime/private-opp/vendors/smooth_l1_loss_custom/framework.
+[ops_custom] [2026-08-21 23:37:38] [INFO] copy new ops framework files ......
+[ops_custom] [2026-08-21 23:37:38] [INFO] upgrade op proto
+[ops_custom] [2026-08-21 23:37:38] [INFO] create /home/ma-user/work/numpilot-gap-runs/poisson-ritz-p0-20260821/direct-local-v5/qualification-evidence-v5/runtime/private-opp/vendors/smooth_l1_loss_custom/op_proto.
+[ops_custom] [2026-08-21 23:37:38] [INFO] copy new ops op_proto files ......
+[ops_custom] [2026-08-21 23:37:39] [INFO] upgrade op impl
+[ops_custom] [2026-08-21 23:37:39] [INFO] create /home/ma-user/work/numpilot-gap-runs/poisson-ritz-p0-20260821/direct-local-v5/qualification-evidence-v5/runtime/private-opp/vendors/smooth_l1_loss_custom/op_impl.
+[ops_custom] [2026-08-21 23:37:39] [INFO] copy new ops op_impl files ......
+[ops_custom] [2026-08-21 23:37:39] [INFO] upgrade op api
+[ops_custom] [2026-08-21 23:37:39] [INFO] create /home/ma-user/work/numpilot-gap-runs/poisson-ritz-p0-20260821/direct-local-v5/qualification-evidence-v5/runtime/private-opp/vendors/smooth_l1_loss_custom/op_api.
+[ops_custom] [2026-08-21 23:37:39] [INFO] copy new ops op_api files ......
+[ops_custom] [2026-08-21 23:37:39] [INFO] upgrade uninstall
+[ops_custom] [2026-08-21 23:37:39] [INFO] copy new uninstall.sh files ......
+[ops_custom] [2026-08-21 23:37:39] [INFO] upgrade version.info
+[ops_custom] [2026-08-21 23:37:39] [INFO] copy new version.info files ......
+[ops_custom] [2026-08-21 23:37:39] [INFO] no need to upgrade custom.proto files
+[ops_custom] [2026-08-21 23:37:39] [INFO] using requirements: when custom module install finished or before you run the custom module, execute the command [ source /home/ma-user/work/numpilot-gap-runs/poisson-ritz-p0-20260821/direct-local-v5/qualification-evidence-v5/runtime/private-opp/vendors/smooth_l1_loss_custom/bin/set_env.bash ] to set the environment path
+SUCCESS

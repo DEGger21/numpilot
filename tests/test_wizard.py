@@ -67,14 +67,25 @@ def test_noninteractive_llm_missing_config_fails_fast(tmp_path, monkeypatch):
         _ask_engine("llm")
 
 
-def test_wizard_noninteractive_shim_e2e():
+def test_wizard_noninteractive_shim_e2e(tmp_path):
     # 非交互(带 file+engine)走 shim 后端, 不需 NPU/网络; 子进程 bench-cpu 为纯 numpy。
-    rc = run_wizard(file="examples/mlp_forward.py", engine="ast", backend="shim")
+    rc = run_wizard(
+        file="examples/mlp_forward.py",
+        engine="ast",
+        backend="shim",
+        out_dir=str(tmp_path / "wizard"),
+        reports_dir=str(tmp_path / "reports"),
+    )
     assert rc == 0
 
 
-def test_wizard_unsupported_returns_1():
-    rc = run_wizard(file="examples/unsupported_demo.py", engine="ast", backend="shim")
+def test_wizard_unsupported_returns_1(tmp_path):
+    rc = run_wizard(
+        file="examples/unsupported_demo.py",
+        engine="ast",
+        backend="shim",
+        reports_dir=str(tmp_path / "reports"),
+    )
     assert rc == 1
 
 

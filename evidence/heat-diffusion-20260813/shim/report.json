@@ -1,0 +1,147 @@
+{
+  "status": "pass",
+  "source_path": "examples/heat_diffusion_forward.py",
+  "unsupported": [],
+  "engine": "ast",
+  "rewrites": {
+    "add": 4,
+    "multiply": 2,
+    "subtract": 1
+  },
+  "expected_rewrites": {
+    "add": 4,
+    "multiply": 2,
+    "subtract": 1
+  },
+  "rewrite_integrity": true,
+  "total_rewrites": 7,
+  "numerically_consistent": true,
+  "max_rel_diff": 0.0,
+  "max_abs_diff": 0.0,
+  "tol": 0.0001,
+  "atol": 1e-05,
+  "rtol": 0.0001,
+  "failure_path": null,
+  "failure_index": null,
+  "failure_reason": null,
+  "exception_phase": null,
+  "exception_type": null,
+  "exception_message": null,
+  "artifact_inputs_executed": true,
+  "input_consistent": true,
+  "kernel_consistent": true,
+  "artifact_consistent": true,
+  "comparisons": {
+    "inputs": {
+      "consistent": true,
+      "max_abs_diff": 0.0,
+      "max_rel_diff": 0.0,
+      "atol": 1e-05,
+      "rtol": 0.0001,
+      "failure_path": null,
+      "failure_index": null,
+      "reason": null,
+      "n_elements": 7340032
+    },
+    "kernel": {
+      "consistent": true,
+      "max_abs_diff": 0.0,
+      "max_rel_diff": 0.0,
+      "atol": 1e-05,
+      "rtol": 0.0001,
+      "failure_path": null,
+      "failure_index": null,
+      "reason": null,
+      "n_elements": 1048576
+    },
+    "artifact": {
+      "consistent": true,
+      "max_abs_diff": 0.0,
+      "max_rel_diff": 0.0,
+      "atol": 1e-05,
+      "rtol": 0.0001,
+      "failure_path": null,
+      "failure_index": null,
+      "reason": null,
+      "n_elements": 1048576
+    }
+  },
+  "backend_provenance": {
+    "schema_version": "1.1",
+    "backend": "shim",
+    "backend_version": null,
+    "audit_id": "runtime-shim-v1",
+    "environment": {
+      "cann_home": "/usr/local/Ascend/cann-9.0.0",
+      "cann_version": "9.0.0",
+      "module_path": "unknown",
+      "python_version": "3.10.20",
+      "soc_version": "unknown"
+    },
+    "strict_npu": false,
+    "ok": true,
+    "required_ops": [
+      "add",
+      "multiply",
+      "subtract"
+    ],
+    "missing": [],
+    "non_strict": [
+      "add",
+      "multiply",
+      "subtract"
+    ],
+    "capabilities": {
+      "add": {
+        "name": "add",
+        "available": true,
+        "provenance": "shim_cpu",
+        "strict_npu": false,
+        "evidence": "runtime callable on shim backend",
+        "constraints": [],
+        "signature_variants": []
+      },
+      "multiply": {
+        "name": "multiply",
+        "available": true,
+        "provenance": "shim_cpu",
+        "strict_npu": false,
+        "evidence": "runtime callable on shim backend",
+        "constraints": [],
+        "signature_variants": []
+      },
+      "subtract": {
+        "name": "subtract",
+        "available": true,
+        "provenance": "shim_cpu",
+        "strict_npu": false,
+        "evidence": "runtime callable on shim backend",
+        "constraints": [],
+        "signature_variants": []
+      }
+    },
+    "runtime_trace_ok": true,
+    "runtime_execution_ok": true,
+    "runtime_call_counts": {
+      "kernel": {
+        "add": 4,
+        "multiply": 2,
+        "subtract": 1
+      },
+      "artifact": {
+        "add": 4,
+        "multiply": 2,
+        "subtract": 1
+      }
+    }
+  },
+  "speedup": null,
+  "backend": "shim",
+  "backend_module": null,
+  "backend_version": null,
+  "cpu_threads": null,
+  "t_orig_ms": null,
+  "t_mig_ms": null,
+  "n_elements": 1048576,
+  "strategy": "whole_forward_npu"
+}

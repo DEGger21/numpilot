@@ -1,4 +1,4 @@
-"""CLI: python -m numpilot <migrate|complete-gaps|setup-skills|bench-cpu|bench-npu|doctor|configure-llm> ...
+"""CLI: python -m numpilot <migrate|complete-gaps|setup-skills|bench-cpu|bench-npu|doctor|configure-llm|paths> ...
 
 演示三步:
   1) bench-cpu <file>   纯 NumPy 基线，默认请求 BLAS 1 线程并记录实际线程池
@@ -63,6 +63,8 @@ from numpilot.llm_config import (LlmConfigError,               # noqa: E402
                                  init_llm_config_template,
                                  load_llm_config)
 from numpilot.orchestrator import Orchestrator, _make_engine  # noqa: E402
+from numpilot.paths import (default_benchmark_dir, default_gap_dir,  # noqa: E402
+                            path_summary)
 from numpilot.report import save_migration_report            # noqa: E402
 
 
@@ -212,9 +214,10 @@ def _render_terminal(res):
 
     # [性能] 交给两个独立 bench 程序(公平口径:numpy 单核 vs NPU 满线程)
     src = res.get("source_path", "<file>")
+    bench_dir = default_benchmark_dir()
     out.append("[性能] 本命令不发布加速比；请运行独立、fail-closed 的两步评测:")
-    out.append(f"       ① python -m numpilot bench-cpu {src} --out out_demo")
-    out.append(f"       ② python -m numpilot bench-npu {src} --out out_demo")
+    out.append(f"       ① python -m numpilot bench-cpu {src} --out {bench_dir}")
+    out.append(f"       ② python -m numpilot bench-npu {src} --out {bench_dir}")
     return "\n".join(out)
 
 
@@ -226,6 +229,19 @@ def _cmd_doctor(args):
     rep = Env.check(backend=_resolve_backend_name(args))
     print(rep.render())
     return 1 if rep.errors else 0
+
+
+def _cmd_paths(args):
+    paths = path_summary()
+    if args.get:
+        print(paths[args.get])
+    elif args.json:
+        print(json.dumps(paths, ensure_ascii=False, indent=2, sort_keys=True))
+    else:
+        print("NumPilot 路径（本命令不会创建目录）:")
+        for name, path in paths.items():
+            print(f"  {name:14} {path}")
+    return 0
 
 
 def _load_llm_or_report():
@@ -742,7 +758,9 @@ def _cmd_migrate(args):
 
     print(_render_terminal(res))
     try:
-        rp = save_migration_report(_migrate_report_info(res))
+        rp = save_migration_report(
+            _migrate_report_info(res), reports_dir=args.reports_dir
+        )
         print(f"[报告] 迁移报告已落盘:{rp}")
     except Exception as e:
         print(f"[报告] 落盘失败(不影响迁移):{e}")
@@ -825,7 +843,12 @@ def main(argv=None):
     mig.add_argument("file")
     mig.add_argument("--backend", choices=["shim", "npu"], default=None)
     mig.add_argument("--engine", choices=["ast", "llm"], default=None)
-    mig.add_argument("--out", default=None, help="报告与迁移代码输出目录")
+    mig.add_argument("--out", default=None, help="结构化报告与迁移代码输出目录")
+    mig.add_argument(
+        "--reports-dir",
+        default=None,
+        help="时间戳报告目录；默认使用仓库外用户状态目录",
+    )
     mig.add_argument("--threshold", type=int, default=1_000_000)
     mig.add_argument("--skip-env-check", action="store_true",
                      help="跳过 migrate 前置环境自检(缺依赖也强制继续)")
@@ -847,14 +870,22 @@ def main(argv=None):
 
     bc = sub.add_parser("bench-cpu", help="① 纯 numpy 基线, 进程内钉 1 核, 存基线供对比")
     bc.add_argument("file")
-    bc.add_argument("--out", default="out_demo", help="基线文件输出目录")
+    bc.add_argument(
+        "--out",
+        default=str(default_benchmark_dir()),
+        help="基线文件输出目录（默认 %(default)s）",
+    )
     bc.add_argument("--cpu-threads", default="1",
                     help="请求的 NumPy BLAS 线程数(默认 1；0/all 表示不主动限制)")
 
     bn = sub.add_parser(
         "bench-npu", help="② 审计并评测 asnumpy；仅严格 NPU 路径发布加速比")
     bn.add_argument("file")
-    bn.add_argument("--out", default="out_demo", help="读取 ① 基线 / 写迁移代码的目录")
+    bn.add_argument(
+        "--out",
+        default=str(default_benchmark_dir()),
+        help="读取 ① 基线 / 写迁移代码的目录（默认 %(default)s）",
+    )
     bn.add_argument("--engine", choices=["ast", "llm"], default=None)
     bn.add_argument("--threshold", type=int, default=1_000_000)
     bn.add_argument("--skip-env-check", action="store_true")
@@ -883,10 +914,31 @@ def main(argv=None):
     wiz.add_argument("--engine", choices=["ast", "llm"], default=None,
                      help="迁移引擎(省略则交互选择)")
     wiz.add_argument("--backend", choices=["shim", "npu"], default="npu")
+    wiz.add_argument(
+        "--out",
+        default=None,
+        help="迁移代码目录；默认使用仓库外用户状态目录",
+    )
+    wiz.add_argument(
+        "--reports-dir",
+        default=None,
+        help="时间戳报告目录；默认使用仓库外用户状态目录",
+    )
 
     doc = sub.add_parser("doctor", help="环境自检:检查 Python/numpy/CANN/NPU/asnumpy")
     doc.add_argument("--backend", choices=["shim", "npu"], default=None,
                      help="以指定后端语义评估硬依赖(npu 更严格)")
+
+    paths = sub.add_parser(
+        "paths", help="显示配置、缓存与运行产物的仓库外路径"
+    )
+    paths.add_argument("--json", action="store_true", help="输出 JSON")
+    paths.add_argument(
+        "--get",
+        choices=("state", "runs", "reports", "benchmark", "wizard", "gaps",
+                 "demo", "llm_config", "cannbot_cache"),
+        help="只输出一个路径值",
+    )
 
     cfg = sub.add_parser(
         "configure-llm",
@@ -939,8 +991,8 @@ def main(argv=None):
     gaps.add_argument("file", help="待分析的 NumPy Python 源文件")
     gaps.add_argument(
         "--out",
-        default="out_gaps",
-        help="规格、草稿和审计报告目录(默认 out_gaps)",
+        default=str(default_gap_dir()),
+        help="规格、草稿和审计报告目录（默认 %(default)s）",
     )
     gaps.add_argument(
         "--target-soc",
@@ -1035,6 +1087,8 @@ def main(argv=None):
             return _cmd_configure_llm(args)
         if args.cmd == "setup-skills":
             return _cmd_setup_skills(args)
+        if args.cmd == "paths":
+            return _cmd_paths(args)
         if args.cmd == "complete-gaps":
             return _cmd_complete_gaps(args)
         if args.cmd == "repair-draft":
@@ -1043,7 +1097,13 @@ def main(argv=None):
             return _cmd_seal_repair(args)
         if args.cmd == "wizard":
             from numpilot.wizard import run_wizard
-            return run_wizard(file=args.file, engine=args.engine, backend=args.backend)
+            return run_wizard(
+                file=args.file,
+                engine=args.engine,
+                backend=args.backend,
+                out_dir=args.out,
+                reports_dir=args.reports_dir,
+            )
         if args.cmd == "doctor":
             return _cmd_doctor(args)
         if args.cmd == "bench-cpu":

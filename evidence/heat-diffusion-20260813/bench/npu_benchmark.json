@@ -1,0 +1,274 @@
+{
+  "schema_version": 1,
+  "status": "pass",
+  "file": "examples/heat_diffusion_forward.py",
+  "source_sha256": "6f83b11ae500b2201b6bd1e416f1b67e935bf8d147d80a385f8c2eb605e2bc9f",
+  "migrated_sha256": "f1713c39aa9865b781dd0cb53dcab3c83e3278b9cb833936e491a36571f1b2bf",
+  "net": "heat_diffusion_forward",
+  "engine": "ast",
+  "backend": "npu",
+  "backend_version": "0.3.1.dev4+g1929a3ba4",
+  "backend_module": "/home/ma-user/work/numpilot-runs/heat-diffusion-20260813/audited-site/asnumpy/__init__.py",
+  "rewrites": {
+    "add": 4,
+    "multiply": 2,
+    "subtract": 1
+  },
+  "expected_rewrites": {
+    "add": 4,
+    "multiply": 2,
+    "subtract": 1
+  },
+  "rewrite_integrity": true,
+  "allow_cpu_fallback": false,
+  "fallback_override_used": false,
+  "provenance": {
+    "ok": true,
+    "audit_source": "NpuBackend.prepare_profile_guard",
+    "audit_error": null,
+    "required_ops": [
+      "add",
+      "multiply",
+      "subtract"
+    ],
+    "planned_cpu_ops": [],
+    "cpu_fallback_ops": [],
+    "unknown_ops": [],
+    "backend_version": "0.3.1.dev4+g1929a3ba4",
+    "audit_id": "asnumpy-0.3.1.dev4+g1929a3ba4-source-1929a3ba4-v1",
+    "environment": {
+      "cann_home": "/usr/local/Ascend/cann-9.0.0",
+      "cann_version": "9.0.0",
+      "module_path": "/home/ma-user/work/numpilot-runs/heat-diffusion-20260813/audited-site/asnumpy/__init__.py",
+      "python_version": "3.10.20",
+      "soc_version": "unknown"
+    },
+    "strict_npu": true,
+    "profile_status": "not_required",
+    "profile_guard_integrity_error": false,
+    "provenance_by_op": {
+      "add": "native_npu",
+      "multiply": "native_npu",
+      "subtract": "native_npu"
+    },
+    "capabilities": {
+      "add": {
+        "name": "add",
+        "available": true,
+        "provenance": "native_npu",
+        "strict_npu": true,
+        "evidence": "asnumpy@1929a3ba4 source audit: public wrapper delegates to an NPU binding",
+        "constraints": [],
+        "signature_variants": []
+      },
+      "multiply": {
+        "name": "multiply",
+        "available": true,
+        "provenance": "native_npu",
+        "strict_npu": true,
+        "evidence": "asnumpy@1929a3ba4 source audit: public wrapper delegates to an NPU binding",
+        "constraints": [],
+        "signature_variants": []
+      },
+      "subtract": {
+        "name": "subtract",
+        "available": true,
+        "provenance": "native_npu",
+        "strict_npu": true,
+        "evidence": "asnumpy@1929a3ba4 source audit: public wrapper delegates to an NPU binding",
+        "constraints": [],
+        "signature_variants": []
+      }
+    },
+    "issues": [],
+    "static_forward_surface": {
+      "ok": true,
+      "ap_calls": {
+        "add": 4,
+        "multiply": 2,
+        "subtract": 1
+      },
+      "violations": []
+    },
+    "profile_scoped": [],
+    "runtime_profile_checks": {},
+    "runtime_call_counts": {
+      "kernel": {
+        "add": 4,
+        "multiply": 2,
+        "subtract": 1
+      },
+      "artifact": {
+        "add": 4,
+        "multiply": 2,
+        "subtract": 1
+      }
+    },
+    "runtime_trace_ok": true,
+    "schema_version": "1.1",
+    "backend": "npu",
+    "preflight_ok": true,
+    "preflight_strict_npu": true,
+    "missing": [],
+    "non_strict": [],
+    "runtime_profile_ok": true,
+    "runtime_target_integrity_ok": true,
+    "runtime_target_integrity_errors": [],
+    "profile_guard": {
+      "schema_version": "1.1",
+      "backend": "npu",
+      "backend_version": "0.3.1.dev4+g1929a3ba4",
+      "audit_id": "asnumpy-0.3.1.dev4+g1929a3ba4-source-1929a3ba4-v1",
+      "environment": {
+        "cann_home": "/usr/local/Ascend/cann-9.0.0",
+        "cann_version": "9.0.0",
+        "module_path": "/home/ma-user/work/numpilot-runs/heat-diffusion-20260813/audited-site/asnumpy/__init__.py",
+        "python_version": "3.10.20",
+        "soc_version": "unknown"
+      },
+      "strict_npu": true,
+      "ok": true,
+      "preflight_ok": true,
+      "preflight_strict_npu": true,
+      "profile_status": "not_required",
+      "required_ops": [
+        "add",
+        "multiply",
+        "subtract"
+      ],
+      "missing": [],
+      "non_strict": [],
+      "profile_scoped": [],
+      "runtime_profile_ok": true,
+      "runtime_profile_checks": {},
+      "runtime_target_integrity_ok": true,
+      "runtime_target_integrity_errors": [],
+      "capabilities": {
+        "add": {
+          "name": "add",
+          "available": true,
+          "provenance": "native_npu",
+          "strict_npu": true,
+          "evidence": "asnumpy@1929a3ba4 source audit: public wrapper delegates to an NPU binding",
+          "constraints": [],
+          "signature_variants": []
+        },
+        "multiply": {
+          "name": "multiply",
+          "available": true,
+          "provenance": "native_npu",
+          "strict_npu": true,
+          "evidence": "asnumpy@1929a3ba4 source audit: public wrapper delegates to an NPU binding",
+          "constraints": [],
+          "signature_variants": []
+        },
+        "subtract": {
+          "name": "subtract",
+          "available": true,
+          "provenance": "native_npu",
+          "strict_npu": true,
+          "evidence": "asnumpy@1929a3ba4 source audit: public wrapper delegates to an NPU binding",
+          "constraints": [],
+          "signature_variants": []
+        }
+      }
+    },
+    "runtime_execution_ok": true
+  },
+  "performance_valid": true,
+  "performance_issues": [],
+  "speedup": 1.07819980579314,
+  "comparison": {
+    "consistent": true,
+    "max_abs_diff": 0.0,
+    "max_rel_diff": 0.0,
+    "atol": 1e-05,
+    "rtol": 0.0001,
+    "failure_path": null,
+    "failure_index": null,
+    "reason": null,
+    "n_elements": 1048576
+  },
+  "t_cpu_ms": 15.552298980765045,
+  "t_npu_ms": 14.424319961108267,
+  "cpu_baseline": {
+    "file": "examples/heat_diffusion_forward.py",
+    "source_sha256": "6f83b11ae500b2201b6bd1e416f1b67e935bf8d147d80a385f8c2eb605e2bc9f",
+    "net": "heat_diffusion_forward",
+    "t_cpu_ms": 15.552298980765045,
+    "n_elements": 1048576,
+    "output_shape": [
+      1024,
+      1024
+    ],
+    "cpu_threads": 1,
+    "cpu_threads_requested": 1,
+    "blas": {
+      "source": "environment",
+      "effective_threads": 1,
+      "environment_key": "OPENBLAS_NUM_THREADS",
+      "pools": []
+    },
+    "dtype": "float32"
+  },
+  "npu_process_blas": {
+    "source": "unavailable",
+    "effective_threads": null,
+    "pools": []
+  },
+  "artifact_inputs_executed": true,
+  "timing_scope": {
+    "classification": "device_resident_inputs_plus_d2h_sync",
+    "inputs_resident_on_device": true,
+    "includes_h2d": false,
+    "includes_d2h_sync_each_iteration": true,
+    "kernel_only": false,
+    "end_to_end": false,
+    "description": "forward 输入预先驻留设备；每轮计时包含递归 D2H 回传同步"
+  },
+  "input_comparison": {
+    "consistent": true,
+    "max_abs_diff": 0.0,
+    "max_rel_diff": 0.0,
+    "atol": 1e-05,
+    "rtol": 0.0001,
+    "failure_path": null,
+    "failure_index": null,
+    "reason": null,
+    "n_elements": 7340032
+  },
+  "kernel_comparison": {
+    "consistent": true,
+    "max_abs_diff": 0.0,
+    "max_rel_diff": 0.0,
+    "atol": 1e-05,
+    "rtol": 0.0001,
+    "failure_path": null,
+    "failure_index": null,
+    "reason": null,
+    "n_elements": 1048576
+  },
+  "artifact_comparison": {
+    "consistent": true,
+    "max_abs_diff": 0.0,
+    "max_rel_diff": 0.0,
+    "atol": 1e-05,
+    "rtol": 0.0001,
+    "failure_path": null,
+    "failure_index": null,
+    "reason": null,
+    "n_elements": 1048576
+  },
+  "baseline_output_comparison": {
+    "consistent": true,
+    "max_abs_diff": 0.0,
+    "max_rel_diff": 0.0,
+    "atol": 1e-05,
+    "rtol": 0.0001,
+    "failure_path": null,
+    "failure_index": null,
+    "reason": null,
+    "n_elements": 1048576
+  },
+  "baseline_compatible": true
+}
