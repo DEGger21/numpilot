@@ -41,8 +41,12 @@ def _make_module():
     for name in ["add", "subtract", "multiply", "divide", "matmul", "dot",
                  "maximum", "minimum", "power"]:
         _b(name, getattr(np, name))
+    m.outer = lambda a, b: _wrap(np.outer(_unwrap(a), _unwrap(b)))
     # 一元
-    for name in ["exp", "sqrt", "square", "tanh", "sin", "cos", "log", "abs"]:
+    for name in [
+        "exp", "sqrt", "square", "tanh", "sin", "cos", "log", "abs",
+        "absolute", "negative",
+    ]:
         _u(name, getattr(np, name))
     # 归约(带 axis 透传)
     for name in ["sum", "mean", "max", "min"]:
@@ -56,6 +60,38 @@ def _make_module():
         e = np.exp(x - np.max(x, axis=axis, keepdims=True))
         return _wrap(e / np.sum(e, axis=axis, keepdims=True))
     m.softmax = _softmax
+
+    m.clip = lambda a, lower, upper, **kw: _wrap(
+        np.clip(_unwrap(a), _unwrap(lower), _unwrap(upper), **kw)
+    )
+
+    def _smooth_l1_loss(predict, target, reduction="mean", beta=1.0):
+        error = np.subtract(_unwrap(predict), _unwrap(target))
+        absolute = np.abs(error)
+        beta_value = np.float32(beta)
+        bounded = np.minimum(absolute, beta_value)
+        loss = (
+            bounded * bounded / (np.float32(2.0) * beta_value)
+            + (absolute - bounded)
+        )
+        if reduction == "none":
+            return _wrap(loss)
+        if reduction == "sum":
+            return _wrap(np.sum(loss))
+        if reduction == "mean":
+            return _wrap(np.mean(loss))
+        raise ValueError("reduction must be none, mean, or sum")
+
+    def _apply_gradient_descent(var, alpha, delta):
+        return _wrap(
+            np.subtract(
+                _unwrap(var),
+                np.multiply(_unwrap(alpha), _unwrap(delta)),
+            )
+        )
+
+    m.smooth_l1_loss = _smooth_l1_loss
+    m.apply_gradient_descent = _apply_gradient_descent
 
     # 创建
     m.zeros = lambda *a, **k: _wrap(np.zeros(*a, **k))

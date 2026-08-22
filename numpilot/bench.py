@@ -18,6 +18,7 @@ from numpilot.agents.analysis import AnalysisAgent
 from numpilot.agents.decision import DecisionAgent
 from numpilot.agents.migration import MigrationAgent
 from numpilot.backends.base import select_backend
+from numpilot.capabilities import strict_receipt_issues
 from numpilot.comparison import compare_outputs
 from numpilot.engines.ast_rewrite import audit_forward_surface
 from numpilot.module_injection import temporary_module, traced_module
@@ -101,21 +102,40 @@ def _to_device(backend, value):
     return value
 
 
-def _median_ms(fn, args, sync=None, warmup=3, iters=10):
-    """``fn(*args)`` 的中位耗时；sync 用于等待异步设备完成。"""
+def _timing_samples_ms(fn, args, sync=None, warmup=3, iters=10):
+    """返回可审计的逐轮毫秒样本；sync 用于等待异步设备完成。"""
+    if (
+        isinstance(warmup, bool) or not isinstance(warmup, int) or warmup < 0
+        or isinstance(iters, bool) or not isinstance(iters, int) or iters < 1
+    ):
+        raise ValueError("warmup must be >= 0 and iters must be >= 1")
     for _ in range(warmup):
         result = fn(*args)
         if sync is not None:
             sync(result)
-    samples = []
+    samples_ms = []
     for _ in range(iters):
         start = time.perf_counter()
         result = fn(*args)
         if sync is not None:
             sync(result)
-        samples.append(time.perf_counter() - start)
-    samples.sort()
-    return samples[len(samples) // 2] * 1e3
+        samples_ms.append((time.perf_counter() - start) * 1e3)
+    ordered = sorted(samples_ms)
+    return {
+        "clock": "time.perf_counter",
+        "warmup_iterations": warmup,
+        "measurement_iterations": iters,
+        # 保留执行顺序，便于识别首轮抖动或热降频；中位数在副本上计算。
+        "samples_ms": samples_ms,
+        "median_ms": ordered[len(ordered) // 2],
+    }
+
+
+def _median_ms(fn, args, sync=None, warmup=3, iters=10):
+    """兼容旧调用者；新证据应保存 ``_timing_samples_ms`` 的完整结果。"""
+    return _timing_samples_ms(
+        fn, args, sync=sync, warmup=warmup, iters=iters
+    )["median_ms"]
 
 
 def _env_thread_limit():
@@ -206,16 +226,28 @@ def _names(items):
     return sorted(set(names))
 
 
-def _audit_execution_sources(backend, plan, required_ops):
+def _audit_execution_sources(
+    backend,
+    plan,
+    required_ops,
+    *,
+    include_prepared_guard=False,
+):
     """兼容消费 NPU backend 的 capability audit；缺接口时 fail closed。"""
     validation = None
+    prepared_guard = None
     audit_source = None
     error = None
 
+    prepare_guard = getattr(backend, "prepare_profile_guard", None)
     validate_ops = getattr(backend, "validate_required_ops", None)
     validate_plan = getattr(backend, "validate_plan", None)
     try:
-        if callable(validate_ops):
+        if callable(prepare_guard):
+            audit_source = f"{type(backend).__name__}.prepare_profile_guard"
+            validation = prepare_guard(required_ops)
+            prepared_guard = validation
+        elif callable(validate_ops):
             audit_source = f"{type(backend).__name__}.validate_required_ops"
             validation = validate_ops(
                 required_ops, strict_npu=True, raise_on_error=False)
@@ -223,12 +255,30 @@ def _audit_execution_sources(backend, plan, required_ops):
             audit_source = f"{type(backend).__name__}.validate_plan"
             validation = validate_plan(plan, strict_npu=True, raise_on_error=False)
     except Exception as exc:  # capability 检查失败必须保守拒绝，但保留诊断。
+        failed_validation = getattr(exc, "validation", None)
+        if failed_validation is not None:
+            validation = failed_validation
         error = f"{type(exc).__name__}: {exc}"
+        guard_integrity_error = bool(
+            callable(prepare_guard) and failed_validation is None
+        )
+    else:
+        guard_integrity_error = False
 
     data = _plain_validation(validation)
+    pending_profile = (
+        data.get("preflight_ok") is True
+        and data.get("profile_status") == "pending"
+    )
     missing = _names(data.get("missing"))
     non_strict = _names(data.get("non_strict"))
     capabilities = data.get("capabilities") or {}
+    receipt_issues = strict_receipt_issues(
+        data,
+        required_ops,
+        allow_profile_pending=True,
+        allow_scoped=prepared_guard is not None,
+    )
 
     cpu_fallback = []
     unknown_non_strict = []
@@ -259,7 +309,12 @@ def _audit_execution_sources(backend, plan, required_ops):
 
     if validation is None:
         missing = sorted(set(missing) | set(required_ops))
-    elif data.get("ok") is False and not missing and not non_strict:
+    elif (
+        data.get("ok") is False
+        and not pending_profile
+        and not missing
+        and not non_strict
+    ):
         # 无法解释的 audit 失败仍按 provenance unknown 处理。
         missing = sorted(set(required_ops))
 
@@ -275,10 +330,37 @@ def _audit_execution_sources(backend, plan, required_ops):
         issues.append("执行来源未知: " + ", ".join(missing))
     if error:
         issues.append("capability audit 失败: " + error)
-    if validation is not None and data.get("strict_npu") is not True:
+    if receipt_issues:
+        issues.append(
+            "capability receipt 不合格: " + "; ".join(receipt_issues)
+        )
+    if (
+        validation is not None
+        and data.get("strict_npu") is not True
+        and not pending_profile
+    ):
         issues.append("capability audit 未明确声明 strict_npu=true")
 
-    return {
+    scoped_without_guard = False
+    if prepared_guard is None and isinstance(capabilities, dict):
+        strict_sources = {"native_npu", "custom_npu", "composite_npu"}
+        for capability in capabilities.values():
+            cap = capability.to_dict() if callable(
+                getattr(capability, "to_dict", None)
+            ) else capability
+            if (
+                isinstance(cap, dict)
+                and cap.get("provenance") in strict_sources
+                and cap.get("constraints")
+                and cap.get("signature_variants")
+            ):
+                scoped_without_guard = True
+                break
+    if scoped_without_guard:
+        issues.append("profile-scoped capability 缺少可执行 runtime guard")
+        guard_integrity_error = True
+
+    result = {
         "ok": not issues,
         "audit_source": audit_source,
         "audit_error": error,
@@ -289,11 +371,37 @@ def _audit_execution_sources(backend, plan, required_ops):
         "backend_version": data.get("backend_version"),
         "audit_id": data.get("audit_id"),
         "environment": data.get("environment") or {},
-        "strict_npu": data.get("strict_npu") is True,
+        "strict_npu": (
+            data.get("strict_npu") is True or pending_profile
+        ),
+        "profile_status": data.get("profile_status"),
+        "profile_guard_integrity_error": guard_integrity_error,
         "provenance_by_op": provenance_by_op,
         "capabilities": capabilities,
         "issues": issues,
     }
+    if include_prepared_guard:
+        return result, prepared_guard
+    return result
+
+
+def _merge_profile_guard_receipt(provenance, profile_guard):
+    """Merge a guard receipt without promoting a failed aggregate audit."""
+
+    issues = list(provenance.get("issues") or ())
+    runtime_trace_ok = provenance.get("runtime_trace_ok")
+    receipt = profile_guard.to_dict()
+    provenance.update(receipt)
+    provenance["profile_guard"] = receipt
+    provenance["issues"] = issues
+    provenance["ok"] = bool(
+        receipt.get("ok") is True
+        and not issues
+        and runtime_trace_ok is not False
+    )
+    provenance["strict_npu"] = bool(
+        receipt.get("strict_npu") is True and not issues
+    )
 
 
 def _comparison_data(comparison):
@@ -338,7 +446,8 @@ def run_cpu_baseline(file, out_dir, cpu_threads):
     out = _to_numpy(namespace["forward"](*inputs))
     if not isinstance(out, np.ndarray):
         raise TypeError("bench-cpu 当前要求 forward 返回单个 ndarray")
-    t_cpu = _median_ms(namespace["forward"], inputs)
+    timing = _timing_samples_ms(namespace["forward"], inputs)
+    t_cpu = timing["median_ms"]
 
     os.makedirs(out_dir, exist_ok=True)
     np.save(os.path.join(out_dir, _BASELINE_NPY), out)
@@ -349,6 +458,7 @@ def run_cpu_baseline(file, out_dir, cpu_threads):
         "source_sha256": _source_hash(source),
         "net": _net_name(file),
         "t_cpu_ms": t_cpu,
+        "timing": timing,
         "n_elements": int(out.size),
         "output_shape": list(out.shape),
         "cpu_threads": threads,
@@ -372,15 +482,26 @@ def run_cpu_baseline(file, out_dir, cpu_threads):
 
 # ───────────────────────── ② NPU 对比 ─────────────────────────
 def run_npu_compare(
-        file, out_dir, engine=None, threshold=1_000_000, allow_cpu_fallback=False):
+        file, out_dir, engine=None, threshold=1_000_000, allow_cpu_fallback=False,
+        *, backend=None, analysis_profiles=None):
     with open(file, encoding="utf-8") as stream:
         source = stream.read()
 
-    analysis = AnalysisAgent().analyze(source, file)
+    backend = backend if backend is not None else select_backend("npu")
+    profile_resolver = (
+        backend
+        if callable(getattr(backend, "resolve_profile_capability", None))
+        else None
+    )
+    analysis = AnalysisAgent(profile_resolver).analyze(
+        source,
+        file,
+        profiles=analysis_profiles,
+    )
     net = _net_name(file)
     print(f"── NumPilot NPU 对比 · {net} " + "─" * max(4, 30 - len(net)))
     if not analysis.migratable:
-        print(f"[分析] 命中 {len(analysis.unsupported)} 个覆盖集缺口 ✗")
+        print(f"[分析] 命中 {len(analysis.unsupported)} 个静态阻断项 ✗")
         print("[缺口] " + ", ".join(analysis.unsupported) + "  (无法迁移)")
         return 1
 
@@ -394,9 +515,10 @@ def run_npu_compare(
     items = "  ".join(
         f"{op}×{count}" for op, count in
         sorted(migration.rewrites.items(), key=lambda item: (-item[1], item[0])))
-    print(f"[迁移] 引擎={migration.engine} · 替换 {total} 处 np.* → ap.*   {items}")
+    has_domain = any(op.kind == "domain_operator" for op in analysis.op_uses)
+    mapping = "np.*/OperatorSpec helper → ap.*" if has_domain else "np.* → ap.*"
+    print(f"[迁移] 引擎={migration.engine} · 替换 {total} 处 {mapping}   {items}")
 
-    backend = select_backend("npu")
     ap_module = backend.get_module()
     planned_npu_ops = {
         name for name, placement in plan.placement.items() if placement == "NPU"
@@ -406,7 +528,12 @@ def run_npu_compare(
         | set(migration.expected_rewrites)
         | planned_npu_ops
     )
-    provenance = _audit_execution_sources(backend, plan, required_ops)
+    provenance, profile_guard = _audit_execution_sources(
+        backend,
+        plan,
+        required_ops,
+        include_prepared_guard=True,
+    )
     provenance["static_forward_surface"] = {
         "ok": surface.ok,
         "ap_calls": dict(surface.ap_calls),
@@ -451,6 +578,7 @@ def run_npu_compare(
         "comparison": None,
         "t_cpu_ms": None,
         "t_npu_ms": None,
+        "npu_timing": None,
         "cpu_baseline": None,
         "npu_process_blas": _blas_runtime_info(),
         "artifact_inputs_executed": False,
@@ -465,7 +593,10 @@ def run_npu_compare(
         },
     }
 
-    if provenance["issues"] and not allow_cpu_fallback:
+    if provenance["issues"] and (
+        not allow_cpu_fallback
+        or provenance.get("profile_guard_integrity_error")
+    ):
         print("[门禁] 拒绝发布 NPU 性能结果 ✗")
         for issue in provenance["issues"]:
             print(f"       - {issue}")
@@ -479,15 +610,33 @@ def run_npu_compare(
         for issue in provenance["issues"]:
             print(f"       - {issue}")
 
-    # NumPy 参考只用于正确性，不参与本进程计时。
-    orig_ns = _load_namespace(source)
-    inputs = orig_ns["build_inputs"]()
-    reference = _to_numpy(orig_ns["forward"](*_clone_tree(inputs)))
-
     try:
-        execution_module, runtime_call_counts = traced_module(
-            ap_module, surface.ap_calls
+        if profile_guard is not None:
+            provenance["profile_scoped"] = list(profile_guard.profile_scoped)
+            provenance["runtime_profile_checks"] = profile_guard.checks
+            provenance["profile_status"] = profile_guard.profile_status
+        runtime_targets = (
+            profile_guard.runtime_targets
+            if profile_guard is not None else None
         )
+        execution_module, runtime_call_counts = traced_module(
+            ap_module,
+            surface.ap_calls,
+            before_call=(
+                profile_guard.validate_call
+                if profile_guard is not None else None
+            ),
+            targets=runtime_targets,
+            enforce_target_identity=True,
+        )
+
+        # NumPy reference code is user-authored.  Bind the audited target
+        # snapshot first so attempts to monkeypatch AsNumpy fail before target
+        # dispatch instead of inheriting a stale qualification receipt.
+        orig_ns = _load_namespace(source)
+        inputs = orig_ns["build_inputs"]()
+        reference = _to_numpy(orig_ns["forward"](*_clone_tree(inputs)))
+
         with temporary_module("asnumpy", execution_module):
             migrated_ns = _load_namespace(migration.migrated_source)
             migrated_inputs = migrated_ns["build_inputs"]()
@@ -533,9 +682,26 @@ def run_npu_compare(
                     "strict-NPU 每条验证路径都必须执行全部静态 ap.* callsite: "
                     + str(trace_missing)
                 )
-            t_npu = _median_ms(
+            if profile_guard is not None:
+                _merge_profile_guard_receipt(provenance, profile_guard)
+                if (
+                    profile_guard.profile_scoped
+                    and not profile_guard.runtime_profile_ok
+                ):
+                    raise RuntimeError(
+                        "strict-NPU scoped capability was not validated "
+                        "against a real runtime call"
+                    )
+            provenance["runtime_execution_ok"] = True
+            npu_timing = _timing_samples_ms(
                 forward, dev_inputs, sync=lambda value: _to_host(backend, value))
+            t_npu = npu_timing["median_ms"]
     except Exception as exc:
+        if profile_guard is not None:
+            _merge_profile_guard_receipt(provenance, profile_guard)
+        provenance["runtime_execution_ok"] = False
+        provenance["ok"] = False
+        provenance["strict_npu"] = False
         result["status"] = "runtime_error"
         result["runtime_error"] = f"{type(exc).__name__}: {exc}"
         result["performance_issues"].append("迁移侧运行失败: " + result["runtime_error"])
@@ -550,6 +716,7 @@ def run_npu_compare(
     result["artifact_comparison"] = _comparison_data(artifact_comparison)
     result["comparison"] = _comparison_data(comparison)
     result["t_npu_ms"] = t_npu
+    result["npu_timing"] = npu_timing
     result["status"] = (
         "pass_unqualified" if (
             input_comparison.consistent and kernel_comparison.consistent

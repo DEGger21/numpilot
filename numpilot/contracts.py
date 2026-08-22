@@ -10,6 +10,15 @@ class OpUse:
     supported: bool                 # 是否在覆盖集
     est_elements: Optional[int] = None  # 估计张量规模(决策用), 未知为 None
     reason: Optional[str] = None        # capability/signature 不满足时的原因
+    col_offset: int = 0
+    qualified_name: Optional[str] = None  # e.g. numpy.fft.fft
+    call_expr: Optional[str] = None
+    positional_args: int = 0
+    keyword_args: tuple = ()
+    kind: str = "numpy_api"          # "numpy_api" | "domain_operator"
+    target_api: Optional[str] = None  # e.g. asnumpy.smooth_l1_loss
+    requires_qualification: bool = False
+    operator_spec: Optional[dict] = None
 
 
 @dataclass

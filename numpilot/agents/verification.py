@@ -10,6 +10,7 @@ import numpy as np
 from numpilot.backends.base import ExecutionBackend
 from numpilot.backends.shim import ShimBackend
 from numpilot.comparison import ComparisonResult, compare_outputs
+from numpilot.capabilities import strict_receipt_issues
 from numpilot.contracts import VerificationReport
 from numpilot.engines.ast_rewrite import audit_forward_surface
 from numpilot.module_injection import temporary_module, traced_module
@@ -163,22 +164,10 @@ class VerificationAgent:
         backend_module = None
         backend_version = None
         provenance = {}
+        profile_guard = None
         artifact_inputs_executed = False
         rng_initial = (np.random.get_state(), random.getstate())
         try:
-            orig_ns = _load_namespace(orig_source, "<original>")
-            phase = "original.build_inputs"
-            _set_rng_state(rng_initial)
-            canonical_inputs = _normalise_inputs(orig_ns["build_inputs"]())
-            original_forward_rng = (np.random.get_state(), random.getstate())
-            phase = "original.forward"
-            _set_rng_state(original_forward_rng)
-            out_orig = orig_ns["forward"](*_clone_tree(canonical_inputs))
-            t_orig = (
-                _time_call(orig_ns["forward"], _clone_tree(canonical_inputs))
-                if measure else None
-            )
-
             phase = "migrated.backend"
             ap_module = self.backend.get_module()
             backend_module = getattr(ap_module, "__file__", None)
@@ -221,8 +210,23 @@ class VerificationAgent:
             if self.backend.name == "npu" and not discovered_ops:
                 raise RuntimeError("NPU 后端无法从迁移产物解析任何直接 ap.* 调用，已 fail closed")
             audited_ops = tuple(sorted(discovered_ops | expected_ops))
+            guard_factory = getattr(self.backend, "prepare_profile_guard", None)
             validator = getattr(self.backend, "validate_required_ops", None)
-            if callable(validator) and audited_ops:
+            if (
+                self.backend.name == "npu"
+                and callable(guard_factory)
+                and audited_ops
+            ):
+                phase = "migrated.capabilities"
+                try:
+                    profile_guard = guard_factory(audited_ops)
+                except Exception as error:
+                    failed_validation = getattr(error, "validation", None)
+                    if failed_validation is not None:
+                        provenance = failed_validation.to_dict()
+                    raise
+                provenance = profile_guard.to_dict()
+            elif callable(validator) and audited_ops:
                 phase = "migrated.capabilities"
                 try:
                     validation = validator(
@@ -236,10 +240,48 @@ class VerificationAgent:
                         provenance = failed_validation.to_dict()
                     raise
                 provenance = validation.to_dict()
+                if self.backend.name == "npu":
+                    receipt_issues = strict_receipt_issues(
+                        provenance,
+                        audited_ops,
+                    )
+                    if receipt_issues:
+                        raise RuntimeError(
+                            "strict capability receipt rejected: "
+                            + "; ".join(receipt_issues)
+                        )
 
-            execution_module, runtime_call_counts = traced_module(
-                ap_module, audited_ops
+            runtime_targets = (
+                profile_guard.runtime_targets
+                if profile_guard is not None else None
             )
+            execution_module, runtime_call_counts = traced_module(
+                ap_module,
+                audited_ops,
+                before_call=(
+                    profile_guard.validate_call
+                    if profile_guard is not None else None
+                ),
+                targets=runtime_targets,
+                enforce_target_identity=self.backend.name == "npu",
+            )
+
+            # Bind strict backend targets before executing either user-authored
+            # source.  Any subsequent monkeypatch is rejected before dispatch.
+            phase = "original.load"
+            orig_ns = _load_namespace(orig_source, "<original>")
+            phase = "original.build_inputs"
+            _set_rng_state(rng_initial)
+            canonical_inputs = _normalise_inputs(orig_ns["build_inputs"]())
+            original_forward_rng = (np.random.get_state(), random.getstate())
+            phase = "original.forward"
+            _set_rng_state(original_forward_rng)
+            out_orig = orig_ns["forward"](*_clone_tree(canonical_inputs))
+            t_orig = (
+                _time_call(orig_ns["forward"], _clone_tree(canonical_inputs))
+                if measure else None
+            )
+
             with temporary_module("asnumpy", execution_module):
                 phase = "migrated.load"
                 migrated_ns = _load_namespace(migrated_source, "<migrated-artifact>")
@@ -299,6 +341,17 @@ class VerificationAgent:
                 provenance["runtime_trace_ok"] = bool(
                     self.backend.name != "npu" or not missing_paths
                 )
+                if profile_guard is not None:
+                    provenance.update(profile_guard.to_dict())
+                    if (
+                        profile_guard.profile_scoped
+                        and not profile_guard.runtime_profile_ok
+                    ):
+                        raise RuntimeError(
+                            "strict-NPU scoped capability was not validated "
+                            "against a real runtime call"
+                        )
+                provenance["runtime_execution_ok"] = True
                 provenance["runtime_call_counts"] = {
                     "kernel": kernel_runtime_counts,
                     "artifact": artifact_runtime_counts,
@@ -334,6 +387,13 @@ class VerificationAgent:
                 artifact_comparison=artifact_comparison,
             )
         except Exception as error:  # 验证失败是结构化结果，不让编排进程直接崩溃。
+            if profile_guard is not None:
+                provenance = dict(provenance)
+                provenance.update(profile_guard.to_dict())
+            if self.backend.name == "npu":
+                provenance["runtime_execution_ok"] = False
+                provenance["ok"] = False
+                provenance["strict_npu"] = False
             report = self._exception_report(
                 phase,
                 error,

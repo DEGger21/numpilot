@@ -215,3 +215,148 @@ def forward(x):
     assert report.exception_phase == "migrated.surface"
     assert "PRECOMPUTED" in report.exception_message
     assert "不依赖" in report.exception_message
+
+
+def _scoped_cbrt_backend(target_calls):
+    import types
+
+    import numpy as np
+
+    from numpilot.backends.npu import NpuBackend
+    from numpilot.capabilities import (
+        CapabilityManifest,
+        ExecutionProvenance,
+        OperatorCapability,
+        OperatorSignature,
+    )
+
+    class ArrayFactory:
+        @staticmethod
+        def from_numpy(value):
+            return value
+
+    module = types.ModuleType("asnumpy")
+    module.__version__ = "private-cbrt"
+    module.__file__ = "/private/asnumpy/__init__.py"
+    module.ndarray = ArrayFactory
+
+    def cbrt(value):
+        target_calls.append(value.dtype.name)
+        return np.cbrt(value)
+
+    module.cbrt = cbrt
+
+    class ScopedBackend(NpuBackend):
+        def capability_manifest(self, required_ops=None):
+            return CapabilityManifest(
+                backend="npu",
+                backend_version=module.__version__,
+                audit_id="qualified-cbrt-test",
+                operators={
+                    "cbrt": OperatorCapability(
+                        name="cbrt",
+                        available=True,
+                        provenance=ExecutionProvenance.CUSTOM_NPU,
+                        evidence="qualification:qual-0123456789abcdefabcd",
+                        constraints=(
+                            "dtype=float32",
+                            "rank>=1",
+                            "contiguous=true",
+                        ),
+                        signature_variants=(
+                            OperatorSignature(positional_args=1),
+                        ),
+                    )
+                },
+            )
+
+    return ScopedBackend(module=module)
+
+
+def _cbrt_sources(dtype):
+    original = f"""
+import numpy as np
+def build_inputs(): return (np.array([1.0, 8.0], dtype=np.{dtype}),)
+def forward(x): return np.cbrt(x)
+"""
+    migrated = f"""
+import numpy as np
+import asnumpy as ap
+def build_inputs(): return (np.array([1.0, 8.0], dtype=np.{dtype}),)
+def forward(x):
+    if isinstance(x, np.ndarray):
+        x = ap.ndarray.from_numpy(x)
+    return ap.cbrt(x)
+"""
+    return original, migrated
+
+
+def test_verifier_executes_scoped_custom_op_only_after_profile_match():
+    target_calls = []
+    original, migrated = _cbrt_sources("float32")
+
+    report = VerificationAgent(_scoped_cbrt_backend(target_calls)).verify(
+        original,
+        migrated,
+        measure=False,
+        required_ops={"cbrt": 1},
+    )
+
+    assert report.status == "pass"
+    assert target_calls == ["float32", "float32"]
+    assert report.backend_provenance["profile_scoped"] == ["cbrt"]
+    assert report.backend_provenance["runtime_profile_ok"] is True
+    assert len(report.backend_provenance["runtime_profile_checks"]["cbrt"]) == 2
+
+
+def test_verifier_rejects_scoped_dtype_before_custom_op_dispatch():
+    target_calls = []
+    original, migrated = _cbrt_sources("float64")
+
+    report = VerificationAgent(_scoped_cbrt_backend(target_calls)).verify(
+        original,
+        migrated,
+        measure=False,
+        required_ops={"cbrt": 1},
+    )
+
+    assert report.status == "fail"
+    assert report.exception_phase == "migrated.forward"
+    assert report.exception_type == "RuntimeProfileError"
+    assert "dtype=float64" in report.exception_message
+    assert target_calls == []
+    checks = report.backend_provenance["runtime_profile_checks"]["cbrt"]
+    assert checks and checks[0]["matched"] is False
+
+
+def test_verifier_rejects_original_source_target_monkeypatch_before_dispatch():
+    target_calls = []
+    backend = _scoped_cbrt_backend(target_calls)
+    original, migrated = _cbrt_sources("float32")
+    original = original.replace(
+        "def build_inputs(): return",
+        "def build_inputs():\n    backend.cbrt = np.cbrt\n    return",
+        1,
+    )
+    original = "import sys\nbackend = sys.modules['poison_backend']\n" + original
+
+    import sys
+    sys.modules["poison_backend"] = backend.get_module()
+
+    try:
+        report = VerificationAgent(backend).verify(
+            original,
+            migrated,
+            measure=False,
+            required_ops={"cbrt": 1},
+        )
+    finally:
+        sys.modules.pop("poison_backend", None)
+
+    assert report.status == "fail"
+    assert report.exception_phase == "migrated.forward"
+    assert report.exception_type == "RuntimeError"
+    assert "target integrity rejected" in report.exception_message
+    assert target_calls == []
+    assert report.backend_provenance["ok"] is False
+    assert report.backend_provenance["strict_npu"] is False

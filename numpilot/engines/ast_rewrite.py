@@ -2,8 +2,13 @@
 import ast
 from dataclasses import dataclass
 
+from numpilot.agents.analysis import (
+    numpy_bindings_for_forward,
+    resolve_numpy_function,
+)
 from numpilot.contracts import OffloadPlan
 from numpilot.engines.base import MigrationEngine
+from numpilot.operator_specs import collect_static_operator_specs
 
 
 _CONTROL_FLOW_NODES = (
@@ -280,7 +285,6 @@ def count_ap_calls(source: str) -> dict:
 def expected_forward_ap_calls(source: str, plan: OffloadPlan) -> dict:
     """从原始 ``forward`` 和 plan 推导 strict MVP 允许的精确改写清单。"""
     tree = ast.parse(source)
-    np_aliases = AstRewriteEngine._np_aliases(tree)
     npu_ops = {name for name, place in plan.placement.items() if place == "NPU"}
     forwards = [
         node for node in tree.body
@@ -288,19 +292,32 @@ def expected_forward_ap_calls(source: str, plan: OffloadPlan) -> dict:
     ]
     if len(forwards) != 1:
         return {}
+    forward = forwards[0]
+    numpy_bindings = numpy_bindings_for_forward(tree, forward)
+    static_specs = collect_static_operator_specs(tree).specs
+    argument_names = {
+        item.arg
+        for item in (
+            list(forward.args.posonlyargs)
+            + list(forward.args.args)
+            + list(forward.args.kwonlyargs)
+        )
+    }
+    shadowed = argument_names | _assigned_names(forward)
+    domain_specs = {
+        name: spec for name, spec in static_specs.items() if name not in shadowed
+    }
 
     counts = {}
 
     class _ExpectedVisitor(ast.NodeVisitor):
         def visit_Call(self, node):
-            func = node.func
-            if (
-                isinstance(func, ast.Attribute)
-                and isinstance(func.value, ast.Name)
-                and func.value.id in np_aliases
-                and func.attr in npu_ops
-            ):
-                name = func.attr
+            resolved = resolve_numpy_function(node.func, numpy_bindings)
+            if resolved is not None:
+                name, qualified = resolved
+            else:
+                name, qualified = None, None
+            if name in npu_ops and qualified == "numpy." + name:
                 if (
                     name == "maximum"
                     and len(node.args) == 2
@@ -312,16 +329,44 @@ def expected_forward_ap_calls(source: str, plan: OffloadPlan) -> dict:
                 ):
                     name = "relu"
                 counts[name] = counts.get(name, 0) + 1
+            elif isinstance(node.func, ast.Name):
+                spec = domain_specs.get(node.func.id)
+                if spec is not None and spec.name in npu_ops:
+                    counts[spec.name] = counts.get(spec.name, 0) + 1
             self.generic_visit(node)
 
-    _ExpectedVisitor().visit(forwards[0])
+        def visit_FunctionDef(self, node):
+            return None
+
+        def visit_AsyncFunctionDef(self, node):
+            return None
+
+        def visit_ClassDef(self, node):
+            return None
+
+        def visit_Lambda(self, node):
+            return None
+
+    visitor = _ExpectedVisitor()
+    for statement in forward.body:
+        visitor.visit(statement)
     return counts
 
 
 class _Rewriter(ast.NodeTransformer):
-    def __init__(self, np_aliases, npu_ops):
-        self.np_aliases = np_aliases        # {"np"}
+    def __init__(
+        self,
+        numpy_bindings,
+        domain_specs,
+        npu_ops,
+        numpy_alias,
+        ap_alias,
+    ):
+        self.numpy_bindings = numpy_bindings
+        self.domain_specs = dict(domain_specs)
         self.npu_ops = npu_ops              # set[str], 需改到 ap 的算子
+        self.numpy_alias = numpy_alias
+        self.ap_alias = ap_alias
         self.used_ap = False
         self._in_forward = False
         self._current_forward_used_ap = False
@@ -354,21 +399,29 @@ class _Rewriter(ast.NodeTransformer):
 
     visit_AsyncFunctionDef = visit_FunctionDef
 
+    def visit_ClassDef(self, node):
+        if self._in_forward:
+            return node
+        return self.generic_visit(node)
+
+    def visit_Lambda(self, node):
+        if self._in_forward:
+            return node
+        return self.generic_visit(node)
+
     def _input_uploads(self, node):
         """为具名参数生成幂等上传:NumPy ndarray 上传,设备数组原样保留。"""
-        np_alias = sorted(self.np_aliases)[0]
         args = node.args.posonlyargs + node.args.args + node.args.kwonlyargs
-        return [self._input_upload(arg.arg, np_alias) for arg in args]
+        return [self._input_upload(arg.arg) for arg in args]
 
-    @staticmethod
-    def _input_upload(name, np_alias):
+    def _input_upload(self, name):
         return ast.If(
             test=ast.Call(
                 func=ast.Name(id="isinstance", ctx=ast.Load()),
                 args=[
                     ast.Name(id=name, ctx=ast.Load()),
                     ast.Attribute(
-                        value=ast.Name(id=np_alias, ctx=ast.Load()),
+                        value=ast.Name(id=self.numpy_alias, ctx=ast.Load()),
                         attr="ndarray",
                         ctx=ast.Load(),
                     ),
@@ -381,7 +434,7 @@ class _Rewriter(ast.NodeTransformer):
                     value=ast.Call(
                         func=ast.Attribute(
                             value=ast.Attribute(
-                                value=ast.Name(id="ap", ctx=ast.Load()),
+                                value=ast.Name(id=self.ap_alias, ctx=ast.Load()),
                                 attr="ndarray",
                                 ctx=ast.Load(),
                             ),
@@ -403,23 +456,50 @@ class _Rewriter(ast.NodeTransformer):
     def visit_Call(self, node):
         if not self._in_forward:
             return node
+        if isinstance(node.func, ast.Name):
+            spec = self.domain_specs.get(node.func.id)
+            if spec is not None and spec.name in self.npu_ops:
+                self.generic_visit(node)
+                self._mark_ap_used()
+                node.func = ast.copy_location(
+                    ast.Attribute(
+                        value=ast.Name(id=self.ap_alias, ctx=ast.Load()),
+                        attr=spec.name,
+                        ctx=ast.Load(),
+                    ),
+                    node.func,
+                )
+                return node
+        resolved = resolve_numpy_function(node.func, self.numpy_bindings)
+        if resolved is not None:
+            name, qualified = resolved
+        else:
+            name, qualified = None, None
+        if name not in self.npu_ops or qualified != "numpy." + str(name):
+            self.generic_visit(node)
+            return node
         # relu 模式:np.maximum(x, 0) / np.maximum(0, x) → ap.relu(x)
         # asnumpy 的二元算子要求两侧都是 NPUArray,不接受标量 0;而 relu 在覆盖集内,
         # 语义等价且真机可用。故把这一 numpy 惯用法识别改写为 ap.relu。
-        relu = self._as_relu(node)
+        relu = self._as_relu(node, name)
         if relu is not None:
             return relu
         self.generic_visit(node)
+        self._mark_ap_used()
+        node.func = ast.copy_location(
+            ast.Attribute(
+                value=ast.Name(id=self.ap_alias, ctx=ast.Load()),
+                attr=name,
+                ctx=ast.Load(),
+            ),
+            node.func,
+        )
         return node
 
-    def _as_relu(self, node):
-        func = node.func
+    def _as_relu(self, node, name):
         if not (
-            isinstance(func, ast.Attribute)
-            and func.attr == "maximum"
+            name == "maximum"
             and "maximum" in self.npu_ops
-            and isinstance(func.value, ast.Name)
-            and func.value.id in self.np_aliases
         ):
             return None
         if len(node.args) != 2 or node.keywords:
@@ -435,7 +515,7 @@ class _Rewriter(ast.NodeTransformer):
         new_x = self.visit(x)                 # 递归改写内部(matmul/add 等)
         return ast.copy_location(
             ast.Call(
-                func=ast.Attribute(value=ast.Name(id="ap", ctx=ast.Load()),
+                func=ast.Attribute(value=ast.Name(id=self.ap_alias, ctx=ast.Load()),
                                    attr="relu", ctx=ast.Load()),
                 args=[new_x], keywords=[],
             ),
@@ -451,51 +531,103 @@ class _Rewriter(ast.NodeTransformer):
             and n.value == 0
         )
 
-    def visit_Attribute(self, node):
-        if not self._in_forward:
-            return node
-        self.generic_visit(node)
-        if (
-            isinstance(node.value, ast.Name)
-            and node.value.id in self.np_aliases
-            and node.attr in self.npu_ops
-        ):
-            self._mark_ap_used()
-            return ast.copy_location(
-                ast.Attribute(value=ast.Name(id="ap", ctx=ast.Load()),
-                              attr=node.attr, ctx=node.ctx),
-                node,
-            )
-        return node
-
 
 class AstRewriteEngine(MigrationEngine):
     name = "ast"
 
     def rewrite(self, source: str, plan: OffloadPlan) -> str:
         tree = ast.parse(source)
-        np_aliases = self._np_aliases(tree)
+        forwards = [
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == "forward"
+        ]
+        if len(forwards) != 1:
+            return ast.unparse(tree)
+        numpy_bindings = numpy_bindings_for_forward(tree, forwards[0])
+        static_specs = collect_static_operator_specs(tree).specs
+        arguments = (
+            list(forwards[0].args.posonlyargs)
+            + list(forwards[0].args.args)
+            + list(forwards[0].args.kwonlyargs)
+        )
+        shadowed = {item.arg for item in arguments} | _assigned_names(forwards[0])
+        domain_specs = {
+            name: spec for name, spec in static_specs.items() if name not in shadowed
+        }
         npu_ops = {op for op, place in plan.placement.items() if place == "NPU"}
-        rewriter = _Rewriter(np_aliases, npu_ops)
+        numpy_alias = self._module_numpy_alias(tree, numpy_bindings)
+        add_numpy_import = numpy_alias is None
+        if add_numpy_import:
+            numpy_alias = self._fresh_alias(tree, "_numpilot_numpy")
+        ap_alias = self._fresh_alias(tree, "ap")
+        rewriter = _Rewriter(
+            numpy_bindings,
+            domain_specs,
+            npu_ops,
+            numpy_alias,
+            ap_alias,
+        )
         new_tree = rewriter.visit(tree)
         ast.fix_missing_locations(new_tree)
         if rewriter.used_ap:
-            self._insert_ap_import(new_tree)
+            if add_numpy_import:
+                self._insert_import(new_tree, "numpy", numpy_alias)
+            self._insert_import(new_tree, "asnumpy", ap_alias)
         return ast.unparse(new_tree)
 
     @staticmethod
     def _np_aliases(tree):
-        aliases = set()
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                for a in node.names:
-                    if a.name == "numpy":
-                        aliases.add(a.asname or "numpy")
-        return aliases or {"np"}
+        forwards = [
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == "forward"
+        ]
+        if len(forwards) != 1:
+            return set()
+        bindings = numpy_bindings_for_forward(tree, forwards[0])
+        return {
+            name for name, qualified in bindings.items()
+            if qualified == "numpy"
+        }
 
     @staticmethod
-    def _insert_ap_import(tree):
-        imp = ast.Import(names=[ast.alias(name="asnumpy", asname="ap")])
+    def _module_numpy_alias(tree, numpy_bindings):
+        for statement in tree.body:
+            if not isinstance(statement, ast.Import):
+                continue
+            for alias in statement.names:
+                local_name = alias.asname or alias.name.split(".", 1)[0]
+                if numpy_bindings.get(local_name) == "numpy":
+                    return local_name
+        return None
+
+    @staticmethod
+    def _fresh_alias(tree, preferred):
+        used = {
+            node.id for node in ast.walk(tree)
+            if isinstance(node, ast.Name)
+        }
+        used.update(
+            node.arg for node in ast.walk(tree)
+            if isinstance(node, ast.arg)
+        )
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                used.update(
+                    alias.asname or alias.name.split(".", 1)[0]
+                    for alias in node.names
+                )
+            elif isinstance(node, ast.ImportFrom):
+                used.update(alias.asname or alias.name for alias in node.names)
+        candidate = preferred
+        suffix = 2
+        while candidate in used:
+            candidate = "%s_%d" % (preferred, suffix)
+            suffix += 1
+        return candidate
+
+    @staticmethod
+    def _insert_import(tree, module, alias):
+        imp = ast.Import(names=[ast.alias(name=module, asname=alias)])
         last_import_idx = -1
         for i, node in enumerate(tree.body):
             if isinstance(node, (ast.Import, ast.ImportFrom)):

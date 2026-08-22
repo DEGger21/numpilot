@@ -21,16 +21,34 @@ def _make_engine(name):
 
 
 class Orchestrator:
-    def __init__(self, backend=None, engine=None, threshold=1_000_000):
+    def __init__(
+        self,
+        backend=None,
+        engine=None,
+        threshold=1_000_000,
+        analysis_profiles=None,
+    ):
         self.backend = backend if backend is not None else select_backend()
         self.engine = engine if engine is not None else AstRewriteEngine()
         self.threshold = threshold
+        self.analysis_profiles = analysis_profiles
 
     def run(self, source_path: str, out_dir=None) -> dict:
         with open(source_path, encoding="utf-8") as f:
             source = f.read()
 
-        analysis = AnalysisAgent().analyze(source, source_path)
+        profile_resolver = (
+            self.backend
+            if callable(
+                getattr(self.backend, "resolve_profile_capability", None)
+            )
+            else None
+        )
+        analysis = AnalysisAgent(profile_resolver).analyze(
+            source,
+            source_path,
+            profiles=self.analysis_profiles,
+        )
         if not analysis.migratable:
             result = {
                 "status": "unsupported",

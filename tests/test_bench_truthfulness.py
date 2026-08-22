@@ -1,5 +1,6 @@
 """真实性能评测：数值、线程观测与 strict-NPU provenance 门禁。"""
 import json
+import hashlib
 import sys
 import types
 
@@ -10,6 +11,7 @@ from numpilot.bench import (
     _blas_runtime_info,
     _comparison_data,
     _speedup_verdict,
+    _timing_samples_ms,
     _to_host,
     _write_benchmark_artifacts,
 )
@@ -34,6 +36,22 @@ def test_benchmark_comparison_rejects_zero_reference_mismatch():
 def test_speedup_verdict_says_which_side_is_faster():
     assert _speedup_verdict(2.0) == "NPU 快 2.00x"
     assert _speedup_verdict(0.25) == "CPU 快 4.00x"
+
+
+def test_timing_evidence_keeps_raw_samples_and_warmup_counts():
+    calls = []
+
+    def measured(value):
+        calls.append(value)
+        return value
+
+    timing = _timing_samples_ms(measured, (1,), warmup=2, iters=4)
+    assert calls == [1] * 6
+    assert timing["clock"] == "time.perf_counter"
+    assert timing["warmup_iterations"] == 2
+    assert timing["measurement_iterations"] == 4
+    assert len(timing["samples_ms"]) == 4
+    assert timing["median_ms"] == sorted(timing["samples_ms"])[2]
 
 
 def test_blas_runtime_info_prefers_observed_threadpool(monkeypatch):
@@ -233,8 +251,17 @@ def test_run_npu_compare_executes_migrated_artifact_build_inputs(monkeypatch, tm
             return _Validation({
                 "ok": True, "missing": [], "non_strict": [],
                 "strict_npu": True,
+                "required_ops": ["add"],
                 "capabilities": {
-                    "add": {"provenance": "native_npu", "strict_npu": True},
+                    "add": {
+                        "name": "add",
+                        "available": True,
+                        "provenance": "native_npu",
+                        "strict_npu": True,
+                        "evidence": "test source audit",
+                        "constraints": [],
+                        "signature_variants": [],
+                    },
                 },
             })
 
@@ -337,8 +364,17 @@ def test_successful_run_without_cpu_baseline_is_not_performance_valid(
             return _Validation({
                 "ok": True, "missing": [], "non_strict": [],
                 "strict_npu": True,
+                "required_ops": ["add"],
                 "capabilities": {
-                    "add": {"provenance": "native_npu", "strict_npu": True},
+                    "add": {
+                        "name": "add",
+                        "available": True,
+                        "provenance": "native_npu",
+                        "strict_npu": True,
+                        "evidence": "test source audit",
+                        "constraints": [],
+                        "signature_variants": [],
+                    },
                 },
             })
 
@@ -365,15 +401,270 @@ def test_cli_forwards_allow_cpu_fallback(monkeypatch, tmp_path):
 
     seen = {}
     monkeypatch.setattr(cli, "_preflight", lambda *args: None)
+    backend = object()
+    profiles = object()
 
-    def fake_run(file, out_dir, engine, threshold, allow_cpu_fallback):
+    def fake_runtime(args, backend_name):
+        seen["overlay"] = args.capability_overlay
+        seen["root"] = args.qualification_evidence_root
+        seen["profiles_path"] = args.analysis_profiles
+        assert backend_name == "npu"
+        return backend, profiles
+
+    monkeypatch.setattr(cli, "_qualified_runtime_inputs", fake_runtime)
+
+    def fake_run(
+        file,
+        out_dir,
+        engine,
+        threshold,
+        allow_cpu_fallback,
+        *,
+        backend,
+        analysis_profiles,
+    ):
         seen["allow"] = allow_cpu_fallback
+        seen["backend"] = backend
+        seen["profiles"] = analysis_profiles
         return 0
 
     monkeypatch.setattr(cli, "run_npu_compare", fake_run)
     rc = cli.main([
         "bench-npu", "x.py", "--out", str(tmp_path),
         "--allow-cpu-fallback",
+        "--capability-overlay", "/private/overlay.json",
+        "--qualification-evidence-root", "/private/evidence",
+        "--analysis-profiles", "/private/profiles.json",
     ])
     assert rc == 0
     assert seen["allow"] is True
+    assert seen["backend"] is backend
+    assert seen["profiles"] is profiles
+    assert seen["overlay"] == "/private/overlay.json"
+    assert seen["root"] == "/private/evidence"
+    assert seen["profiles_path"] == "/private/profiles.json"
+
+
+def test_cli_rejects_incomplete_overlay_pair_before_preflight(monkeypatch, capsys):
+    from numpilot import __main__ as cli
+
+    monkeypatch.setattr(
+        cli,
+        "_preflight",
+        lambda *args: (_ for _ in ()).throw(
+            AssertionError("invalid activation must fail before preflight")
+        ),
+    )
+
+    rc = cli.main([
+        "bench-npu",
+        "x.py",
+        "--capability-overlay",
+        "/private/overlay.json",
+    ])
+
+    assert rc == 2
+    assert "必须成对提供" in capsys.readouterr().err
+
+
+def _scoped_benchmark_case(tmp_path, dtype):
+    from numpilot.agents.analysis import AnalysisAgent
+    from numpilot.capabilities import (
+        AnalysisCallsiteProfile,
+        AnalysisProfileSet,
+        OperatorCallProfile,
+        TensorProfile,
+    )
+    from numpilot.backends.npu import NpuBackend
+    from numpilot.capabilities import (
+        AnalysisCallsiteProfile,
+        AnalysisProfileSet,
+        CapabilityManifest,
+        ExecutionProvenance,
+        OperatorCallProfile,
+        OperatorCapability,
+        OperatorSignature,
+        TensorProfile,
+    )
+
+    source_text = (
+        "import numpy as np\n"
+        "def build_inputs():\n"
+        f"    return (np.array([1.0, 8.0], dtype=np.{dtype}),)\n"
+        "def forward(x):\n"
+        "    return np.cbrt(x)\n"
+    )
+    source = tmp_path / ("cbrt_" + dtype + ".py")
+    source.write_text(source_text, encoding="utf-8")
+    op = AnalysisAgent().analyze(source_text, str(source)).op_uses[0]
+    profiles = AnalysisProfileSet(
+        source_sha256=hashlib.sha256(source_text.encode("utf-8")).hexdigest(),
+        callsites=(AnalysisCallsiteProfile(
+            qualified_name="numpy.cbrt",
+            lineno=op.lineno,
+            col_offset=op.col_offset,
+            profile=OperatorCallProfile(
+                inputs=(TensorProfile("float32", (2,), True),),
+                positional_args=1,
+                keyword_args=(),
+            ),
+        ),),
+    )
+    calls = []
+
+    class ArrayFactory:
+        @staticmethod
+        def from_numpy(value):
+            return value.copy()
+
+    module = types.ModuleType("asnumpy")
+    module.__version__ = "private-cbrt"
+    module.__file__ = "/private/asnumpy/__init__.py"
+    module.ndarray = ArrayFactory
+
+    def cbrt(value):
+        calls.append(value.dtype.name)
+        return np.cbrt(value)
+
+    module.cbrt = cbrt
+
+    class Backend(NpuBackend):
+        def capability_manifest(self, required_ops=None):
+            return CapabilityManifest(
+                backend="npu",
+                backend_version=module.__version__,
+                audit_id="qualified-cbrt-test",
+                operators={
+                    "cbrt": OperatorCapability(
+                        name="cbrt",
+                        available=True,
+                        provenance=ExecutionProvenance.CUSTOM_NPU,
+                        evidence="qualification:qual-test",
+                        constraints=(
+                            "dtype=float32",
+                            "rank>=1",
+                            "contiguous=true",
+                        ),
+                        signature_variants=(
+                            OperatorSignature(positional_args=1),
+                        ),
+                    ),
+                },
+            )
+
+        def to_device(self, value):
+            return value.copy()
+
+        def to_host(self, value):
+            return value
+
+    return source, Backend(module=module), profiles, calls
+
+
+def test_benchmark_scoped_profile_matches_before_performance_path(tmp_path):
+    from numpilot import bench
+
+    source, backend, profiles, calls = _scoped_benchmark_case(
+        tmp_path,
+        "float32",
+    )
+    out = tmp_path / "valid-scoped"
+
+    rc = bench.run_npu_compare(
+        str(source),
+        str(out),
+        backend=backend,
+        analysis_profiles=profiles,
+    )
+
+    assert rc == 0
+    assert calls
+    result = json.loads((out / "npu_benchmark.json").read_text())
+    assert result["provenance"]["profile_status"] == "matched"
+    assert result["provenance"]["runtime_profile_ok"] is True
+
+
+def test_benchmark_runtime_profile_rechecks_stale_static_receipt_before_target(
+    tmp_path,
+):
+    from numpilot import bench
+
+    source, backend, profiles, calls = _scoped_benchmark_case(
+        tmp_path,
+        "float64",
+    )
+    out = tmp_path / "stale-scoped"
+
+    rc = bench.run_npu_compare(
+        str(source),
+        str(out),
+        backend=backend,
+        analysis_profiles=profiles,
+    )
+
+    assert rc == 4
+    assert calls == []
+    result = json.loads((out / "npu_benchmark.json").read_text())
+    assert result["status"] == "runtime_error"
+    assert "dtype=float64" in result["runtime_error"]
+    assert result["provenance"]["profile_status"] == "rejected"
+    assert result["provenance"]["ok"] is False
+    assert result["provenance"]["strict_npu"] is False
+
+
+def test_benchmark_rejects_original_source_target_monkeypatch(tmp_path):
+    from numpilot import bench
+
+    source, backend, profiles, calls = _scoped_benchmark_case(
+        tmp_path,
+        "float32",
+    )
+    source_text = source.read_text(encoding="utf-8")
+    poisoned = source_text.replace(
+        "def build_inputs():",
+        "def build_inputs():\n"
+        "    __import__('sys').modules['poison_backend'].cbrt = np.cbrt",
+        1,
+    )
+    source.write_text(poisoned, encoding="utf-8")
+    from numpilot.agents.analysis import AnalysisAgent
+    from numpilot.capabilities import (
+        AnalysisCallsiteProfile,
+        AnalysisProfileSet,
+        OperatorCallProfile,
+        TensorProfile,
+    )
+
+    op = AnalysisAgent().analyze(poisoned, str(source)).op_uses[0]
+    profiles = AnalysisProfileSet(
+        source_sha256=hashlib.sha256(poisoned.encode("utf-8")).hexdigest(),
+        callsites=(AnalysisCallsiteProfile(
+            qualified_name="numpy.cbrt",
+            lineno=op.lineno,
+            col_offset=op.col_offset,
+            profile=OperatorCallProfile(
+                inputs=(TensorProfile("float32", (2,), True),),
+                positional_args=1,
+                keyword_args=(),
+            ),
+        ),),
+    )
+    out = tmp_path / "poisoned-scoped"
+
+    sys.modules["poison_backend"] = backend.get_module()
+    try:
+        rc = bench.run_npu_compare(
+            str(source),
+            str(out),
+            backend=backend,
+            analysis_profiles=profiles,
+        )
+    finally:
+        sys.modules.pop("poison_backend", None)
+
+    assert rc == 4
+    assert calls == []
+    result = json.loads((out / "npu_benchmark.json").read_text())
+    assert "target integrity rejected" in result["runtime_error"]
+    assert result["provenance"]["ok"] is False
+    assert result["provenance"]["strict_npu"] is False

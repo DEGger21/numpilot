@@ -6,7 +6,7 @@ capability provenance；性能必须通过独立的 ``bench-cpu`` / ``bench-npu`
 """
 import ast
 import os
-import re
+import sys
 
 from rich.console import Console
 from rich.panel import Panel
@@ -24,6 +24,8 @@ from numpilot.backends.base import select_backend
 from numpilot.coverage import is_custom
 from numpilot.engines.llm import LlmError
 from numpilot.env_check import Env
+from numpilot.llm_config import (LlmConfigError, configure_llm_interactive,
+                                 load_llm_config)
 from numpilot.orchestrator import _make_engine
 from numpilot.report import save_migration_report
 
@@ -52,20 +54,6 @@ def validate_task_file(path):
     return True, p, ""
 
 
-def load_env_llm(path=".env.llm"):
-    """把 .env.llm 里的 `export KEY="VAL"` 载入 os.environ。返回载入的 key 列表。"""
-    if not os.path.isfile(path):
-        return []
-    loaded = []
-    pat = re.compile(r'^\s*export\s+(\w+)\s*=\s*"?([^"\n]*)"?\s*$')
-    for line in open(path, encoding="utf-8"):
-        m = pat.match(line)
-        if m:
-            os.environ[m.group(1)] = m.group(2)
-            loaded.append(m.group(1))
-    return loaded
-
-
 def custom_op_breakdown(rewrites):
     """挑出 AsNumpy 的扩展 API；这不代表本次新生成了自定义算子。"""
     return {op: n for op, n in rewrites.items() if is_custom(op)}
@@ -73,7 +61,8 @@ def custom_op_breakdown(rewrites):
 
 def agent_roster(engine_name):
     """返回 5 智能体阵容 [(名称, 职责, 模型/引擎)]。只有迁移智能体(可选)用大模型。"""
-    mig_model = ("glm-5.1 大模型" if engine_name == "llm"
+    configured_model = os.getenv("NUMPILOT_LLM_MODEL", "已配置 LLM")
+    mig_model = (f"{configured_model} 大模型" if engine_name == "llm"
                  else "AST 确定性改写(规则,无模型)")
     return [
         ("编排智能体 Orchestrator", "统筹流水线 · 传递上下文 · 汇总报告", "规则编排(无模型)"),
@@ -122,15 +111,22 @@ def _ask_file(file):
 
 
 def _ask_engine(engine):
+    interactive_choice = engine is None
     if engine is None:
-        engine = Prompt.ask("[bold]选择迁移引擎[/]  [dim](ast=确定性改写/离线, llm=glm-5.1 大模型智能体)[/]",
+        engine = Prompt.ask("[bold]选择迁移引擎[/]  [dim](ast=确定性改写/离线, llm=已配置大模型智能体)[/]",
                             choices=["ast", "llm"], default="ast")
     if engine == "llm":
-        loaded = load_env_llm()
-        if not loaded:
-            console.print("[red]✗ 未找到 .env.llm,无法启用大模型智能体。[/]")
-            return None
-        console.print(f"[green]✓[/] 已载入大模型凭据(model=[bold]{os.getenv('NUMPILOT_LLM_MODEL','?')}[/],"
+        status = load_llm_config()
+        if not status.configured:
+            can_prompt = interactive_choice and sys.stdin.isatty() and sys.stdout.isatty()
+            if not can_prompt:
+                raise LlmConfigError(
+                    status.summary() + "；请先运行 python -m numpilot configure-llm"
+                )
+            if not Confirm.ask("尚未配置 LLM，是否现在在 NumPilot 内填写?", default=True):
+                return None
+            status = configure_llm_interactive()
+        console.print(f"[green]✓[/] 已载入大模型配置(model=[bold]{status.model or '?'}[/],"
                       "失败将按 strict 直接终止)")
     return engine
 
@@ -170,7 +166,7 @@ def _startup_check(backend, interactive):
 def _run_pipeline(source, path, engine_name, backend_name):
     """跑分析→整段决策→迁移→产物校验→证据门禁。"""
     data = {"path": path, "engine": engine_name, "backend": backend_name}
-    mig_tag = "glm-5.1" if engine_name == "llm" else "AST"
+    mig_tag = os.getenv("NUMPILOT_LLM_MODEL", "LLM") if engine_name == "llm" else "AST"
     # 每步归属的智能体(名称, 该步用的模型/引擎), 让用户看清是谁在动作
     steps = [
         ("分析智能体", "分析算子", "规则AST"),
@@ -222,7 +218,8 @@ def _run_pipeline(source, path, engine_name, backend_name):
         with open(mig_path, "w", encoding="utf-8") as f:
             f.write(migration.migrated_source)
         data["migrated_path"] = mig_path
-        model_tag = "glm-5.1 大模型" if migration.engine == "llm" else "AST 规则改写"
+        model_tag = ((os.getenv("NUMPILOT_LLM_MODEL", "LLM") + " 大模型")
+                     if migration.engine == "llm" else "AST 规则改写")
         prog.console.print(f"   ↳ [magenta]迁移智能体·{model_tag}[/] 替换 {migration.total_rewrites} 处 np.* → ap.*")
         prog.advance(t)
 
@@ -288,7 +285,9 @@ def _feedback(data):
     net = os.path.splitext(os.path.basename(data["path"]))[0]
     tb.add_row("网络", net)
     tb.add_row("源程序", data["path"])
-    tb.add_row("迁移引擎", data["engine"] + (" (glm-5.1 智能体)" if data["engine"] == "llm" else " (确定性改写)"))
+    model_label = os.getenv("NUMPILOT_LLM_MODEL", "LLM")
+    tb.add_row("迁移引擎", data["engine"] +
+               (f" ({model_label} 智能体)" if data["engine"] == "llm" else " (确定性改写)"))
     tb.add_row(
         "算子分析",
         f"{len(a.op_uses)} 处 forward 调用 · {len({o.name for o in a.op_uses})} 个算子 · "
@@ -389,7 +388,11 @@ def run_wizard(file=None, engine=None, backend="npu"):
     path = _ask_file(file)
     if path is None:
         return 1
-    engine_name = _ask_engine(engine)
+    try:
+        engine_name = _ask_engine(engine)
+    except LlmConfigError as e:
+        console.print(Panel(f"{e}", title="[red]LLM 配置失败[/]", border_style="red"))
+        return 4
     if engine_name is None:
         return 1
 

@@ -22,6 +22,25 @@ def test_e2e_elementwise_strict_npu_candidate_under_shim():
     assert "ap.square(" in res["migrated_source"]
 
 
+def test_from_numpy_import_migrates_and_verifies_end_to_end(tmp_path):
+    source = tmp_path / "from_import.py"
+    source.write_text(
+        "from numpy import array, sqrt as root\n"
+        "def build_inputs(): return (array([1.0, 4.0, 9.0]),)\n"
+        "def forward(x): return root(x)\n",
+        encoding="utf-8",
+    )
+
+    result = Orchestrator().run(str(source))
+
+    assert result["status"] == "pass"
+    assert result["expected_rewrites"] == {"sqrt": 1}
+    assert result["rewrites"] == {"sqrt": 1}
+    assert "ap.sqrt(x)" in result["migrated_source"]
+    assert "import numpy as _numpilot_numpy" in result["migrated_source"]
+    assert "return root(x)" not in result["migrated_source"]
+
+
 def test_wrong_operator_with_same_call_count_is_rejected(tmp_path):
     from numpilot.backends.shim import ShimBackend
 

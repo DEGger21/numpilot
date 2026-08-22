@@ -9,6 +9,9 @@ description = "面向科学智能的昇腾 NPU 代码自动迁移智能体(最�
 requires-python = ">=3.9"
 dependencies = ["numpy", "rich>=13"]
 
+[project.scripts]
+numpilot = "numpilot.__main__:main"
+
 [project.optional-dependencies]
 dev = ["pytest"]
 # 真机可选:asnumpy(NPU 后端)、threadpoolctl(备用 BLAS 限核)

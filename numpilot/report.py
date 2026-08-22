@@ -65,14 +65,20 @@ def build_report_md(info: dict) -> str:
 
     # 算子分析
     lines += ["", "## 算子分析"]
-    lines.append(f"- numpy 调用点:{info.get('n_calls', '?')} 处")
+    lines.append(f"- NumPy 调用点:{info.get('n_numpy_calls', info.get('n_calls', '?'))} 处")
+    if info.get("n_operator_calls"):
+        lines.append(f"- OperatorSpec 调用点:{info['n_operator_calls']} 处")
     lines.append(f"- 去重算子数:{info.get('n_ops', '?')} 个")
     lines.append("- 静态门禁:API 名称与已建模签名均通过（运行时仍须 capability/provenance 审计）")
 
     # 算子替换
     rewrites = info.get("rewrites") or {}
     if rewrites:
-        lines += ["", f"## 算子替换(np.* → ap.*,共 {info.get('total_rewrites', 0)} 处)"]
+        mapping = (
+            "np.*/OperatorSpec helper → ap.*"
+            if info.get("n_operator_calls") else "np.* → ap.*"
+        )
+        lines += ["", f"## 算子替换({mapping},共 {info.get('total_rewrites', 0)} 处)"]
         for op, n in sorted(rewrites.items(), key=lambda kv: (-kv[1], kv[0])):
             lines.append(f"- `ap.{op}` ×{n}")
 
@@ -86,6 +92,10 @@ def build_report_md(info: dict) -> str:
         )
         for op, n in sorted(extension_apis.items(), key=lambda kv: (-kv[1], kv[0])):
             lines.append(f"  - `ap.{op}` ×{n}")
+        if info.get("operator_specs"):
+            lines.append(
+                "- OperatorSpec 只提供显式映射；真机执行仍须通过 qualification overlay。"
+            )
     else:
         lines.append("- 无；本次新生成自定义算子数量为 **0**。")
 
@@ -265,6 +275,22 @@ def build_benchmark_report_md(result: dict) -> str:
     if result.get("t_npu_ms") is not None:
         label = "NPU 时延" if result.get("performance_valid") else "迁移侧诊断时延"
         lines.append(f"- {label}:{result['t_npu_ms']:.3f} ms")
+    cpu_timing = (result.get("cpu_baseline") or {}).get("timing") or {}
+    npu_timing = result.get("npu_timing") or {}
+    if cpu_timing:
+        lines.append(
+            "- CPU 原始样本:"
+            f"warmup={cpu_timing.get('warmup_iterations', '?')}, "
+            f"repeats={cpu_timing.get('measurement_iterations', '?')}, "
+            f"samples_ms={cpu_timing.get('samples_ms', [])}"
+        )
+    if npu_timing:
+        lines.append(
+            "- NPU 原始样本:"
+            f"warmup={npu_timing.get('warmup_iterations', '?')}, "
+            f"repeats={npu_timing.get('measurement_iterations', '?')}, "
+            f"samples_ms={npu_timing.get('samples_ms', [])}"
+        )
     timing_scope = result.get("timing_scope") or {}
     if timing_scope:
         lines.append(f"- NPU 计时口径:{timing_scope.get('description', '?')}")

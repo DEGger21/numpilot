@@ -1,8 +1,9 @@
 # tests/test_wizard.py
 """交互式向导:helper 单测 + 非交互端到端(shim, CI 安全)。"""
-import os
+import pytest
 
-from numpilot.wizard import (agent_roster, custom_op_breakdown, load_env_llm,
+from numpilot.llm_config import LlmConfigError, save_llm_config
+from numpilot.wizard import (_ask_engine, agent_roster, custom_op_breakdown,
                              run_wizard, validate_task_file)
 
 
@@ -23,25 +24,13 @@ def test_validate_no_required_funcs(tmp_path):
     assert not ok and "build_inputs" in msg
 
 
-def test_load_env_llm(tmp_path):
-    f = tmp_path / ".env.llm"
-    f.write_text('export NUMPILOT_TEST_FOO="bar"\n# 注释行\nexport NUMPILOT_TEST_BAZ="q x"\n')
-    loaded = load_env_llm(str(f))
-    assert {"NUMPILOT_TEST_FOO", "NUMPILOT_TEST_BAZ"} <= set(loaded)
-    assert os.environ["NUMPILOT_TEST_FOO"] == "bar"
-    del os.environ["NUMPILOT_TEST_FOO"], os.environ["NUMPILOT_TEST_BAZ"]
-
-
-def test_load_env_llm_missing_file():
-    assert load_env_llm("/no/such/.env.llm") == []
-
-
 def test_custom_op_breakdown():
     assert custom_op_breakdown({"matmul": 2, "relu": 3, "softmax": 1}) == {"relu": 3, "softmax": 1}
     assert custom_op_breakdown({"matmul": 2, "add": 1}) == {}
 
 
-def test_agent_roster_migration_model_follows_engine():
+def test_agent_roster_migration_model_follows_engine(monkeypatch):
+    monkeypatch.setenv("NUMPILOT_LLM_MODEL", "glm-5.1")
     ast_roster = agent_roster("ast")
     llm_roster = agent_roster("llm")
     assert len(ast_roster) == 5
@@ -50,6 +39,32 @@ def test_agent_roster_migration_model_follows_engine():
     llm_mig = [m for n, r, m in llm_roster if "Migration" in n][0]
     assert "无模型" in ast_mig and "glm-5.1" in llm_mig
     assert all("无模型" in m for n, r, m in ast_roster if "Migration" not in n)
+
+
+def test_ast_engine_never_reads_llm_config(monkeypatch):
+    from numpilot import wizard
+    monkeypatch.setattr(
+        wizard,
+        "load_llm_config",
+        lambda: (_ for _ in ()).throw(AssertionError("AST 不应读取 LLM 配置")),
+    )
+    assert _ask_engine("ast") == "ast"
+
+
+def test_noninteractive_llm_uses_framework_config(tmp_path, monkeypatch):
+    monkeypatch.setenv("NUMPILOT_CONFIG_HOME", str(tmp_path / "config"))
+    for key in ("NUMPILOT_LLM_BASE_URL", "NUMPILOT_LLM_AUTH_TOKEN", "NUMPILOT_LLM_MODEL"):
+        monkeypatch.delenv(key, raising=False)
+    save_llm_config("https://gateway.example/v1", "wizard-token", "wizard-model")
+    assert _ask_engine("llm") == "llm"
+
+
+def test_noninteractive_llm_missing_config_fails_fast(tmp_path, monkeypatch):
+    monkeypatch.setenv("NUMPILOT_CONFIG_HOME", str(tmp_path / "config"))
+    for key in ("NUMPILOT_LLM_BASE_URL", "NUMPILOT_LLM_AUTH_TOKEN", "NUMPILOT_LLM_MODEL"):
+        monkeypatch.delenv(key, raising=False)
+    with pytest.raises(LlmConfigError):
+        _ask_engine("llm")
 
 
 def test_wizard_noninteractive_shim_e2e():

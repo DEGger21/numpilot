@@ -4,6 +4,7 @@ import sys
 import numpy as np
 import pytest
 
+from numpilot.agents.migration import MigrationAgent
 from numpilot.backends.shim import ShimBackend
 from numpilot.engines.ast_rewrite import AstRewriteEngine
 from numpilot.engines.llm import LlmEngine, LlmError
@@ -80,6 +81,28 @@ def forward(x, w):
     dev_inputs = tuple(shim.ndarray.from_numpy(x) for x in ns["build_inputs"]())
     result = ns["forward"](*dev_inputs)
     np.testing.assert_array_equal(result.to_numpy(), np.full((2, 2), 3.0, dtype=np.float32))
+
+
+def test_ast_and_expected_calls_do_not_rewrite_shadowed_numpy_alias():
+    src = """\
+import math
+import numpy as np
+import numpy as n
+
+def forward(x, np):
+    return n.add(np.sqrt(x), n.sqrt(x))
+"""
+    plan = OffloadPlan(
+        placement={"add": "NPU", "sqrt": "NPU"},
+        threshold_elements=1,
+    )
+
+    migration = MigrationAgent(AstRewriteEngine()).migrate(src, plan)
+
+    assert "ap.add(np.sqrt(x), ap.sqrt(x))" in migration.migrated_source
+    assert migration.expected_rewrites == {"add": 1, "sqrt": 1}
+    assert migration.rewrites == migration.expected_rewrites
+
 
 def test_engine_name():
     assert AstRewriteEngine().name == "ast"

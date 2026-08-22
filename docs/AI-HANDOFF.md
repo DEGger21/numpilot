@@ -1,5 +1,15 @@
 # NumPilot AI 续接手册
 
+> **当前续接提示（2026-08-21）**：下方 `/home/lixing`、106 tests 和旧 capability 内容是
+> 历史设计背景，不是当前状态。权威目录是 `/home/ma-user/work/numpilot`，全量回归为
+> `355 passed`。Poisson 两个缺口算子已由用户 LLM + 固定 CANNBot Skill 定向生成、repair、
+> 封存并通过 v5 六门资格化；限定 profile 的 AsNumpy v9 `outer/matmul` 已走 NPU；完整动态
+> 一轮 117 个调用点和 250 轮设备驻留对拍均通过 strict-NPU。先读
+> [`P0-LLM-CANNBOT-RUN-20260821.md`](P0-LLM-CANNBOT-RUN-20260821.md)、
+> [`evidence/poisson-ritz-p0-npu-20260821.md`](evidence/poisson-ritz-p0-npu-20260821.md) 和
+> [`COMPETITION-GAP-REVIEW-20260821.md`](COMPETITION-GAP-REVIEW-20260821.md)。下一优先级是
+> profiler/放大规模/重复样本，不能先发布性能；CodeArts 仍按用户决定后置。
+
 > 最后更新：2026-07-18（Asia/Shanghai）  
 > 权威工作目录：`/home/lixing/numpilot`  
 > 用途：下一位 AI/开发者从当前状态继续，不重新做已经完成的全量审计。
