@@ -24,7 +24,10 @@
 - [x] 将通过完整证据复验的 overlay 接入 profile-aware runtime capability 解析
 - [x] qualified + activated 后完成迁移、完整动态一轮和 250 轮数值回归
 - [x] Poisson 缩小案例的 profiler、已知方向探针、包装层复制定位与消除后重采
-- [ ] 放大规模、预热与重复性能样本通过后再发布性能结论
+- [x] 放大到原始 48×48/49 RBF/3000 轮，并在数值、单线程、传输、profiler、预热与重复
+  样本门通过后发布真实性能结论：当前 device-resident 口径下 CPU 约快 2.67×
+- [x] 根据 profiler 减少 Poisson 逐算子 launch：广播/CSE 将每轮调用从 117 降到 101，
+  NPU 中位时延下降 19.71%；同一 3000 轮最终输出不变，CPU 仍约快 2.879×
 
 ## 当前证据边界
 

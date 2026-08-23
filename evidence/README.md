@@ -27,9 +27,19 @@
 - `profiler-copy-elision/`：已知方向最小探针、修复后 `runtime.db`/`rts_track.db`、新轮
   qualification 身份和机器可审计的修复前后对比。1,170 条 kernel 保持不变，
   `aclrtMemcpy` 从 1,235 降至 35；本证据不发布性能结果。
+- `performance-original-scale/`：48×48 内点、49 RBF、3000 轮训练，独立 CPU/NPU worker、
+  2 次预热、7 次原始样本、单线程 OpenBLAS 实测、最终数值输出和同规模 profiler 门；
+  合格结论为 CPU 约快 `2.67×`。
+- `performance-broadcast-optimized/`：同规模、同计时口径的广播/CSE 优化；保存迁移产物、
+  3000 轮最终输出、7 次原始样本、profiler DB 和机器审计。每轮调用由 117 降到 101，
+  NPU 中位时延下降 `19.71%`，但 CPU 仍约快 `2.879×`。
 
 完整解释见 [`docs/evidence/poisson-ritz-p0-npu-20260821.md`](../docs/evidence/poisson-ritz-p0-npu-20260821.md)
 和 [`docs/evidence/poisson-ritz-profiler-p0-20260822.md`](../docs/evidence/poisson-ritz-profiler-p0-20260822.md)。
+原始规模性能口径见
+[`docs/evidence/poisson-ritz-performance-original-scale-20260823.md`](../docs/evidence/poisson-ritz-performance-original-scale-20260823.md)。
+优化前后对照见
+[`docs/evidence/poisson-ritz-broadcast-optimization-20260823.md`](../docs/evidence/poisson-ritz-broadcast-optimization-20260823.md)。
 
 ## 完整运行树
 

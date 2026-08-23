@@ -1,12 +1,14 @@
 # NumPilot 下一次 AI 接入 Prompt
 
-> **已过时（2026-08-22）**：不要照搬下方 `/home/lixing` 路径、106 tests 或旧 matmul
+> **已过时（2026-08-23）**：不要照搬下方 `/home/lixing` 路径、106 tests 或旧 matmul
 > 结论。当前工作树位于 `/home/ma-user/work/numpilot`；权威续接
 > 入口是 `docs/P0-LLM-CANNBOT-RUN-20260821.md`、
 > `docs/evidence/poisson-ritz-p0-npu-20260821.md` 和
-> `docs/COMPETITION-GAP-REVIEW-20260821.md`。缩小案例的 profiler 与包装层复制闭环已经
-> 完成；当前全量回归为 `369 passed`，下一优先级是放大规模、预热和重复样本，CodeArts
-> 按用户决定后置。
+> `docs/COMPETITION-GAP-REVIEW-20260821.md`。缩小案例的 profiler/复制闭环与原始
+> 48×48/49 RBF/3000 轮重复性能门都已完成；合格结论是 CPU 约快 `2.67×`，不是 NPU
+> 加速。广播/CSE 优化又把每轮调用从 117 降到 101，NPU 时延下降 `19.71%`，但 CPU
+> 仍约快 `2.879×`。下一优先级是把 Poisson 专用 harness 泛化为产品级 runner；若继续
+> 性能主线，则需做图化/融合或批量提交。CodeArts 按用户决定后置。
 
 > 用法：将本文从“你现在接手 NumPilot 项目”开始完整复制给下一次接入的 AI。
 

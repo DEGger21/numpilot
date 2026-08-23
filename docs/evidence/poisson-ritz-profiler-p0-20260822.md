@@ -232,5 +232,7 @@ runtime.db:        fe2e13e11a6a206f8c8b3d61d554fe5bb8ed544655f8ed7b0f690f78369dd
 1. ~~完成已知方向的 memcpy 最小探针，解释采集字段边界~~（已完成）；
 2. ~~审计 AsNumpy `ndarray` 包装/构造的逐返回值深拷贝~~（已完成）；
 3. ~~消除不必要复制后重新采集同一 10 轮基线~~（已完成，1,235 → 35）；
-4. 再扩到合理规模、预热和多次重复样本；
-5. 数值、fallback、传输和统计门都通过后，才形成性能结论。
+4. ~~再扩到合理规模、预热和多次重复样本~~（已完成：48×48/49 RBF/3000 轮）；
+5. ~~数值、fallback、传输和统计门都通过后，才形成性能结论~~（已完成；结论为 CPU
+   约快 `2.67×`，详见
+   [`poisson-ritz-performance-original-scale-20260823.md`](poisson-ritz-performance-original-scale-20260823.md)）。

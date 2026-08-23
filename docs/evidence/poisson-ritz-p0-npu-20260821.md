@@ -20,6 +20,7 @@ NumPilot 已按比赛框架完成一条不依赖 `ops-nn` 启动的 P0 纵向链
 → 250 轮参数驻留设备的确定性缩小案例
 → profiler 定位并消除逐返回值包装深拷贝
 → 重新资格化、同负载 profiler 与 250 轮回归
+→ 原始 48×48/49 RBF/3000 轮数值、预热、重复样本与 profiler 发布门
 ```
 
 两个缺口是：
@@ -40,8 +41,10 @@ NumPilot 已按比赛框架完成一条不依赖 `ops-nn` 启动的 P0 纵向链
 `aclrtMemcpy`。已知方向探针证明当前 compact profiler 方向字段不具区分力；源码与精确
 账目进一步定位到 public wrapper 对每个 private native 结果的深拷贝。显式 one-shot move
 修复后，同负载仍有 1,170 条 kernel，复制降为恰好 30 H2D + 5 D2H 的 35 次，并再次通过
-六门资格化和 250 轮回归。当前仍不能证明比赛级性能收益，也不能把 8×8 内部点、9 个 RBF
-的确定性缩小案例扩大表述为原始 48×48、49 个 RBF、3000 轮配置已经完成性能验收。
+六门资格化和 250 轮回归。随后原始 48×48 内点、49 RBF、3000 轮配置通过独立 CPU/NPU、
+单线程实测、最终数值、传输和同规模 profiler 门。2 次预热、7 次重复的 device-resident
+中位数为 CPU `17.752825701609254 ms/轮`、NPU `47.41388170514256 ms/轮`，因此准确结论是
+CPU 约快 `2.670779×`，不是 NPU 加速。
 
 ## 生成来源与封存
 
@@ -245,14 +248,14 @@ ACL 公共枚举解释。源码和精确调用账目定位到 AsNumpy public wra
 ## 当前边界与下一步
 
 当前可准确表述为：“NumPilot 先扫描接口，只定向补齐两个缺失领域算子；两算子经真实 LLM、
-CANNBot Skill、封存和六门资格化后显式激活；确定性缩小 Poisson/RBF 案例已完成完整动态
-单轮和 250 轮参数驻留设备的 strict-NPU 数值对拍；同一 10 轮 profiler 已定位并消除
-1,200 次包装层深拷贝，修复后 1,170 条 kernel 不变，只剩 35 次边界复制。”
+CANNBot Skill、封存和六门资格化后显式激活；原始 48×48/49 RBF 案例已完成 3000 轮
+strict-NPU 数值门；同规模重复性能与 profiler 门均通过，但 117 个细粒度 kernel/轮的
+device-resident 口径下 CPU 约快 `2.67×`，没有 NPU 加速。”完整性能口径见
+[`poisson-ritz-performance-original-scale-20260823.md`](poisson-ritz-performance-original-scale-20260823.md)。
 
 仍待完成：
 
-1. 为更大配置保留 kernel timeline、预热与重复原始样本；
-2. 只有数值、fallback、传输与统计门全部通过后才发布性能；
-3. 将 Poisson 专用 qualification/evidence harness 泛化为产品级 runner；
-4. 发布包、许可证/SBOM、演示视频和普通用户可复现环境；
-5. CodeArts 继续按用户决定后置，本阶段不把它当作 LLM 链路前置条件。
+1. 将 Poisson 专用 qualification/evidence harness 泛化为产品级 runner；
+2. 针对 117 次/轮的细粒度 launch 做融合/图化设计，再按同一门禁重新测量；
+3. 发布包、许可证/SBOM、演示视频和普通用户可复现环境；
+4. CodeArts 继续按用户决定后置，本阶段不把它当作 LLM 链路前置条件。

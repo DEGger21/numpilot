@@ -16,6 +16,8 @@
 - [热扩散 strict-NPU 说明](evidence/heat-diffusion-npu-20260813.md)；
 - [Poisson P0 strict-NPU 说明](evidence/poisson-ritz-p0-npu-20260821.md)；
 - [Poisson profiler 说明](evidence/poisson-ritz-profiler-p0-20260822.md)；
+- [Poisson 原始规模重复性能证据](evidence/poisson-ritz-performance-original-scale-20260823.md)；
+- [Poisson 广播/CSE 优化证据](evidence/poisson-ritz-broadcast-optimization-20260823.md)；
 - [竞争力与缺口评审](COMPETITION-GAP-REVIEW-20260821.md)。
 
 ## 设计记录与开发历史

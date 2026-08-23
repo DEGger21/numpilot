@@ -23,6 +23,8 @@ NumPilot 的 P0 主链路已经跑到“真实模型生成 → 编译/运行诊�
 → 修复并哈希绑定限定 profile 的 outer/matmul ACLNN 路径
 → 显式加载 overlay，运行完整动态训练轮并核验 117 个调用点
 → 循环前一次上传，250 轮内接力设备参数，结束后一次下载并对拍 CPU
+→ 原始 48×48/49 RBF/3000 轮、预热、重复样本与同规模 profiler 发布门
+→ 广播/CSE 将每轮调用从 117 降到 101，并在同一发布门下复测
 ```
 
 首轮不拉取、不构建、不依赖 `ops-nn`。它以后可以作为人工对照或可选实现源，但不是
@@ -40,11 +42,14 @@ NumPilot 的 P0 主链路已经跑到“真实模型生成 → 编译/运行诊�
 - 250 轮确定性缩小案例：已通过，29,250 次实际调用零 profile 拒绝，最终 CPU/NPU
   最大绝对误差 `4.76837158203125e-07`；
 - 缩小案例 profiler、已知方向 memcpy 探针、包装层复制定位和消除后重采：已完成；
-- 原始大配置、预热、重复性能样本与性能结论：未完成。
+- 原始大配置、预热、重复性能样本与性能结论：已完成；device-resident 口径下 CPU
+  `17.7528 ms/轮`、NPU `47.4139 ms/轮`，CPU 约快 `2.67×`。
+- 广播/CSE 优化：已完成；NPU 降到 `38.0690 ms/轮`，相对基线快 `1.245×`，3000 轮
+  CPU/NPU 输出哈希均与基线相同；CPU 仍约快 `2.879×`。
 
 因此可以写“两个自定义算子已通过正式资格化，并在一个包含 RBF、Laplacian、损失、解析
-梯度和更新的动态训练轮中显式激活；确定性缩小案例又完成了 250 轮设备驻留对拍”。不能把
-这个结论扩大成“原始大配置已有真实性能收益”。原始 Artifact 仍为
+梯度和更新的动态训练轮中显式激活；原始规模又完成 3000 轮数值门和重复性能验收，当前
+结果是 CPU 明显更快”。不能把负收益包装成 NPU 加速。原始 Artifact 仍为
 `generated_unverified`，中间修复候选为
 `repaired_unverified`，最终封存 Artifact 本身也仍保留 `generated_unverified`；能力是否可用
 由独立的 qualification evidence 与显式 overlay 决定，而不是回写生成物状态。
@@ -279,7 +284,7 @@ v9 新增 `outer`/`matmul` 公共路径的 NPU 修复，选定 linalg 测试结�
 NumPilot 仓库回归：
 
 ```text
-369 passed
+376 passed
 python -m compileall -q numpilot tests examples  # passed
 git diff --check                                # passed
 ```
@@ -393,10 +398,13 @@ H2D/D2D/D2H；源码和调用账目定位到每个 private native 返回值的 p
 1. **已完成**：对动态迁移产物运行 profiler，以已知方向探针验证采集字段，定位并消除
    private native result 到 public `ndarray` 的逐返回值深拷贝；同一 10 轮 workload 的
    `aclrtMemcpy` 从 1,235 降至 35，1,170 条 kernel 不变；
-2. 选择接近原始案例的更大规模，运行预热、重复样本与收敛/数值门禁；
-3. 只在数值、fallback、传输和 profiler 门通过后生成性能结论；
-4. 将当前 Poisson 专用可信 harness 收敛成可复用的多算子 qualification runner；
-5. CodeArts 保持后置；用户决定切换时，再保留需求、生成、调试、测试和 Diff 证据。
+2. **已完成**：原始 48×48/49 RBF/3000 轮、2 次预热、7 次重复、单线程实测和同规模
+   profiler 门均通过；CPU 约快 `2.67×`；
+3. **已完成**：广播/CSE 把每轮调用从 117 降到 101，NPU 时延下降 `19.71%`，最终输出
+   与基线字节级相同；
+4. 将当前 Poisson 专用可信 harness 收敛成可复用的多算子 qualification/evidence runner；
+5. 若继续性能优化，进入图化/融合或批量提交；等量逐元素替换不足以覆盖调度开销；
+6. CodeArts 保持后置；用户决定切换时，再保留需求、生成、调试、测试和 Diff 证据。
 
 ## 10. 复现入口
 

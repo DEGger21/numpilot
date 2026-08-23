@@ -1,0 +1,2934 @@
+{
+  "status": "pass",
+  "source_path": "examples/poisson_ritz_iteration_broadcast.py",
+  "unsupported": [],
+  "engine": "ast",
+  "rewrites": {
+    "multiply": 40,
+    "sqrt": 1,
+    "subtract": 7,
+    "add": 11,
+    "exp": 2,
+    "matmul": 10,
+    "negative": 5,
+    "smooth_l1_loss": 2,
+    "clip": 3,
+    "outer": 2,
+    "divide": 14,
+    "apply_gradient_descent": 4
+  },
+  "expected_rewrites": {
+    "multiply": 40,
+    "sqrt": 1,
+    "subtract": 7,
+    "add": 11,
+    "exp": 2,
+    "divide": 14,
+    "matmul": 10,
+    "negative": 5,
+    "smooth_l1_loss": 2,
+    "clip": 3,
+    "outer": 2,
+    "apply_gradient_descent": 4
+  },
+  "rewrite_integrity": true,
+  "total_rewrites": 101,
+  "numerically_consistent": true,
+  "max_rel_diff": 1.4264183789691742e-07,
+  "max_abs_diff": 9.5367431640625e-07,
+  "tol": 0.0001,
+  "atol": 1e-05,
+  "rtol": 0.0001,
+  "failure_path": null,
+  "failure_index": null,
+  "failure_reason": null,
+  "exception_phase": null,
+  "exception_type": null,
+  "exception_message": null,
+  "artifact_inputs_executed": true,
+  "input_consistent": true,
+  "kernel_consistent": true,
+  "artifact_consistent": true,
+  "comparisons": {
+    "inputs": {
+      "consistent": true,
+      "max_abs_diff": 0.0,
+      "max_rel_diff": 0.0,
+      "atol": 1e-05,
+      "rtol": 0.0001,
+      "failure_path": null,
+      "failure_index": null,
+      "reason": null,
+      "n_elements": 3235
+    },
+    "kernel": {
+      "consistent": true,
+      "max_abs_diff": 9.5367431640625e-07,
+      "max_rel_diff": 1.4264183789691742e-07,
+      "atol": 1e-05,
+      "rtol": 0.0001,
+      "failure_path": null,
+      "failure_index": null,
+      "reason": null,
+      "n_elements": 37
+    },
+    "artifact": {
+      "consistent": true,
+      "max_abs_diff": 9.5367431640625e-07,
+      "max_rel_diff": 1.4264183789691742e-07,
+      "atol": 1e-05,
+      "rtol": 0.0001,
+      "failure_path": null,
+      "failure_index": null,
+      "reason": null,
+      "n_elements": 37
+    }
+  },
+  "backend_provenance": {
+    "schema_version": "1.1",
+    "backend": "npu",
+    "backend_version": "0.1.dev106+g21368abf9.d20260822",
+    "audit_id": "asnumpy-0.1.dev106-g21368abf9-poisson-move-init4f4e8083-math62e0ba09-direct4479c588-utils1b298145-core4465ce6e-v1+qualification-1c5aa2ae5c4ebf2d",
+    "environment": {
+      "cann_home": "/usr/local/Ascend/cann-9.0.0",
+      "cann_version": "9.0.0",
+      "module_path": "/home/ma-user/work/numpilot-gap-runs/poisson-ritz-p0-20260821/direct-local-v5/asnumpy-p0-site-v10-move/asnumpy/__init__.py",
+      "python_version": "3.10.20",
+      "soc_version": "Ascend910B"
+    },
+    "strict_npu": true,
+    "ok": true,
+    "preflight_ok": true,
+    "preflight_strict_npu": true,
+    "profile_status": "matched",
+    "required_ops": [
+      "add",
+      "apply_gradient_descent",
+      "clip",
+      "divide",
+      "exp",
+      "matmul",
+      "multiply",
+      "negative",
+      "outer",
+      "smooth_l1_loss",
+      "sqrt",
+      "subtract"
+    ],
+    "missing": [],
+    "non_strict": [],
+    "profile_scoped": [
+      "apply_gradient_descent",
+      "divide",
+      "exp",
+      "matmul",
+      "negative",
+      "outer",
+      "smooth_l1_loss",
+      "sqrt",
+      "subtract"
+    ],
+    "runtime_profile_ok": true,
+    "runtime_profile_checks": {
+      "apply_gradient_descent": [
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  1
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 3,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  1
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 3,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  1
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 3,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  1
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 3,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  1
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 3,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  1
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 3,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  1
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 3,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  1
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 3,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        }
+      ],
+      "divide": [
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  64,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  64,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  64,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  32,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  64,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  64,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  64,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  64,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  64,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  64,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  64,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  32,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  32,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  32,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  64,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  64,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  64,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  32,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  64,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  64,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  64,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  64,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  64,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  64,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  64,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  32,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  32,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  32,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        }
+      ],
+      "exp": [
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  64,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 1,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  32,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 1,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  64,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 1,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  32,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 1,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        }
+      ],
+      "matmul": [
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  64,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  32,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  64
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  64,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  64
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  64,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  64
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  64,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  64
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  64,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  32
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  32,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  32
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  32,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  32
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  32,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  32
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  32,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  64,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  32,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  64
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  64,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  64
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  64,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  64
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  64,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  64
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  64,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  32
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  32,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  32
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  32,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  32
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  32,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  32
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  32,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        }
+      ],
+      "negative": [
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  64
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 1,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 1,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 1,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 1,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 1,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  64
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 1,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 1,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 1,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 1,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 1,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        }
+      ],
+      "outer": [
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  64
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  32
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  64
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  32
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        }
+      ],
+      "smooth_l1_loss": [
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  64
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  64
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  32
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  32
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  64
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  64
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  32
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  32
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        }
+      ],
+      "sqrt": [
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 1,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 1,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        }
+      ],
+      "subtract": [
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  64,
+                  1
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  64,
+                  1
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  64,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  64,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  32,
+                  1
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  32,
+                  1
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  64
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  64
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  32
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  32
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  64,
+                  1
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  64,
+                  1
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  64,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  64,
+                  9
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  32,
+                  1
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  32,
+                  1
+                ],
+                "rank": 2,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  9
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  64
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  64
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        },
+        {
+          "matched": true,
+          "reasons": [],
+          "profile": {
+            "inputs": [
+              {
+                "dtype": "float32",
+                "shape": [
+                  32
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              },
+              {
+                "dtype": "float32",
+                "shape": [
+                  32
+                ],
+                "rank": 1,
+                "c_contiguous": true
+              }
+            ],
+            "positional_args": 2,
+            "keyword_args": [],
+            "unprofiled_operands": []
+          }
+        }
+      ]
+    },
+    "runtime_target_integrity_ok": true,
+    "runtime_target_integrity_errors": [],
+    "capabilities": {
+      "add": {
+        "name": "add",
+        "available": true,
+        "provenance": "native_npu",
+        "strict_npu": true,
+        "evidence": "asnumpy P0 hash-bound source/binary audit: public wrapper delegates to ACLNN",
+        "constraints": [],
+        "signature_variants": []
+      },
+      "apply_gradient_descent": {
+        "name": "apply_gradient_descent",
+        "available": true,
+        "provenance": "custom_npu",
+        "strict_npu": false,
+        "evidence": "qualification:qual-d5c4c3bd44db3cc4301f",
+        "constraints": [
+          "dtype=float32",
+          "rank>=1",
+          "contiguous=true"
+        ],
+        "signature_variants": [
+          {
+            "positional_args": 3,
+            "keyword_args": []
+          }
+        ]
+      },
+      "clip": {
+        "name": "clip",
+        "available": true,
+        "provenance": "native_npu",
+        "strict_npu": true,
+        "evidence": "asnumpy P0 hash-bound source/binary audit: public wrapper delegates to ACLNN",
+        "constraints": [],
+        "signature_variants": []
+      },
+      "divide": {
+        "name": "divide",
+        "available": true,
+        "provenance": "native_npu",
+        "strict_npu": false,
+        "evidence": "asnumpy P0 hash-bound math audit: float32 public path delegates to ACLNN",
+        "constraints": [
+          "dtype=float32",
+          "rank>=1",
+          "contiguous=true",
+          "numel>=1"
+        ],
+        "signature_variants": [
+          {
+            "positional_args": 2,
+            "keyword_args": []
+          }
+        ]
+      },
+      "exp": {
+        "name": "exp",
+        "available": true,
+        "provenance": "native_npu",
+        "strict_npu": false,
+        "evidence": "asnumpy P0 hash-bound math audit: float32 public path delegates to ACLNN",
+        "constraints": [
+          "dtype=float32",
+          "rank>=1",
+          "contiguous=true",
+          "numel>=1"
+        ],
+        "signature_variants": [
+          {
+            "positional_args": 1,
+            "keyword_args": []
+          }
+        ]
+      },
+      "matmul": {
+        "name": "matmul",
+        "available": true,
+        "provenance": "native_npu",
+        "strict_npu": false,
+        "evidence": "asnumpy P0 hash-bound linalg audit: float32 rank-1/2 public path delegates to ACLNN",
+        "constraints": [
+          "dtype=float32",
+          "rank>=1",
+          "rank<=2",
+          "contiguous=true",
+          "numel>=1"
+        ],
+        "signature_variants": [
+          {
+            "positional_args": 2,
+            "keyword_args": []
+          }
+        ]
+      },
+      "multiply": {
+        "name": "multiply",
+        "available": true,
+        "provenance": "native_npu",
+        "strict_npu": true,
+        "evidence": "asnumpy P0 hash-bound source/binary audit: public wrapper delegates to ACLNN",
+        "constraints": [],
+        "signature_variants": []
+      },
+      "negative": {
+        "name": "negative",
+        "available": true,
+        "provenance": "native_npu",
+        "strict_npu": false,
+        "evidence": "asnumpy P0 hash-bound math audit: float32 public path delegates to ACLNN",
+        "constraints": [
+          "dtype=float32",
+          "rank>=1",
+          "contiguous=true",
+          "numel>=1"
+        ],
+        "signature_variants": [
+          {
+            "positional_args": 1,
+            "keyword_args": []
+          }
+        ]
+      },
+      "outer": {
+        "name": "outer",
+        "available": true,
+        "provenance": "native_npu",
+        "strict_npu": false,
+        "evidence": "asnumpy P0 hash-bound linalg audit: float32 rank-1/2 public path delegates to ACLNN",
+        "constraints": [
+          "dtype=float32",
+          "rank>=1",
+          "rank<=2",
+          "contiguous=true",
+          "numel>=1"
+        ],
+        "signature_variants": [
+          {
+            "positional_args": 2,
+            "keyword_args": []
+          }
+        ]
+      },
+      "smooth_l1_loss": {
+        "name": "smooth_l1_loss",
+        "available": true,
+        "provenance": "custom_npu",
+        "strict_npu": false,
+        "evidence": "qualification:qual-82672ac622245bfa6fe3",
+        "constraints": [
+          "dtype=float32",
+          "rank>=1",
+          "contiguous=true"
+        ],
+        "signature_variants": [
+          {
+            "positional_args": 2,
+            "keyword_args": []
+          }
+        ]
+      },
+      "sqrt": {
+        "name": "sqrt",
+        "available": true,
+        "provenance": "native_npu",
+        "strict_npu": false,
+        "evidence": "asnumpy P0 hash-bound math audit: float32 public path delegates to ACLNN",
+        "constraints": [
+          "dtype=float32",
+          "rank>=1",
+          "contiguous=true",
+          "numel>=1"
+        ],
+        "signature_variants": [
+          {
+            "positional_args": 1,
+            "keyword_args": []
+          }
+        ]
+      },
+      "subtract": {
+        "name": "subtract",
+        "available": true,
+        "provenance": "native_npu",
+        "strict_npu": false,
+        "evidence": "asnumpy P0 hash-bound math audit: float32 public path delegates to ACLNN",
+        "constraints": [
+          "dtype=float32",
+          "rank>=1",
+          "contiguous=true",
+          "numel>=1"
+        ],
+        "signature_variants": [
+          {
+            "positional_args": 2,
+            "keyword_args": []
+          }
+        ]
+      }
+    },
+    "runtime_trace_ok": true,
+    "runtime_execution_ok": true,
+    "runtime_call_counts": {
+      "kernel": {
+        "add": 11,
+        "apply_gradient_descent": 4,
+        "clip": 3,
+        "divide": 14,
+        "exp": 2,
+        "matmul": 10,
+        "multiply": 40,
+        "negative": 5,
+        "outer": 2,
+        "smooth_l1_loss": 2,
+        "sqrt": 1,
+        "subtract": 7
+      },
+      "artifact": {
+        "add": 11,
+        "apply_gradient_descent": 4,
+        "clip": 3,
+        "divide": 14,
+        "exp": 2,
+        "matmul": 10,
+        "multiply": 40,
+        "negative": 5,
+        "outer": 2,
+        "smooth_l1_loss": 2,
+        "sqrt": 1,
+        "subtract": 7
+      }
+    }
+  },
+  "speedup": null,
+  "backend": "npu",
+  "backend_module": "/home/ma-user/work/numpilot-gap-runs/poisson-ritz-p0-20260821/direct-local-v5/asnumpy-p0-site-v10-move/asnumpy/__init__.py",
+  "backend_version": "0.1.dev106+g21368abf9.d20260822",
+  "cpu_threads": null,
+  "t_orig_ms": null,
+  "t_mig_ms": null,
+  "n_elements": 37,
+  "strategy": "whole_forward_npu"
+}

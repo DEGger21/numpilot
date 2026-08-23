@@ -13,7 +13,7 @@
 
 ## 1. 总结论
 
-> P0 更新（2026-08-21）：Poisson 动态迭代契约、两个 `OperatorSpec`、官方 CANNBot Skill
+> P0 更新（2026-08-23）：Poisson 动态迭代契约、两个 `OperatorSpec`、官方 CANNBot Skill
 > 固定版本注入以及用户 `llm.json` 的两算子真实远端直接生成已经完成；
 > 两份最终 repair 链已封存为新的不可变 Artifact，并通过纯 NumPy oracle、Host/API、
 > Ascend910B kernel 编译、私有 OPP 安装、public AsNumpy API 和真机 NPU 数值对拍。研发过程
@@ -23,8 +23,10 @@
 > 审计，v5 capability overlay 已原子发布。显式加载后，包含 RBF、Laplacian、损失、解析
 > 梯度和更新的一轮完整动态 `forward` 共 117 个调用点通过 strict-NPU；同一迁移产物又完成
 > 250 轮参数驻留设备对拍，实际 29,250 次调用零 profile 拒绝，最终 CPU/NPU 最大绝对误差
-> `4.76837158203125e-07`。这证明确定性缩小案例的动态迭代与驻留执行，不证明原始大配置的
-> 比赛级性能收益。详见
+> `4.76837158203125e-07`。随后原始 48×48/49 RBF/3000 轮配置通过独立 CPU/NPU、单线程
+> 实测、最终数值、传输、预热、重复样本和同规模 profiler 门；合格结论是 CPU 约快
+> `2.67×`，不是 NPU 加速。广播/CSE 优化随后把每轮调用从 117 降到 101，NPU 中位
+> 时延下降 `19.71%`，3000 轮输出哈希不变；CPU 仍约快 `2.879×`。详见
 > [`P0-LLM-CANNBOT-RUN-20260821.md`](P0-LLM-CANNBOT-RUN-20260821.md)。按当前决策，
 > CodeArts 接入暂时后置，不属于这一轮 LLM 链路的完成条件。
 
@@ -54,7 +56,7 @@ Poisson Ritz 科学计算需求
 
 - 当前分支：`feat/numpilot-demo`。
 - 已跟踪文件约有 4,500 行净新增尚未提交，另有缺口补全、资格化、LLM 配置、测试和证据文档尚未跟踪。
-- 当前全量测试结果：`369 passed`。
+- 当前全量测试结果：`376 passed`。
 - `git diff --check` 通过。
 - `bash -n run_demo.sh` 通过。
 - Python `compileall` 通过。
@@ -179,9 +181,9 @@ python -m numpilot migrate \
 - 来源、许可证、目标 SoC/CANN；
 - `direct_generation` 主路由及后续复用/对照扩展点。
 
-AnalysisAgent、AST rewrite、GapSpec 和 qualification 已能保留 `operator.<name>` 身份，而不是把 helper 伪造成 NumPy API。编译/运行诊断回传、逐文件 repair、父候选哈希接力、不可变 Artifact 封存、kernel 编译、私有 OPP 安装、public AsNumpy 接线、正式六门 evidence、overlay 激活、完整动态一轮、250 轮驻留设备对拍，以及缩小案例的 profiler/包装层复制闭环均已完成。当前未完成的是接近原始规模的预热、重复性能样本与发布门禁。
+AnalysisAgent、AST rewrite、GapSpec 和 qualification 已能保留 `operator.<name>` 身份，而不是把 helper 伪造成 NumPy API。编译/运行诊断回传、逐文件 repair、父候选哈希接力、不可变 Artifact 封存、kernel 编译、私有 OPP 安装、public AsNumpy 接线、正式六门 evidence、overlay 激活、完整动态一轮、250 轮驻留设备对拍、复制闭环，以及原始规模性能发布门均已完成。当前主要工程缺口变为通用 harness、kernel 融合和 CodeArts/发布交付。
 
-### 3.3 当前 Poisson 性能结论存在真实性风险
+### 3.3 历史 Poisson 性能结论与当前替代证据
 
 现有 `BENCHMARK_RESULTS.md` 不能直接作为比赛级性能证据，原因包括：
 
@@ -196,7 +198,11 @@ AnalysisAgent、AST rewrite、GapSpec 和 qualification 已能保留 `operator.<
 8. 缺少 kernel/profiler、传输字节和 fallback 证据；
 9. “超过 50K 点预计 5～10×”没有实测依据，应删除。
 
-在这些问题修复前，只能称它为“AsNumpy 混合路径历史测量”，不能称为 strict-NPU 性能结论。
+这些历史结果仍只能称为“AsNumpy 混合路径历史测量”。新的原始规模证据已逐项补齐上述
+门禁，但结论是 CPU 约快 `2.67×`；详见
+[`evidence/poisson-ritz-performance-original-scale-20260823.md`](evidence/poisson-ritz-performance-original-scale-20260823.md)。
+第一轮广播/CSE 优化已经在同一口径下通过完整门禁，NPU 相对基线快 `1.245×`；详见
+[`evidence/poisson-ritz-broadcast-optimization-20260823.md`](evidence/poisson-ritz-broadcast-optimization-20260823.md)。
 
 ## 4. 参赛手册逐项差距
 
@@ -227,9 +233,12 @@ AnalysisAgent、AST rewrite、GapSpec 和 qualification 已能保留 `operator.<
 - 不把 API 存在、shim 通过或 Python wrapper 调用冒充真实 NPU；
 - 缺口算子经 GapSpec、资格化证据和 capability overlay 才能激活；
 - CPU fallback、unknown provenance、数值失败时禁止发布加速比；
-- 能展示小规模 CPU 更快、中大规模 NPU 可能获益的真实性能交叉点。
+- 能在完整证据门下如实展示原始规模仍由 CPU 更快，并把 117 次 kernel launch/轮降到
+  101 次；NPU 时延下降 `19.71%` 后仍不冒充 NPU 加速。
 
-当前两个 Poisson 算子已经由 NumPilot 自动发现、定向生成、资格化并在迁移产物中激活。当前削弱创新性展示的主要问题变成：资格化执行 harness 仍是 Poisson 专用工具，完整迭代/性能闭环和 CodeArts 过程证据尚未完成。
+当前两个 Poisson 算子已经由 NumPilot 自动发现、定向生成、资格化并在迁移产物中激活，
+完整迭代与性能闭环也已完成。当前削弱创新性展示的主要问题变成：资格化/性能执行 harness
+仍是 Poisson 专用工具，剩余 101 个细粒度 kernel 尚未图化/融合，CodeArts 过程证据尚未完成。
 
 ### 4.3 应用真实性
 
@@ -337,10 +346,11 @@ AnalysisAgent、AST rewrite、GapSpec 和 qualification 已能保留 `operator.<
    `outer`、`matmul` 已在哈希绑定的 v9 wheel 中走 ACLNN；完整动态一轮和 250 轮设备状态
    接力已通过。随后用哈希绑定的 move wheel 重新资格化并采集同一 10 轮 workload：
    1,170 条 kernel 保持一致，`aclrtMemcpy` 从 1,235 降到 35。当前证据仅覆盖声明的
-   float32/rank profile，且不构成性能结论。
+   float32/rank profile；其自身不构成性能结论，后续原始规模门已另行完成。
 
-7. **重做真实性能测试**  
-   使用独立 CPU/NPU 进程、固定线程、warmup、重复样本、中位数、原始样本、数值门禁、源码哈希、fallback 和 profiler。
+7. **重做真实性能测试（已完成）**
+   已使用独立 CPU/NPU 进程、实测单线程、warmup、重复样本、中位数、原始样本、数值门禁、
+   源码/runner/overlay 哈希、fallback 和 profiler；结果为 CPU 约快 `2.67×`。
 
 8. **在 CodeArts 中完成并记录最后一轮核心开发**  
    不能只提交配置文件，必须有可验证的需求、任务、代码、测试、调试和部署过程。
@@ -356,8 +366,7 @@ AnalysisAgent、AST rewrite、GapSpec 和 qualification 已能保留 `operator.<
 - 增加真实工程数据与明确受益方；
 - 增加 CodeArts MCP 控制层；
 - 增加只读证据看板或轻量 Web 展示；
-- 将缩小案例已经保存的 kernel timeline、传输字节和原始 profiler artifact 扩展到更大
-  规模、通用采集器与重复样本；
+- 将当前 Poisson 专用 profiler/性能 runner 泛化为通用采集器，并探索 kernel 融合；
 - 增加第三方依赖清单、SBOM、许可证和来源说明；
 - 增加 OS 级不受信代码隔离。
 
@@ -392,13 +401,16 @@ AnalysisAgent、AST rewrite、GapSpec 和 qualification 已能保留 `operator.<
 - 已生成 qualification schema v2 evidence 并发布 capability overlay；
 - 已显式激活两算子并运行完整动态一轮 strict-NPU。
 
-### 阶段 C：真机正确性已完成，性能仍待完成
+### 阶段 C：真机正确性与原始规模性能门已完成
 
 - 已修复并哈希绑定本例限定 profile 的 `outer`/`matmul` NPU 路径；
 - 已以 250 轮设备状态接力移除逐轮显式 D2H；
 - 已保存 117×250 次调用、profile、传输阶段和 CPU/NPU 收敛数值证据；
 - 已保存缩小案例修复前后 profiler、原始数据库、复制审计与数值报告；
-- 为更大规模保存预热和重复原始样本；
+- 已为原始 48×48/49 RBF/3000 轮保存预热、重复原始样本和同规模 profiler；
+- 已发布 CPU 约快 `2.67×` 的负收益结论，不宣传 NPU 加速；
+- 已以广播/CSE 将每轮调用从 117 降到 101，NPU 中位时延下降 `19.71%`，并以相同
+  数值、线程、传输和 profiler 门复验；
 - 不满足门禁时明确显示 `performance_valid=false`。
 
 ### 阶段 D：CodeArts 与交付
@@ -441,7 +453,10 @@ AnalysisAgent、AST rewrite、GapSpec 和 qualification 已能保留 `operator.<
 - Poisson 历史 `3.09×` 不能作为 strict-NPU 结论。
 - 两个 Poisson 算子有真实 LLM 生成/repair 回执、封存 Artifact、正式六门 evidence 和显式 overlay 激活记录，可以称为“已资格化并在受约束 profile 内激活的本地能力”。这不等于所有 dtype/shape/signature 都受支持。
 - 完整动态 Poisson 训练轮已经 strict-NPU 运行，117 个调用在 kernel/artifact trace 中精确匹配，最大绝对误差 `9.5367431640625e-07`。
-- 同一产物的确定性缩小案例已运行 250 轮，29,250 次调用精确匹配，循环前 30 次 H2D、循环后 5 次 D2H，最终 CPU/NPU 最大绝对误差 `4.76837158203125e-07`；这仍不证明原始大配置的性能收益。
+- 同一产物的原始规模案例已运行 3000 轮；2 次预热、7 次重复和同规模 profiler 门通过，
+  CPU `17.7528 ms/轮`、NPU `47.4139 ms/轮`，CPU 约快 `2.67×`。
+- 广播/CSE 优化版同样完成 3000 轮和 profiler 门，NPU 为 `38.0690 ms/轮`，相对基线
+  快 `1.245×`；CPU 为 `13.2244 ms/轮`，仍约快 `2.879×`，最终输出哈希与基线相同。
 - `cbrt` 复合探针通过不等于 Ascend C custom OPP 已资格化。
 - `.codeartsdoer` 文件存在不等于 CodeArts 已实际加载或全流程使用。
 - 普通环境运行失败说明当前发布包尚不可由评委直接复现。
@@ -451,8 +466,8 @@ AnalysisAgent、AST rewrite、GapSpec 和 qualification 已能保留 `operator.<
 
 下一轮应直接实施：
 
-> 在缩小案例复制闭环已经通过的基础上，选择接近原始案例的规模，固定 CPU 线程与运行
-> 身份，执行预热和重复原始样本，并同时守住数值、fallback、传输与 profiler 门，决定
-> 能否发布性能结论。
+> 将当前 Poisson 专用 qualification/performance evidence harness 泛化为产品级多算子
+> runner；若继续性能主线，则针对剩余 101 次 kernel launch/轮设计图化/融合或批量提交，
+> 并继续使用同一数值、fallback、传输、单线程和 profiler 门复测。
 
-这是当前距离比赛级真实性能闭环最近的修改方向；CodeArts 仍按用户决定后置。
+原始规模真实性能闭环已经完成；CodeArts 仍按用户决定后置。

@@ -1,16 +1,22 @@
 # NumPilot AI 续接手册
 
-> **当前续接提示（2026-08-22）**：下方 `/home/lixing`、106 tests 和旧 capability 内容是
+> **当前续接提示（2026-08-23）**：下方 `/home/lixing`、106 tests 和旧 capability 内容是
 > 历史设计背景，不是当前状态。权威目录是 `/home/ma-user/work/numpilot`。Poisson 两个
 > 缺口算子已由用户 LLM + 固定 CANNBot Skill 定向生成、repair、封存并通过
 > 六门资格化；限定 profile 的 AsNumpy `outer/matmul` 已走 NPU；完整动态一轮 117 个调用点
 > 和 250 轮设备驻留对拍均通过 strict-NPU。包装层逐返回值深拷贝也已定位并消除，同一
-> 10 轮 profiler 的 `aclrtMemcpy` 从 1,235 降到 35，kernel 数保持 1,170。先读
+> 10 轮 profiler 的 `aclrtMemcpy` 从 1,235 降到 35，kernel 数保持 1,170。原始
+> 48×48 内点、49 RBF、3000 轮配置也已通过独立 CPU/NPU、单线程实测、数值、传输和同规模
+> profiler 门；2 次预热、7 次重复的结果是 CPU 约快 `2.67×`，不是 NPU 加速。随后
+> 广播/CSE 优化把每轮调用从 117 降到 101，NPU 中位时延从 `47.414 ms` 降到
+> `38.069 ms`（快 `1.245×`），3000 轮输出哈希与基线相同；CPU 仍约快 `2.879×`。先读
 > [`P0-LLM-CANNBOT-RUN-20260821.md`](P0-LLM-CANNBOT-RUN-20260821.md)、
 > [`evidence/poisson-ritz-p0-npu-20260821.md`](evidence/poisson-ritz-p0-npu-20260821.md) 和
-> [`COMPETITION-GAP-REVIEW-20260821.md`](COMPETITION-GAP-REVIEW-20260821.md)。下一优先级是
-> 放大规模、预热和重复样本，不能先发布性能；当前全量回归为 `369 passed`，CodeArts
-> 仍按用户决定后置。
+> [`evidence/poisson-ritz-performance-original-scale-20260823.md`](evidence/poisson-ritz-performance-original-scale-20260823.md)
+> 和 [`evidence/poisson-ritz-broadcast-optimization-20260823.md`](evidence/poisson-ritz-broadcast-optimization-20260823.md)
+> 和 [`COMPETITION-GAP-REVIEW-20260821.md`](COMPETITION-GAP-REVIEW-20260821.md)。下一优先级
+> 是把 Poisson 专用 qualification/evidence harness 泛化为产品级 runner；当前全量回归为
+> `376 passed`，CodeArts 仍按用户决定后置。
 
 > 最后更新：2026-07-18（Asia/Shanghai）  
 > 权威工作目录：`/home/lixing/numpilot`  

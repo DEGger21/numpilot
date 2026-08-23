@@ -42,8 +42,12 @@ host 调用 NumPy。因此 `mlp_forward.py` 和 `big_gemm.py` 仍只能用于迁
 float32、非空、rank 1/2 的已测范围内放行修复后的 `outer`/`matmul` ACLNN 路径，并把
 私有 native 返回值以显式 one-shot move 包装成公开 `ndarray`。同一 10 轮 profiler 的
 kernel 数保持 1,170，`aclrtMemcpy` 从 1,235 降到 35；这仍不能反向扩大通用基线能力声明，
-也不是性能结论。详见
-[`docs/evidence/poisson-ritz-profiler-p0-20260822.md`](docs/evidence/poisson-ritz-profiler-p0-20260822.md)。
+也不是性能结论。随后原始 48×48 内点、49 RBF、3000 轮配置通过独立 CPU/NPU、数值、
+传输、profiler 和单线程实测门；2 次预热、7 次重复的 device-resident 中位数表明 CPU
+约快 `2.67×`，没有 NPU 加速。随后广播/CSE 优化把每轮调用从 117 降到 101，NPU
+中位时延从 `47.414 ms` 降到 `38.069 ms`（优化版快 `1.245×`），但 CPU 仍约快
+`2.879×`。详见[原始基线](docs/evidence/poisson-ritz-performance-original-scale-20260823.md)
+与[优化证据](docs/evidence/poisson-ritz-broadcast-optimization-20260823.md)。
 
 ## 快速运行
 
@@ -114,7 +118,8 @@ NUMPILOT_PY=python3 ./run_demo.sh
 | `examples/elementwise_forward.py` | square/add/sqrt/tanh 的裸金属 smoke | 当前审计无已知 fallback，仍以运行时 manifest 为准 |
 | [`examples/heat_diffusion_forward.py`](examples/heat_diffusion_forward.py) | 1024×1024 二维热扩散单步网络 | 已有 [910B4 实测证据](docs/evidence/heat-diffusion-npu-20260813.md)，7 个逐元素调用 strict-NPU 通过 |
 | [`examples/poisson_ritz_step.py`](examples/poisson_ritz_step.py) | 确定性 Poisson/RBF 损失与一次参数更新，含两个显式领域算子 | 两算子已通过六门资格化；显式加载 overlay 后，9 次调用 strict-NPU 单步通过（[证据](docs/evidence/poisson-ritz-p0-npu-20260821.md)） |
-| [`examples/poisson_ritz_iteration.py`](examples/poisson_ritz_iteration.py) | RBF、Laplacian、损失、解析梯度和更新均在一个动态 `forward` | 117 个调用点完成 strict-NPU；同一产物已完成 250 轮设备驻留对拍，29,250 次实际调用零 profile 拒绝（[证据](docs/evidence/poisson-ritz-p0-npu-20260821.md)） |
+| [`examples/poisson_ritz_iteration.py`](examples/poisson_ritz_iteration.py) | RBF、Laplacian、损失、解析梯度和更新均在一个动态 `forward` | 117 个调用点完成 strict-NPU；原始规模 3000 轮与重复性能门通过，但 CPU 约快 `2.67×`（[证据](docs/evidence/poisson-ritz-performance-original-scale-20260823.md)） |
+| [`examples/poisson_ritz_iteration_broadcast.py`](examples/poisson_ritz_iteration_broadcast.py) | 通过广播与公共子表达式复用减少 Poisson 迭代 launch | 101 个调用点完成 strict-NPU；NPU 比 117-call 基线快 `1.245×`，CPU 仍约快 `2.879×`（[证据](docs/evidence/poisson-ritz-broadcast-optimization-20260823.md)） |
 | `examples/mlp_forward.py` | 两层 MLP 的迁移与正确性示例 | 因 `matmul` CPU fallback 被拒绝性能发布 |
 | `examples/big_gemm.py` | 历史 GEMM 压测输入 | 只允许诊断，不是 NPU GEMM 加速证据 |
 | `examples/unsupported_demo.py` | `np.fft.fft` 缺口负例 | 分析阶段 early stop |
@@ -314,7 +319,7 @@ python -m numpilot seal-repair \
 - callsite/value 级 IR、动态 shape guard 和真正的 CPU/NPU 子图划分；
 - OS 级用户代码隔离与完整网络/文件权限收敛；
 - 通用 H2D/D2H 字节数、kernel trace 和 profiler 自动采集；Poisson P0 的定向采集、复制
-  审计与消除已完成；
+  审计、消除及原始规模性能门已完成；
 - 通用化的多算子 qualification runner、安装事务与自动回滚；Poisson P0 已有受信外部 harness 完成构建、UT、NPU 数值、私有安装和 overlay 激活闭环；
 - 通用 ndarray 结构语义、异步 stream、内存池以及 AsNumpy 插件 ABI。
 

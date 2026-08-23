@@ -83,3 +83,105 @@ def test_curated_evidence_preserves_fail_closed_verdicts():
     assert copy_audit["after"]["rows"] == 35
     assert copy_audit["eliminated"]["copies"] == 1200
     assert all(copy_audit["checks"].values())
+
+    performance = _json(
+        "poisson-ritz-p0-20260821/performance-original-scale/"
+        "final/evidence.json"
+    )
+    assert performance["status"] == "pass"
+    assert performance["performance"]["published"] is True
+    assert performance["performance"]["winner"] == "cpu"
+    assert performance["cpu"]["threadpools"][0]["num_threads"] == 1
+    assert performance["npu"]["strict_npu"] is True
+    assert performance["npu"]["total_runtime_calls"] == 361530
+    assert performance["workload"]["convergence_iterations"] == 3000
+    assert performance["comparison"]["consistent"] is True
+    assert performance["profiler_audit"]["status"] == "pass"
+    assert all(performance["profiler_audit"]["checks"].values())
+
+    performance_root = EVIDENCE / (
+        "poisson-ritz-p0-20260821/performance-original-scale"
+    )
+    assert performance["runner_sha256"] == hashlib.sha256(
+        (ROOT / "tools/poisson_performance_evidence.py").read_bytes()
+    ).hexdigest()
+    assert performance["cpu"]["output_sha256"] == hashlib.sha256(
+        (performance_root / "final/cpu-convergence-output.npz").read_bytes()
+    ).hexdigest()
+    assert performance["npu"]["output_sha256"] == hashlib.sha256(
+        (performance_root / "final/npu-convergence-output.npz").read_bytes()
+    ).hexdigest()
+    profiler_artifacts = performance["profiler_audit"]["artifacts"]
+    for key, relative in (
+        ("run_evidence_sha256", "profiler/profile-run.json"),
+        ("runtime_db_sha256", "profiler/runtime.db"),
+        ("task_db_sha256", "profiler/rts_track.db"),
+    ):
+        assert profiler_artifacts[key] == hashlib.sha256(
+            (performance_root / relative).read_bytes()
+        ).hexdigest()
+
+    optimized = _json(
+        "poisson-ritz-p0-20260821/performance-broadcast-optimized/"
+        "final/evidence.json"
+    )
+    assert optimized["status"] == "pass"
+    assert optimized["performance"]["published"] is True
+    assert optimized["performance"]["winner"] == "cpu"
+    assert optimized["performance"]["issues"] == []
+    assert optimized["cpu"]["threadpools"][0]["num_threads"] == 1
+    assert optimized["npu"]["strict_npu"] is True
+    assert optimized["npu"]["runtime_profile_ok"] is True
+    assert optimized["npu"]["runtime_target_integrity_ok"] is True
+    assert sum(optimized["npu"]["per_iteration_calls"].values()) == 101
+    assert optimized["npu"]["per_iteration_calls"]["outer"] == 2
+    assert optimized["npu"]["total_runtime_calls"] == 312090
+    assert optimized["workload"] == performance["workload"]
+    assert optimized["scale"] == performance["scale"]
+    assert optimized["comparison"] == performance["comparison"]
+    assert (
+        performance["performance"]["npu_median_per_iteration_ms"]
+        / optimized["performance"]["npu_median_per_iteration_ms"]
+        > 1.2
+    )
+
+    optimized_audit = optimized["profiler_audit"]
+    assert optimized_audit["status"] == "pass"
+    assert all(optimized_audit["checks"].values())
+    assert optimized_audit["kernel_tasks"]["total"] == 505
+    assert optimized_audit["memcpy"]["rows"] == 34
+
+    optimized_root = EVIDENCE / (
+        "poisson-ritz-p0-20260821/performance-broadcast-optimized"
+    )
+    assert optimized["runner_sha256"] == hashlib.sha256(
+        (ROOT / "tools/poisson_broadcast_performance_evidence.py").read_bytes()
+    ).hexdigest()
+    assert optimized["npu"]["source_sha256"] == hashlib.sha256(
+        (ROOT / "examples/poisson_ritz_iteration_broadcast.py").read_bytes()
+    ).hexdigest()
+    assert optimized["npu"]["migrated_sha256"] == hashlib.sha256(
+        (optimized_root / "migration/migrated.py").read_bytes()
+    ).hexdigest()
+    assert optimized["npu"]["migration_report_sha256"] == hashlib.sha256(
+        (optimized_root / "migration/report.json").read_bytes()
+    ).hexdigest()
+    for worker, filename in (
+        ("cpu", "cpu-convergence-output.npz"),
+        ("npu", "npu-convergence-output.npz"),
+    ):
+        optimized_output = optimized_root / "final" / filename
+        baseline_output = performance_root / "final" / filename
+        digest = hashlib.sha256(optimized_output.read_bytes()).hexdigest()
+        assert optimized[worker]["output_sha256"] == digest
+        assert optimized_output.read_bytes() == baseline_output.read_bytes()
+
+    optimized_profiler_artifacts = optimized_audit["artifacts"]
+    for key, relative in (
+        ("run_evidence_sha256", "profiler/profile-run.json"),
+        ("runtime_db_sha256", "profiler/runtime.db"),
+        ("task_db_sha256", "profiler/rts_track.db"),
+    ):
+        assert optimized_profiler_artifacts[key] == hashlib.sha256(
+            (optimized_root / relative).read_bytes()
+        ).hexdigest()
