@@ -27,14 +27,55 @@ CANNBOT_COMMIT = "abcb35fc0ff77f4bc5eda74de6bbcf28cbc1572b"
 CANNBOT_SKILL_NAME = "ascendc-registry-invoke-template"
 CANNBOT_LICENSE = "CANN Open Software License Agreement Version 2.0"
 _SKILL_PREFIX = "ops/ascendc-registry-invoke-template"
+_WORKFLOW_PREFIX = "plugins-official/ops-registry-invoke"
+_API_PRACTICES_PREFIX = "ops/ascendc-api-best-practices"
+_PRECISION_PREFIX = "ops/ascendc-precision-debug"
 _MAX_BUNDLE_BYTES = 384 * 1024
 _MAX_GIT_OUTPUT = 4096
+
+# These are paths in the independently installed CANNBot repository, not
+# copies of Skill content.  Generation follows the official registry-invoke
+# workflow; compiler-driven repair additionally reads the official Ascend C
+# API practices selected for the failing source file.
+CANNBOT_GENERATION_SKILL_FILES: Tuple[str, ...] = (
+    _SKILL_PREFIX + "/SKILL.md",
+    _WORKFLOW_PREFIX + "/workflow/SKILL.md",
+    _WORKFLOW_PREFIX + "/agents/ascendc-ops-developer.md",
+    _WORKFLOW_PREFIX + "/agents/ascendc-ops-tester.md",
+)
+CANNBOT_REPAIR_SKILL_FILES: Tuple[str, ...] = (
+    *CANNBOT_GENERATION_SKILL_FILES,
+    _API_PRACTICES_PREFIX + "/SKILL.md",
+    _API_PRACTICES_PREFIX + "/references/api-buffer.md",
+    _API_PRACTICES_PREFIX + "/references/api-arithmetic.md",
+    _API_PRACTICES_PREFIX + "/references/api-datacopy.md",
+    _API_PRACTICES_PREFIX + "/references/api-pipeline.md",
+    _API_PRACTICES_PREFIX + "/references/api-restrictions.md",
+)
+CANNBOT_PRECISION_SKILL_FILES: Tuple[str, ...] = (
+    *CANNBOT_GENERATION_SKILL_FILES,
+    "ops/ascendc-ut-develop/SKILL.md",
+    "ops/ascendc-st-design/SKILL.md",
+    _PRECISION_PREFIX + "/SKILL.md",
+    _PRECISION_PREFIX + "/references/diagnosis-workflow.md",
+    _PRECISION_PREFIX + "/references/common-traps.md",
+    _PRECISION_PREFIX + "/references/best-practices.md",
+)
+CANNBOT_RUNTIME_SKILL_FILES: Tuple[str, ...] = (
+    *CANNBOT_GENERATION_SKILL_FILES,
+    "ops/ascendc-runtime-debug/SKILL.md",
+)
+CANNBOT_PERFORMANCE_SKILL_FILES: Tuple[str, ...] = (
+    *CANNBOT_GENERATION_SKILL_FILES,
+    "ops/ascendc-perf-optimize/SKILL.md",
+)
 
 # This is intentionally a focused bundle rather than the complete 116 MB
 # repository.  A 131 KB first version containing every adjacent guide was
 # rejected by the configured gateway with repeated HTTP 504 responses.  The
-# files below retain the full primary Skill, its first-development/build route,
-# and the concrete arch22 Host/Kernel/ACLNN implementation spine.
+# files below retain the official end-to-end workflow, its developer/tester
+# roles, the first-development/build route, the API repair route, and the
+# concrete arch22 Host/Kernel/ACLNN implementation spine.
 _BUNDLE_FILES: Tuple[str, ...] = (
     "LICENSE",
     _SKILL_PREFIX + "/SKILL.md",
@@ -55,6 +96,23 @@ _BUNDLE_FILES: Tuple[str, ...] = (
     _SKILL_PREFIX + "/references/add_example/op_api/aclnn_add_example.h",
     _SKILL_PREFIX + "/references/add_example/op_api/add_example.cpp",
     _SKILL_PREFIX + "/references/add_example/op_api/add_example.h",
+    _WORKFLOW_PREFIX + "/workflow/SKILL.md",
+    _WORKFLOW_PREFIX + "/agents/ascendc-ops-developer.md",
+    _WORKFLOW_PREFIX + "/agents/ascendc-ops-tester.md",
+    _API_PRACTICES_PREFIX + "/SKILL.md",
+    _API_PRACTICES_PREFIX + "/references/api-buffer.md",
+    _API_PRACTICES_PREFIX + "/references/api-arithmetic.md",
+    _API_PRACTICES_PREFIX + "/references/api-datacopy.md",
+    _API_PRACTICES_PREFIX + "/references/api-pipeline.md",
+    _API_PRACTICES_PREFIX + "/references/api-restrictions.md",
+    "ops/ascendc-ut-develop/SKILL.md",
+    "ops/ascendc-st-design/SKILL.md",
+    _PRECISION_PREFIX + "/SKILL.md",
+    _PRECISION_PREFIX + "/references/diagnosis-workflow.md",
+    _PRECISION_PREFIX + "/references/common-traps.md",
+    _PRECISION_PREFIX + "/references/best-practices.md",
+    "ops/ascendc-runtime-debug/SKILL.md",
+    "ops/ascendc-perf-optimize/SKILL.md",
 )
 
 
@@ -201,8 +259,7 @@ def load_skill_bundle(
         "--porcelain",
         "--untracked-files=no",
         "--",
-        "LICENSE",
-        _SKILL_PREFIX,
+        *bundle_files,
     )
     if dirty:
         raise CannbotSkillError("CANNBot skill files contain local modifications")

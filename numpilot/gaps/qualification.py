@@ -514,19 +514,26 @@ def _constraints_from_gap_spec(spec: GapSpec) -> Tuple[str, ...]:
         rule for rule in spec.shape_rules
         if rule in {"contiguous", "contiguous=true"}
     ]
+    numel_rules = [
+        rule for rule in spec.shape_rules
+        if isinstance(rule, str)
+        and re.fullmatch(r"numel>=(0|[1-9][0-9]*)", rule)
+    ]
     if (
         len(rank_rules) != 1
         or len(contiguous_rules) != 1
-        or len(spec.shape_rules) != 2
+        or len(numel_rules) > 1
+        or len(spec.shape_rules) != 2 + len(numel_rules)
     ):
         raise QualificationError(
-            "GapSpec shape rules are not a concrete v1 rank/contiguous scope"
+            "GapSpec shape rules are not a concrete v1 "
+            "rank/contiguous/optional-numel scope"
         )
     constraints = (
         "dtype=float32",
         rank_rules[0],
         "contiguous=true",
-    )
+    ) + tuple(numel_rules)
     try:
         parse_profile_constraints(constraints)
     except ValueError as exc:

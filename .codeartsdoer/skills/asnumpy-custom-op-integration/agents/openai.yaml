@@ -1,0 +1,4 @@
+interface:
+  display_name: "AsNumpy Custom-Op Integration"
+  short_description: "接入私有 Ascend 算子并完成 AsNumpy 真机精度门禁"
+  default_prompt: "Use $asnumpy-custom-op-integration to integrate this verified custom OPP into AsNumpy and qualify it on NPU."

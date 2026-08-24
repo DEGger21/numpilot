@@ -80,6 +80,43 @@ def test_modified_skill_file_is_rejected(tmp_path):
         )
 
 
+def test_modified_selected_file_outside_primary_skill_prefix_is_rejected(
+    tmp_path,
+):
+    root, _commit = _skill_repo(tmp_path)
+    relative = "plugins-official/ops-registry-invoke/workflow/SKILL.md"
+    workflow = root / relative
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text("official workflow\n", encoding="utf-8")
+    _run("git", "add", relative, cwd=root)
+    _run(
+        "git",
+        "-c",
+        "user.name=NumPilot Test",
+        "-c",
+        "user.email=numpilot@example.invalid",
+        "commit",
+        "-qm",
+        "add workflow fixture",
+        cwd=root,
+    )
+    commit = subprocess.run(
+        ("git", "rev-parse", "HEAD"),
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    workflow.write_text("locally modified workflow\n", encoding="utf-8")
+
+    with pytest.raises(CannbotSkillError, match="local modifications"):
+        load_skill_bundle(
+            root,
+            expected_commit=commit,
+            bundle_files=(relative,),
+        )
+
+
 def test_unpinned_commit_is_rejected(tmp_path):
     root, _commit = _skill_repo(tmp_path)
 

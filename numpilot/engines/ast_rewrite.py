@@ -11,6 +11,14 @@ from numpilot.engines.base import MigrationEngine
 from numpilot.operator_specs import collect_static_operator_specs
 
 
+_SAFE_ARRAY_METADATA = frozenset({
+    "dtype", "itemsize", "nbytes", "ndim", "shape", "strides",
+})
+_SAFE_NUMPY_STATIC_VALUES = frozenset({
+    "bool", "bool_", "e", "euler_gamma", "float16", "float32", "float64",
+    "inf", "int8", "int16", "int32", "int64", "nan", "ndarray", "pi",
+    "uint8", "uint16", "uint32", "uint64",
+})
 _CONTROL_FLOW_NODES = (
     ast.IfExp, ast.For, ast.AsyncFor, ast.While, ast.Try, ast.With,
     ast.AsyncWith, ast.Lambda, ast.ListComp, ast.SetComp, ast.DictComp,
@@ -89,16 +97,26 @@ def _assigned_names(node):
     }
 
 
-def _depends_on_ap(node, tainted, ap_modules):
-    return any(
-        _is_direct_ap_call(item, ap_modules)
-        or (
-            isinstance(item, ast.Name)
-            and isinstance(item.ctx, ast.Load)
-            and item.id in tainted
+def _fully_depends_on_ap(node, tainted, ap_modules):
+    """Require every returned data leaf to come from a direct device call."""
+
+    if _is_direct_ap_call(node, ap_modules):
+        return True
+    if isinstance(node, ast.Name):
+        return node.id in tainted
+    if isinstance(node, ast.Attribute) and node.attr in _SAFE_ARRAY_METADATA:
+        return _fully_depends_on_ap(node.value, tainted, ap_modules)
+    if isinstance(node, (ast.Tuple, ast.List, ast.Set)):
+        return bool(node.elts) and all(
+            _fully_depends_on_ap(item, tainted, ap_modules)
+            for item in node.elts
         )
-        for item in ast.walk(node)
-    )
+    if isinstance(node, ast.Dict):
+        return bool(node.values) and all(
+            _fully_depends_on_ap(item, tainted, ap_modules)
+            for item in node.values
+        )
+    return False
 
 
 def audit_forward_surface(source: str) -> ForwardSurfaceAudit:
@@ -149,6 +167,11 @@ def audit_forward_surface(source: str) -> ForwardSurfaceAudit:
         + list(forward.args.kwonlyargs)
     )
     local_names = {argument.arg for argument in arguments} | _assigned_names(forward)
+    call_function_attributes = {
+        id(node.func)
+        for node in ast.walk(forward)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+    }
 
     for node in ast.walk(forward):
         if isinstance(node, ast.Call):
@@ -217,6 +240,20 @@ def audit_forward_surface(source: str) -> ForwardSurfaceAudit:
                 violations.append(
                     f"L{getattr(node, 'lineno', 0)}: forward 读取未审计模块全局 {node.id}"
                 )
+        elif isinstance(node, ast.Attribute):
+            root = _root_name(node)
+            if id(node) in call_function_attributes:
+                continue
+            if root in np_modules:
+                allowed = node.attr in _SAFE_NUMPY_STATIC_VALUES
+            elif root in ap_modules:
+                allowed = node.attr == "ndarray"
+            else:
+                allowed = node.attr in _SAFE_ARRAY_METADATA
+            if not allowed:
+                violations.append(
+                    f"L{getattr(node, 'lineno', 0)}: forward 读取未审计属性 .{node.attr}"
+                )
         elif isinstance(node, _CONTROL_FLOW_NODES):
             violations.append(
                 f"L{getattr(node, 'lineno', 0)}: forward 包含未建模控制流/dunder "
@@ -244,18 +281,32 @@ def audit_forward_surface(source: str) -> ForwardSurfaceAudit:
         if isinstance(statement, (ast.Assign, ast.AnnAssign)):
             value = statement.value
             names = _assigned_names(statement)
-            if value is not None and _depends_on_ap(value, tainted, ap_modules):
+            targets = (
+                statement.targets
+                if isinstance(statement, ast.Assign)
+                else [statement.target]
+            )
+            if len(targets) != 1 or not isinstance(targets[0], ast.Name):
+                violations.append(
+                    f"L{getattr(statement, 'lineno', 0)}: forward 仅允许单一名称赋值"
+                )
+                tainted.difference_update(names)
+                continue
+            if value is not None and _fully_depends_on_ap(
+                value, tainted, ap_modules
+            ):
                 tainted.update(names)
             else:
                 tainted.difference_update(names)
             continue
         if isinstance(statement, ast.Return):
             returns += 1
-            if statement.value is None or not _depends_on_ap(
+            if statement.value is None or not _fully_depends_on_ap(
                 statement.value, tainted, ap_modules
             ):
                 violations.append(
-                    f"L{getattr(statement, 'lineno', 0)}: forward 返回值不依赖任何直接 ap.* 结果"
+                    f"L{getattr(statement, 'lineno', 0)}: forward 每个返回值叶子"
+                    "都必须依赖直接 ap.* 结果，不能存在不依赖设备结果的叶子"
                 )
             continue
         if isinstance(statement, ast.If):

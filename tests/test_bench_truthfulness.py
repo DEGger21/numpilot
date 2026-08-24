@@ -186,6 +186,7 @@ def test_run_npu_compare_rejects_audited_matmul_before_execution(monkeypatch, tm
     import types
 
     from numpilot import bench
+    from numpilot.backends import npu as npu_module
     from numpilot.backends.npu import AUDITED_ASNUMPY_VERSION, NpuBackend
 
     source = tmp_path / "matmul_case.py"
@@ -201,6 +202,9 @@ def test_run_npu_compare_rejects_audited_matmul_before_execution(monkeypatch, tm
     module.__version__ = AUDITED_ASNUMPY_VERSION
     module.__file__ = "/fake/asnumpy/__init__.py"
     module.matmul = lambda x, y: None
+    monkeypatch.setattr(
+        npu_module, "_audited_runtime_identity_matches", lambda _module: True
+    )
     backend = NpuBackend(module)
     monkeypatch.setattr(bench, "select_backend", lambda name: backend)
 

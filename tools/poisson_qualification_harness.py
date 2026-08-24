@@ -44,6 +44,43 @@ OPERATOR_CONFIG = {
 }
 RESULT_PREFIX = "NUMPILOT_QUALIFICATION_RESULT="
 _PASS_COUNT = re.compile(r"(?:^|\s)([0-9]+) passed(?:\s|,|$)")
+_DEVICE_SELECTION = re.compile(r"(?:0|[1-9][0-9]*)(?:,(?:0|[1-9][0-9]*))*\Z")
+
+_CANN_ROOT = Path("/usr/local/Ascend/cann-9.0.0")
+_DRIVER_ROOT = Path("/usr/local/Ascend/driver/lib64")
+_TRUSTED_SYSTEM_PATH = (
+    _CANN_ROOT / "bin",
+    _CANN_ROOT / "tools/ccec_compiler/bin",
+    _CANN_ROOT / "tools/bisheng_compiler/bin",
+    _CANN_ROOT / "tools/show_kernel_debug_data",
+    _CANN_ROOT / "tools/msobjdump",
+    Path("/usr/local/sbin"),
+    Path("/usr/local/bin"),
+    Path("/usr/sbin"),
+    Path("/usr/bin"),
+    Path("/sbin"),
+    Path("/bin"),
+)
+_CANN_PYTHON_PATH = (
+    _CANN_ROOT / "python/site-packages",
+    _CANN_ROOT / "opp/built-in/op_impl/ai_core/tbe",
+)
+_SUPPORT_SITE_RELATIVE_TO_WORKSPACE = Path(
+    "numpilot-gap-runs/asnumpy-runtime-20260813/venv/lib/python3.10/site-packages"
+)
+_CANN_LIBRARY_PATH = (
+    _DRIVER_ROOT,
+    _DRIVER_ROOT / "common",
+    _DRIVER_ROOT / "driver",
+    _CANN_ROOT / "aarch64-linux/lib64",
+    _CANN_ROOT / "lib64/plugin/opskernel",
+    _CANN_ROOT / "lib64/plugin/nnengine",
+    _CANN_ROOT / "opp/built-in/op_impl/ai_core/tbe/op_tiling/lib/linux/aarch64",
+)
+_CANN_CMAKE_PREFIX_PATH = (
+    _CANN_ROOT / "lib64/cmake",
+    _CANN_ROOT / "toolkit/tools/tikicpulib/lib/cmake",
+)
 
 
 def _sha256_bytes(payload: bytes) -> str:
@@ -106,25 +143,104 @@ def _require_artifact(path: str, expected_key: str) -> Path:
     return root
 
 
-def _command_env(private_opp: Path | None = None) -> Dict[str, str]:
-    env = dict(os.environ)
-    driver_first = [
-        "/usr/local/Ascend/driver/lib64",
-        "/usr/local/Ascend/driver/lib64/common",
-        "/usr/local/Ascend/driver/lib64/driver",
-        "/usr/local/Ascend/cann-9.0.0/aarch64-linux/lib64",
-        "/usr/local/Ascend/ascend-toolkit/latest/lib64",
-    ]
-    env.update({
-        "ASCEND_HOME_PATH": "/usr/local/Ascend/cann-9.0.0",
-        "ASCEND_TOOLKIT_HOME": "/usr/local/Ascend/cann-9.0.0",
-        "ASCEND_OPP_PATH": "/usr/local/Ascend/cann-9.0.0/opp",
+def _private_environment_directory(path: Path) -> Path:
+    """Create one non-symlinked 0700 directory for untrusted subprocess state."""
+
+    invoked = path.absolute()
+    if os.path.lexists(invoked):
+        if invoked.is_symlink() or not invoked.is_dir():
+            raise RuntimeError(f"subprocess environment path is unsafe: {invoked}")
+    else:
+        invoked.mkdir(parents=True, mode=0o700)
+    invoked.chmod(0o700)
+    return invoked.resolve(strict=True)
+
+
+def _inherited_device_selection() -> str | None:
+    """Copy only a syntactically bounded Ascend device list from the caller."""
+
+    value = os.getenv("ASCEND_VISIBLE_DEVICES")
+    if value is None or value == "":
+        return None
+    if len(value) > 128 or not _DEVICE_SELECTION.fullmatch(value):
+        raise RuntimeError("ASCEND_VISIBLE_DEVICES must be a comma-separated device list")
+    devices = value.split(",")
+    if len(devices) != len(set(devices)):
+        raise RuntimeError("ASCEND_VISIBLE_DEVICES contains duplicate devices")
+    return value
+
+
+def _command_env(
+    *,
+    sandbox_root: Path,
+    python: Path,
+    private_opp: Path | None = None,
+) -> Dict[str, str]:
+    """Return a credential-free environment with optional safe device selection."""
+
+    sandbox = _private_environment_directory(sandbox_root)
+    private_paths = {
+        "HOME": _private_environment_directory(sandbox / "home"),
+        "TMPDIR": _private_environment_directory(sandbox / "tmp"),
+        "XDG_CACHE_HOME": _private_environment_directory(sandbox / "xdg-cache"),
+        "XDG_CONFIG_HOME": _private_environment_directory(sandbox / "xdg-config"),
+        "XDG_DATA_HOME": _private_environment_directory(sandbox / "xdg-data"),
+        "XDG_STATE_HOME": _private_environment_directory(sandbox / "xdg-state"),
+        "XDG_RUNTIME_DIR": _private_environment_directory(sandbox / "xdg-runtime"),
+        "ASNUMPY_LOG_DIR": _private_environment_directory(sandbox / "asnumpy-logs"),
+    }
+    repository = Path(__file__).resolve().parents[1]
+    runtime_site = (
+        python.absolute().parent.parent / "lib/python3.10/site-packages"
+    )
+    if not runtime_site.is_dir():
+        raise RuntimeError(
+            f"selected Python 3.10 site-packages is missing: {runtime_site}"
+        )
+    support_site = repository.parent / _SUPPORT_SITE_RELATIVE_TO_WORKSPACE
+    trusted_path = (python.absolute().parent, *_TRUSTED_SYSTEM_PATH)
+    # The selected runtime owns AsNumpy.  Keep its site-packages ahead of the
+    # support environment, which exists only to supply auxiliary dependencies
+    # and may contain an older AsNumpy installation.
+    python_path = (repository, runtime_site, support_site, *_CANN_PYTHON_PATH)
+    env = {
+        "ASCEND_HOME_PATH": str(_CANN_ROOT),
+        "ASCEND_TOOLKIT_HOME": str(_CANN_ROOT),
+        "ASCEND_OPP_PATH": str(_CANN_ROOT / "opp"),
+        "ASCEND_AICPU_PATH": str(_CANN_ROOT),
+        "TOOLCHAIN_HOME": str(_CANN_ROOT / "toolkit"),
         "ASCEND_SOC_VERSION": SOC_RUNTIME_NAME,
         "CANN_VERSION": CANN_VERSION,
+        "CMAKE_PREFIX_PATH": os.pathsep.join(
+            str(path) for path in _CANN_CMAKE_PREFIX_PATH
+        ),
+        "LANG": "C",
+        "LC_ALL": "C",
+        "TZ": "UTC",
+        "OPENBLAS_NUM_THREADS": "1",
+        "OMP_NUM_THREADS": "1",
+        "MKL_NUM_THREADS": "1",
+        "NUMEXPR_NUM_THREADS": "1",
+        "ASNUMPY_DEBUG": "0",
         "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONHASHSEED": "0",
+        "PYTHONNOUSERSITE": "1",
+        "PYTHONUNBUFFERED": "1",
+        "PYTHONUTF8": "1",
+        "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
         "PYTEST_ADDOPTS": "-p no:cacheprovider",
-        "LD_LIBRARY_PATH": ":".join(driver_first),
-    })
+        "LD_LIBRARY_PATH": os.pathsep.join(
+            str(path) for path in _CANN_LIBRARY_PATH
+        ),
+        "PATH": os.pathsep.join(str(path) for path in trusted_path),
+        "PYTHONPATH": os.pathsep.join(str(path) for path in python_path),
+        **{name: str(path) for name, path in private_paths.items()},
+    }
+    env["TMP"] = env["TMPDIR"]
+    env["TEMP"] = env["TMPDIR"]
+    device_selection = _inherited_device_selection()
+    if device_selection is not None:
+        env["ASCEND_VISIBLE_DEVICES"] = device_selection
     if private_opp is not None:
         roots = [
             private_opp / "vendors" / config["vendor"]
@@ -183,11 +299,15 @@ def _build_and_install(
     build_root: Path,
     output_root: Path,
     private_opp: Path,
+    python: Path,
     jobs: int,
 ) -> Dict[str, Any]:
     build_dir = build_root / key
     raw_dir = output_root / "raw" / key
-    env = _command_env()
+    env = _command_env(
+        sandbox_root=build_root / ".subprocess-environment" / key,
+        python=python,
+    )
     _run_logged(
         (
             "cmake",
@@ -501,11 +621,16 @@ def _main(args: argparse.Namespace) -> int:
                 build_root=build_root,
                 output_root=output_root,
                 private_opp=private_opp,
+                python=asnumpy_python,
                 jobs=args.jobs,
             )
 
     _materialize_private_opp_symlinks(private_opp)
-    runtime_env = _command_env(private_opp)
+    runtime_env = _command_env(
+        sandbox_root=output_root / "runtime" / "subprocess-environment",
+        python=asnumpy_python,
+        private_opp=private_opp,
+    )
     unit_counts: Dict[str, int] = {}
     for key in OPERATOR_CONFIG:
         test_path = output_root / key / "artifact" / OPERATOR_CONFIG[key]["test"]

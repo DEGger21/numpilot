@@ -6,7 +6,7 @@ import pytest
 
 from numpilot.agents.migration import MigrationAgent
 from numpilot.backends.shim import ShimBackend
-from numpilot.engines.ast_rewrite import AstRewriteEngine
+from numpilot.engines.ast_rewrite import AstRewriteEngine, audit_forward_surface
 from numpilot.engines.llm import LlmEngine, LlmError
 from numpilot.contracts import OffloadPlan
 
@@ -102,6 +102,44 @@ def forward(x, np):
     assert "ap.add(np.sqrt(x), ap.sqrt(x))" in migration.migrated_source
     assert migration.expected_rewrites == {"add": 1, "sqrt": 1}
     assert migration.rewrites == migration.expected_rewrites
+
+
+def test_forward_surface_requires_every_return_leaf_to_be_device_derived():
+    source = """\
+import numpy as np
+import asnumpy as ap
+def forward(x):
+    value = ap.add(x, x)
+    return (value, np.pi)
+"""
+
+    audit = audit_forward_surface(source)
+
+    assert not audit.ok
+    assert any("每个返回值叶子" in item for item in audit.violations)
+
+
+def test_forward_surface_rejects_unknown_attributes_and_destructuring():
+    unknown = """\
+import asnumpy as ap
+def forward(x):
+    return (ap.add(x, x), ap.__dict__)
+"""
+    destructuring = """\
+import asnumpy as ap
+def forward(x):
+    a, b = x
+    return ap.add(a, b)
+"""
+
+    assert any(
+        ".__dict__" in item
+        for item in audit_forward_surface(unknown).violations
+    )
+    assert any(
+        "单一名称赋值" in item
+        for item in audit_forward_surface(destructuring).violations
+    )
 
 
 def test_engine_name():

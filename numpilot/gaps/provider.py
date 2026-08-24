@@ -11,6 +11,11 @@ import stat
 import tempfile
 from typing import Callable, Dict, List, Optional, Tuple
 
+from numpilot.asnumpy_skill import ASNUMPY_INTEGRATION_SKILL_FILES
+from numpilot.cannbot_skills import (
+    CANNBOT_GENERATION_SKILL_FILES,
+    CANNBOT_REPAIR_SKILL_FILES,
+)
 from numpilot.gaps.models import (
     ARTIFACT_SCHEMA_VERSION,
     GapSpec,
@@ -40,6 +45,7 @@ _ALLOWED_TOP_DIRS = frozenset({
     "op_host",
     "op_kernel",
     "op_api",
+    "csrc",
     "tests",
     "asnumpy_adapter",
     "docs",
@@ -64,7 +70,26 @@ _MAX_RESPONSE_BYTES = _MAX_TOTAL_BYTES + 256 * 1024
 _MAX_SUMMARY_CHARS = 4096
 _MAX_PATH_CHARS = 240
 _MAX_PATH_DEPTH = 8
-_MAX_TRANSPORT_ATTEMPTS = 48
+# Direct generation has a fixed 17-file plan and permits three bounded
+# requests per file.  Repair chains are independently bounded to eight
+# rounds, each of which may repair all 16 admitted paths with three requests.
+# ``repair_to_candidate`` reserves that round's worst case before any remote
+# call, so every candidate it publishes remains sealable.
+_MAX_FRESH_TRANSPORT_ATTEMPTS = 51
+_MAX_REPAIR_PATHS = 16
+_MAX_REPAIR_CHAIN_DEPTH = 8
+_MAX_REPAIR_ATTEMPTS_PER_ROUND = _MAX_REPAIR_PATHS * 3
+_MAX_TRANSPORT_ATTEMPTS = (
+    _MAX_FRESH_TRANSPORT_ATTEMPTS
+    + _MAX_REPAIR_CHAIN_DEPTH * _MAX_REPAIR_ATTEMPTS_PER_ROUND
+)
+_MAX_METADATA_BYTES = 2 * 1024 * 1024
+_MAX_OPERATOR_TREE_ENTRIES = 256
+_MAX_ADAPTER_CHAIN_DEPTH = 32
+_MAX_ADAPTER_FILES = 8
+_MAX_ADAPTER_TREE_ENTRIES = 64
+_MAX_ADAPTER_FILE_BYTES = 512 * 1024
+_MAX_ADAPTER_TOTAL_BYTES = 2 * 1024 * 1024
 _REMOTE_RECEIPT_FIELDS = frozenset({
     "schema_version",
     "utc_start",
@@ -105,6 +130,76 @@ _ARTIFACT_FIELDS = frozenset({
     "status",
     "files",
     "generation",
+    "gates",
+})
+_REPAIR_REPORT_FIELDS = frozenset({
+    "schema_version",
+    "status",
+    "source_artifact_id",
+    "source_workspace",
+    "signed_source_workspace",
+    "parent_repair_report_sha256",
+    "gap_id",
+    "model",
+    "provider",
+    "configuration_source",
+    "attempt_count",
+    "paths",
+    "before_sha256",
+    "after_sha256",
+    "candidate_files_sha256",
+    "diagnostic_sha256",
+    "generation_request_sha256",
+    "skill_bundle_sha256",
+    "cannbot_repair_skill_files",
+    "response_sha256",
+    "remote_receipts",
+    "actual_remote_call",
+    "gates",
+})
+_GENERATED_ADAPTER_REPORT_FIELDS = frozenset({
+    "schema_version",
+    "status",
+    "adapter_artifact_id",
+    "source_artifact_id",
+    "model",
+    "provider",
+    "configuration_source",
+    "attempt_count",
+    "files_sha256",
+    "adapter_contract_sha256",
+    "asnumpy_context_sha256",
+    "skill_bundle_sha256",
+    "integration_skill_files",
+    "response_sha256",
+    "remote_receipts",
+    "actual_remote_call",
+    "gates",
+})
+_REPAIRED_ADAPTER_REPORT_FIELDS = frozenset({
+    "schema_version",
+    "status",
+    "adapter_artifact_id",
+    "source_artifact_id",
+    "source_adapter_root",
+    "parent_adapter_artifact_id",
+    "parent_adapter_report_sha256",
+    "model",
+    "provider",
+    "configuration_source",
+    "repair_profile",
+    "attempt_count",
+    "paths",
+    "before_sha256",
+    "after_sha256",
+    "files_sha256",
+    "diagnostic_sha256",
+    "asnumpy_context_sha256",
+    "skill_bundle_sha256",
+    "integration_skill_files",
+    "response_sha256",
+    "remote_receipts",
+    "actual_remote_call",
     "gates",
 })
 _SAFE_RECEIPT_TEXT = re.compile(r"^[A-Za-z0-9._:?-]{1,512}$")
@@ -192,6 +287,53 @@ Emit the complete replacement file, not a diff. Preserve correct behavior
 outside the reported failure. Do not emit TODO, placeholders, stub returns,
 external repository dependencies, network operations, system installation, or
 success claims. Never put a line equal to END_FILE inside file content.
+"""
+
+_ASNUMPY_ADAPTER_SYSTEM_PROMPT = """You generate exactly one file for an
+UNVERIFIED AsNumpy custom-operator integration overlay. The signed operator
+artifact and its adapter JSON are semantic and ABI truth. The supplied
+AsNumpy registry/generator files are integration truth, and the supplied
+NumPilot AsNumpy integration Skill is workflow and testing truth.
+
+Return exactly one NUMPILOT_BUNDLE_V1 line bundle containing only the requested
+path. The literal envelope is:
+NUMPILOT_BUNDLE_V1
+SUMMARY: one short adapter summary
+FILE: the/exact/requested/path
+CONTENT:
+raw complete file content
+END_FILE
+END_BUNDLE
+
+The first line MUST be exactly NUMPILOT_BUNDLE_V1 and the last line MUST be
+exactly END_BUNDLE. Emit the complete file, not a diff. Do not edit generated AsNumpy files,
+invent APIs, add CPU fallbacks, disable tests, access the network, install
+software, or claim build/NPU success. Never put a line equal to END_FILE inside
+file content.
+"""
+
+_ASNUMPY_ADAPTER_REPAIR_SYSTEM_PROMPT = """You repair exactly one file in an
+UNVERIFIED AsNumpy custom-operator integration overlay. The raw local build or
+test diagnostic is authoritative. The current overlay and supplied AsNumpy
+build/generator files are integration truth, and the supplied NumPilot AsNumpy
+integration Skill files are engineering truth.
+
+Return exactly one NUMPILOT_BUNDLE_V1 line bundle containing only the requested
+path. The literal envelope is:
+NUMPILOT_BUNDLE_V1
+SUMMARY: one short repair summary
+FILE: the/exact/requested/path
+CONTENT:
+raw complete replacement file
+END_FILE
+END_BUNDLE
+
+The first line MUST be exactly NUMPILOT_BUNDLE_V1 and the last line MUST be
+exactly END_BUNDLE. Do not use Markdown fences or add commentary before or
+after the envelope. Emit the complete replacement file, not a diff. Do not edit
+generated AsNumpy files, invent APIs, add CPU fallbacks, disable tests, access
+the network, install software, or claim build/NPU success. Never put a line
+equal to END_FILE inside file content.
 """
 
 _SKILL_PREFIX = "ops/ascendc-registry-invoke-template"
@@ -370,6 +512,161 @@ def _sha256_bytes(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
+def _bounded_json_payload(value: object, label: str) -> bytes:
+    payload = (
+        json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    ).encode("utf-8")
+    if len(payload) > _MAX_METADATA_BYTES:
+        raise DraftGenerationError("%s exceeds the size limit" % label)
+    return payload
+
+
+def _read_bounded_bytes(path: Path, maximum: int, label: str) -> bytes:
+    """Read at most ``maximum`` bytes plus one sentinel byte."""
+
+    descriptor = -1
+    try:
+        if path.is_symlink():
+            raise DraftGenerationError("%s must not be a symlink" % label)
+        descriptor = os.open(
+            path,
+            os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+        )
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode):
+            raise DraftGenerationError("%s must be a regular file" % label)
+        if metadata.st_size > maximum:
+            raise DraftGenerationError("%s exceeds the size limit" % label)
+        with os.fdopen(descriptor, "rb") as handle:
+            descriptor = -1
+            payload = handle.read(maximum + 1)
+    except OSError as exc:
+        raise DraftGenerationError("cannot read %s" % label) from exc
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+    if len(payload) > maximum:
+        raise DraftGenerationError("%s exceeds the size limit" % label)
+    return payload
+
+
+def _read_bounded_text(
+    path: Path,
+    maximum: int,
+    label: str,
+) -> Tuple[str, bytes]:
+    payload = _read_bounded_bytes(path, maximum, label)
+    try:
+        return payload.decode("utf-8"), payload
+    except UnicodeError as exc:
+        raise DraftGenerationError("%s is not UTF-8" % label) from exc
+
+
+def _hash_bounded_file(
+    path: Path,
+    maximum: int,
+    label: str,
+) -> Tuple[str, int]:
+    """Hash one regular file with a hard streaming byte bound."""
+
+    digest = hashlib.sha256()
+    total = 0
+    descriptor = -1
+    try:
+        descriptor = os.open(
+            path,
+            os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+        )
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode):
+            raise DraftGenerationError("%s must be a regular file" % label)
+        if metadata.st_size > maximum:
+            raise DraftGenerationError("%s exceeds the size limit" % label)
+        with os.fdopen(descriptor, "rb") as handle:
+            descriptor = -1
+            while True:
+                chunk = handle.read(64 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > maximum:
+                    raise DraftGenerationError(
+                        "%s exceeds the size limit" % label
+                    )
+                digest.update(chunk)
+    except OSError as exc:
+        raise DraftGenerationError("cannot read %s" % label) from exc
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+    return digest.hexdigest(), total
+
+
+def _bounded_tree_hashes(
+    root: Path,
+    *,
+    excluded: Tuple[str, ...],
+    maximum_files: int,
+    maximum_entries: int,
+    maximum_file_bytes: int,
+    maximum_total_bytes: int,
+    label: str,
+) -> Dict[str, str]:
+    """Stream, bound and hash every non-metadata regular file below ``root``."""
+
+    excluded_names = set(excluded)
+    hashes: Dict[str, str] = {}
+    entry_count = 0
+    total_bytes = 0
+    try:
+        candidates = root.rglob("*")
+        for candidate in candidates:
+            entry_count += 1
+            if entry_count > maximum_entries:
+                raise DraftGenerationError("%s exceeds the entry limit" % label)
+            if candidate.is_symlink():
+                raise DraftGenerationError(
+                    "%s contains a symlink: %s"
+                    % (label, candidate.relative_to(root).as_posix())
+                )
+            try:
+                metadata = candidate.stat()
+            except OSError as exc:
+                raise DraftGenerationError("cannot inspect %s" % label) from exc
+            if stat.S_ISDIR(metadata.st_mode):
+                continue
+            if not stat.S_ISREG(metadata.st_mode):
+                raise DraftGenerationError("%s contains a special file" % label)
+            relative = candidate.relative_to(root).as_posix()
+            if relative in excluded_names:
+                continue
+            if len(hashes) >= maximum_files:
+                raise DraftGenerationError("%s exceeds the file-count limit" % label)
+            safe = str(_safe_relative_path(relative))
+            if safe != relative:
+                raise DraftGenerationError("%s path is not normalized" % label)
+            if metadata.st_size > maximum_file_bytes:
+                raise DraftGenerationError("%s file exceeds the size limit" % label)
+            if total_bytes + metadata.st_size > maximum_total_bytes:
+                raise DraftGenerationError("%s exceeds the total-size limit" % label)
+            digest, actual_size = _hash_bounded_file(
+                candidate,
+                maximum_file_bytes,
+                "%s file %s" % (label, relative),
+            )
+            if actual_size != metadata.st_size:
+                raise DraftGenerationError(
+                    "%s file changed while being validated" % label
+                )
+            total_bytes += actual_size
+            if total_bytes > maximum_total_bytes:
+                raise DraftGenerationError("%s exceeds the total-size limit" % label)
+            hashes[relative] = digest
+    except OSError as exc:
+        raise DraftGenerationError("cannot enumerate %s" % label) from exc
+    return hashes
+
+
 def _is_sha256(value: object) -> bool:
     return (
         isinstance(value, str)
@@ -508,7 +805,434 @@ def _validate_remote_receipt(
     return dict(receipt)
 
 
-def _validate_generation(generation: object) -> Dict[str, object]:
+def _adapter_artifact_id(report: Dict[str, object]) -> str:
+    """Return the reproducible identity for an AsNumpy adapter report.
+
+    Schema 1 generated reports used a narrower identity and remain readable.
+    A schema 1 repair reused its parent's ID and therefore cannot prove a
+    content/parent identity; those reports are deliberately rejected below.
+    Schema 2 binds every auditable field except the relocatable parent path.
+    """
+
+    if (
+        report.get("schema_version") == 1
+        and report.get("status") == "generated_unverified"
+    ):
+        identity = {
+            "source_artifact_id": report.get("source_artifact_id"),
+            "files": report.get("files_sha256"),
+            "response_sha256": report.get("response_sha256"),
+        }
+    else:
+        identity = {
+            name: report[name]
+            for name in sorted(report)
+            if name not in {"adapter_artifact_id", "source_adapter_root"}
+        }
+    payload = json.dumps(
+        identity, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return "adapter-" + _sha256_bytes(payload)[:20]
+
+
+def _validate_adapter_hash_map(
+    value: object,
+    label: str,
+    *,
+    maximum: int,
+    paths: bool,
+) -> Dict[str, str]:
+    if not isinstance(value, dict) or not value or len(value) > maximum:
+        raise DraftGenerationError("AsNumpy adapter %s is invalid" % label)
+    normalized: Dict[str, str] = {}
+    for raw_name, digest in value.items():
+        if paths:
+            name = str(_safe_relative_path(raw_name))
+        else:
+            if (
+                not isinstance(raw_name, str)
+                or not raw_name
+                or len(raw_name) > _MAX_PATH_CHARS
+                or any(ord(character) < 32 for character in raw_name)
+            ):
+                raise DraftGenerationError(
+                    "AsNumpy adapter %s label is invalid" % label
+                )
+            name = raw_name
+        if name in normalized or not _is_sha256(digest):
+            raise DraftGenerationError(
+                "AsNumpy adapter %s digest is invalid" % label
+            )
+        normalized[name] = digest
+    return normalized
+
+
+def _validate_adapter_report(
+    report: object,
+    *,
+    candidate_hashes: Optional[Dict[str, str]] = None,
+    parent_report: Optional[Dict[str, object]] = None,
+    parent_report_sha256: Optional[str] = None,
+) -> Dict[str, object]:
+    """Validate a complete adapter report and, when supplied, its parent edge."""
+
+    if not isinstance(report, dict):
+        raise DraftGenerationError("AsNumpy adapter report must be an object")
+    schema_version = report.get("schema_version")
+    status = report.get("status")
+    if (
+        isinstance(schema_version, bool)
+        or not isinstance(schema_version, int)
+        or schema_version not in (1, 2)
+    ):
+        raise DraftGenerationError("AsNumpy adapter report schema is unsupported")
+    if status == "generated_unverified":
+        expected_fields = _GENERATED_ADAPTER_REPORT_FIELDS
+    elif status == "repaired_unverified":
+        if schema_version == 1:
+            raise DraftGenerationError(
+                "legacy AsNumpy adapter repair cannot prove a distinct artifact "
+                "identity and parent chain; regenerate it (fail-closed)"
+            )
+        expected_fields = _REPAIRED_ADAPTER_REPORT_FIELDS
+    else:
+        raise DraftGenerationError("AsNumpy adapter report status is invalid")
+    if frozenset(report) != expected_fields:
+        if (
+            status == "repaired_unverified"
+            and schema_version == 2
+            and "repair_profile" not in report
+        ):
+            raise DraftGenerationError(
+                "legacy AsNumpy adapter repair cannot prove its repair-profile "
+                "binding; rerun the repair (fail-closed)"
+            )
+        raise DraftGenerationError("AsNumpy adapter report schema is invalid")
+
+    for name in (
+        "source_artifact_id",
+        "model",
+        "provider",
+        "configuration_source",
+    ):
+        value = report.get(name)
+        if (
+            not isinstance(value, str)
+            or not value
+            or len(value) > 512
+            or any(ord(character) < 32 for character in value)
+        ):
+            raise DraftGenerationError(
+                "AsNumpy adapter report field is invalid: %s" % name
+            )
+    _require_exact_int(
+        report.get("attempt_count"),
+        "AsNumpy adapter attempt count",
+        minimum=1,
+        maximum=_MAX_TRANSPORT_ATTEMPTS,
+    )
+    files = _validate_adapter_hash_map(
+        report.get("files_sha256"),
+        "file map",
+        maximum=_MAX_ADAPTER_FILES,
+        paths=True,
+    )
+    contexts = _validate_adapter_hash_map(
+        report.get("asnumpy_context_sha256"),
+        "context map",
+        maximum=64,
+        paths=False,
+    )
+    if not contexts or not _is_sha256(report.get("skill_bundle_sha256")):
+        raise DraftGenerationError("AsNumpy adapter context/skill binding is invalid")
+    skill_files = report.get("integration_skill_files")
+    if (
+        not isinstance(skill_files, list)
+        or not skill_files
+        or len(skill_files) > 64
+        or any(
+            not isinstance(item, str)
+            or not item
+            or len(item) > _MAX_PATH_CHARS
+            or any(ord(character) < 32 for character in item)
+            for item in skill_files
+        )
+    ):
+        raise DraftGenerationError("AsNumpy adapter skill file binding is invalid")
+    if len(set(skill_files)) != len(skill_files):
+        raise DraftGenerationError("AsNumpy adapter skill file binding is invalid")
+    for item in skill_files:
+        skill_path = PurePosixPath(item)
+        if (
+            skill_path.is_absolute()
+            or not skill_path.parts
+            or ".." in skill_path.parts
+            or "." in skill_path.parts
+            or str(skill_path) != item
+        ):
+            raise DraftGenerationError(
+                "AsNumpy adapter skill file binding is invalid"
+            )
+
+    response_hashes = report.get("response_sha256")
+    receipts = report.get("remote_receipts")
+    attempt_count = report["attempt_count"]
+    if (
+        not isinstance(response_hashes, list)
+        or not response_hashes
+        or len(response_hashes) > attempt_count
+        or any(not _is_sha256(item) for item in response_hashes)
+        or not isinstance(receipts, list)
+        or not receipts
+        or len(receipts) > attempt_count
+        or report.get("actual_remote_call") is not True
+        or report.get("gates") != _EXPECTED_UNVERIFIED_GATES
+    ):
+        raise DraftGenerationError("AsNumpy adapter transport evidence is invalid")
+    normalized_receipts = [_validate_remote_receipt(item) for item in receipts]
+    content_hashes = [
+        item["content_sha256"]
+        for item in normalized_receipts
+        if item["content_sha256"] is not None
+    ]
+    if (
+        content_hashes != response_hashes
+        or any(item["requested_model"] != report["model"] for item in normalized_receipts)
+    ):
+        raise DraftGenerationError(
+            "AsNumpy adapter receipt/content hashes are inconsistent"
+        )
+    if candidate_hashes is not None and files != candidate_hashes:
+        raise DraftGenerationError(
+            "AsNumpy adapter candidate content differs from its report"
+        )
+
+    normalized = dict(report)
+    normalized["files_sha256"] = files
+    normalized["asnumpy_context_sha256"] = contexts
+    normalized["integration_skill_files"] = list(skill_files)
+    normalized["response_sha256"] = list(response_hashes)
+    normalized["remote_receipts"] = normalized_receipts
+    if status == "generated_unverified":
+        if not _is_sha256(report.get("adapter_contract_sha256")):
+            raise DraftGenerationError(
+                "AsNumpy adapter contract binding is invalid"
+            )
+    else:
+        repair_profile = report.get("repair_profile")
+        if (
+            not isinstance(repair_profile, str)
+            or repair_profile not in {"compile", "precision", "runtime"}
+        ):
+            raise DraftGenerationError(
+                "AsNumpy adapter repair profile is invalid"
+            )
+        source_root = report.get("source_adapter_root")
+        if (
+            not isinstance(source_root, str)
+            or not source_root
+            or len(source_root) > 4096
+            or any(ord(character) < 32 for character in source_root)
+            or not Path(source_root).is_absolute()
+            or not _is_sha256(report.get("parent_adapter_report_sha256"))
+            or not _is_sha256(report.get("diagnostic_sha256"))
+        ):
+            raise DraftGenerationError(
+                "AsNumpy adapter repair provenance is invalid"
+            )
+        parent_id = report.get("parent_adapter_artifact_id")
+        if (
+            not isinstance(parent_id, str)
+            or not re.fullmatch(r"adapter-[0-9a-f]{20}", parent_id)
+        ):
+            raise DraftGenerationError(
+                "AsNumpy adapter parent artifact identity is invalid"
+            )
+        raw_paths = report.get("paths")
+        if (
+            not isinstance(raw_paths, list)
+            or len(raw_paths) != 1
+        ):
+            raise DraftGenerationError("AsNumpy adapter repair path is invalid")
+        repaired_paths = tuple(str(_safe_relative_path(item)) for item in raw_paths)
+        if len(set(repaired_paths)) != len(repaired_paths):
+            raise DraftGenerationError("AsNumpy adapter repair path is duplicated")
+        before = _validate_adapter_hash_map(
+            report.get("before_sha256"),
+            "before map",
+            maximum=_MAX_ADAPTER_FILES,
+            paths=True,
+        )
+        after = _validate_adapter_hash_map(
+            report.get("after_sha256"),
+            "after map",
+            maximum=_MAX_ADAPTER_FILES,
+            paths=True,
+        )
+        if (
+            set(before) != set(repaired_paths)
+            or set(after) != set(repaired_paths)
+            or any(files.get(path) != after[path] for path in repaired_paths)
+        ):
+            raise DraftGenerationError(
+                "AsNumpy adapter repair content hashes are inconsistent"
+            )
+        normalized["paths"] = list(repaired_paths)
+        normalized["before_sha256"] = before
+        normalized["after_sha256"] = after
+        if parent_report is not None:
+            if not _is_sha256(parent_report_sha256):
+                raise DraftGenerationError(
+                    "AsNumpy adapter parent report hash is unavailable"
+                )
+            parent_files = parent_report["files_sha256"]
+            expected_files = dict(parent_files)
+            expected_files.update(after)
+            if (
+                report["parent_adapter_report_sha256"] != parent_report_sha256
+                or parent_id != parent_report["adapter_artifact_id"]
+                or report["source_artifact_id"] != parent_report["source_artifact_id"]
+                or report["skill_bundle_sha256"]
+                != parent_report["skill_bundle_sha256"]
+                or any(
+                    report[name] != parent_report[name]
+                    for name in ("model", "provider", "configuration_source")
+                )
+                or any(parent_files.get(path) != before[path] for path in repaired_paths)
+                or expected_files != files
+            ):
+                raise DraftGenerationError(
+                    "AsNumpy adapter repair does not derive from its parent"
+                )
+
+    artifact_id = report.get("adapter_artifact_id")
+    if (
+        not isinstance(artifact_id, str)
+        or artifact_id != _adapter_artifact_id(normalized)
+    ):
+        raise DraftGenerationError("AsNumpy adapter artifact_id mismatch")
+    if status == "repaired_unverified" and artifact_id == report.get(
+        "parent_adapter_artifact_id"
+    ):
+        raise DraftGenerationError(
+            "AsNumpy adapter repair must have a distinct artifact_id"
+        )
+    return normalized
+
+
+def _validate_adapter_skill_binding(report: Dict[str, object], bundle) -> None:
+    """Bind report skill claims to the verified in-memory bundle in this run."""
+
+    if report["skill_bundle_sha256"] != getattr(bundle, "bundle_sha256", None):
+        raise DraftGenerationError("AsNumpy adapter Skill bundle hash mismatch")
+    files = getattr(bundle, "files", None)
+    if not isinstance(files, dict):
+        raise DraftGenerationError("AsNumpy adapter Skill bundle is invalid")
+    for relative in report["integration_skill_files"]:
+        content = files.get(relative)
+        if not isinstance(content, str) or not content:
+            raise DraftGenerationError(
+                "AsNumpy adapter Skill file is unavailable: %s" % relative
+            )
+
+
+def _read_bounded_adapter_text(path: Path, relative: str) -> Tuple[str, int, str]:
+    """Read prompt context with the same hard byte bound used by reloading."""
+
+    content, payload = _read_bounded_text(
+        path,
+        _MAX_ADAPTER_FILE_BYTES,
+        "AsNumpy adapter base file %s" % relative,
+    )
+    return content, len(payload), _sha256_bytes(payload)
+
+
+def _load_asnumpy_adapter_report(
+    root: Path,
+    *,
+    _seen=None,
+    _depth: int = 0,
+) -> Tuple[Dict[str, object], bytes, Dict[str, str]]:
+    """Reload and recursively validate an adapter report and candidate tree."""
+
+    root = Path(root)
+    if _depth >= _MAX_ADAPTER_CHAIN_DEPTH:
+        raise DraftGenerationError("AsNumpy adapter parent chain is too deep")
+    report_path = root / "asnumpy-adapter-report.json"
+    candidate_root = root / "candidate"
+    if (
+        root.is_symlink()
+        or not root.is_dir()
+        or report_path.is_symlink()
+        or not report_path.is_file()
+        or candidate_root.is_symlink()
+        or not candidate_root.is_dir()
+    ):
+        raise DraftGenerationError("AsNumpy adapter base is invalid")
+    try:
+        identity = (root.stat().st_dev, root.stat().st_ino)
+    except OSError as exc:
+        raise DraftGenerationError("cannot inspect AsNumpy adapter base") from exc
+    seen = set() if _seen is None else _seen
+    if identity in seen:
+        raise DraftGenerationError("AsNumpy adapter parent chain contains a cycle")
+    seen.add(identity)
+    report_text, payload = _read_bounded_text(
+        report_path,
+        _MAX_METADATA_BYTES,
+        "AsNumpy adapter base report",
+    )
+    try:
+        raw_report = json.loads(report_text)
+    except json.JSONDecodeError as exc:
+        raise DraftGenerationError(
+            "AsNumpy adapter base report is unreadable"
+        ) from exc
+
+    report = _validate_adapter_report(raw_report)
+    actual_hashes = _bounded_tree_hashes(
+        candidate_root,
+        excluded=(),
+        maximum_files=_MAX_ADAPTER_FILES,
+        maximum_entries=_MAX_ADAPTER_TREE_ENTRIES,
+        maximum_file_bytes=_MAX_ADAPTER_FILE_BYTES,
+        maximum_total_bytes=_MAX_ADAPTER_TOTAL_BYTES,
+        label="AsNumpy adapter base",
+    )
+    if set(actual_hashes) != set(report["files_sha256"]):
+        raise DraftGenerationError(
+            "AsNumpy adapter base files differ from its report"
+        )
+
+    parent = None
+    parent_sha256 = None
+    if report["status"] == "repaired_unverified":
+        parent, parent_payload, _parent_hashes = _load_asnumpy_adapter_report(
+            Path(report["source_adapter_root"]),
+            _seen=seen,
+            _depth=_depth + 1,
+        )
+        parent_sha256 = _sha256_bytes(parent_payload)
+    report = _validate_adapter_report(
+        report,
+        candidate_hashes=actual_hashes,
+        parent_report=parent,
+        parent_report_sha256=parent_sha256,
+    )
+    return report, payload, actual_hashes
+
+
+def _validate_generation(
+    generation: object,
+    *,
+    maximum_attempts: int = _MAX_TRANSPORT_ATTEMPTS,
+) -> Dict[str, object]:
+    maximum_attempts = _require_exact_int(
+        maximum_attempts,
+        "generation validation attempt limit",
+        minimum=1,
+        maximum=_MAX_TRANSPORT_ATTEMPTS,
+    )
     if (
         not isinstance(generation, dict)
         or frozenset(generation) != _GENERATION_FIELDS
@@ -542,23 +1266,23 @@ def _validate_generation(generation: object) -> Dict[str, object]:
         generation.get("attempt_count"),
         "existing draft attempt count",
         minimum=1,
-        maximum=_MAX_TRANSPORT_ATTEMPTS,
+        maximum=maximum_attempts,
     )
     transport_count = _require_exact_int(
         generation.get("transport_attempt_count"),
         "existing draft transport attempt count",
         minimum=1,
-        maximum=_MAX_TRANSPORT_ATTEMPTS,
+        maximum=maximum_attempts,
     )
     successful_http_count = _require_exact_int(
         generation.get("successful_http_response_count"),
         "existing draft successful HTTP response count",
-        maximum=_MAX_TRANSPORT_ATTEMPTS,
+        maximum=maximum_attempts,
     )
     content_count = _require_exact_int(
         generation.get("content_response_count"),
         "existing draft content response count",
-        maximum=_MAX_TRANSPORT_ATTEMPTS,
+        maximum=maximum_attempts,
     )
     if transport_count != attempt_count:
         raise DraftGenerationError(
@@ -581,7 +1305,7 @@ def _validate_generation(generation: object) -> Dict[str, object]:
     raw_receipts = generation.get("remote_receipts")
     if (
         not isinstance(raw_receipts, list)
-        or len(raw_receipts) > _MAX_TRANSPORT_ATTEMPTS
+        or len(raw_receipts) > maximum_attempts
     ):
         raise DraftGenerationError("existing draft remote receipts are invalid")
     receipts = [_validate_remote_receipt(item) for item in raw_receipts]
@@ -673,11 +1397,16 @@ def _draft_artifact_id(
 
 def _load_existing_draft(draft_dir: Path, spec: GapSpec) -> OperatorDraft:
     manifest_path = draft_dir / "operator-artifact.json"
-    if draft_dir.is_symlink() or manifest_path.is_symlink():
+    if draft_dir.is_symlink() or not draft_dir.is_dir():
         raise DraftGenerationError("existing draft must not contain symlinks")
+    manifest_text, _manifest_payload = _read_bounded_text(
+        manifest_path,
+        _MAX_METADATA_BYTES,
+        "existing draft manifest",
+    )
     try:
-        data = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        data = json.loads(manifest_text)
+    except json.JSONDecodeError as exc:
         raise DraftGenerationError(
             "existing draft has no valid operator-artifact.json"
         ) from exc
@@ -711,11 +1440,19 @@ def _load_existing_draft(draft_dir: Path, spec: GapSpec) -> OperatorDraft:
         raise DraftGenerationError("existing draft summary is invalid")
     normalized_generation = _validate_generation(data.get("generation"))
     files = data.get("files")
-    if not isinstance(files, dict):
+    if (
+        not isinstance(files, dict)
+        or not files
+        or len(files) > _MAX_FILES
+    ):
         raise DraftGenerationError("existing draft file manifest is invalid")
     normalized_files: Dict[str, str] = {}
     for relative, expected in files.items():
         path_key = str(_safe_relative_path(relative))
+        if path_key != relative:
+            raise DraftGenerationError(
+                "existing draft file path is not normalized"
+            )
         if not _is_sha256(expected):
             raise DraftGenerationError(
                 "existing draft digest is invalid: %s" % path_key
@@ -723,48 +1460,34 @@ def _load_existing_draft(draft_dir: Path, spec: GapSpec) -> OperatorDraft:
         normalized_files[path_key] = expected
     if len(normalized_files) != len(files):
         raise DraftGenerationError("existing draft has duplicate normalized paths")
-    actual_names = set()
-    try:
-        candidates = tuple(draft_dir.rglob("*"))
-    except OSError as exc:
-        raise DraftGenerationError("cannot enumerate existing draft") from exc
-    for candidate in candidates:
-        if candidate.is_symlink():
-            raise DraftGenerationError(
-                "existing draft contains a symlink: %s"
-                % candidate.relative_to(draft_dir).as_posix()
-            )
-        try:
-            mode = candidate.stat().st_mode
-        except OSError as exc:
-            raise DraftGenerationError(
-                "cannot inspect existing draft file"
-            ) from exc
-        if stat.S_ISDIR(mode):
-            continue
-        if not stat.S_ISREG(mode):
-            raise DraftGenerationError("existing draft contains a special file")
-        relative = candidate.relative_to(draft_dir).as_posix()
-        if relative != "operator-artifact.json":
-            actual_names.add(relative)
-    if actual_names != set(normalized_files):
+    actual_files = _bounded_tree_hashes(
+        draft_dir,
+        excluded=("operator-artifact.json",),
+        maximum_files=_MAX_FILES,
+        maximum_entries=_MAX_OPERATOR_TREE_ENTRIES,
+        maximum_file_bytes=_MAX_TOTAL_BYTES,
+        maximum_total_bytes=_MAX_TOTAL_BYTES,
+        label="existing draft",
+    )
+    if set(actual_files) != set(normalized_files):
         raise DraftGenerationError(
             "existing draft file set differs from its manifest"
         )
     _require_project_layout(normalized_files)
 
     for relative, expected in normalized_files.items():
-        path = draft_dir / _safe_relative_path(relative)
-        try:
-            actual = _sha256_bytes(path.read_bytes())
-        except OSError as exc:
-            raise DraftGenerationError(
-                "existing draft file is missing: %s" % relative
-            ) from exc
-        if actual != expected:
+        if actual_files[relative] != expected:
             raise DraftGenerationError(
                 "existing draft hash mismatch: %s" % relative
             )
+    if (
+        normalized_generation["attempt_count"]
+        > _MAX_FRESH_TRANSPORT_ATTEMPTS
+        and "docs/numpilot-repair-provenance.json" not in normalized_files
+    ):
+        raise DraftGenerationError(
+            "extended transport evidence requires sealed repair provenance"
+        )
     artifact_id = _draft_artifact_id(
         spec.gap_id,
         normalized_files,
@@ -785,18 +1508,40 @@ def _load_existing_draft(draft_dir: Path, spec: GapSpec) -> OperatorDraft:
     )
 
 
+def _validate_operator_repair_skill_binding(
+    report: Dict[str, object],
+    skill_bundle,
+) -> None:
+    """Bind an operator repair report to the verified bundle in this run."""
+
+    if skill_bundle is None:
+        return
+    if report["skill_bundle_sha256"] != getattr(
+        skill_bundle, "bundle_sha256", None
+    ):
+        raise DraftGenerationError("repair base Skill bundle hash mismatch")
+    files = getattr(skill_bundle, "files", None)
+    if not isinstance(files, dict) or any(
+        not isinstance(files.get(relative), str) or not files[relative]
+        for relative in report["cannbot_repair_skill_files"]
+    ):
+        raise DraftGenerationError(
+            "repair base Skill file binding is unavailable"
+        )
+
+
 def _load_repair_candidate(
     candidate_dir: Path,
     spec: GapSpec,
     signed_source: OperatorDraft,
+    skill_bundle=None,
 ) -> Tuple[Dict[str, str], str, Dict[str, object]]:
     """Verify a repaired overlay and return its complete current file hashes.
 
     The signed ``operator-artifact.json`` remains immutable in every repair
     candidate.  The repair report therefore acts as a hash-bound overlay over
-    that original artifact.  Newer reports carry the complete candidate file
-    map; schema-v1 reports produced before repair chaining are reconstructed
-    from the original manifest plus ``after_sha256``.
+    that original artifact.  Reports without the complete candidate file map
+    cannot prove this binding and are rejected with migration guidance.
     """
 
     candidate_dir = Path(candidate_dir)
@@ -804,20 +1549,27 @@ def _load_repair_candidate(
     artifact_path = candidate_dir / "operator-artifact.json"
     if (
         candidate_dir.is_symlink()
-        or report_path.is_symlink()
-        or artifact_path.is_symlink()
+        or not candidate_dir.is_dir()
     ):
         raise DraftGenerationError("repair base must not contain symlinks")
+    report_text, report_payload = _read_bounded_text(
+        report_path,
+        _MAX_METADATA_BYTES,
+        "repair base report",
+    )
+    artifact_payload = _read_bounded_bytes(
+        artifact_path,
+        _MAX_METADATA_BYTES,
+        "repair base signed artifact",
+    )
+    signed_artifact_payload = _read_bounded_bytes(
+        Path(signed_source.workspace) / "operator-artifact.json",
+        _MAX_METADATA_BYTES,
+        "signed source artifact",
+    )
     try:
-        report_payload = report_path.read_bytes()
-        if len(report_payload) > 2 * 1024 * 1024:
-            raise DraftGenerationError("repair base report exceeds the size limit")
-        report = json.loads(report_payload.decode("utf-8"))
-        artifact_payload = artifact_path.read_bytes()
-        signed_artifact_payload = (
-            Path(signed_source.workspace) / "operator-artifact.json"
-        ).read_bytes()
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        report = json.loads(report_text)
+    except json.JSONDecodeError as exc:
         raise DraftGenerationError(
             "repair base has no valid repair report or signed artifact"
         ) from exc
@@ -825,6 +1577,13 @@ def _load_repair_candidate(
         raise DraftGenerationError("repair base changed the signed artifact manifest")
     if not isinstance(report, dict):
         raise DraftGenerationError("repair base report must be an object")
+    if frozenset(report) != _REPAIR_REPORT_FIELDS:
+        if "candidate_files_sha256" not in report:
+            raise DraftGenerationError(
+                "legacy repair report cannot prove its complete audit binding; "
+                "regenerate it (fail-closed)"
+            )
+        raise DraftGenerationError("repair base report schema is invalid")
     if (
         isinstance(report.get("schema_version"), bool)
         or not isinstance(report.get("schema_version"), int)
@@ -837,20 +1596,76 @@ def _load_repair_candidate(
     ):
         raise DraftGenerationError("repair base report identity is invalid")
 
+    source_workspace = report.get("source_workspace")
+    if (
+        not isinstance(source_workspace, str)
+        or not source_workspace
+        or len(source_workspace) > 4096
+        or any(ord(character) < 32 for character in source_workspace)
+        or not Path(source_workspace).is_absolute()
+        or report.get("signed_source_workspace") != signed_source.workspace
+    ):
+        raise DraftGenerationError("repair base workspace binding is invalid")
+    parent_report_hash = report.get("parent_repair_report_sha256")
+    if parent_report_hash is not None and not _is_sha256(parent_report_hash):
+        raise DraftGenerationError("repair base parent binding is invalid")
+    for name in (
+        "diagnostic_sha256",
+        "generation_request_sha256",
+        "skill_bundle_sha256",
+    ):
+        if not _is_sha256(report.get(name)):
+            raise DraftGenerationError(
+                "repair base audit hash is invalid: %s" % name
+            )
+    repair_skill_files = report.get("cannbot_repair_skill_files")
+    if (
+        not isinstance(repair_skill_files, list)
+        or not repair_skill_files
+        or len(repair_skill_files) > 64
+        or len(set(repair_skill_files)) != len(repair_skill_files)
+    ):
+        raise DraftGenerationError("repair base Skill file binding is invalid")
+    normalized_skill_files = []
+    for raw_path in repair_skill_files:
+        if not isinstance(raw_path, str):
+            raise DraftGenerationError(
+                "repair base Skill file binding is invalid"
+            )
+        path = PurePosixPath(raw_path)
+        if (
+            path.is_absolute()
+            or not path.parts
+            or "." in path.parts
+            or ".." in path.parts
+            or str(path) != raw_path
+            or len(raw_path) > _MAX_PATH_CHARS
+            or any(ord(character) < 32 for character in raw_path)
+        ):
+            raise DraftGenerationError(
+                "repair base Skill file binding is invalid"
+            )
+        normalized_skill_files.append(raw_path)
+
     paths = report.get("paths")
     before = report.get("before_sha256")
     after = report.get("after_sha256")
     if (
         not isinstance(paths, list)
         or not paths
-        or len(paths) > 16
+        or len(paths) > _MAX_REPAIR_PATHS
         or not isinstance(before, dict)
         or not isinstance(after, dict)
     ):
         raise DraftGenerationError("repair base hash overlay is invalid")
+    if any(not isinstance(path, str) for path in paths):
+        raise DraftGenerationError("repair base path hashes are invalid")
     normalized_paths = tuple(str(_safe_relative_path(path)) for path in paths)
     if (
-        len(set(normalized_paths)) != len(normalized_paths)
+        tuple(paths) != normalized_paths
+        or len(set(normalized_paths)) != len(normalized_paths)
+        or len(before) != len(normalized_paths)
+        or len(after) != len(normalized_paths)
         or set(before) != set(normalized_paths)
         or set(after) != set(normalized_paths)
         or any(path not in signed_source.files for path in normalized_paths)
@@ -858,72 +1673,95 @@ def _load_repair_candidate(
         or any(not _is_sha256(value) for value in after.values())
     ):
         raise DraftGenerationError("repair base path hashes are invalid")
+    for name in ("model", "provider", "configuration_source"):
+        value = report.get(name)
+        if (
+            not isinstance(value, str)
+            or not value
+            or value != signed_source.generation.get(name)
+        ):
+            raise DraftGenerationError(
+                "repair base LLM identity differs from signed generation"
+            )
+    report_attempts = _require_exact_int(
+        report.get("attempt_count"),
+        "repair base attempt count",
+        minimum=1,
+        maximum=len(normalized_paths) * 3,
+    )
+    response_hashes = report.get("response_sha256")
+    raw_receipts = report.get("remote_receipts")
+    if (
+        not isinstance(response_hashes, list)
+        or not response_hashes
+        or len(response_hashes) > report_attempts
+        or any(not _is_sha256(item) for item in response_hashes)
+        or not isinstance(raw_receipts, list)
+        or not raw_receipts
+        or len(raw_receipts) > report_attempts
+    ):
+        raise DraftGenerationError("repair base transport evidence is invalid")
+    receipts = [_validate_remote_receipt(item) for item in raw_receipts]
+    content_hashes = [
+        item["content_sha256"]
+        for item in receipts
+        if item["content_sha256"] is not None
+    ]
+    if (
+        content_hashes != response_hashes
+        or any(item["requested_model"] != report["model"] for item in receipts)
+    ):
+        raise DraftGenerationError(
+            "repair base receipt/content hashes are inconsistent"
+        )
+    report = dict(report)
+    report["cannbot_repair_skill_files"] = normalized_skill_files
+    report["response_sha256"] = list(response_hashes)
+    report["remote_receipts"] = receipts
 
     candidate_files = report.get("candidate_files_sha256")
-    if candidate_files is None:
-        normalized_files = dict(signed_source.files)
-        normalized_files.update(after)
-    else:
-        if not isinstance(candidate_files, dict):
-            raise DraftGenerationError("repair base complete file map is invalid")
-        normalized_files = {}
-        for relative, digest in candidate_files.items():
-            path = str(_safe_relative_path(relative))
-            if path in normalized_files:
-                raise DraftGenerationError(
-                    "repair base complete file map has duplicate paths"
-                )
-            if not _is_sha256(digest):
-                raise DraftGenerationError(
-                    "repair base digest is invalid: %s" % path
-                )
-            normalized_files[path] = digest
-        if set(normalized_files) != set(signed_source.files):
+    if (
+        not isinstance(candidate_files, dict)
+        or not candidate_files
+        or len(candidate_files) > _MAX_FILES
+    ):
+        raise DraftGenerationError("repair base complete file map is invalid")
+    normalized_files = {}
+    for relative, digest in candidate_files.items():
+        path = str(_safe_relative_path(relative))
+        if relative != path or path in normalized_files:
             raise DraftGenerationError(
-                "repair base complete file map differs from signed artifact"
+                "repair base complete file map has duplicate or non-normalized paths"
             )
-        if any(normalized_files[path] != after[path] for path in normalized_paths):
+        if not _is_sha256(digest):
             raise DraftGenerationError(
-                "repair base overlay differs from its complete file map"
+                "repair base digest is invalid: %s" % path
             )
+        normalized_files[path] = digest
+    if set(normalized_files) != set(signed_source.files):
+        raise DraftGenerationError(
+            "repair base complete file map differs from signed artifact"
+        )
+    if any(normalized_files[path] != after[path] for path in normalized_paths):
+        raise DraftGenerationError(
+            "repair base overlay differs from its complete file map"
+        )
 
-    actual_names = set()
-    try:
-        candidates = tuple(candidate_dir.rglob("*"))
-    except OSError as exc:
-        raise DraftGenerationError("cannot enumerate repair base") from exc
-    for candidate in candidates:
-        if candidate.is_symlink():
-            raise DraftGenerationError(
-                "repair base contains a symlink: %s"
-                % candidate.relative_to(candidate_dir).as_posix()
-            )
-        try:
-            mode = candidate.stat().st_mode
-        except OSError as exc:
-            raise DraftGenerationError("cannot inspect repair base file") from exc
-        if stat.S_ISDIR(mode):
-            continue
-        if not stat.S_ISREG(mode):
-            raise DraftGenerationError("repair base contains a special file")
-        relative = candidate.relative_to(candidate_dir).as_posix()
-        if relative not in {
-            "operator-artifact.json",
-            "numpilot-repair-report.json",
-        }:
-            actual_names.add(relative)
-    if actual_names != set(normalized_files):
+    _validate_operator_repair_skill_binding(report, skill_bundle)
+
+    actual_files = _bounded_tree_hashes(
+        candidate_dir,
+        excluded=("operator-artifact.json", "numpilot-repair-report.json"),
+        maximum_files=_MAX_FILES,
+        maximum_entries=_MAX_OPERATOR_TREE_ENTRIES,
+        maximum_file_bytes=_MAX_TOTAL_BYTES,
+        maximum_total_bytes=_MAX_TOTAL_BYTES,
+        label="repair base",
+    )
+    if set(actual_files) != set(normalized_files):
         raise DraftGenerationError("repair base file set differs from its report")
     for relative, expected in normalized_files.items():
-        try:
-            actual = _sha256_bytes(
-                (candidate_dir / _safe_relative_path(relative)).read_bytes()
-            )
-        except OSError as exc:
-            raise DraftGenerationError(
-                "repair base file is missing: %s" % relative
-            ) from exc
-        if actual != expected:
+        if actual_files[relative] != expected:
             raise DraftGenerationError(
                 "repair base hash mismatch: %s" % relative
             )
@@ -934,6 +1772,7 @@ def _load_repair_chain(
     candidate_dir: Path,
     spec: GapSpec,
     signed_source: OperatorDraft,
+    skill_bundle=None,
 ) -> Tuple[Dict[str, str], Tuple[Dict[str, object], ...]]:
     """Validate a complete parent-linked repair chain, oldest report first."""
 
@@ -942,14 +1781,17 @@ def _load_repair_chain(
     reverse_reports = []
     final_files = None
     while True:
-        resolved = str(current_dir.resolve(strict=False))
-        if resolved in seen:
+        if len(reverse_reports) >= _MAX_REPAIR_CHAIN_DEPTH:
+            raise DraftGenerationError("repair chain exceeds the depth limit")
+        identity = os.path.abspath(str(current_dir))
+        if identity in seen:
             raise DraftGenerationError("repair chain contains a directory cycle")
-        seen.add(resolved)
+        seen.add(identity)
         current_files, current_hash, report = _load_repair_candidate(
             current_dir,
             spec,
             signed_source,
+            skill_bundle,
         )
         if final_files is None:
             final_files = current_files
@@ -978,6 +1820,7 @@ def _load_repair_chain(
             parent_dir,
             spec,
             signed_source,
+            skill_bundle,
         )
         if actual_parent_hash != parent_hash:
             raise DraftGenerationError("repair chain parent report hash mismatch")
@@ -1082,11 +1925,25 @@ def _direct_generation_stages(name: str):
         (
             "%s_%02d" % (group_name, file_index),
             (path,),
-            references,
+            tuple(dict.fromkeys(
+                (*CANNBOT_GENERATION_SKILL_FILES, *references)
+            )),
         )
         for group_name, paths, references in groups
         for file_index, path in enumerate(paths, start=1)
     )
+
+
+def _should_use_staged_direct(spec: GapSpec) -> bool:
+    """Use bounded per-file generation for every direct Ascend C candidate.
+
+    Direct NumPy gaps and explicit OperatorSpec gaps share the same fixed
+    17-file project contract.  Restricting staged generation to OperatorSpec
+    made a native gap such as ``numpy.cbrt`` fall back to one very large model
+    response, which is both less auditable and prone to gateway timeouts.
+    """
+
+    return spec.route == "ascendc_registry_candidate"
 
 
 def _compact_generation_contract(request: str) -> str:
@@ -1159,6 +2016,8 @@ class LlmDraftProvider:
         configuration_loader: Optional[Callable] = None,
         skill_bundle=None,
         staged_direct: bool = False,
+        repair_skill_files: Optional[Tuple[str, ...]] = None,
+        operator_goal: str = "accuracy",
     ):
         if max_attempts not in (1, 2, 3):
             raise ValueError("max_attempts must be 1, 2, or 3")
@@ -1170,6 +2029,21 @@ class LlmDraftProvider:
         self._configuration_loader = configuration_loader
         self._skill_bundle = skill_bundle
         self._staged_direct = bool(staged_direct)
+        self._repair_skill_files = tuple(
+            repair_skill_files or CANNBOT_REPAIR_SKILL_FILES
+        )
+        if operator_goal != "accuracy":
+            raise ValueError(
+                "operator_goal must be accuracy; performance generation is "
+                "not implemented"
+            )
+        self._operator_goal = operator_goal
+        if (
+            not self._repair_skill_files
+            or len(set(self._repair_skill_files)) != len(self._repair_skill_files)
+            or any(not isinstance(path, str) or not path for path in self._repair_skill_files)
+        ):
+            raise ValueError("repair_skill_files must be unique non-empty paths")
         if self._staged_direct and self._skill_bundle is None:
             raise ValueError("staged direct generation requires a verified skill bundle")
         self._run_actions: Dict[str, str] = {}
@@ -1245,6 +2119,9 @@ class LlmDraftProvider:
                     "\n".join("- `%s`" % path for path in paths),
                     "\n\nEvery file must be complete and mutually consistent with files "
                     "from the other deterministic stages.\n\n",
+                    "Operator goal: accuracy-first. Complete semantic, build, "
+                    "runtime, and numerical correctness; do not spend this "
+                    "generation stage on performance optimization.\n\n",
                     _stage_invariants(spec, paths[0]),
                     "\n\n",
                     contract,
@@ -1353,19 +2230,22 @@ class LlmDraftProvider:
 
         if self._skill_bundle is None:
             raise DraftGenerationError("LLM repair requires a verified skill bundle")
-        draft_dir = Path(draft_dir)
+        draft_dir = Path(draft_dir).absolute()
         source = _load_existing_draft(draft_dir, spec)
         repair_source_dir = draft_dir
         current_files = dict(source.files)
         parent_repair_sha256 = None
+        repair_reports: Tuple[Dict[str, object], ...] = ()
         if base_candidate_dir is not None:
-            repair_source_dir = Path(base_candidate_dir)
-            current_files, parent_repair_sha256, _parent_report = _load_repair_candidate(
+            repair_source_dir = Path(base_candidate_dir).absolute()
+            current_files, repair_reports = _load_repair_chain(
                 repair_source_dir,
                 spec,
                 source,
+                self._skill_bundle,
             )
-        candidate_dir = Path(candidate_dir)
+            parent_repair_sha256 = repair_reports[-1]["report_sha256"]
+        candidate_dir = Path(candidate_dir).absolute()
         if os.path.lexists(candidate_dir):
             raise DraftGenerationError("repair candidate path already exists")
         if not isinstance(diagnostic, str) or not diagnostic.strip():
@@ -1373,7 +2253,13 @@ class LlmDraftProvider:
         diagnostic_bytes = diagnostic.encode("utf-8")
         if len(diagnostic_bytes) > 64 * 1024 or "\x00" in diagnostic:
             raise DraftGenerationError("repair diagnostic is invalid or too large")
-        if not paths or len(paths) > 16 or len(set(paths)) != len(paths):
+        if (
+            not isinstance(paths, tuple)
+            or not paths
+            or len(paths) > _MAX_REPAIR_PATHS
+            or any(not isinstance(path, str) for path in paths)
+            or len(set(paths)) != len(paths)
+        ):
             raise DraftGenerationError("repair path set is empty, duplicated, or too large")
 
         stage_by_path = {}
@@ -1383,13 +2269,38 @@ class LlmDraftProvider:
             for stage_path in stage_paths:
                 stage_by_path[stage_path] = (stage_paths, references)
         normalized_paths = tuple(str(_safe_relative_path(path)) for path in paths)
+        if normalized_paths != paths or len(set(normalized_paths)) != len(
+            normalized_paths
+        ):
+            raise DraftGenerationError(
+                "repair paths must be unique normalized relative paths"
+            )
         for path in normalized_paths:
             if path not in current_files or path not in stage_by_path:
                 raise DraftGenerationError(
                     "repair path is not part of the signed stage plan: %s" % path
                 )
 
+        if len(repair_reports) >= _MAX_REPAIR_CHAIN_DEPTH:
+            raise DraftGenerationError("repair chain has no remaining depth budget")
+        reserved_attempts = (
+            source.generation["attempt_count"]
+            + sum(report["attempt_count"] for report in repair_reports)
+            + len(normalized_paths) * self.max_attempts
+        )
+        if reserved_attempts > _MAX_TRANSPORT_ATTEMPTS:
+            raise DraftGenerationError(
+                "repair request exceeds the remaining sealable attempt budget"
+            )
+
         chat, generation_base = self._resolve_chat()
+        if any(
+            generation_base[name] != source.generation[name]
+            for name in ("model", "provider", "configuration_source")
+        ):
+            raise DraftGenerationError(
+                "repair LLM identity differs from signed generation"
+            )
         contract = _compact_generation_contract(generation_request)
         collected = {}
         receipts = []
@@ -1398,15 +2309,21 @@ class LlmDraftProvider:
 
         for repair_index, path in enumerate(normalized_paths, start=1):
             related_paths, references = stage_by_path[path]
+            repair_references = tuple(dict.fromkeys(
+                (*self._repair_skill_files, *references)
+            ))
             related_sections = []
             for related in related_paths:
                 related_file = repair_source_dir / _safe_relative_path(related)
-                try:
-                    content = related_file.read_text(encoding="utf-8")
-                except (OSError, UnicodeError) as exc:
+                content, payload = _read_bounded_text(
+                    related_file,
+                    _MAX_TOTAL_BYTES,
+                    "repair context file %s" % related,
+                )
+                if _sha256_bytes(payload) != current_files[related]:
                     raise DraftGenerationError(
-                        "cannot read repair context file: %s" % related
-                    ) from exc
+                        "repair context file changed after validation: %s" % related
+                    )
                 related_sections.append(
                     "CURRENT FILE `%s`:\n%s" % (related, content)
                 )
@@ -1424,7 +2341,7 @@ class LlmDraftProvider:
                     contract,
                     "Related current project files (context only; return only the "
                     "requested path):\n\n" + "\n\n".join(related_sections),
-                    self._skill_bundle.prompt_context(references),
+                    self._skill_bundle.prompt_context(repair_references),
                 ))
                 if failure:
                     prompt += (
@@ -1518,6 +2435,7 @@ class LlmDraftProvider:
                 generation_request.encode("utf-8")
             ),
             "skill_bundle_sha256": self._skill_bundle.bundle_sha256,
+            "cannbot_repair_skill_files": list(self._repair_skill_files),
             "response_sha256": response_hashes,
             "remote_receipts": receipts,
             "actual_remote_call": True,
@@ -1544,6 +2462,10 @@ class LlmDraftProvider:
                 json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True)
                 + "\n"
             ).encode("utf-8")
+            if len(report_payload) > _MAX_METADATA_BYTES:
+                raise DraftGenerationError(
+                    "repair report exceeds the size limit"
+                )
             report_path = temp_dir / "numpilot-repair-report.json"
             report_temp = temp_dir / ".numpilot-repair-report.json.repair"
             with open(report_temp, "xb") as handle:
@@ -1552,11 +2474,541 @@ class LlmDraftProvider:
                 os.fsync(handle.fileno())
             os.chmod(report_temp, 0o600)
             os.replace(report_temp, report_path)
+            validated_files = _bounded_tree_hashes(
+                temp_dir,
+                excluded=(
+                    "operator-artifact.json",
+                    "numpilot-repair-report.json",
+                ),
+                maximum_files=_MAX_FILES,
+                maximum_entries=_MAX_OPERATOR_TREE_ENTRIES,
+                maximum_file_bytes=_MAX_TOTAL_BYTES,
+                maximum_total_bytes=_MAX_TOTAL_BYTES,
+                label="repair candidate",
+            )
+            if validated_files != candidate_files:
+                raise DraftGenerationError(
+                    "repair candidate differs from its report before publication"
+                )
             os.replace(temp_dir, candidate_dir)
             temp_dir = None
         finally:
             if temp_dir is not None:
                 shutil.rmtree(temp_dir, ignore_errors=True)
+        return report
+
+    def generate_asnumpy_adapter_candidate(
+        self,
+        output_root: Path,
+        *,
+        operator_artifact: Dict[str, object],
+        adapter_contract: str,
+        asnumpy_context: Dict[str, str],
+        expected_paths: Tuple[str, ...],
+        skill_files: Tuple[str, ...] = ASNUMPY_INTEGRATION_SKILL_FILES,
+    ) -> Dict[str, object]:
+        """Ask the model for an isolated AsNumpy registry/test overlay."""
+
+        if self._skill_bundle is None:
+            raise DraftGenerationError(
+                "AsNumpy adapter generation requires a verified skill bundle"
+            )
+        if (
+            not isinstance(operator_artifact, dict)
+            or not isinstance(operator_artifact.get("artifact_id"), str)
+            or not isinstance(adapter_contract, str)
+            or not adapter_contract.strip()
+        ):
+            raise DraftGenerationError("AsNumpy adapter inputs are invalid")
+        if (
+            not expected_paths
+            or len(expected_paths) > _MAX_ADAPTER_FILES
+            or len(set(expected_paths)) != len(expected_paths)
+        ):
+            raise DraftGenerationError("AsNumpy adapter path set is invalid")
+        normalized_paths = tuple(
+            str(_safe_relative_path(path)) for path in expected_paths
+        )
+        if normalized_paths != expected_paths:
+            raise DraftGenerationError("AsNumpy adapter paths are not normalized")
+        if not isinstance(asnumpy_context, dict) or not asnumpy_context:
+            raise DraftGenerationError("AsNumpy reference context is empty")
+        context_bytes = 0
+        for label, content in asnumpy_context.items():
+            if (
+                not isinstance(label, str)
+                or not label
+                or len(label) > _MAX_PATH_CHARS
+                or any(ord(character) < 32 for character in label)
+                or not isinstance(content, str)
+                or not content
+                or "\x00" in content
+            ):
+                raise DraftGenerationError("AsNumpy reference context is invalid")
+            context_bytes += len(content.encode("utf-8"))
+        if context_bytes > 256 * 1024:
+            raise DraftGenerationError("AsNumpy reference context exceeds size limit")
+
+        root = Path(output_root)
+        candidate_dir = root / "candidate"
+        if root.is_symlink() or not root.is_dir():
+            raise DraftGenerationError("AsNumpy adapter output root is invalid")
+        if os.path.lexists(candidate_dir):
+            raise DraftGenerationError("AsNumpy adapter candidate already exists")
+
+        chat, generation_base = self._resolve_chat()
+        if generation_base["mode"] != "remote_llm":
+            raise DraftGenerationError(
+                "AsNumpy adapter publication requires a real remote model"
+            )
+        artifact_json = json.dumps(
+            operator_artifact, ensure_ascii=False, indent=2, sort_keys=True
+        )
+        reference_sections = "\n\n".join(
+            "ASNUMPY REFERENCE `%s`:\n%s" % (label, content)
+            for label, content in sorted(asnumpy_context.items())
+        )
+        skill_context = self._skill_bundle.prompt_context(skill_files)
+        collected: Dict[str, str] = {}
+        collected_bytes = 0
+        receipts = []
+        response_hashes = []
+        failures = []
+        total_attempts = 0
+
+        for file_index, path in enumerate(normalized_paths, start=1):
+            failure = ""
+            for file_attempt in range(1, self.max_attempts + 1):
+                total_attempts += 1
+                prior = "\n\n".join(
+                    "ALREADY GENERATED `%s`:\n%s" % item
+                    for item in collected.items()
+                )
+                prompt = "\n\n".join(filter(None, (
+                    "AsNumpy integration file %d/%d. Return exactly `%s` and no "
+                    "other path." % (file_index, len(normalized_paths), path),
+                    "Your response first line must be exactly "
+                    "NUMPILOT_BUNDLE_V1; do not use Markdown fences or commentary.",
+                    "Expected overlay paths:\n" + "\n".join(
+                        "- `%s`" % item for item in normalized_paths
+                    ),
+                    "SIGNED OPERATOR ARTIFACT MANIFEST:\n" + artifact_json,
+                    "MODEL-GENERATED ADAPTER CONTRACT:\n" + adapter_contract,
+                    reference_sections,
+                    prior,
+                    skill_context,
+                )))
+                if failure:
+                    prompt += (
+                        "\n\nThe previous response was rejected by local validation: "
+                        + failure[:500]
+                    )
+                try:
+                    result = chat(_ASNUMPY_ADAPTER_SYSTEM_PROMPT, prompt)
+                    if not isinstance(result, tuple) or len(result) != 2:
+                        raise DraftGenerationError(
+                            "remote adapter call returned no auditable receipt"
+                        )
+                    response, receipt = result
+                    validated_receipt = _validate_remote_receipt(receipt, response)
+                    if validated_receipt["requested_model"] != generation_base["model"]:
+                        raise DraftGenerationError(
+                            "remote adapter receipt requested model mismatch"
+                        )
+                    receipts.append(validated_receipt)
+                    response_hashes.append(
+                        _sha256_bytes(response.encode("utf-8"))
+                    )
+                    _summary, files = _validate_stage_bundle(response, (path,))
+                    content = files[0][1]
+                    content_size = len(content.encode("utf-8"))
+                    if content_size > _MAX_ADAPTER_FILE_BYTES:
+                        raise DraftGenerationError(
+                            "generated AsNumpy adapter file exceeds the size limit"
+                        )
+                    if collected_bytes + content_size > _MAX_ADAPTER_TOTAL_BYTES:
+                        raise DraftGenerationError(
+                            "generated AsNumpy adapter exceeds the total-size limit"
+                        )
+                    collected[path] = content
+                    collected_bytes += content_size
+                    break
+                except DraftGenerationError as exc:
+                    failure = str(exc)
+                    failures.append(
+                        "%s attempt %d: %s"
+                        % (path, file_attempt, failure[:500])
+                    )
+                except Exception as exc:
+                    from numpilot.engines.llm import LlmResponseError
+
+                    if isinstance(exc, LlmResponseError):
+                        failed_receipt = _validate_remote_receipt(exc.receipt, None)
+                        receipts.append(failed_receipt)
+                    failure = "remote adapter call failed: %s" % type(exc).__name__
+                    failures.append(
+                        "%s attempt %d: %s"
+                        % (path, file_attempt, failure[:500])
+                    )
+            else:
+                raise DraftRepairError(
+                    "model AsNumpy adapter generation failed after %d request(s): %s"
+                    % (total_attempts, "; ".join(failures)),
+                    receipt_count=len(receipts),
+                )
+
+        file_hashes = {
+            path: _sha256_bytes(content.encode("utf-8"))
+            for path, content in collected.items()
+        }
+        report = {
+            "schema_version": 2,
+            "status": "generated_unverified",
+            "source_artifact_id": operator_artifact["artifact_id"],
+            "model": generation_base["model"],
+            "provider": generation_base["provider"],
+            "configuration_source": generation_base["configuration_source"],
+            "attempt_count": total_attempts,
+            "files_sha256": file_hashes,
+            "adapter_contract_sha256": _sha256_bytes(
+                adapter_contract.encode("utf-8")
+            ),
+            "asnumpy_context_sha256": {
+                label: _sha256_bytes(content.encode("utf-8"))
+                for label, content in sorted(asnumpy_context.items())
+            },
+            "skill_bundle_sha256": self._skill_bundle.bundle_sha256,
+            "integration_skill_files": list(skill_files),
+            "response_sha256": response_hashes,
+            "remote_receipts": receipts,
+            "actual_remote_call": True,
+            "gates": dict(_EXPECTED_UNVERIFIED_GATES),
+        }
+        report["adapter_artifact_id"] = _adapter_artifact_id(report)
+        report = _validate_adapter_report(
+            report,
+            candidate_hashes=file_hashes,
+        )
+        _validate_adapter_skill_binding(report, self._skill_bundle)
+        report_payload = _bounded_json_payload(
+            report, "AsNumpy adapter report"
+        )
+
+        temp_dir = Path(tempfile.mkdtemp(prefix=".adapter-", dir=str(root)))
+        report_temp = root / ".asnumpy-adapter-report.json.tmp"
+        try:
+            for relative, content in collected.items():
+                target = temp_dir / _safe_relative_path(relative)
+                target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+                target.write_text(content, encoding="utf-8")
+                os.chmod(target, 0o600)
+            validated_files = _bounded_tree_hashes(
+                temp_dir,
+                excluded=(),
+                maximum_files=_MAX_ADAPTER_FILES,
+                maximum_entries=_MAX_ADAPTER_TREE_ENTRIES,
+                maximum_file_bytes=_MAX_ADAPTER_FILE_BYTES,
+                maximum_total_bytes=_MAX_ADAPTER_TOTAL_BYTES,
+                label="generated AsNumpy adapter candidate",
+            )
+            if validated_files != file_hashes:
+                raise DraftGenerationError(
+                    "generated AsNumpy adapter differs before publication"
+                )
+            with open(report_temp, "xb") as handle:
+                handle.write(report_payload)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.chmod(report_temp, 0o600)
+            os.replace(temp_dir, candidate_dir)
+            temp_dir = None
+            report_path = root / "asnumpy-adapter-report.json"
+            os.replace(report_temp, report_path)
+        finally:
+            if temp_dir is not None:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            if os.path.lexists(report_temp):
+                os.unlink(report_temp)
+        return report
+
+    def repair_asnumpy_adapter_candidate(
+        self,
+        output_root: Path,
+        *,
+        base_adapter_root: Path,
+        diagnostic: str,
+        path: str,
+        asnumpy_context: Dict[str, str],
+        skill_files: Tuple[str, ...] = ASNUMPY_INTEGRATION_SKILL_FILES,
+        repair_profile: str = "compile",
+    ) -> Dict[str, object]:
+        """Let the remote model repair one hash-bound AsNumpy overlay file."""
+
+        if self._skill_bundle is None:
+            raise DraftGenerationError(
+                "AsNumpy adapter repair requires a verified skill bundle"
+            )
+        if (
+            not isinstance(repair_profile, str)
+            or repair_profile not in {"compile", "precision", "runtime"}
+        ):
+            raise DraftGenerationError(
+                "AsNumpy adapter repair profile must be compile, precision, or runtime"
+            )
+        if not isinstance(diagnostic, str) or not diagnostic.strip():
+            raise DraftGenerationError("AsNumpy adapter diagnostic must be non-empty")
+        diagnostic_bytes = diagnostic.encode("utf-8")
+        if len(diagnostic_bytes) > 64 * 1024 or "\x00" in diagnostic:
+            raise DraftGenerationError(
+                "AsNumpy adapter diagnostic is invalid or too large"
+            )
+        normalized_path = str(_safe_relative_path(path))
+        if normalized_path != path:
+            raise DraftGenerationError("AsNumpy adapter repair path is not normalized")
+        if not isinstance(asnumpy_context, dict) or not asnumpy_context:
+            raise DraftGenerationError("AsNumpy repair context is empty")
+        context_bytes = 0
+        for label, content in asnumpy_context.items():
+            if (
+                not isinstance(label, str)
+                or not label
+                or len(label) > _MAX_PATH_CHARS
+                or any(ord(character) < 32 for character in label)
+                or not isinstance(content, str)
+                or not content
+                or "\x00" in content
+            ):
+                raise DraftGenerationError("AsNumpy repair context is invalid")
+            context_bytes += len(content.encode("utf-8"))
+        if context_bytes > 256 * 1024:
+            raise DraftGenerationError("AsNumpy repair context exceeds size limit")
+
+        base_root = Path(base_adapter_root).absolute()
+        base_candidate = base_root / "candidate"
+        base_report, report_payload, normalized_hashes = (
+            _load_asnumpy_adapter_report(base_root)
+        )
+        _validate_adapter_skill_binding(base_report, self._skill_bundle)
+        if normalized_path not in normalized_hashes:
+            raise DraftGenerationError(
+                "repair path is not part of the model-generated AsNumpy overlay"
+            )
+        current_contents = {}
+        current_total_bytes = 0
+        for relative, expected_hash in normalized_hashes.items():
+            content, content_bytes, actual_hash = _read_bounded_adapter_text(
+                base_candidate / _safe_relative_path(relative),
+                relative,
+            )
+            current_total_bytes += content_bytes
+            if current_total_bytes > _MAX_ADAPTER_TOTAL_BYTES:
+                raise DraftGenerationError(
+                    "AsNumpy adapter base exceeds the total-size limit"
+                )
+            if actual_hash != expected_hash:
+                raise DraftGenerationError(
+                    "AsNumpy adapter base changed after validation: %s" % relative
+                )
+            current_contents[relative] = content
+
+        root = Path(output_root)
+        candidate_dir = root / "candidate"
+        if root.is_symlink() or not root.is_dir() or os.path.lexists(candidate_dir):
+            raise DraftGenerationError("AsNumpy adapter repair output is invalid")
+        chat, generation_base = self._resolve_chat()
+        if generation_base["mode"] != "remote_llm":
+            raise DraftGenerationError(
+                "AsNumpy adapter repair requires a real remote model"
+            )
+        if (
+            base_report.get("model") != generation_base["model"]
+            or base_report.get("provider") != generation_base["provider"]
+            or base_report.get("configuration_source")
+            != generation_base["configuration_source"]
+        ):
+            raise DraftGenerationError(
+                "AsNumpy adapter repair model identity differs from its base"
+            )
+
+        context_sections = "\n\n".join(
+            "ASNUMPY BUILD REFERENCE `%s`:\n%s" % (label, content)
+            for label, content in sorted(asnumpy_context.items())
+        )
+        current_sections = "\n\n".join(
+            "CURRENT MODEL OVERLAY `%s`:\n%s" % (label, content)
+            for label, content in sorted(current_contents.items())
+        )
+        skill_context = self._skill_bundle.prompt_context(skill_files)
+        receipts = []
+        response_hashes = []
+        failures = []
+        replacement = None
+        total_attempts = 0
+        failure = ""
+        for repair_attempt in range(1, self.max_attempts + 1):
+            total_attempts += 1
+            prompt = "\n\n".join((
+                "Repair exactly `%s` and no other path." % normalized_path,
+                "Repair qualification profile (audit binding): `%s`."
+                % repair_profile,
+                "Your response first line must be exactly NUMPILOT_BUNDLE_V1 "
+                "and your last line must be exactly END_BUNDLE. Do not use "
+                "Markdown fences or commentary.",
+                "Raw local AsNumpy build/test diagnostic (authoritative):\n"
+                + diagnostic.strip(),
+                current_sections,
+                context_sections,
+                skill_context,
+            ))
+            if failure:
+                prompt += (
+                    "\n\nThe previous repair response was rejected by local "
+                    "validation: " + failure[:500]
+                )
+            try:
+                result = chat(_ASNUMPY_ADAPTER_REPAIR_SYSTEM_PROMPT, prompt)
+                if not isinstance(result, tuple) or len(result) != 2:
+                    raise DraftGenerationError(
+                        "remote AsNumpy repair call returned no auditable receipt"
+                    )
+                response, receipt = result
+                validated_receipt = _validate_remote_receipt(receipt, response)
+                if validated_receipt["requested_model"] != generation_base["model"]:
+                    raise DraftGenerationError(
+                        "remote AsNumpy repair receipt requested model mismatch"
+                    )
+                receipts.append(validated_receipt)
+                response_hashes.append(_sha256_bytes(response.encode("utf-8")))
+                _summary, files = _validate_stage_bundle(response, (normalized_path,))
+                proposed = files[0][1]
+                proposed_size = len(proposed.encode("utf-8"))
+                replaced_size = len(
+                    current_contents[normalized_path].encode("utf-8")
+                )
+                if proposed_size > _MAX_ADAPTER_FILE_BYTES:
+                    raise DraftGenerationError(
+                        "repaired AsNumpy adapter file exceeds the size limit"
+                    )
+                if (
+                    current_total_bytes - replaced_size + proposed_size
+                    > _MAX_ADAPTER_TOTAL_BYTES
+                ):
+                    raise DraftGenerationError(
+                        "repaired AsNumpy adapter exceeds the total-size limit"
+                    )
+                replacement = proposed
+                break
+            except DraftGenerationError as exc:
+                failure = str(exc)
+                failures.append(
+                    "%s attempt %d: %s"
+                    % (normalized_path, repair_attempt, failure[:500])
+                )
+            except Exception as exc:
+                from numpilot.engines.llm import LlmResponseError
+
+                if isinstance(exc, LlmResponseError):
+                    failed_receipt = _validate_remote_receipt(exc.receipt, None)
+                    receipts.append(failed_receipt)
+                status_code = getattr(exc, "status_code", None)
+                failure = (
+                    "remote AsNumpy repair call failed: HTTP status %d" % status_code
+                    if isinstance(status_code, int) and not isinstance(status_code, bool)
+                    else "remote AsNumpy repair call failed: %s" % type(exc).__name__
+                )
+                failures.append(
+                    "%s attempt %d: %s"
+                    % (normalized_path, repair_attempt, failure[:500])
+                )
+        if replacement is None:
+            raise DraftRepairError(
+                "model AsNumpy adapter repair failed after %d request(s): %s"
+                % (total_attempts, "; ".join(failures)),
+                receipt_count=len(receipts),
+            )
+
+        before_hash = normalized_hashes[normalized_path]
+        after_hash = _sha256_bytes(replacement.encode("utf-8"))
+        updated_hashes = dict(normalized_hashes)
+        updated_hashes[normalized_path] = after_hash
+        report = {
+            "schema_version": 2,
+            "status": "repaired_unverified",
+            "source_artifact_id": base_report["source_artifact_id"],
+            "source_adapter_root": str(base_root),
+            "parent_adapter_artifact_id": base_report["adapter_artifact_id"],
+            "parent_adapter_report_sha256": _sha256_bytes(report_payload),
+            "model": generation_base["model"],
+            "provider": generation_base["provider"],
+            "configuration_source": generation_base["configuration_source"],
+            "repair_profile": repair_profile,
+            "attempt_count": total_attempts,
+            "paths": [normalized_path],
+            "before_sha256": {normalized_path: before_hash},
+            "after_sha256": {normalized_path: after_hash},
+            "files_sha256": updated_hashes,
+            "diagnostic_sha256": _sha256_bytes(diagnostic_bytes),
+            "asnumpy_context_sha256": {
+                label: _sha256_bytes(content.encode("utf-8"))
+                for label, content in sorted(asnumpy_context.items())
+            },
+            "skill_bundle_sha256": self._skill_bundle.bundle_sha256,
+            "integration_skill_files": list(skill_files),
+            "response_sha256": response_hashes,
+            "remote_receipts": receipts,
+            "actual_remote_call": True,
+            "gates": dict(_EXPECTED_UNVERIFIED_GATES),
+        }
+        report["adapter_artifact_id"] = _adapter_artifact_id(report)
+        report = _validate_adapter_report(
+            report,
+            candidate_hashes=updated_hashes,
+            parent_report=base_report,
+            parent_report_sha256=_sha256_bytes(report_payload),
+        )
+        _validate_adapter_skill_binding(report, self._skill_bundle)
+        serialized_report = _bounded_json_payload(
+            report, "AsNumpy adapter repair report"
+        )
+        temp_dir = Path(tempfile.mkdtemp(prefix=".adapter-repair-", dir=str(root)))
+        report_temp = root / ".asnumpy-adapter-report.json.tmp"
+        try:
+            shutil.copytree(base_candidate, temp_dir, dirs_exist_ok=True)
+            target = temp_dir / _safe_relative_path(normalized_path)
+            temporary = target.with_name(".%s.repair" % target.name)
+            with open(temporary, "xb") as handle:
+                handle.write(replacement.encode("utf-8"))
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.chmod(temporary, 0o600)
+            os.replace(temporary, target)
+            validated_files = _bounded_tree_hashes(
+                temp_dir,
+                excluded=(),
+                maximum_files=_MAX_ADAPTER_FILES,
+                maximum_entries=_MAX_ADAPTER_TREE_ENTRIES,
+                maximum_file_bytes=_MAX_ADAPTER_FILE_BYTES,
+                maximum_total_bytes=_MAX_ADAPTER_TOTAL_BYTES,
+                label="repaired AsNumpy adapter candidate",
+            )
+            if validated_files != updated_hashes:
+                raise DraftGenerationError(
+                    "repaired AsNumpy adapter differs before publication"
+                )
+            with open(report_temp, "xb") as handle:
+                handle.write(serialized_report)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.chmod(report_temp, 0o600)
+            os.replace(temp_dir, candidate_dir)
+            temp_dir = None
+            report_path = root / "asnumpy-adapter-report.json"
+            os.replace(report_temp, report_path)
+        finally:
+            if temp_dir is not None:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            if os.path.lexists(report_temp):
+                os.unlink(report_temp)
         return report
 
     def seal_repair_candidate(
@@ -1571,6 +3023,10 @@ class LlmDraftProvider:
         draft_dir = Path(draft_dir)
         candidate_dir = Path(candidate_dir)
         artifact_dir = Path(artifact_dir)
+        if self._skill_bundle is None:
+            raise DraftGenerationError(
+                "sealing a repair requires the verified Skill bundle"
+            )
         source = _load_existing_draft(draft_dir, spec)
         if os.path.lexists(artifact_dir):
             raise DraftGenerationError("sealed artifact path already exists")
@@ -1578,6 +3034,7 @@ class LlmDraftProvider:
             candidate_dir,
             spec,
             source,
+            self._skill_bundle,
         )
         if not reports:
             raise DraftGenerationError("repair chain is empty")
@@ -1646,6 +3103,15 @@ class LlmDraftProvider:
         })
         generation = _validate_generation(generation)
 
+        provenance_relative = "docs/numpilot-repair-provenance.json"
+        if any(
+            provenance_relative in report.get("paths", ())
+            for report in reports
+        ):
+            raise DraftGenerationError(
+                "repair chain cannot modify reserved provenance metadata"
+            )
+
         provenance = {
             "schema_version": 1,
             "source_artifact_id": source.artifact_id,
@@ -1662,18 +3128,31 @@ class LlmDraftProvider:
             raise DraftGenerationError("sealed repair provenance exceeds size limit")
 
         files = []
+        sealed_source_bytes = 0
         for relative in sorted(candidate_files):
+            # A repair may start from an artifact that was sealed previously.
+            # Its candidate inherits the old provenance file, which this seal
+            # replaces with provenance for the new repair chain.
+            if relative == provenance_relative:
+                continue
             path = candidate_dir / _safe_relative_path(relative)
-            try:
-                content = path.read_text(encoding="utf-8")
-            except (OSError, UnicodeError) as exc:
+            content, payload = _read_bounded_text(
+                path,
+                _MAX_TOTAL_BYTES,
+                "repaired artifact file %s" % relative,
+            )
+            if _sha256_bytes(payload) != candidate_files[relative]:
                 raise DraftGenerationError(
-                    "cannot read repaired artifact file: %s" % relative
-                ) from exc
+                    "repaired artifact file changed after validation: %s"
+                    % relative
+                )
+            sealed_source_bytes += len(payload)
+            if sealed_source_bytes > _MAX_TOTAL_BYTES:
+                raise DraftGenerationError(
+                    "sealed repair artifact exceeds size limits"
+                )
             files.append((_safe_relative_path(relative), content))
-        provenance_path = _safe_relative_path(
-            "docs/numpilot-repair-provenance.json"
-        )
+        provenance_path = _safe_relative_path(provenance_relative)
         files.append((provenance_path, provenance_text))
         total_bytes = sum(
             len(content.encode("utf-8")) for _path, content in files
@@ -1689,6 +3168,7 @@ class LlmDraftProvider:
             "Sealed compiler-directed repair chain for %s" % spec.qualified_api,
             tuple(files),
             generation,
+            maximum_attempts=_MAX_TRANSPORT_ATTEMPTS,
         )
         self._run_actions[draft.workspace] = "sealed_repair_chain"
         return draft
@@ -1701,15 +3181,51 @@ class LlmDraftProvider:
         summary: str,
         files,
         generation,
+        *,
+        maximum_attempts: int = _MAX_FRESH_TRANSPORT_ATTEMPTS,
     ) -> OperatorDraft:
+        # Publication is the trust boundary: use the same strict evidence
+        # validator used when reloading an existing artifact.
+        generation = _validate_generation(
+            generation,
+            maximum_attempts=maximum_attempts,
+        )
         workspace.mkdir(parents=True, exist_ok=True, mode=0o700)
         temp_dir = Path(tempfile.mkdtemp(prefix=".draft-", dir=str(workspace)))
         try:
             hashes: Dict[str, str] = {}
+            total_bytes = 0
             for relative, content in files:
+                if len(hashes) >= _MAX_FILES:
+                    raise DraftGenerationError(
+                        "draft publication exceeds the file-count limit"
+                    )
+                if not isinstance(relative, PurePosixPath) or not isinstance(
+                    content, str
+                ):
+                    raise DraftGenerationError(
+                        "draft publication contains an invalid file"
+                    )
+                if str(_safe_relative_path(str(relative))) != str(relative):
+                    raise DraftGenerationError(
+                        "draft publication path is not normalized"
+                    )
                 target = temp_dir.joinpath(*relative.parts)
                 target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
                 payload = content.encode("utf-8")
+                if len(payload) > _MAX_TOTAL_BYTES:
+                    raise DraftGenerationError(
+                        "draft publication file exceeds the size limit"
+                    )
+                total_bytes += len(payload)
+                if total_bytes > _MAX_TOTAL_BYTES:
+                    raise DraftGenerationError(
+                        "draft publication exceeds the total-size limit"
+                    )
+                if str(relative) in hashes:
+                    raise DraftGenerationError(
+                        "draft publication contains a duplicate path"
+                    )
                 with open(target, "xb") as handle:
                     handle.write(payload)
                     handle.flush()
@@ -1732,6 +3248,10 @@ class LlmDraftProvider:
             manifest = json.dumps(
                 draft.to_dict(), ensure_ascii=False, indent=2, sort_keys=True
             ) + "\n"
+            if len(manifest.encode("utf-8")) > _MAX_METADATA_BYTES:
+                raise DraftGenerationError(
+                    "draft artifact manifest exceeds the size limit"
+                )
             manifest_path = temp_dir / "operator-artifact.json"
             with open(manifest_path, "x", encoding="utf-8") as handle:
                 handle.write(manifest)
@@ -1784,8 +3304,7 @@ class LlmDraftProvider:
         if (
             self._staged_direct
             and generation_base["mode"] == "remote_llm"
-            and spec.route == "ascendc_registry_candidate"
-            and spec.semantic_source.startswith("operator-spec:")
+            and _should_use_staged_direct(spec)
         ):
             (
                 summary,
@@ -1908,51 +3427,11 @@ class LlmDraftProvider:
             "local_validation": "passed",
             "fallback": "disabled",
         })
-
-        workspace.mkdir(parents=True, exist_ok=True, mode=0o700)
-        temp_dir = Path(tempfile.mkdtemp(prefix=".draft-", dir=str(workspace)))
-        try:
-            hashes: Dict[str, str] = {}
-            for relative, content in files:
-                target = temp_dir.joinpath(*relative.parts)
-                target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-                payload = content.encode("utf-8")
-                with open(target, "xb") as handle:
-                    handle.write(payload)
-                    handle.flush()
-                    os.fsync(handle.fileno())
-                os.chmod(target, 0o700 if relative.name == "build.sh" else 0o600)
-                hashes[str(relative)] = _sha256_bytes(payload)
-
-            draft = OperatorDraft(
-                artifact_id=_draft_artifact_id(
-                    spec.gap_id,
-                    hashes,
-                    generation,
-                ),
-                gap_id=spec.gap_id,
-                workspace=str(draft_dir),
-                summary=summary,
-                files=hashes,
-                generation=generation,
-            )
-            manifest = json.dumps(
-                draft.to_dict(), ensure_ascii=False, indent=2, sort_keys=True
-            ) + "\n"
-            manifest_path = temp_dir / "operator-artifact.json"
-            with open(manifest_path, "x", encoding="utf-8") as handle:
-                handle.write(manifest)
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.chmod(manifest_path, 0o600)
-            os.replace(temp_dir, draft_dir)
-        except Exception:
-            shutil.rmtree(temp_dir, ignore_errors=True)
-            raise
-        action = (
-            "fresh_remote"
-            if generation["mode"] == "remote_llm"
-            else "injected_test_double"
+        return self._publish_draft(
+            spec,
+            workspace,
+            draft_dir,
+            summary,
+            files,
+            generation,
         )
-        self._run_actions[draft.workspace] = action
-        return draft

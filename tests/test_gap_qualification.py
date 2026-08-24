@@ -483,6 +483,45 @@ def test_complete_offline_evidence_promotes_only_to_custom_npu(evidence):
     )
 
 
+def test_nonempty_gap_scope_is_bound_through_every_gate(evidence):
+    spec = json.loads(evidence.spec_path.read_text(encoding="utf-8"))
+    spec["shape_rules"] = ["rank>=1", "contiguous=true", "numel>=1"]
+    evidence.rebind_spec(spec)
+
+    constraints = (
+        "dtype=float32",
+        "rank>=1",
+        "contiguous=true",
+        "numel>=1",
+    )
+    evidence.evidence_data["constraints"] = list(constraints)
+    constraints_sha256 = qualification.qualification_constraints_sha256(
+        constraints
+    )
+    for name, path in evidence.gate_paths.items():
+        report = json.loads(path.read_text(encoding="utf-8"))
+        report["constraints_sha256"] = constraints_sha256
+        evidence.update_gate_report(name, report)
+
+    capability = _validate(evidence)
+
+    assert capability.constraints == constraints
+
+
+def test_duplicate_numel_gap_scope_fails_closed(evidence):
+    spec = json.loads(evidence.spec_path.read_text(encoding="utf-8"))
+    spec["shape_rules"] = [
+        "rank>=1",
+        "contiguous=true",
+        "numel>=1",
+        "numel>=8",
+    ]
+    evidence.rebind_spec(spec)
+
+    with pytest.raises(QualificationError, match="optional-numel"):
+        _validate(evidence)
+
+
 def test_canonical_signature_digest_is_order_independent():
     signatures = (
         OperatorSignature(positional_args=1),

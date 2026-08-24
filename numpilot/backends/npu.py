@@ -27,45 +27,104 @@ from numpilot.coverage import SUPPORTED_OPS
 # Python wrapper without changing whether its public name exists, so version
 # drift must be re-audited before it can make a strict-NPU performance claim.
 AUDITED_ASNUMPY_VERSION = "0.3.1.dev4+g1929a3ba4"
-ASNUMPY_AUDIT_ID = "asnumpy-0.3.1.dev4+g1929a3ba4-source-1929a3ba4-v1"
+ASNUMPY_AUDIT_ID = (
+    "asnumpy-0.3.1.dev4-g1929a3ba4-runtime-"
+    "init8761f7f9-coreab71b004-v2"
+)
+_AUDITED_RUNTIME_FILE_SHA256 = {
+    "__init__.py": "8761f7f9fe557606df6c6683245f4dfc3b8ac69385689a0673f3c90e33afd28e",
+    "_types.py": "3686cc4be153e88950357aacdc71e90d98a71f2d01e659c3376ff4e0b2d66fa7",
+    "_version.py": "c5fa636eada219c1045482d84a2a1f91fb2951fdf3ee075ed3abeae1a5db9c77",
+    "array.py": "16c901f5937027d2ce6ae6f9d58813d389d20252315333c954ec5ccb9a3b4cc3",
+    "linalg/__init__.py": "bae3efa81d9840d622c3f29ed677dfd834e7e2c2769b9a35daea0b9b55e52a83",
+    "linalg/direct.py": "c56b61be41eea589d3d1c15b9afd606e7e26f0a25fc601cb1563a4279e7244c3",
+    "logic.py": "56b9c8c6815a99f9734fb90cf84cb6df2ac7e810455f4d8b4d65e997decf8f29",
+    "math.py": "62e0ba09576ead5d3b44f6b0b33311e849efd47ab0bb11f7875c0a43f499085c",
+    "nn.py": "c0b2ed95d70fa15e92e2939d76cc93da116b64b2b94579aeb684b03e1cf07748",
+    "sorting.py": "bc206227bbb2709cef9242db9b3de32e4eec15c58a9b83d568e9181729d9cf2c",
+    "statistics.py": "175315eec27c8fa2875e236b3c88cb047d5e9d3cbc7735a3f1fae6231a14d3cd",
+    "utils.py": "d4105619f540f7f98dd29b9967fe925c6355c96769f54862dc245c0851666cb1",
+    "_core": "ab71b0041f872bd25f4581a9f269414af9accd37f83e4ad8d99b3e713d63ff53",
+}
 
 # Competition P0 wheel.  This is deliberately a narrow source/binary audit,
 # not a declaration that every API in the locally built wheel is strict NPU.
 P0_ASNUMPY_VERSION = "0.1.dev106+g21368abf9.d20260821"
 P0_ASNUMPY_AUDIT_ID = (
     "asnumpy-0.1.dev106-g21368abf9-poisson-core-"
-    "init4f4e8083-math62e0ba09-core964c17f3-v1"
+    "init4f4e8083-math62e0ba09-utilsfd94c025-core964c17f3-v2"
 )
 P0_AUDITED_NATIVE_OPS = frozenset({"add", "multiply", "clip"})
 _P0_RUNTIME_FILE_SHA256 = {
     "__init__.py": "4f4e8083755dde87bd6f0dc8c765da71984cb1346c97e8b6dbb97d714be34c04",
     "math.py": "62e0ba09576ead5d3b44f6b0b33311e849efd47ab0bb11f7875c0a43f499085c",
+    "utils.py": "fd94c0254d9b02dbd55510e88e345606e69a84903a4aceeb238b435bea14beed",
     "_core": "964c17f3c910f54992fa24f086493481dd471d060f523f2e124cb8e8d6c373f3",
 }
 P0_LINALG_ASNUMPY_AUDIT_ID = (
     "asnumpy-0.1.dev106-g21368abf9-poisson-linalg-"
-    "init4f4e8083-math62e0ba09-direct4479c588-cored3ccb39f-v1"
+    "init4f4e8083-array16c901f5-math62e0ba09-direct4479c588-"
+    "utilsfd94c025-cored3ccb39f-v3"
 )
 P0_LINALG_AUDITED_NATIVE_OPS = frozenset(
     {
+        "absolute",
         "add",
+        "amax",
         "clip",
+        "cos",
         "divide",
         "exp",
+        "linspace",
         "matmul",
         "multiply",
         "negative",
         "outer",
+        "sin",
         "sqrt",
         "subtract",
+        "sum",
     }
 )
 P0_MOVE_ASNUMPY_VERSION = "0.1.dev106+g21368abf9.d20260822"
 P0_MOVE_ASNUMPY_AUDIT_ID = (
     "asnumpy-0.1.dev106-g21368abf9-poisson-move-"
+    "init4f4e8083-array16c901f5-math62e0ba09-direct4479c588-"
+    "utils1b298145-core4465ce6e-v2"
+)
+# The published Poisson qualification/profiler receipts predate the array.py
+# extension of the runtime identity.  They may be activated only when the
+# current runtime first passes the stricter v2 identity and their exact legacy
+# base-manifest hash is reproduced; ordinary manifests always expose v2.
+P0_MOVE_LEGACY_OVERLAY_AUDIT_ID = (
+    "asnumpy-0.1.dev106-g21368abf9-poisson-move-"
     "init4f4e8083-math62e0ba09-direct4479c588-"
     "utils1b298145-core4465ce6e-v1"
 )
+_P0_LINALG_AUDIT_IDS = frozenset({
+    P0_LINALG_ASNUMPY_AUDIT_ID,
+    P0_MOVE_ASNUMPY_AUDIT_ID,
+    P0_MOVE_LEGACY_OVERLAY_AUDIT_ID,
+})
+# The cbrt showcase wheel preserves the hash-audited P0 add/multiply wrappers
+# while adding one generated custom operator.  Only the inherited base
+# operators are admitted here; cbrt remains unknown until an explicit
+# qualification overlay binds its artifact, private OPP and float32 profile.
+CBRT_ASNUMPY_VERSION = "0.0.1"
+CBRT_ASNUMPY_AUDIT_ID = (
+    "asnumpy-0.0.1-cbrt-integration-"
+    "init4f4e8083-math62e0ba09-custom78937935-"
+    "registry01370707-utils1b298145-core338dd5ad-v2"
+)
+CBRT_ASNUMPY_AUDITED_BASE_OPS = frozenset({"add", "multiply"})
+_CBRT_ASNUMPY_RUNTIME_FILE_SHA256 = {
+    "__init__.py": "4f4e8083755dde87bd6f0dc8c765da71984cb1346c97e8b6dbb97d714be34c04",
+    "math.py": "62e0ba09576ead5d3b44f6b0b33311e849efd47ab0bb11f7875c0a43f499085c",
+    "custom_ops.py": "78937935889331e5f24f92abf805c93e3cad6f77f1fffd921edbc7961995d793",
+    "_custom_ops_registry.py": "01370707cc5d7f5586d054029806021b9cac2cb0e2c013bcae3e6f4015259b04",
+    "utils.py": "1b2981456b2e4258b2f3f9611a07c98dc5a79acb8d67d35e3f2595af13911435",
+    "_core": "338dd5ad32008ee12337d64f882a81ce0334b083a60007d648df37995fd1f42b",
+}
 _P0_SCOPED_MATH_SIGNATURES = {
     "divide": 2,
     "exp": 1,
@@ -75,12 +134,15 @@ _P0_SCOPED_MATH_SIGNATURES = {
 }
 _P0_LINALG_RUNTIME_FILE_SHA256 = {
     "__init__.py": "4f4e8083755dde87bd6f0dc8c765da71984cb1346c97e8b6dbb97d714be34c04",
+    "array.py": "16c901f5937027d2ce6ae6f9d58813d389d20252315333c954ec5ccb9a3b4cc3",
     "math.py": "62e0ba09576ead5d3b44f6b0b33311e849efd47ab0bb11f7875c0a43f499085c",
     "linalg/direct.py": "4479c588c57705e229611a44844b6c7497deb6d97a7f067155f645b1f2913dbf",
+    "utils.py": "fd94c0254d9b02dbd55510e88e345606e69a84903a4aceeb238b435bea14beed",
     "_core": "d3ccb39f23a24611d4e5f0f34605fdf6825c74a11ef8a1aa4dac498a0ff38821",
 }
 _P0_MOVE_RUNTIME_FILE_SHA256 = {
     "__init__.py": "4f4e8083755dde87bd6f0dc8c765da71984cb1346c97e8b6dbb97d714be34c04",
+    "array.py": "16c901f5937027d2ce6ae6f9d58813d389d20252315333c954ec5ccb9a3b4cc3",
     "math.py": "62e0ba09576ead5d3b44f6b0b33311e849efd47ab0bb11f7875c0a43f499085c",
     "linalg/direct.py": "4479c588c57705e229611a44844b6c7497deb6d97a7f067155f645b1f2913dbf",
     "utils.py": "1b2981456b2e4258b2f3f9611a07c98dc5a79acb8d67d35e3f2595af13911435",
@@ -250,9 +312,35 @@ def _p0_runtime_identity_matches(module):
     observed = {
         "__init__.py": _sha256_private_regular_file(init_path),
         "math.py": _sha256_private_regular_file(parent / "math.py"),
+        "utils.py": _sha256_private_regular_file(parent / "utils.py"),
         "_core": _sha256_private_regular_file(core_paths[0]),
     }
     return observed == _P0_RUNTIME_FILE_SHA256
+
+
+def _audited_runtime_identity_matches(module):
+    """Bind the generic audited wheel to every executable public wrapper."""
+
+    raw_path = getattr(module, "__file__", None)
+    if not isinstance(raw_path, str) or not raw_path:
+        return False
+    init_path = Path(raw_path)
+    if init_path.is_symlink() or init_path.name != "__init__.py":
+        return False
+    parent = init_path.parent
+    linalg_dir = parent / "linalg"
+    if linalg_dir.is_symlink() or not linalg_dir.is_dir():
+        return False
+    core_paths = tuple(parent.glob("_core*.so"))
+    if len(core_paths) != 1 or core_paths[0].is_symlink():
+        return False
+    observed = {
+        relative: _sha256_private_regular_file(parent / relative)
+        for relative in _AUDITED_RUNTIME_FILE_SHA256
+        if relative != "_core"
+    }
+    observed["_core"] = _sha256_private_regular_file(core_paths[0])
+    return observed == _AUDITED_RUNTIME_FILE_SHA256
 
 
 def _p0_linalg_runtime_identity_matches(module):
@@ -271,8 +359,10 @@ def _p0_linalg_runtime_identity_matches(module):
         return False
     observed = {
         "__init__.py": _sha256_private_regular_file(init_path),
+        "array.py": _sha256_private_regular_file(parent / "array.py"),
         "math.py": _sha256_private_regular_file(parent / "math.py"),
         "linalg/direct.py": _sha256_private_regular_file(linalg_dir / "direct.py"),
+        "utils.py": _sha256_private_regular_file(parent / "utils.py"),
         "_core": _sha256_private_regular_file(core_paths[0]),
     }
     return observed == _P0_LINALG_RUNTIME_FILE_SHA256
@@ -296,6 +386,7 @@ def _p0_move_runtime_identity_matches(module):
         return False
     observed = {
         "__init__.py": _sha256_private_regular_file(init_path),
+        "array.py": _sha256_private_regular_file(parent / "array.py"),
         "math.py": _sha256_private_regular_file(parent / "math.py"),
         "linalg/direct.py": _sha256_private_regular_file(linalg_dir / "direct.py"),
         "utils.py": _sha256_private_regular_file(parent / "utils.py"),
@@ -304,8 +395,37 @@ def _p0_move_runtime_identity_matches(module):
     return observed == _P0_MOVE_RUNTIME_FILE_SHA256
 
 
+def _cbrt_runtime_identity_matches(module):
+    """Bind the showcase wheel without auto-admitting its custom operator."""
+
+    raw_path = getattr(module, "__file__", None)
+    if not isinstance(raw_path, str) or not raw_path:
+        return False
+    init_path = Path(raw_path)
+    if init_path.is_symlink() or init_path.name != "__init__.py":
+        return False
+    parent = init_path.parent
+    core_paths = tuple(parent.glob("_core*.so"))
+    if len(core_paths) != 1 or core_paths[0].is_symlink():
+        return False
+    observed = {
+        "__init__.py": _sha256_private_regular_file(init_path),
+        "math.py": _sha256_private_regular_file(parent / "math.py"),
+        "custom_ops.py": _sha256_private_regular_file(parent / "custom_ops.py"),
+        "_custom_ops_registry.py": _sha256_private_regular_file(
+            parent / "_custom_ops_registry.py"
+        ),
+        "utils.py": _sha256_private_regular_file(parent / "utils.py"),
+        "_core": _sha256_private_regular_file(core_paths[0]),
+    }
+    return observed == _CBRT_ASNUMPY_RUNTIME_FILE_SHA256
+
+
 def _runtime_audit_id(module, version):
-    if version == AUDITED_ASNUMPY_VERSION:
+    if (
+        version == AUDITED_ASNUMPY_VERSION
+        and _audited_runtime_identity_matches(module)
+    ):
         return ASNUMPY_AUDIT_ID
     if version == P0_ASNUMPY_VERSION:
         if _p0_linalg_runtime_identity_matches(module):
@@ -317,12 +437,29 @@ def _runtime_audit_id(module, version):
         and _p0_move_runtime_identity_matches(module)
     ):
         return P0_MOVE_ASNUMPY_AUDIT_ID
+    if (
+        version == CBRT_ASNUMPY_VERSION
+        and _cbrt_runtime_identity_matches(module)
+    ):
+        return CBRT_ASNUMPY_AUDIT_ID
     return "unaudited-asnumpy-version"
 
 
 def _provenance_profile(name, version, audit_id):
     """Return source-audited provenance independently of runtime availability."""
 
+    if (
+        audit_id == CBRT_ASNUMPY_AUDIT_ID
+        and name not in CBRT_ASNUMPY_AUDITED_BASE_OPS
+    ):
+        return (
+            ExecutionProvenance.UNKNOWN,
+            (
+                "asnumpy cbrt showcase wheel identity is bound, but API %r "
+                "requires an operator-specific qualification overlay" % name
+            ),
+            ("requires an operator-specific qualification",),
+        )
     if audit_id == P0_ASNUMPY_AUDIT_ID and name not in P0_AUDITED_NATIVE_OPS:
         return (
             ExecutionProvenance.UNKNOWN,
@@ -333,7 +470,7 @@ def _provenance_profile(name, version, audit_id):
             ("requires an operator-specific source audit",),
         )
     if (
-        audit_id in {P0_LINALG_ASNUMPY_AUDIT_ID, P0_MOVE_ASNUMPY_AUDIT_ID}
+        audit_id in _P0_LINALG_AUDIT_IDS
         and name not in P0_LINALG_AUDITED_NATIVE_OPS
     ):
         return (
@@ -349,6 +486,8 @@ def _provenance_profile(name, version, audit_id):
         P0_ASNUMPY_AUDIT_ID,
         P0_LINALG_ASNUMPY_AUDIT_ID,
         P0_MOVE_ASNUMPY_AUDIT_ID,
+        P0_MOVE_LEGACY_OVERLAY_AUDIT_ID,
+        CBRT_ASNUMPY_AUDIT_ID,
     }:
         return (
             ExecutionProvenance.UNKNOWN,
@@ -371,7 +510,7 @@ def _provenance_profile(name, version, audit_id):
             ("requires an operator-specific source audit",),
         )
     if (
-        audit_id in {P0_LINALG_ASNUMPY_AUDIT_ID, P0_MOVE_ASNUMPY_AUDIT_ID}
+        audit_id in _P0_LINALG_AUDIT_IDS
         and name in {"outer", "matmul"}
     ):
         return (
@@ -386,7 +525,7 @@ def _provenance_profile(name, version, audit_id):
             ),
         )
     if (
-        audit_id in {P0_LINALG_ASNUMPY_AUDIT_ID, P0_MOVE_ASNUMPY_AUDIT_ID}
+        audit_id in _P0_LINALG_AUDIT_IDS
         and name in _P0_SCOPED_MATH_SIGNATURES
     ):
         return (
@@ -404,14 +543,17 @@ def _provenance_profile(name, version, audit_id):
     return (
         ExecutionProvenance.NATIVE_NPU,
         (
-            "asnumpy P0 hash-bound source/binary audit: public wrapper delegates "
-            "to ACLNN"
-            if audit_id == P0_ASNUMPY_AUDIT_ID
-            or audit_id in {
-                P0_LINALG_ASNUMPY_AUDIT_ID,
-                P0_MOVE_ASNUMPY_AUDIT_ID,
-            }
-            else "asnumpy@1929a3ba4 source audit: public wrapper delegates to an NPU binding"
+            "asnumpy cbrt showcase hash-bound base audit: public wrapper "
+            "delegates to ACLNN"
+            if audit_id == CBRT_ASNUMPY_AUDIT_ID
+            else (
+                "asnumpy P0 hash-bound source/binary audit: public wrapper "
+                "delegates to ACLNN"
+                if audit_id == P0_ASNUMPY_AUDIT_ID
+                or audit_id in _P0_LINALG_AUDIT_IDS
+                else "asnumpy@1929a3ba4 source audit: public wrapper delegates "
+                "to an NPU binding"
+            )
         ),
         (),
     )
@@ -419,18 +561,50 @@ def _provenance_profile(name, version, audit_id):
 
 def _signature_variants(name, audit_id):
     if (
-        audit_id in {P0_LINALG_ASNUMPY_AUDIT_ID, P0_MOVE_ASNUMPY_AUDIT_ID}
+        audit_id in _P0_LINALG_AUDIT_IDS
         and name in {"outer", "matmul"}
     ):
         return (OperatorSignature(positional_args=2),)
     if (
-        audit_id in {P0_LINALG_ASNUMPY_AUDIT_ID, P0_MOVE_ASNUMPY_AUDIT_ID}
+        audit_id in _P0_LINALG_AUDIT_IDS
         and name in _P0_SCOPED_MATH_SIGNATURES
     ):
         return (
             OperatorSignature(positional_args=_P0_SCOPED_MATH_SIGNATURES[name]),
         )
     return ()
+
+
+def _overlay_base_with_audit_id(snapshot, names, audit_id):
+    """Reproduce one historical base only from a stricter live snapshot."""
+
+    capabilities = {}
+    for name in names:
+        current = snapshot.operators[name]
+        if not current.available:
+            # An old publishable base required the API to be callable. Keeping
+            # the current failure detail guarantees its hash cannot match.
+            capabilities[name] = current
+            continue
+        provenance, evidence, constraints = _provenance_profile(
+            name, snapshot.backend_version, audit_id
+        )
+        capabilities[name] = OperatorCapability(
+            name=name,
+            available=True,
+            provenance=provenance,
+            evidence=evidence,
+            constraints=constraints,
+            signature_variants=_signature_variants(name, audit_id),
+        )
+    return CapabilityManifest(
+        backend=snapshot.backend,
+        backend_version=snapshot.backend_version,
+        operators=capabilities,
+        environment=dict(snapshot.environment),
+        schema_version=snapshot.schema_version,
+        audit_id=audit_id,
+    )
 
 
 class NpuBackend(ExecutionBackend):
@@ -606,7 +780,11 @@ class NpuBackend(ExecutionBackend):
 
         # Import lazily: qualification depends on the capability contracts, but
         # the backend must remain usable without the optional overlay path.
-        from numpilot.gaps.qualification import apply_overlay, load_overlay
+        from numpilot.gaps.qualification import (
+            apply_overlay,
+            capability_manifest_sha256,
+            load_overlay,
+        )
 
         config = self._overlay_config
         overlay = load_overlay(config.overlay_path)
@@ -642,6 +820,21 @@ class NpuBackend(ExecutionBackend):
             schema_version=snapshot.schema_version,
             audit_id=snapshot.audit_id,
         )
+        if (
+            snapshot.audit_id == P0_MOVE_ASNUMPY_AUDIT_ID
+            and capability_manifest_sha256(overlay_base)
+            != overlay.base_manifest_sha256
+        ):
+            legacy_base = _overlay_base_with_audit_id(
+                snapshot,
+                overlay_names,
+                P0_MOVE_LEGACY_OVERLAY_AUDIT_ID,
+            )
+            if (
+                capability_manifest_sha256(legacy_base)
+                == overlay.base_manifest_sha256
+            ):
+                overlay_base = legacy_base
         admitted = apply_overlay(
             overlay_base,
             overlay,

@@ -1,7 +1,10 @@
 # tests/test_report.py
 """迁移报告渲染与落盘。"""
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 import os
 
+import numpilot.report as report_module
 from numpilot.report import build_report_md, save_migration_report
 
 
@@ -40,6 +43,59 @@ def test_save_report_timestamped(tmp_path):
     assert os.path.basename(path).startswith("migration_mlp_forward_")
     assert path.endswith(".md")
     assert "整网性能对比" in open(path, encoding="utf-8").read()
+
+
+class _FrozenDatetime:
+    @classmethod
+    def now(cls):
+        return datetime(2026, 8, 25, 1, 2, 3, 456789)
+
+
+def test_save_report_same_name_and_timestamp_never_overwrites(tmp_path, monkeypatch):
+    monkeypatch.setattr(report_module, "datetime", _FrozenDatetime)
+    first_info = _info()
+    first_info["source_path"] = "examples/first.py"
+    second_info = _info()
+    second_info["source_path"] = "examples/second.py"
+
+    first = save_migration_report(first_info, reports_dir=str(tmp_path))
+    second = save_migration_report(second_info, reports_dir=str(tmp_path))
+
+    assert first != second
+    assert os.path.basename(first).endswith("_010203_456789.md")
+    assert os.path.basename(second).endswith("_010203_456789_1.md")
+    assert "examples/first.py" in open(first, encoding="utf-8").read()
+    assert "examples/second.py" in open(second, encoding="utf-8").read()
+
+
+def test_save_report_concurrent_writers_never_overwrite(tmp_path, monkeypatch):
+    monkeypatch.setattr(report_module, "datetime", _FrozenDatetime)
+
+    def save(index):
+        info = _info()
+        info["source_path"] = "examples/concurrent-%02d.py" % index
+        return save_migration_report(info, reports_dir=str(tmp_path))
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        paths = list(executor.map(save, range(24)))
+
+    assert len(set(paths)) == 24
+    assert len(tuple(tmp_path.glob("migration_mlp_forward_*.md"))) == 24
+    contents = {
+        open(path, encoding="utf-8").read()
+        for path in paths
+    }
+    assert len(contents) == 24
+
+
+def test_save_report_sanitizes_untrusted_network_name(tmp_path):
+    info = _info()
+    info["net"] = "../../outside report"
+
+    path = save_migration_report(info, reports_dir=str(tmp_path))
+
+    assert os.path.dirname(path) == str(tmp_path)
+    assert os.path.basename(path).startswith("migration_outside_report_")
 
 
 def test_report_suppresses_speedup_without_strict_provenance():

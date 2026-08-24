@@ -12,6 +12,7 @@ NumPilot 真正需要的东西:Python 版本、numpy、CANN Toolkit(set_env)、N
 """
 import os
 import importlib.util
+import re
 import shutil
 import subprocess
 import sys
@@ -74,6 +75,61 @@ def _run(cmd):
         return p.returncode, (p.stdout or "") + (p.stderr or "")
     except (OSError, subprocess.SubprocessError):
         return -1, ""
+
+
+def _npu_smi_has_device(output: str) -> bool:
+    """Recognise both legacy and current ``npu-smi info`` device tables.
+
+    Older releases printed ``Ascend`` in the model name.  Recent 910B4
+    releases use a compact two-line device row whose model cell is only
+    ``910B4``.  Checking a product word therefore reports a healthy device as
+    missing.  Require a successful command separately and accept only a
+    recognisable table/model row here; headings and ``No running processes``
+    alone are not device evidence.
+    """
+
+    if not isinstance(output, str) or not output.strip():
+        return False
+
+    # npu-smi may echo the requested product in a negative result, for example
+    # ``No Ascend910 devices found``.  Treat explicit no-device statements as
+    # authoritative before looking for a model token anywhere else.
+    no_device = re.compile(
+        r"\bno\s+"
+        r"(?:(?:ascend\s*(?:(?:310|610|910)"
+        r"(?:\s*[A-Za-z][A-Za-z0-9_-]*)?)?|npu)\s+)?"
+        r"devices?\s+(?:(?:is|are|was|were)\s+)?"
+        r"(?:found|detected|available|present)\b",
+        re.IGNORECASE,
+    )
+    if no_device.search(output):
+        return False
+
+    # Require a device-index prefix, an explicit supported model token and a
+    # health-state token on the same line.  This accepts both compact table
+    # rows (``| 2 910B4 | OK``) and legacy/current named rows such as
+    # ``0 Ascend910 Premium OK`` or ``NPU 0: Ascend 910B4 Health: OK`` while
+    # rejecting headings, documentation and model names in error prose.
+    model_token = (
+        r"(?:Ascend\s*)?(?:310|610|910)"
+        r"(?:\s*[A-Za-z][A-Za-z0-9_-]*)?"
+    )
+    indexed_model = re.compile(
+        r"^\s*(?:"
+        r"(?:\|\s*)?\d+\s+(?:\|\s*)?" + model_token
+        + r"|NPU\s*(?:ID\s*)?[:#]?\s*\d+\s*[:|,-]?\s*"
+        + model_token
+        + r")(?![A-Za-z0-9])",
+        re.IGNORECASE,
+    )
+    health = re.compile(
+        r"\b(?:OK|Healthy|Normal)\b",
+        re.IGNORECASE,
+    )
+    return any(
+        indexed_model.search(line) and health.search(line)
+        for line in output.splitlines()
+    )
 
 
 class Env:
@@ -139,7 +195,7 @@ class Env:
         smi = shutil.which("npu-smi")
         if smi:
             code, out = _run([smi, "info"])
-            if code == 0 and "Ascend" in out:
+            if code == 0 and _npu_smi_has_device(out):
                 rep.add("NPU 设备", OK, "npu-smi 可用,检测到 Ascend 设备")
             else:
                 rep.add("NPU 设备", miss, "npu-smi 存在但未返回设备信息")

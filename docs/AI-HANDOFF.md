@@ -1,48 +1,99 @@
 # NumPilot AI 续接手册
 
-> **当前续接提示（2026-08-23）**：下方 `/home/lixing`、106 tests 和旧 capability 内容是
-> 历史设计背景，不是当前状态。权威目录是 `/home/ma-user/work/numpilot`。Poisson 两个
-> 缺口算子已由用户 LLM + 固定 CANNBot Skill 定向生成、repair、封存并通过
-> 六门资格化；限定 profile 的 AsNumpy `outer/matmul` 已走 NPU；完整动态一轮 117 个调用点
-> 和 250 轮设备驻留对拍均通过 strict-NPU。包装层逐返回值深拷贝也已定位并消除，同一
-> 10 轮 profiler 的 `aclrtMemcpy` 从 1,235 降到 35，kernel 数保持 1,170。原始
-> 48×48 内点、49 RBF、3000 轮配置也已通过独立 CPU/NPU、单线程实测、数值、传输和同规模
-> profiler 门；2 次预热、7 次重复的结果是 CPU 约快 `2.67×`，不是 NPU 加速。随后
-> 广播/CSE 优化把每轮调用从 117 降到 101，NPU 中位时延从 `47.414 ms` 降到
-> `38.069 ms`（快 `1.245×`），3000 轮输出哈希与基线相同；CPU 仍约快 `2.879×`。先读
-> [`P0-LLM-CANNBOT-RUN-20260821.md`](P0-LLM-CANNBOT-RUN-20260821.md)、
-> [`evidence/poisson-ritz-p0-npu-20260821.md`](evidence/poisson-ritz-p0-npu-20260821.md) 和
-> [`evidence/poisson-ritz-performance-original-scale-20260823.md`](evidence/poisson-ritz-performance-original-scale-20260823.md)
-> 和 [`evidence/poisson-ritz-broadcast-optimization-20260823.md`](evidence/poisson-ritz-broadcast-optimization-20260823.md)
-> 和 [`COMPETITION-GAP-REVIEW-20260821.md`](COMPETITION-GAP-REVIEW-20260821.md)。下一优先级
-> 是把 Poisson 专用 qualification/evidence harness 泛化为产品级 runner；当前全量回归为
-> `376 passed`，CodeArts 仍按用户决定后置。
+## 当前续接摘要（2026-08-25）
 
-> 最后更新：2026-07-18（Asia/Shanghai）  
-> 权威工作目录：`/home/lixing/numpilot`  
-> 用途：下一位 AI/开发者从当前状态继续，不重新做已经完成的全量审计。
+权威工作目录是 `/home/ma-user/work/numpilot`，当前分支是 `feat/numpilot-demo`。本轮用户已
+明确授权整理、提交并推送；重启后先用 `git status --short` 和 `git log --oneline -5` 核对
+推送结果，不要使用 `git reset --hard` 或 `git checkout --` 覆盖工作树。
 
-## 0. 续接时先做什么
+### 本轮可重启检查点
 
-按顺序读取：
+- 全量测试：`621 passed in 10.64s`；提交前另需执行 `git diff --check`。
+- 新增静态 `check-suite`、完整 AsNumpy 调用合同、`build_inputs` 非执行审计、shim 122 API、
+  精确 runtime hash capability、CANNBot/operator repair 完整性约束、AsNumpy adapter
+  generate/repair、内置 AsNumpy custom-op integration Skill、cbrt/Poisson qualification 与
+  demo 工具。
+- `complete-gaps --operator-goal performance` 是保留但尚未实现的选项；CLI 已在任何模型、
+  Skill、网络或输出动作前明确返回 2，不能再宣传为已实现流程。
+- 用户要求 demo 的补码和迁移代码只能由其 GLM 模型生成；NumPilot 只负责框架门禁、执行和
+  记录。不要人工改写下面两个 GLM 最终产物。
 
-1. 本文；
-2. [技术评审与实施复盘](numpilot-technical-review.md)；
-3. [当前架构](architecture.md)；
-4. [CodeArts 集成建议](codearts-integration.md)；
-5. [裸金属 NPU 证据](evidence/npu-smoke-20260718.md)；
-6. `README.md` 和待修改模块的测试。
+两个 GLM demo 最终产物：
 
-先执行：
+- `/home/ma-user/work/numpilot-runs/examples-demo-20260824-run02/case-01/final-v2-output/migrated.py`
+  （SHA-256 `a093d2dba01982a5bd5d1150452819e59e5957d3e01a4979b36e9e4230e18a77`）；
+- `/home/ma-user/work/numpilot-runs/examples-demo-20260824-run02/case-02/final-v2-output/migrated.py`
+  （SHA-256 `051fca3b19a2299f1dc28e6111d7afe2f1c492553e02f344147caf5c43e4c9a3`）。
+
+两者均已在 P0 move wheel 上独立运行并通过 deny-NumPy smoke，分别出现真实 ACLNN
+`matmul/exp/sum/divide` 与 `sin/cos/add/absolute/amax` 日志。必须保留以下新发现：case-02
+原始 `normalized.py` 使用 `np.amax(abs_signal)`；真实 AsNumpy 在 `axis=None` 时返回 Python
+`float`，而 NumPy float32 输入返回 `np.float32`，因此当前 `check-suite` 会诚实地把原始
+case-02 阻断为 1 direct + 1 blocked。GLM 最终产物已把这一维输入改成
+`ap.amax(..., axis=0, keepdims=False)` 并通过真机；不能让 shim 再把原始调用误报为机械直迁。
+
+本轮真实 AsNumpy 审计依据位于：
+
+- Python 源码：`/home/ma-user/work/asnumpy/src/asnumpy/`；
+- C++/pybind 源码：`/home/ma-user/work/asnumpy/bindings/python/` 与
+  `/home/ma-user/work/asnumpy/csrc/`；
+- 通用审计 wheel：`/home/ma-user/work/numpilot-runs/heat-diffusion-20260813/audited-site/`；
+- demo P0 wheel：`/home/ma-user/work/numpilot-runs/examples-demo-20260824-run02/runtime/venv/`。
+
+外部资格化结果：cbrt 最终 qualification 位于
+`/home/ma-user/work/numpilot-showcases/cbrt_sensor_calibration/53-final-qualification-v2-20260825`
+（21 sealed artifact、4 AsNumpy、7 numerical tests 通过）；Poisson 默认实时 demo 位于
+`/home/ma-user/work/numpilot-runs/poisson-demo-20260825-final`，101/101 rewrites、20 轮驻留
+执行和 strict-NPU 门禁通过。仓库外结果不能自动提升为公开性能结论。
+
+推送需使用用户指定代理：
 
 ```bash
-cd /home/lixing/numpilot
-git status --short
-/home/lixing/np310/bin/python -m pytest -q tests
+export http_proxy=http://127.0.0.1:7897
+export https_proxy=http://127.0.0.1:7897
+git push origin feat/numpilot-demo
+```
+
+远端 GitCode 使用 HTTPS Basic 身份；若交互提示，用户会输入账号和令牌。禁止 force push。
+`.git/info/exclude` 中两份本地未发布文档仍只保留本机，不要纳入：
+`docs/RESTART-HANDOFF-20260824.md` 与
+`docs/evidence/poisson-ritz-large-single-core-20260824.md`。
+
+Poisson 两个缺口算子已由用户 LLM 配合固定 CANNBot Skill 完成生成、repair、封存和六门
+资格化；已封存的原始规模与广播/CSE 性能结论仍以仓库内精选证据及其 manifest 为准：
+
+- [`P0-LLM-CANNBOT-RUN-20260821.md`](P0-LLM-CANNBOT-RUN-20260821.md)；
+- [`evidence/poisson-ritz-p0-npu-20260821.md`](evidence/poisson-ritz-p0-npu-20260821.md)；
+- [`evidence/poisson-ritz-performance-original-scale-20260823.md`](evidence/poisson-ritz-performance-original-scale-20260823.md)；
+- [`evidence/poisson-ritz-broadcast-optimization-20260823.md`](evidence/poisson-ritz-broadcast-optimization-20260823.md)；
+- [`COMPETITION-GAP-REVIEW-20260821.md`](COMPETITION-GAP-REVIEW-20260821.md)。
+
+`run_poisson_demo.sh` 提供公开证据校验、qualification、doctor、实时 strict-NPU 迁移和
+驻留执行入口。`--large-single-core` 仅为实验诊断：它验证 CPU affinity 和 BLAS 单线程，
+但在缺少同 runner/规模、哈希匹配且通过的 profiler audit 时必须保持
+`performance.published=false`，不得发布或引用其性能比值。CodeArts 集成仍按用户决定后置。
+
+当前全量测试数：**621 passed**。
+
+续接时先执行：
+
+```bash
+cd /home/ma-user/work/numpilot
+git status --short --untracked-files=all
+python3 -m pytest -q
 git diff --check
 ```
 
-当前工作树包含用户授权的、尚未提交的实现和文档修改。**不要执行 `git reset --hard`、`git checkout --` 或覆盖这些文件；不要自行提交，除非用户明确要求。** `/home/lixing/asnumpyoplogin/.numpilot_stage` 只是本轮受限环境中的暂存副本，后续以 `/home/lixing/numpilot` 为准。
+然后阅读 `README.md`、当前变更对应测试和上面的精选证据；不要把仓库外运行目录中的结果
+直接提升为公开结论。
+
+---
+
+## 2026-07-18 历史基线（非当前状态）
+
+> 以下正文保留早期架构、风险和实现背景。其 `/home/lixing` 路径、测试数量、capability
+> 判断、未完成项和复现命令均属于 2026-07-18 快照，不是当前工作目录、当前命令或当前结论；
+> 续接工作一律以上方 2026-08-25 摘要为准。
 
 ## 1. 项目目标与当前定位
 

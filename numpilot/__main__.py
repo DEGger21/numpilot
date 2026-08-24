@@ -1,4 +1,4 @@
-"""CLI: python -m numpilot <migrate|complete-gaps|setup-skills|bench-cpu|bench-npu|doctor|configure-llm|paths> ...
+"""CLI: python -m numpilot <migrate|check-suite|complete-gaps|setup-skills|bench-cpu|bench-npu|doctor|configure-llm|paths> ...
 
 演示三步:
   1) bench-cpu <file>   纯 NumPy 基线，默认请求 BLAS 1 线程并记录实际线程池
@@ -9,6 +9,9 @@ import argparse
 import hashlib
 import json
 import os
+from pathlib import Path
+import re
+import shutil
 import sys
 import tempfile
 
@@ -49,10 +52,21 @@ def _early_pin_for_bench_cpu():
 _early_pin_for_bench_cpu()                # 在下面 import numpy(经 numpilot 传递)前完成
 
 from numpilot.backends.base import select_backend            # noqa: E402
+from numpilot.asnumpy_skill import (                         # noqa: E402
+    ASNUMPY_INTEGRATION_SKILL_FILES,
+    AsnumpyIntegrationSkillError,
+    load_asnumpy_integration_skill,
+)
 from numpilot.bench import run_cpu_baseline, run_npu_compare  # noqa: E402
 from numpilot.capabilities import load_analysis_profile_set    # noqa: E402
-from numpilot.cannbot_skills import (CannbotSkillError,         # noqa: E402
-                                     resolve_skill_bundle)
+from numpilot.cannbot_skills import (                          # noqa: E402
+    CANNBOT_GENERATION_SKILL_FILES,
+    CANNBOT_PRECISION_SKILL_FILES,
+    CANNBOT_REPAIR_SKILL_FILES,
+    CANNBOT_RUNTIME_SKILL_FILES,
+    CannbotSkillError,
+    resolve_skill_bundle,
+)
 from numpilot.coverage import is_custom                       # noqa: E402
 from numpilot.engines.llm import (LlmEngine, LlmError,        # noqa: E402
                                   LlmHttpError, LlmResponseError,
@@ -244,6 +258,61 @@ def _cmd_paths(args):
     return 0
 
 
+def _cmd_check_suite(args):
+    """Statically admit a proposed migration suite without executing it."""
+
+    from numpilot.suite_check import (
+        SuiteCheckError,
+        check_suite,
+        write_suite_report,
+    )
+
+    try:
+        report = check_suite(
+            args.paths,
+            target_soc=args.target_soc,
+            cann_version=args.cann_version,
+            expected_direct=args.expect_direct,
+            expected_single_gap=args.expect_single_gap,
+        )
+        if args.out:
+            write_suite_report(args.out, report)
+    except SuiteCheckError as exc:
+        print("[测试集准入] 失败: %s" % exc, file=sys.stderr)
+        return 2
+
+    counts = report["counts"]
+    print(
+        "[测试集准入] status=%s total=%d direct=%d single_gap=%d blocked=%d"
+        % (
+            report["status"],
+            len(report["cases"]),
+            counts["direct_migration_candidate"],
+            counts["single_gap_candidate"],
+            counts["blocked"],
+        )
+    )
+    for case in report["cases"]:
+        suffix = ""
+        if case["category"] == "single_gap_candidate":
+            suffix = " gap=" + case["generatable_gaps"][0]["qualified_api"]
+        print(
+            "[%s] %s%s"
+            % (case["category"], case["path"], suffix)
+        )
+        for error in case.get("errors", ()):
+            print("  - %s" % error, file=sys.stderr)
+    for error in report["expectation_errors"]:
+        print("[测试集期望] %s" % error, file=sys.stderr)
+    if args.out:
+        print("[测试集准入] report=%s" % Path(args.out).absolute())
+    print(
+        "[测试集准入] execution_performed=no runtime_capability_checked=no；"
+        "通过仅表示静态候选合格，真机仍须精确 wheel provenance 与数值门禁。"
+    )
+    return 0 if report["status"] == "pass" else 1
+
+
 def _load_llm_or_report():
     """Load framework-managed credentials; never prompt from non-wizard commands."""
     try:
@@ -257,6 +326,292 @@ def _load_llm_or_report():
         print("[LLM] 请运行交互配置，或用 configure-llm --init 生成文件后手填。", file=sys.stderr)
         return None
     return status
+
+
+_LLM_READY_MARKER = "NUMPILOT_LLM_READY"
+_LLM_PROBE_SYSTEM = (
+    "You are a connectivity probe. Return one short acknowledgement."
+)
+_LLM_PROBE_QUESTION = "Reply with NUMPILOT_LLM_READY."
+
+
+def _run_llm_readiness_gate(status, *, require_marker):
+    """Make and verify one small remote call before operator generation."""
+
+    content, receipt = LlmEngine._chat_with_receipt(
+        _LLM_PROBE_SYSTEM,
+        _LLM_PROBE_QUESTION,
+    )
+    expected_hash = (
+        hashlib.sha256(content.encode("utf-8")).hexdigest()
+        if isinstance(content, str) and content.strip()
+        else None
+    )
+    http_status = receipt.get("http_status") if isinstance(receipt, dict) else None
+    receipt_is_valid = (
+        expected_hash is not None
+        and receipt.get("schema_version") == 1
+        and isinstance(http_status, int)
+        and not isinstance(http_status, bool)
+        and 200 <= http_status <= 299
+        and receipt.get("requested_model") == status.model
+        and receipt.get("content_sha256") == expected_hash
+        and receipt.get("tls_verification") in {"enabled", "disabled"}
+    ) if isinstance(receipt, dict) else False
+    marker_present = (
+        isinstance(content, str) and _LLM_READY_MARKER in content
+    )
+    if not receipt_is_valid or (require_marker and not marker_present):
+        raise LlmResponseError("readiness_gate_validation_failed", receipt or {})
+    safe_receipt_fields = (
+        "schema_version", "utc_start", "utc_end", "http_status",
+        "requested_model", "response_model", "response_id",
+        "response_created", "request_body_sha256", "response_body_sha256",
+        "content_sha256", "request_id", "usage", "tls_verification",
+    )
+    return {
+        "schema_version": 1,
+        "gate": "llm_readiness",
+        "status": "pass",
+        "actual_remote_call": True,
+        "question_sha256": hashlib.sha256(
+            _LLM_PROBE_QUESTION.encode("utf-8")
+        ).hexdigest(),
+        "answer_marker": _LLM_READY_MARKER,
+        "answer_marker_present": marker_present,
+        "receipt": {
+            name: receipt.get(name)
+            for name in safe_receipt_fields
+            if name in receipt
+        },
+    }
+
+
+def _run_cannbot_skill_gate(bundle, required_files=None):
+    """Prove that the external CANNBot workflow files were read."""
+
+    required = tuple(required_files or CANNBOT_GENERATION_SKILL_FILES)
+    if not required or len(set(required)) != len(required):
+        raise CannbotSkillError("CANNBot gate has an invalid required file set")
+    manifest = bundle.manifest()
+    manifest_files = manifest.get("files") or {}
+    verified_hashes = {}
+    for relative in required:
+        content = bundle.files.get(relative)
+        if not isinstance(content, str) or not content.strip():
+            raise CannbotSkillError(
+                "required CANNBot workflow file is empty or unreadable: %s"
+                % relative
+            )
+        content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        if manifest_files.get(relative) != content_hash:
+            raise CannbotSkillError(
+                "required CANNBot workflow file hash mismatch: %s" % relative
+            )
+        verified_hashes[relative] = content_hash
+    rendered = bundle.prompt_context(required)
+    if (
+        bundle.bundle_sha256 not in rendered
+        or any(bundle.files[path] not in rendered for path in required)
+    ):
+        raise CannbotSkillError(
+            "required CANNBot workflow was not embedded in prompt context"
+        )
+    return {
+        "schema_version": 1,
+        "gate": "cannbot_skill_readiness",
+        "status": "pass",
+        "repository": manifest.get("repository"),
+        "commit": bundle.commit,
+        "skill_name": bundle.skill_name,
+        "primary_file": required[0],
+        "primary_file_sha256": verified_hashes[required[0]],
+        "required_skill_files": list(required),
+        "required_skill_files_sha256": verified_hashes,
+        "bundle_sha256": bundle.bundle_sha256,
+        "verified_file_count": len(bundle.files),
+        "prompt_context_sha256": hashlib.sha256(
+            rendered.encode("utf-8")
+        ).hexdigest(),
+        "content_embedded_for_remote_model": True,
+    }
+
+
+def _run_asnumpy_skill_gate(bundle, required_files=None):
+    """Prove that NumPilot's repository-owned integration skill was read."""
+
+    required = tuple(required_files or ASNUMPY_INTEGRATION_SKILL_FILES)
+    if not required or len(set(required)) != len(required):
+        raise AsnumpyIntegrationSkillError(
+            "AsNumpy integration gate has an invalid required file set"
+        )
+    manifest = bundle.manifest()
+    manifest_files = manifest.get("files") or {}
+    verified_hashes = {}
+    for relative in required:
+        content = bundle.files.get(relative)
+        if not isinstance(content, str) or not content.strip():
+            raise AsnumpyIntegrationSkillError(
+                "required AsNumpy integration skill file is unreadable: %s"
+                % relative
+            )
+        digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        if manifest_files.get(relative) != digest:
+            raise AsnumpyIntegrationSkillError(
+                "required AsNumpy integration skill hash mismatch: %s" % relative
+            )
+        verified_hashes[relative] = digest
+    rendered = bundle.prompt_context(required)
+    if (
+        bundle.bundle_sha256 not in rendered
+        or any(bundle.files[path] not in rendered for path in required)
+    ):
+        raise AsnumpyIntegrationSkillError(
+            "AsNumpy integration skill was not embedded in prompt context"
+        )
+    return {
+        "schema_version": 1,
+        "gate": "asnumpy_integration_skill_readiness",
+        "status": "pass",
+        "source": manifest.get("source"),
+        "skill_name": bundle.skill_name,
+        "required_skill_files": list(required),
+        "required_skill_files_sha256": verified_hashes,
+        "bundle_sha256": bundle.bundle_sha256,
+        "verified_file_count": len(bundle.files),
+        "prompt_context_sha256": hashlib.sha256(
+            rendered.encode("utf-8")
+        ).hexdigest(),
+        "content_embedded_for_remote_model": True,
+    }
+
+
+def _write_generation_preflight(
+    out_dir,
+    llm_gate,
+    skill_gate,
+    timeout_seconds,
+    operator_goal=None,
+):
+    """Atomically save both successful gates without secrets or response text."""
+
+    root = Path(out_dir).absolute()
+    if os.path.lexists(root) and (root.is_symlink() or not root.is_dir()):
+        raise OSError("generation output is not a real directory")
+    root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    skill_gate_name = skill_gate.get("gate")
+    if skill_gate_name not in (
+        "cannbot_skill_readiness",
+        "asnumpy_integration_skill_readiness",
+    ):
+        raise OSError("generation skill gate identity is invalid")
+    preflight = {
+            "schema_version": 1,
+            "producer": "numpilot-generation-preflight-v1",
+            "status": "pass",
+            "required_order": ["llm_readiness", skill_gate_name],
+            "client_timeout_seconds": timeout_seconds,
+            "gates": {
+                "llm_readiness": llm_gate,
+                skill_gate_name: skill_gate,
+            },
+        }
+    if operator_goal is not None:
+        preflight["operator_goal"] = operator_goal
+        preflight["performance_optimization"] = (
+            "deferred_until_accuracy_and_user_confirmation"
+            if operator_goal == "performance"
+            else "skipped_accuracy_first"
+        )
+    payload = (
+        json.dumps(preflight, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    ).encode("utf-8")
+    fd, temporary = tempfile.mkstemp(
+        prefix=".generation-preflight-", suffix=".tmp", dir=str(root)
+    )
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "wb") as handle:
+            fd = -1
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, root / "generation-preflight.json")
+        temporary = ""
+    finally:
+        if fd >= 0:
+            os.close(fd)
+        if temporary:
+            try:
+                os.unlink(temporary)
+            except OSError:
+                pass
+
+
+def _create_output_stage(out_dir, label):
+    """Create a private sibling stage without claiming the final output path."""
+
+    final = Path(out_dir).absolute()
+    if os.path.lexists(final):
+        raise OSError("%s output already exists" % label)
+    final.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    safe_name = re.sub(r"[^A-Za-z0-9_.-]", "-", final.name)[:80] or "output"
+    return Path(tempfile.mkdtemp(
+        prefix=".%s-%s-stage-" % (safe_name, label),
+        dir=str(final.parent),
+    ))
+
+
+def _publish_output_stage(stage, out_dir, label):
+    """Publish validated staged entries without replacing any existing path."""
+
+    stage = Path(stage)
+    final = Path(out_dir).absolute()
+    # mkdir is the atomic no-replace reservation.  We intentionally do not use
+    # os.replace here: on POSIX it can replace an existing empty user directory.
+    os.mkdir(final, mode=0o700)
+    try:
+        for source in sorted(stage.iterdir(), key=lambda item: item.name):
+            os.rename(source, final / source.name)
+        os.rmdir(stage)
+    except Exception as exc:
+        # The directory was exclusively created by this process, but another
+        # process may have written into it since then.  Preserve it rather than
+        # recursively deleting data we cannot prove we own.
+        raise OSError(
+            "%s publication was interrupted; retained partial output at %s"
+            % (label, final)
+        ) from exc
+
+
+def _resolve_operator_goal(args):
+    """Choose the implemented accuracy lane or the reserved performance lane."""
+
+    goal = getattr(args, "operator_goal", None)
+    if goal is None and sys.stdin.isatty() and sys.stdout.isatty():
+        print("[算子目标] 请选择补全目标：")
+        print("  1) 精度正确（推荐）：通过编译、真机运行和数值精度后即可使用")
+        print("  2) 高性能（尚未开放）：当前会安全拒绝且不会联网或写输出")
+        answer = input("输入 1 或 2 [默认 1]: ").strip()
+        goal = "performance" if answer == "2" else "accuracy"
+    elif goal is None:
+        goal = "accuracy"
+        print(
+            "[算子目标] 非交互运行，默认 accuracy：先保证精度正确，"
+            "跳过性能优化。"
+        )
+    if goal == "performance":
+        print(
+            "[算子目标] performance 尚未开放：当前版本不会启动模型、"
+            "读取 Skill 或写入输出。",
+            file=sys.stderr,
+        )
+    else:
+        print(
+            "[算子目标] accuracy：本轮以语义、编译、真机运行和数值精度正确为准；"
+            "不执行性能优化。"
+        )
+    return goal
 
 
 def _cmd_configure_llm(args):
@@ -304,11 +659,22 @@ def _cmd_configure_llm(args):
             )
             return 1
         try:
-            content, receipt = LlmEngine._chat_with_receipt(
-                "You are a connectivity probe. Return one short acknowledgement.",
-                "Reply with NUMPILOT_LLM_READY.",
-            )
-        except (LlmHttpError, LlmTransportError, LlmResponseError) as exc:
+            gate = _run_llm_readiness_gate(status, require_marker=False)
+        except LlmResponseError as exc:
+            if "readiness_gate_validation_failed" in str(exc):
+                print(
+                    "[LLM probe] 失败: 远端响应与本地回执校验不一致，"
+                    "不能证明真实模型调用成功。",
+                    file=sys.stderr,
+                )
+            else:
+                print(
+                    "[LLM probe] 失败: 未成功获得可验证的远端模型响应: %s"
+                    % exc,
+                    file=sys.stderr,
+                )
+            return 4
+        except (LlmHttpError, LlmTransportError) as exc:
             print(
                 "[LLM probe] 失败: 未成功获得可验证的远端模型响应: %s"
                 % exc,
@@ -322,29 +688,7 @@ def _cmd_configure_llm(args):
                 file=sys.stderr,
             )
             return 4
-        expected_hash = (
-            hashlib.sha256(content.encode("utf-8")).hexdigest()
-            if isinstance(content, str) and content.strip()
-            else None
-        )
-        http_status = receipt.get("http_status") if isinstance(receipt, dict) else None
-        receipt_is_valid = (
-            expected_hash is not None
-            and receipt.get("schema_version") == 1
-            and isinstance(http_status, int)
-            and not isinstance(http_status, bool)
-            and 200 <= http_status <= 299
-            and receipt.get("requested_model") == status.model
-            and receipt.get("content_sha256") == expected_hash
-            and receipt.get("tls_verification") in {"enabled", "disabled"}
-        ) if isinstance(receipt, dict) else False
-        if not receipt_is_valid:
-            print(
-                "[LLM probe] 失败: 远端响应与本地回执校验不一致，不能证明"
-                "真实模型调用成功。",
-                file=sys.stderr,
-            )
-            return 4
+        receipt = gate["receipt"]
         usage = receipt.get("usage") or {}
         print(
             "[LLM probe] 成功: actual_remote_call=yes http_status=%s "
@@ -418,10 +762,94 @@ def _cmd_complete_gaps(args):
     from numpilot.gaps.pipeline import GapCompletionError, GapCompletionPipeline
     from numpilot.gaps.provider import LlmDraftProvider
 
+    configuration_status = None
+    llm_gate = None
+    timeout_seconds = None
+    operator_goal = None
+    if args.provider == "llm":
+        operator_goal = _resolve_operator_goal(args)
+        if operator_goal == "performance":
+            return 2
+        raw_timeout = (
+            str(args.llm_timeout)
+            if args.llm_timeout is not None
+            else os.getenv("NUMPILOT_LLM_TIMEOUT", "120")
+        )
+        try:
+            timeout_seconds = float(raw_timeout)
+        except ValueError:
+            print("[生成门禁 1/2] NUMPILOT_LLM_TIMEOUT 必须是秒数", file=sys.stderr)
+            return 2
+        if not 10 <= timeout_seconds <= 3600:
+            print("[生成门禁 1/2] LLM timeout 必须在 10～3600 秒之间", file=sys.stderr)
+            return 2
+        os.environ["NUMPILOT_LLM_TIMEOUT"] = str(timeout_seconds)
+        configuration_status = _load_llm_or_report()
+        if configuration_status is None:
+            print("[生成门禁 1/2] fail · LLM 本地配置不可用", file=sys.stderr)
+            return 4
+        try:
+            llm_gate = _run_llm_readiness_gate(
+                configuration_status, require_marker=True
+            )
+        except (LlmHttpError, LlmTransportError, LlmResponseError) as exc:
+            print(
+                "[生成门禁 1/2] fail · 简单问答没有取得可验证响应: %s" % exc,
+                file=sys.stderr,
+            )
+            print(
+                "[算子生成] actual_remote_generation_call=no · 未读取 Skill，"
+                "未开始算子生成",
+                file=sys.stderr,
+            )
+            return 4
+        except Exception as exc:
+            print(
+                "[生成门禁 1/2] fail · 简单问答本地错误: %s"
+                % type(exc).__name__,
+                file=sys.stderr,
+            )
+            return 4
+        probe_receipt = llm_gate["receipt"]
+        print(
+            "[生成门禁 1/2] pass · LLM 简单问答 HTTP %s · model=%s · "
+            "timeout=%ss"
+            % (
+                probe_receipt.get("http_status"),
+                probe_receipt.get("response_model") or configuration_status.model,
+                timeout_seconds,
+            )
+        )
+
+    # This checkout is independent from the NumPilot source tree.  Auto mode
+    # fetches the pinned official commit only when the user cache is absent.
     bundle = resolve_skill_bundle(
         args.skill_root,
         allow_fetch=not args.offline_skills,
     )
+    skill_gate = _run_cannbot_skill_gate(
+        bundle, required_files=CANNBOT_GENERATION_SKILL_FILES
+    )
+    if args.provider == "llm":
+        print(
+            "[生成门禁 2/2] pass · 已读取 CANNBot Skill · commit=%s · "
+            "files=%s · bundle_sha256=%s"
+            % (bundle.commit, len(bundle.files), bundle.bundle_sha256)
+        )
+        try:
+            _write_generation_preflight(
+                args.out,
+                llm_gate,
+                skill_gate,
+                timeout_seconds,
+                operator_goal=operator_goal,
+            )
+        except OSError as exc:
+            print(
+                "[生成门禁] 无法落盘门禁收据: %s" % type(exc).__name__,
+                file=sys.stderr,
+            )
+            return 2
     print(
         "[CANNBot] 使用官方 skill=%s commit=%s bundle_sha256=%s"
         % (bundle.skill_name, bundle.commit, bundle.bundle_sha256)
@@ -430,9 +858,10 @@ def _cmd_complete_gaps(args):
     if args.provider == "llm":
         provider = LlmDraftProvider(
             max_attempts=args.max_attempts,
-            configuration_loader=_load_llm_or_report,
+            configuration_status=configuration_status,
             skill_bundle=bundle,
             staged_direct=True,
+            operator_goal=operator_goal,
         )
 
     pipeline = GapCompletionPipeline(
@@ -518,7 +947,7 @@ def _cmd_complete_gaps(args):
         print(f"[算子补全] 失败: {exc}", file=sys.stderr)
         if args.provider == "llm":
             print(
-                "[LLM调用] verified_new_remote_artifact=no；本次没有获得经远端回执"
+                "[算子生成] verified_new_remote_artifact=no；本次没有获得经远端回执"
                 "绑定且通过本地校验的新模型产物（请求可能未发出、远端失败，或响应"
                 "校验失败），并且未回退到 AST。",
                 file=sys.stderr,
@@ -565,7 +994,7 @@ def _cmd_complete_gaps(args):
                     str(receipt.get("http_status", "?")) for receipt in receipts
                 ) or "?"
                 print(
-                    "[LLM调用] actual_remote_call=yes "
+                    "[算子生成] actual_remote_generation_call=yes "
                     "verified_new_remote_artifact=yes receipts={count} "
                     "http_statuses={statuses} content_hash_bound=yes".format(
                         count=len(receipts),
@@ -574,17 +1003,19 @@ def _cmd_complete_gaps(args):
                 )
             elif action == "reused_existing":
                 print(
-                    "[LLM调用] actual_remote_call=no action=reused_existing；"
+                    "[算子生成] actual_remote_generation_call=no "
+                    "action=reused_existing；"
                     "本次只复验并复用已有产物，没有重新请求大模型。"
                 )
             else:
                 print(
-                    "[LLM调用] actual_remote_call=no action={action}；"
+                    "[算子生成] actual_remote_generation_call=no action={action}；"
                     "本次没有发起真实远端模型调用。".format(action=action)
                 )
     elif provider is not None:
         print(
-            "[LLM调用] actual_remote_call=no；本次没有可生成的合格缺口，"
+            "[算子生成] actual_remote_generation_call=no；"
+            "本次没有可生成的合格缺口，"
             "因此没有请求大模型。"
         )
     return 1 if result.blocked else 0
@@ -611,10 +1042,81 @@ def _cmd_repair_draft(args):
             raise DraftGenerationError("%s exceeds the size limit" % label)
         return payload.decode("utf-8")
 
+    raw_timeout = (
+        str(args.llm_timeout)
+        if args.llm_timeout is not None
+        else os.getenv("NUMPILOT_LLM_TIMEOUT", "120")
+    )
+    try:
+        timeout_seconds = float(raw_timeout)
+    except ValueError:
+        print("[修复门禁 1/2] NUMPILOT_LLM_TIMEOUT 必须是秒数", file=sys.stderr)
+        return 2
+    if not 10 <= timeout_seconds <= 3600:
+        print("[修复门禁 1/2] LLM timeout 必须在 10～3600 秒之间", file=sys.stderr)
+        return 2
+    os.environ["NUMPILOT_LLM_TIMEOUT"] = str(timeout_seconds)
+    configuration_status = _load_llm_or_report()
+    if configuration_status is None:
+        print("[修复门禁 1/2] fail · LLM 本地配置不可用", file=sys.stderr)
+        return 4
+    try:
+        llm_gate = _run_llm_readiness_gate(
+            configuration_status, require_marker=True
+        )
+    except (LlmHttpError, LlmTransportError, LlmResponseError) as exc:
+        print(
+            "[修复门禁 1/2] fail · 简单问答没有取得可验证响应: %s" % exc,
+            file=sys.stderr,
+        )
+        print(
+            "[算子修复] actual_remote_repair_call=no · 未读取 Skill，"
+            "未开始模型修复",
+            file=sys.stderr,
+        )
+        return 4
+    probe_receipt = llm_gate["receipt"]
+    print(
+        "[修复门禁 1/2] pass · LLM 简单问答 HTTP %s · model=%s · "
+        "timeout=%ss"
+        % (
+            probe_receipt.get("http_status"),
+            probe_receipt.get("response_model") or configuration_status.model,
+            timeout_seconds,
+        )
+    )
+
+    # Repair is code generation too: it may not read the external Skill until
+    # the model-readiness call above has passed, and it may not contact the
+    # model for repair until both gates have passed.
     bundle = resolve_skill_bundle(
         args.skill_root,
         allow_fetch=not args.offline_skills,
     )
+    repair_skill_files = {
+        "compile": CANNBOT_REPAIR_SKILL_FILES,
+        "precision": CANNBOT_PRECISION_SKILL_FILES,
+        "runtime": CANNBOT_RUNTIME_SKILL_FILES,
+    }[args.repair_profile]
+    skill_gate = _run_cannbot_skill_gate(
+        bundle, required_files=repair_skill_files
+    )
+    print(
+        "[修复门禁 2/2] pass · 已读取 CANNBot Skill · commit=%s · "
+        "files=%s · bundle_sha256=%s"
+        % (bundle.commit, len(bundle.files), bundle.bundle_sha256)
+    )
+    preflight_dir = Path(str(Path(args.out).absolute()) + ".preflight")
+    try:
+        _write_generation_preflight(
+            preflight_dir, llm_gate, skill_gate, timeout_seconds
+        )
+    except OSError as exc:
+        print(
+            "[修复门禁] 无法落盘门禁收据: %s" % type(exc).__name__,
+            file=sys.stderr,
+        )
+        return 2
     try:
         spec_data = json.loads(read_bounded(
             args.spec, "gap spec", 2 * 1024 * 1024
@@ -634,9 +1136,10 @@ def _cmd_repair_draft(args):
         )
         provider = LlmDraftProvider(
             max_attempts=args.max_attempts,
-            configuration_loader=_load_llm_or_report,
+            configuration_status=configuration_status,
             skill_bundle=bundle,
             staged_direct=True,
+            repair_skill_files=repair_skill_files,
         )
         report = provider.repair_to_candidate(
             spec,
@@ -671,6 +1174,7 @@ def _cmd_repair_draft(args):
         "[LLM repair] status=%s source_artifact_id=%s out=%s"
         % (report["status"], report["source_artifact_id"], args.out)
     )
+    print("[修复门禁] receipt=%s" % (preflight_dir / "generation-preflight.json"))
     print(
         "[LLM调用] actual_remote_call=yes verified_new_remote_repair=yes "
         "attempts=%d receipts=%d content_hash_bound=yes"
@@ -697,14 +1201,18 @@ def _cmd_seal_repair(args):
         data = json.loads(payload.decode("utf-8"))
         if not isinstance(data, dict):
             raise DraftGenerationError("gap spec must be a JSON object")
-        draft = LlmDraftProvider().seal_repair_candidate(
+        # Sealing is deliberately offline.  The original repair report is
+        # bound to a verified CANNBot bundle, so reloading that same pinned
+        # bundle is part of verification but can never trigger a fetch here.
+        bundle = resolve_skill_bundle(args.skill_root, allow_fetch=False)
+        draft = LlmDraftProvider(skill_bundle=bundle).seal_repair_candidate(
             GapSpec.from_dict(data),
             Path(args.draft),
             Path(args.candidate),
             Path(args.out),
         )
     except (OSError, UnicodeError, json.JSONDecodeError, ValueError,
-            DraftGenerationError) as exc:
+            CannbotSkillError, DraftGenerationError) as exc:
         print("[seal repair] 失败: %s" % exc, file=sys.stderr)
         print(
             "[LLM调用] actual_remote_call=no sealed_artifact=no",
@@ -719,6 +1227,371 @@ def _cmd_seal_repair(args):
         "[LLM调用] actual_remote_call=no action=sealed_repair_chain "
         "prior_receipts=%d"
         % len(draft.generation["remote_receipts"])
+    )
+    return 0
+
+
+def _cmd_generate_asnumpy_adapter(args):
+    """Generate an isolated AsNumpy manifest/test overlay with the remote model."""
+
+    from numpilot.gaps.models import GapSpec
+    from numpilot.gaps.provider import (
+        DraftGenerationError,
+        DraftRepairError,
+        LlmDraftProvider,
+        _load_existing_draft,
+    )
+
+    def read_bounded(path, label, limit):
+        target = Path(path)
+        if target.is_symlink() or not target.is_file():
+            raise DraftGenerationError("%s must be a regular file" % label)
+        payload = target.read_bytes()
+        if len(payload) > limit:
+            raise DraftGenerationError("%s exceeds the size limit" % label)
+        return payload.decode("utf-8")
+
+    out_root = Path(args.out).absolute()
+    if os.path.lexists(out_root):
+        print("[AsNumpy 接入] 输出目录必须不存在", file=sys.stderr)
+        return 2
+    raw_timeout = (
+        str(args.llm_timeout)
+        if args.llm_timeout is not None
+        else os.getenv("NUMPILOT_LLM_TIMEOUT", "120")
+    )
+    try:
+        timeout_seconds = float(raw_timeout)
+    except ValueError:
+        print("[接入门禁 1/2] NUMPILOT_LLM_TIMEOUT 必须是秒数", file=sys.stderr)
+        return 2
+    if not 10 <= timeout_seconds <= 3600:
+        print("[接入门禁 1/2] LLM timeout 必须在 10～3600 秒之间", file=sys.stderr)
+        return 2
+    os.environ["NUMPILOT_LLM_TIMEOUT"] = str(timeout_seconds)
+    configuration_status = _load_llm_or_report()
+    if configuration_status is None:
+        print("[接入门禁 1/2] fail · LLM 本地配置不可用", file=sys.stderr)
+        return 4
+    try:
+        llm_gate = _run_llm_readiness_gate(
+            configuration_status, require_marker=True
+        )
+    except (LlmHttpError, LlmTransportError, LlmResponseError) as exc:
+        print(
+            "[接入门禁 1/2] fail · 简单问答没有取得可验证响应: %s" % exc,
+            file=sys.stderr,
+        )
+        print(
+            "[AsNumpy 接入生成] actual_remote_call=no · 未读取 Skill，未生成 overlay",
+            file=sys.stderr,
+        )
+        return 4
+    probe_receipt = llm_gate["receipt"]
+    print(
+        "[接入门禁 1/2] pass · LLM 简单问答 HTTP %s · model=%s · timeout=%ss"
+        % (
+            probe_receipt.get("http_status"),
+            probe_receipt.get("response_model") or configuration_status.model,
+            timeout_seconds,
+        )
+    )
+
+    bundle = load_asnumpy_integration_skill(
+        Path(args.asnumpy_skill_root) if args.asnumpy_skill_root else None
+    )
+    skill_gate = _run_asnumpy_skill_gate(
+        bundle, required_files=ASNUMPY_INTEGRATION_SKILL_FILES
+    )
+    print(
+        "[接入门禁 2/2] pass · 已读取 NumPilot AsNumpy 案例 Skill · "
+        "files=%s · bundle_sha256=%s"
+        % (len(bundle.files), bundle.bundle_sha256)
+    )
+    staging_root = None
+    try:
+        staging_root = _create_output_stage(out_root, "asnumpy-generate")
+        _write_generation_preflight(
+            staging_root, llm_gate, skill_gate, timeout_seconds
+        )
+        spec_data = json.loads(read_bounded(
+            args.spec, "gap spec", 2 * 1024 * 1024
+        ))
+        if not isinstance(spec_data, dict):
+            raise DraftGenerationError("gap spec must be a JSON object")
+        spec = GapSpec.from_dict(spec_data)
+        signed = _load_existing_draft(Path(args.artifact), spec)
+        artifact_manifest = json.loads(read_bounded(
+            Path(args.artifact) / "operator-artifact.json",
+            "operator artifact manifest",
+            2 * 1024 * 1024,
+        ))
+        adapter_paths = sorted(
+            path for path in signed.files
+            if path.startswith("asnumpy_adapter/") and path.endswith(".json")
+        )
+        if len(adapter_paths) != 1:
+            raise DraftGenerationError(
+                "signed artifact must contain exactly one AsNumpy adapter JSON"
+            )
+        adapter_path = Path(args.artifact) / adapter_paths[0]
+        adapter_contract = read_bounded(
+            adapter_path, "AsNumpy adapter contract", 256 * 1024
+        )
+        if hashlib.sha256(adapter_contract.encode("utf-8")).hexdigest() != (
+            signed.files[adapter_paths[0]]
+        ):
+            raise DraftGenerationError("AsNumpy adapter contract hash mismatch")
+        adapter_data = json.loads(adapter_contract)
+        api_name = adapter_data.get("api_name") if isinstance(adapter_data, dict) else None
+        if (
+            not isinstance(api_name, str)
+            or not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", api_name)
+            or api_name != spec.api_name
+        ):
+            raise DraftGenerationError("AsNumpy adapter API identity mismatch")
+
+        reference_root = Path(args.asnumpy_reference).absolute()
+        if reference_root.is_symlink() or not reference_root.is_dir():
+            raise DraftGenerationError("AsNumpy reference must be a real directory")
+        reference_paths = (
+            "scripts/gen_custom_ops.py",
+            "csrc/custom_ops/registry/angle_v2/op.yaml",
+            "tests/asnumpy_tests/custom_ops_tests/test_angle_v2.py",
+            "CMakeLists.txt",
+            "cmake/CustomOps.cmake",
+            "csrc/custom_ops/CMakeLists.txt",
+            "include/asnumpy/custom_ops/loader.hpp",
+            "csrc/custom_ops/loader.cpp",
+        )
+        context = {
+            relative: read_bounded(
+                reference_root / relative,
+                "AsNumpy reference %s" % relative,
+                96 * 1024,
+            )
+            for relative in reference_paths
+        }
+        operator_reference_paths = (
+            "CMakeLists.txt",
+            "op_api/aclnn_%s.h" % api_name,
+            "op_api/%s.cpp" % api_name,
+        )
+        for relative in operator_reference_paths:
+            if relative not in signed.files:
+                continue
+            content = read_bounded(
+                Path(args.artifact) / relative,
+                "signed operator reference %s" % relative,
+                96 * 1024,
+            )
+            if hashlib.sha256(content.encode("utf-8")).hexdigest() != (
+                signed.files[relative]
+            ):
+                raise DraftGenerationError(
+                    "signed operator reference hash mismatch: %s" % relative
+                )
+            context["SIGNED_OPERATOR/%s" % relative] = content
+        provider = LlmDraftProvider(
+            max_attempts=args.max_attempts,
+            configuration_status=configuration_status,
+            skill_bundle=bundle,
+            staged_direct=True,
+        )
+        report = provider.generate_asnumpy_adapter_candidate(
+            staging_root,
+            operator_artifact=artifact_manifest,
+            adapter_contract=adapter_contract,
+            asnumpy_context=context,
+            expected_paths=(
+                "csrc/custom_ops/registry/%s/op.yaml" % api_name,
+                "tests/asnumpy_tests/custom_ops_tests/test_%s.py" % api_name,
+            ),
+            skill_files=ASNUMPY_INTEGRATION_SKILL_FILES,
+        )
+        _publish_output_stage(staging_root, out_root, "AsNumpy adapter")
+        staging_root = None
+    except DraftRepairError as exc:
+        print("[AsNumpy 接入生成] 失败: %s" % exc, file=sys.stderr)
+        print(
+            "[LLM调用] actual_remote_call=%s verified_new_adapter=no receipts=%d"
+            % ("yes" if exc.actual_remote_call else "no", exc.receipt_count),
+            file=sys.stderr,
+        )
+        return 2
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError,
+            DraftGenerationError) as exc:
+        print("[AsNumpy 接入生成] 失败: %s" % exc, file=sys.stderr)
+        return 2
+    finally:
+        if staging_root is not None:
+            shutil.rmtree(staging_root, ignore_errors=True)
+
+    print(
+        "[AsNumpy 接入生成] status=%s adapter_artifact_id=%s out=%s"
+        % (report["status"], report["adapter_artifact_id"], out_root / "candidate")
+    )
+    print(
+        "[LLM调用] actual_remote_call=yes verified_new_adapter=yes "
+        "attempts=%d receipts=%d content_hash_bound=yes"
+        % (report["attempt_count"], len(report["remote_receipts"]))
+    )
+    return 0
+
+
+def _cmd_repair_asnumpy_adapter(args):
+    """Return a raw AsNumpy diagnostic to the model for one-file repair."""
+
+    from numpilot.gaps.provider import (
+        DraftGenerationError,
+        DraftRepairError,
+        LlmDraftProvider,
+    )
+
+    def read_bounded(path, label, limit):
+        target = Path(path)
+        if target.is_symlink() or not target.is_file():
+            raise DraftGenerationError("%s must be a regular file" % label)
+        payload = target.read_bytes()
+        if len(payload) > limit:
+            raise DraftGenerationError("%s exceeds the size limit" % label)
+        return payload.decode("utf-8")
+
+    out_root = Path(args.out).absolute()
+    if os.path.lexists(out_root):
+        print("[AsNumpy 接入修复] 输出目录必须不存在", file=sys.stderr)
+        return 2
+    raw_timeout = (
+        str(args.llm_timeout)
+        if args.llm_timeout is not None
+        else os.getenv("NUMPILOT_LLM_TIMEOUT", "120")
+    )
+    try:
+        timeout_seconds = float(raw_timeout)
+    except ValueError:
+        print("[接入修复门禁 1/2] NUMPILOT_LLM_TIMEOUT 必须是秒数", file=sys.stderr)
+        return 2
+    if not 10 <= timeout_seconds <= 3600:
+        print(
+            "[接入修复门禁 1/2] LLM timeout 必须在 10～3600 秒之间",
+            file=sys.stderr,
+        )
+        return 2
+    os.environ["NUMPILOT_LLM_TIMEOUT"] = str(timeout_seconds)
+    configuration_status = _load_llm_or_report()
+    if configuration_status is None:
+        print("[接入修复门禁 1/2] fail · LLM 本地配置不可用", file=sys.stderr)
+        return 4
+    try:
+        llm_gate = _run_llm_readiness_gate(
+            configuration_status, require_marker=True
+        )
+    except (LlmHttpError, LlmTransportError, LlmResponseError) as exc:
+        print(
+            "[接入修复门禁 1/2] fail · 简单问答没有取得可验证响应: %s" % exc,
+            file=sys.stderr,
+        )
+        print(
+            "[AsNumpy 接入修复] actual_remote_call=no · 未读取 Skill，未开始修复",
+            file=sys.stderr,
+        )
+        return 4
+    receipt = llm_gate["receipt"]
+    print(
+        "[接入修复门禁 1/2] pass · LLM 简单问答 HTTP %s · model=%s · "
+        "timeout=%ss"
+        % (
+            receipt.get("http_status"),
+            receipt.get("response_model") or configuration_status.model,
+            timeout_seconds,
+        )
+    )
+
+    profile_files = ASNUMPY_INTEGRATION_SKILL_FILES
+    bundle = load_asnumpy_integration_skill(
+        Path(args.asnumpy_skill_root) if args.asnumpy_skill_root else None
+    )
+    skill_gate = _run_asnumpy_skill_gate(
+        bundle, required_files=profile_files
+    )
+    print(
+        "[接入修复门禁 2/2] pass · 已读取 NumPilot AsNumpy 案例 Skill · "
+        "profile=%s · files=%s · bundle_sha256=%s"
+        % (args.repair_profile, len(bundle.files), bundle.bundle_sha256)
+    )
+    staging_root = None
+    try:
+        staging_root = _create_output_stage(out_root, "asnumpy-repair")
+        _write_generation_preflight(
+            staging_root, llm_gate, skill_gate, timeout_seconds
+        )
+        diagnostic = read_bounded(
+            args.diagnostic_file, "AsNumpy repair diagnostic", 64 * 1024
+        )
+        reference_root = Path(args.asnumpy_reference).absolute()
+        if reference_root.is_symlink() or not reference_root.is_dir():
+            raise DraftGenerationError("AsNumpy reference must be a real directory")
+        reference_paths = (
+            "CMakeLists.txt",
+            "cmake/CustomOps.cmake",
+            "scripts/gen_custom_ops.py",
+        )
+        context = {
+            relative: read_bounded(
+                reference_root / relative,
+                "AsNumpy reference %s" % relative,
+                96 * 1024,
+            )
+            for relative in reference_paths
+        }
+        provider = LlmDraftProvider(
+            max_attempts=args.max_attempts,
+            configuration_status=configuration_status,
+            skill_bundle=bundle,
+            staged_direct=True,
+        )
+        report = provider.repair_asnumpy_adapter_candidate(
+            staging_root,
+            base_adapter_root=Path(args.base_adapter),
+            diagnostic=diagnostic,
+            path=args.path,
+            asnumpy_context=context,
+            skill_files=profile_files,
+            repair_profile=args.repair_profile,
+        )
+        _publish_output_stage(staging_root, out_root, "AsNumpy adapter repair")
+        staging_root = None
+    except DraftRepairError as exc:
+        print("[AsNumpy 接入修复] 失败: %s" % exc, file=sys.stderr)
+        print(
+            "[LLM调用] actual_remote_call=%s verified_new_adapter_repair=no "
+            "receipts=%d"
+            % ("yes" if exc.actual_remote_call else "no", exc.receipt_count),
+            file=sys.stderr,
+        )
+        return 2
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError,
+            DraftGenerationError) as exc:
+        print("[AsNumpy 接入修复] 失败: %s" % exc, file=sys.stderr)
+        return 2
+    finally:
+        if staging_root is not None:
+            shutil.rmtree(staging_root, ignore_errors=True)
+    print(
+        "[AsNumpy 接入修复] status=%s adapter_artifact_id=%s "
+        "parent_adapter_artifact_id=%s path=%s out=%s"
+        % (
+            report["status"],
+            report["adapter_artifact_id"],
+            report["parent_adapter_artifact_id"],
+            args.path,
+            out_root / "candidate",
+        )
+    )
+    print(
+        "[LLM调用] actual_remote_call=yes verified_new_adapter_repair=yes "
+        "attempts=%d receipts=%d content_hash_bound=yes"
+        % (report["attempt_count"], len(report["remote_receipts"]))
     )
     return 0
 
@@ -940,6 +1813,43 @@ def main(argv=None):
         help="只输出一个路径值",
     )
 
+    suite = sub.add_parser(
+        "check-suite",
+        help="不执行源码，静态检查一组案例是否符合直接迁移/单缺口测试合同",
+    )
+    suite.add_argument(
+        "paths",
+        nargs="+",
+        help="Python 案例文件或包含案例的目录（目录只扫描当前层 *.py）",
+    )
+    suite.add_argument(
+        "--target-soc",
+        default=os.getenv("ASCEND_SOC_VERSION", "ascend910b"),
+        help="单缺口 GapSpec 的目标 SoC（默认 %(default)s）",
+    )
+    suite.add_argument(
+        "--cann-version",
+        default=os.getenv("CANN_VERSION", "9.0.0"),
+        help="单缺口 GapSpec 的目标 CANN 版本（默认 %(default)s）",
+    )
+    suite.add_argument(
+        "--expect-direct",
+        type=int,
+        default=None,
+        help="期望的无缺口直接迁移候选数，例如本测试集填 5",
+    )
+    suite.add_argument(
+        "--expect-single-gap",
+        type=int,
+        default=None,
+        help="期望的恰好一个简单缺口候选数，例如本测试集填 5",
+    )
+    suite.add_argument(
+        "--out",
+        default=None,
+        help="可选：原子写入 JSON 准入报告",
+    )
+
     cfg = sub.add_parser(
         "configure-llm",
         help="在 NumPilot 内填写并安全保存 LLM Base URL、Token 与 Model",
@@ -1011,11 +1921,29 @@ def main(argv=None):
         help="prepare 只写规格；llm 另生成隔离且未验证的源码草稿",
     )
     gaps.add_argument(
+        "--operator-goal",
+        choices=["accuracy", "performance"],
+        default=None,
+        help=(
+            "算子补全目标；accuracy 是当前已实现流程；performance 为保留选项，"
+            "当前会在联网、读取 Skill 和写输出前明确拒绝。交互终端会询问，"
+            "非交互默认 accuracy"
+        ),
+    )
+    gaps.add_argument(
         "--max-attempts",
         type=int,
         choices=[1, 2, 3],
         default=3,
         help="模型输出未通过本地结构校验时的最大尝试次数(最多 3)",
+    )
+    gaps.add_argument(
+        "--llm-timeout",
+        type=int,
+        help=(
+            "单次模型请求超时秒数（10～3600）；省略时读取 "
+            "NUMPILOT_LLM_TIMEOUT，默认 120"
+        ),
     )
     gaps.add_argument(
         "--skill-root",
@@ -1067,6 +1995,23 @@ def main(argv=None):
         default=2,
     )
     repair.add_argument(
+        "--llm-timeout",
+        type=int,
+        help=(
+            "单次模型问答/修复超时秒数（10～3600）；省略时读取 "
+            "NUMPILOT_LLM_TIMEOUT，默认 120"
+        ),
+    )
+    repair.add_argument(
+        "--repair-profile",
+        choices=["compile", "precision", "runtime"],
+        default="compile",
+        help=(
+            "按失败阶段读取对应的外部 CANNBot Skill；默认 compile，"
+            "精度/测试失败使用 precision，真机运行失败使用 runtime"
+        ),
+    )
+    repair.add_argument(
         "--skill-root",
         default=os.getenv("NUMPILOT_CANNBOT_SKILLS", "auto"),
     )
@@ -1080,6 +2025,107 @@ def main(argv=None):
     seal.add_argument("--draft", required=True, help="不可变的原始签名 draft")
     seal.add_argument("--candidate", required=True, help="最终 repair candidate")
     seal.add_argument("--out", required=True, help="新 Artifact 目录，必须不存在")
+    seal.add_argument(
+        "--skill-root",
+        default=os.getenv("NUMPILOT_CANNBOT_SKILLS", "auto"),
+        help="repair 时使用的固定 CANNBot checkout；省略时仅查找本地固定缓存",
+    )
+    seal.add_argument(
+        "--offline-skills",
+        action="store_true",
+        help="兼容 repair-draft；seal-repair 始终离线且绝不下载 Skill",
+    )
+
+    adapter = sub.add_parser(
+        "generate-asnumpy-adapter",
+        help="由已配置模型生成隔离的 AsNumpy custom-op 清单与真机测试 overlay",
+    )
+    adapter.add_argument("--spec", required=True, help="签名 Artifact 对应的 gap-spec.json")
+    adapter.add_argument("--artifact", required=True, help="已封存的模型算子 Artifact")
+    adapter.add_argument(
+        "--asnumpy-reference",
+        required=True,
+        help="现有 AsNumpy 清单生成器源码目录，仅作为只读接入契约",
+    )
+    adapter.add_argument("--out", required=True, help="隔离 overlay 与审计报告目录")
+    adapter.add_argument(
+        "--max-attempts", type=int, choices=[1, 2, 3], default=3
+    )
+    adapter.add_argument(
+        "--llm-timeout",
+        type=int,
+        help=(
+            "单次模型问答/接入文件生成超时秒数（10～3600）；省略时读取 "
+            "NUMPILOT_LLM_TIMEOUT，默认 120"
+        ),
+    )
+    adapter.add_argument(
+        "--asnumpy-skill-root",
+        "--skill-root",
+        dest="asnumpy_skill_root",
+        default=None,
+        help="NumPilot 自带 AsNumpy 接入 Skill；默认读取仓库内固定目录",
+    )
+    adapter.add_argument(
+        "--offline-skills",
+        action="store_true",
+        help="兼容旧命令；内置 AsNumpy Skill 从不联网",
+    )
+
+    adapter_repair = sub.add_parser(
+        "repair-asnumpy-adapter",
+        help="把 AsNumpy 构建/测试原始诊断交给已配置模型，修复一个 overlay 文件",
+    )
+    adapter_repair.add_argument(
+        "--base-adapter",
+        required=True,
+        help="上一轮带 asnumpy-adapter-report.json 的模型 overlay 根目录",
+    )
+    adapter_repair.add_argument(
+        "--asnumpy-reference",
+        required=True,
+        help="当前 AsNumpy 隔离工作树，只读提供构建与生成器契约",
+    )
+    adapter_repair.add_argument(
+        "--diagnostic-file",
+        required=True,
+        help="原始且有界的 AsNumpy 构建/测试诊断",
+    )
+    adapter_repair.add_argument(
+        "--path",
+        required=True,
+        help="只能修复上一轮模型 overlay 中的一个相对路径",
+    )
+    adapter_repair.add_argument("--out", required=True, help="新的隔离修复 overlay")
+    adapter_repair.add_argument(
+        "--repair-profile",
+        choices=["compile", "precision", "runtime"],
+        default="compile",
+        help=(
+            "把失败阶段绑定进提示词和审计报告；三个阶段共用同一内置 "
+            "AsNumpy 接入 Skill"
+        ),
+    )
+    adapter_repair.add_argument(
+        "--max-attempts", type=int, choices=[1, 2, 3], default=3
+    )
+    adapter_repair.add_argument(
+        "--llm-timeout",
+        type=int,
+        help="单次模型问答/修复超时秒数（10～3600，默认 120）",
+    )
+    adapter_repair.add_argument(
+        "--asnumpy-skill-root",
+        "--skill-root",
+        dest="asnumpy_skill_root",
+        default=None,
+        help="NumPilot 自带 AsNumpy 接入 Skill；默认读取仓库内固定目录",
+    )
+    adapter_repair.add_argument(
+        "--offline-skills",
+        action="store_true",
+        help="兼容旧命令；内置 AsNumpy Skill 从不联网",
+    )
 
     args = parser.parse_args(argv)
     try:
@@ -1089,12 +2135,18 @@ def main(argv=None):
             return _cmd_setup_skills(args)
         if args.cmd == "paths":
             return _cmd_paths(args)
+        if args.cmd == "check-suite":
+            return _cmd_check_suite(args)
         if args.cmd == "complete-gaps":
             return _cmd_complete_gaps(args)
         if args.cmd == "repair-draft":
             return _cmd_repair_draft(args)
         if args.cmd == "seal-repair":
             return _cmd_seal_repair(args)
+        if args.cmd == "generate-asnumpy-adapter":
+            return _cmd_generate_asnumpy_adapter(args)
+        if args.cmd == "repair-asnumpy-adapter":
+            return _cmd_repair_asnumpy_adapter(args)
         if args.cmd == "wizard":
             from numpilot.wizard import run_wizard
             return run_wizard(
@@ -1135,8 +2187,66 @@ def main(argv=None):
             and getattr(args, "provider", None) == "llm"
         ):
             print(
-                "[LLM调用] actual_remote_call=no；Skill 准备失败，"
-                "因此没有请求大模型。",
+                "[生成门禁 2/2] fail · CANNBot Skill 准备或读取失败",
+                file=sys.stderr,
+            )
+            print(
+                "[算子生成] actual_remote_generation_call=no；"
+                "可能已执行 LLM readiness 问答，但没有开始算子生成。",
+                file=sys.stderr,
+            )
+        elif getattr(args, "cmd", None) == "repair-draft":
+            print(
+                "[修复门禁 2/2] fail · CANNBot Skill 准备或读取失败",
+                file=sys.stderr,
+            )
+            print(
+                "[算子修复] actual_remote_repair_call=no；"
+                "可能已执行 LLM readiness 问答，但没有开始模型修复。",
+                file=sys.stderr,
+            )
+        elif getattr(args, "cmd", None) == "generate-asnumpy-adapter":
+            print(
+                "[接入门禁 2/2] fail · CANNBot Skill 准备或读取失败",
+                file=sys.stderr,
+            )
+            print(
+                "[AsNumpy 接入生成] actual_remote_call=no；"
+                "可能已执行 LLM readiness 问答，但没有开始 overlay 生成。",
+                file=sys.stderr,
+            )
+        elif getattr(args, "cmd", None) == "repair-asnumpy-adapter":
+            print(
+                "[接入修复门禁 2/2] fail · CANNBot Skill 准备或读取失败",
+                file=sys.stderr,
+            )
+            print(
+                "[AsNumpy 接入修复] actual_remote_call=no；"
+                "可能已执行 LLM readiness 问答，但没有开始修复。",
+                file=sys.stderr,
+            )
+        return 2
+    except AsnumpyIntegrationSkillError as e:
+        print(f"[AsNumpy integration skill] {e}", file=sys.stderr)
+        command = getattr(args, "cmd", None)
+        if command == "generate-asnumpy-adapter":
+            print(
+                "[接入门禁 2/2] fail · NumPilot AsNumpy 案例 Skill 读取失败",
+                file=sys.stderr,
+            )
+            print(
+                "[AsNumpy 接入生成] actual_remote_call=no；"
+                "可能已执行 LLM readiness 问答，但没有开始 overlay 生成。",
+                file=sys.stderr,
+            )
+        elif command == "repair-asnumpy-adapter":
+            print(
+                "[接入修复门禁 2/2] fail · NumPilot AsNumpy 案例 Skill 读取失败",
+                file=sys.stderr,
+            )
+            print(
+                "[AsNumpy 接入修复] actual_remote_call=no；"
+                "可能已执行 LLM readiness 问答，但没有开始修复。",
                 file=sys.stderr,
             )
         return 2

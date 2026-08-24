@@ -36,5 +36,18 @@ npu = ["threadpoolctl"]
 [tool.setuptools.packages.find]
 include = ["numpilot*"]
 
+[tool.setuptools.data-files]
+"share/numpilot/skills/asnumpy-custom-op-integration" = [
+  ".codeartsdoer/skills/asnumpy-custom-op-integration/SKILL.md",
+]
+"share/numpilot/skills/asnumpy-custom-op-integration/agents" = [
+  ".codeartsdoer/skills/asnumpy-custom-op-integration/agents/openai.yaml",
+]
+"share/numpilot/skills/asnumpy-custom-op-integration/references" = [
+  ".codeartsdoer/skills/asnumpy-custom-op-integration/references/legacy-case-lessons.md",
+  ".codeartsdoer/skills/asnumpy-custom-op-integration/references/manifest-workflow.md",
+  ".codeartsdoer/skills/asnumpy-custom-op-integration/references/qualification-and-debug.md",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

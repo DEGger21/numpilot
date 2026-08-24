@@ -98,6 +98,22 @@ python -m numpilot paths
 `--out` 参数继续有效，适合 CI 和比赛评测显式指定一次性目录。详细策略见
 [`docs/artifact-storage.md`](docs/artifact-storage.md)。
 
+准备批量测试集时，可先运行完全不执行用户源码的静态准入检查：
+
+```bash
+python -m numpilot check-suite /path/to/cases \
+  --expect-direct 5 --expect-single-gap 5 \
+  --target-soc ascend910b --cann-version 9.0.0 \
+  --out /tmp/numpilot-suite-check.json
+```
+
+目录输入只扫描当前层 `*.py`。该门禁要求每个案例恰有一个无参数 `build_inputs()` 和一个只用
+必需位置参数的同步 `forward()`，并拒绝嵌套 NumPy namespace、标量二元调用、未建模控制流、
+多缺口、已有 API 别名伪装成缺口，以及非 unary/binary 单输出 ufunc 的复杂缺口。它只做 AST、
+GapSpec 和强制改写表面审计，不会 import 或执行案例；因此 `pass` 只表示“测试集结构适合当前
+简单迁移赛道”，不能替代目标 AsNumpy wheel 的 strict-NPU provenance、真机数值和自定义算子
+六门资格化。
+
 真实科学计算网络的完整一次实测见
 [`docs/evidence/heat-diffusion-npu-20260813.md`](docs/evidence/heat-diffusion-npu-20260813.md)：
 二维热扩散单步网络的 7 个调用全部迁移并通过 strict-NPU 与零误差门禁；报告同时保留了
@@ -110,6 +126,28 @@ NUMPILOT_PY=python3 ./run_demo.sh
 ```
 
 脚本使用 `set -euo pipefail`；任何 doctor、迁移或 strict-NPU 门禁失败都会停止，不会继续打印“演示成功”。默认不使用 Docker。
+
+比赛/Poisson Ritz 客户体验使用专用入口（仅在 Git 仓库 checkout 中提供，不属于精简的
+wheel 安装内容）：
+
+```bash
+./run_poisson_demo.sh                 # 公开证据校验 + 实时 NPU 迁移 + 快速驻留执行
+./run_poisson_demo.sh --evidence-only # 无 NPU 时只校验可公开证据
+./run_poisson_demo.sh --full          # 重跑 48×48 / 49 RBF / 3000 轮完整门控评测
+./run_poisson_demo.sh --large-single-core --cpu-core 0
+                                      # 128×128 / 225 RBF，CPU 进程只允许一个逻辑核
+```
+
+默认会折叠 AsNumpy/CANN 的逐算子日志并保存到本次产物目录，终端只展示
+分析、算子资格、strict-NPU、数值和性能门。`--full` 会明确报告当前 CPU
+仍更快，不把优化前后的 NPU 改善包装成对 CPU 的加速。本机完整制品默认从仓库
+同级 `numpilot-gap-runs` 发现；移动制品后可用 `NUMPILOT_POISSON_*` 环境变量显式指定。
+
+`--large-single-core` 是实验入口：它在 Python/NumPy 启动前用 `taskset` 固定 CPU worker，
+在收据中用 `sched_getaffinity` 验证仅剩所选逻辑核，并要求 BLAS runtime 实测为 1 线程。
+该 runner/规模尚无哈希匹配且通过的 profiler audit，因此其测量只能用于本机诊断；在补齐
+同身份 profiler 证据并通过发布门以前，`performance.published` 必须保持 `false`，README、
+发布说明和比赛材料不得引用其性能比值。
 
 ## 示例
 

@@ -5,6 +5,7 @@ wizard 与 migrate 复用同一渲染, 保证报告口径一致。默认目录�
 """
 import os
 from datetime import datetime
+import re
 
 from numpilot.paths import reports_dir as default_reports_dir
 
@@ -323,15 +324,51 @@ def build_benchmark_report_md(result: dict) -> str:
 
 
 def save_migration_report(info: dict, reports_dir=None) -> str:
-    """渲染并落盘带时间戳的报告, 返回绝对路径。文件名 migration_<net>_<时间戳>.md。"""
+    """渲染并以 no-clobber 语义落盘报告，返回绝对路径。
+
+    微秒时间戳降低顺序调用的文件名碰撞概率；独占创建与有界后缀重试
+    则保证同一任务在同一时刻并发写报告时也不会覆盖已有证据。
+    """
     reports_dir = reports_dir or default_reports_dir()
     os.makedirs(reports_dir, exist_ok=True)
     stamp = datetime.now()
     info = dict(info)
     info.setdefault("timestamp", stamp.strftime("%Y-%m-%d %H:%M:%S"))
-    net = info.get("net", "task")
-    fname = f"migration_{net}_{stamp.strftime('%Y%m%d_%H%M%S')}.md"
-    path = os.path.abspath(os.path.join(reports_dir, fname))
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(build_report_md(info))
-    return path
+    raw_net = str(info.get("net", "task"))
+    net = re.sub(r"[^A-Za-z0-9_.-]+", "_", raw_net).strip("._")[:100]
+    net = net or "task"
+    filename_stem = (
+        f"migration_{net}_{stamp.strftime('%Y%m%d_%H%M%S_%f')}"
+    )
+    payload = build_report_md(info)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+
+    for collision in range(10_000):
+        suffix = "" if collision == 0 else f"_{collision}"
+        fname = f"{filename_stem}{suffix}.md"
+        path = os.path.abspath(os.path.join(reports_dir, fname))
+        try:
+            descriptor = os.open(path, flags, 0o600)
+        except FileExistsError:
+            continue
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as report_file:
+                descriptor = -1
+                report_file.write(payload)
+                report_file.flush()
+                os.fsync(report_file.fileno())
+        except Exception:
+            if descriptor >= 0:
+                os.close(descriptor)
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+            raise
+        return path
+
+    raise FileExistsError(
+        "cannot allocate a unique migration report filename after 10000 attempts"
+    )

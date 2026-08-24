@@ -1,18 +1,24 @@
 import json
+import hashlib
+from pathlib import Path
 import platform
 import types
 
 import numpy as np
 import pytest
 
+from numpilot.backends import npu as npu_module
 from numpilot.backends.npu import (
     AUDITED_ASNUMPY_VERSION,
+    CBRT_ASNUMPY_AUDIT_ID,
+    CBRT_ASNUMPY_VERSION,
     NpuBackend,
     OverlayRuntimeConfig,
     P0_ASNUMPY_AUDIT_ID,
     P0_ASNUMPY_VERSION,
     P0_LINALG_ASNUMPY_AUDIT_ID,
     P0_MOVE_ASNUMPY_AUDIT_ID,
+    P0_MOVE_LEGACY_OVERLAY_AUDIT_ID,
     P0_MOVE_ASNUMPY_VERSION,
 )
 from numpilot.capabilities import (
@@ -36,6 +42,20 @@ from numpilot.capabilities import (
 from numpilot.contracts import OffloadPlan
 
 
+_REAL_AUDITED_RUNTIME_IDENTITY_MATCHES = (
+    npu_module._audited_runtime_identity_matches
+)
+
+
+@pytest.fixture(autouse=True)
+def _trust_generic_fake_runtime_identity(monkeypatch):
+    """Unit fakes have no wheel tree; identity matching has dedicated tests."""
+
+    monkeypatch.setattr(
+        npu_module, "_audited_runtime_identity_matches", lambda _module: True
+    )
+
+
 def _fake_asnumpy(version=AUDITED_ASNUMPY_VERSION, **apis):
     module = types.ModuleType("asnumpy")
     module.__version__ = version
@@ -46,6 +66,153 @@ def _fake_asnumpy(version=AUDITED_ASNUMPY_VERSION, **apis):
 
 def _callable(*args, **kwargs):
     return None
+
+
+def test_p0_audit_ids_bind_wrapper_dependencies():
+    assert "init8761f7f9" in npu_module.ASNUMPY_AUDIT_ID
+    assert "coreab71b004" in npu_module.ASNUMPY_AUDIT_ID
+    assert npu_module.ASNUMPY_AUDIT_ID.endswith("-v2")
+    assert "utilsfd94c025" in P0_ASNUMPY_AUDIT_ID
+    assert P0_ASNUMPY_AUDIT_ID.endswith("-v2")
+    assert "array16c901f5" in P0_LINALG_ASNUMPY_AUDIT_ID
+    assert "utilsfd94c025" in P0_LINALG_ASNUMPY_AUDIT_ID
+    assert P0_LINALG_ASNUMPY_AUDIT_ID.endswith("-v3")
+    assert P0_LINALG_ASNUMPY_AUDIT_ID != (
+        "asnumpy-0.1.dev106-g21368abf9-poisson-linalg-"
+        "init4f4e8083-math62e0ba09-direct4479c588-cored3ccb39f-v1"
+    )
+    assert "array16c901f5" in P0_MOVE_ASNUMPY_AUDIT_ID
+    assert P0_MOVE_ASNUMPY_AUDIT_ID.endswith("-v2")
+    assert P0_MOVE_ASNUMPY_AUDIT_ID != (
+        "asnumpy-0.1.dev106-g21368abf9-poisson-move-"
+        "init4f4e8083-math62e0ba09-direct4479c588-"
+        "utils1b298145-core4465ce6e-v1"
+    )
+    assert "utils1b298145" in CBRT_ASNUMPY_AUDIT_ID
+    assert CBRT_ASNUMPY_AUDIT_ID.endswith("-v2")
+
+
+def test_p0_core_identity_rejects_utils_drift(tmp_path, monkeypatch):
+    from numpilot.backends import npu
+
+    module, root = _write_runtime_fixture(
+        tmp_path,
+        {
+            "__init__.py": b"init",
+            "math.py": b"math",
+            "utils.py": b"utils",
+            "_core.so": b"core",
+        },
+        monkeypatch,
+        "_P0_RUNTIME_FILE_SHA256",
+    )
+
+    assert npu._p0_runtime_identity_matches(module)
+    (root / "utils.py").write_bytes(b"drift")
+    assert not npu._p0_runtime_identity_matches(module)
+
+
+def _write_runtime_fixture(tmp_path, relative_payloads, monkeypatch, digest_name):
+    from numpilot.backends import npu
+
+    root = tmp_path / "asnumpy"
+    for relative, payload in relative_payloads.items():
+        target = root / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(payload)
+    digests = {
+        relative: hashlib.sha256(payload).hexdigest()
+        for relative, payload in relative_payloads.items()
+    }
+    core = digests.pop("_core.so")
+    digests["_core"] = core
+    monkeypatch.setattr(npu, digest_name, digests)
+    module = types.ModuleType("asnumpy")
+    module.__file__ = str(root / "__init__.py")
+    return module, root
+
+
+def test_generic_audited_identity_rejects_wrapper_drift(tmp_path, monkeypatch):
+    module, root = _write_runtime_fixture(
+        tmp_path,
+        {
+            "__init__.py": b"init",
+            "_types.py": b"types",
+            "_version.py": b"version",
+            "array.py": b"array",
+            "linalg/__init__.py": b"linalg-init",
+            "linalg/direct.py": b"direct",
+            "logic.py": b"logic",
+            "math.py": b"math",
+            "nn.py": b"nn",
+            "sorting.py": b"sorting",
+            "statistics.py": b"statistics",
+            "utils.py": b"utils",
+            "_core.so": b"core",
+        },
+        monkeypatch,
+        "_AUDITED_RUNTIME_FILE_SHA256",
+    )
+
+    assert _REAL_AUDITED_RUNTIME_IDENTITY_MATCHES(module)
+    (root / "logic.py").write_bytes(b"drift")
+    assert not _REAL_AUDITED_RUNTIME_IDENTITY_MATCHES(module)
+
+
+def test_generic_version_without_exact_runtime_hashes_is_unaudited(monkeypatch):
+    monkeypatch.setattr(
+        npu_module, "_audited_runtime_identity_matches", lambda _module: False
+    )
+    manifest = NpuBackend(
+        _fake_asnumpy(add=_callable)
+    ).capability_manifest(["add"])
+
+    assert manifest.audit_id == "unaudited-asnumpy-version"
+    assert not manifest.operators["add"].strict_npu
+
+
+def test_p0_linalg_identity_rejects_utils_drift(tmp_path, monkeypatch):
+    from numpilot.backends import npu
+
+    module, root = _write_runtime_fixture(
+        tmp_path,
+        {
+            "__init__.py": b"init",
+            "array.py": b"array",
+            "math.py": b"math",
+            "linalg/direct.py": b"direct",
+            "utils.py": b"utils",
+            "_core.so": b"core",
+        },
+        monkeypatch,
+        "_P0_LINALG_RUNTIME_FILE_SHA256",
+    )
+
+    assert npu._p0_linalg_runtime_identity_matches(module)
+    (root / "utils.py").write_bytes(b"drift")
+    assert not npu._p0_linalg_runtime_identity_matches(module)
+
+
+def test_cbrt_identity_rejects_utils_drift(tmp_path, monkeypatch):
+    from numpilot.backends import npu
+
+    module, root = _write_runtime_fixture(
+        tmp_path,
+        {
+            "__init__.py": b"init",
+            "math.py": b"math",
+            "custom_ops.py": b"custom",
+            "_custom_ops_registry.py": b"registry",
+            "utils.py": b"utils",
+            "_core.so": b"core",
+        },
+        monkeypatch,
+        "_CBRT_ASNUMPY_RUNTIME_FILE_SHA256",
+    )
+
+    assert npu._cbrt_runtime_identity_matches(module)
+    (root / "utils.py").write_bytes(b"drift")
+    assert not npu._cbrt_runtime_identity_matches(module)
 
 
 def test_capability_manifest_is_versioned_and_json_round_trips():
@@ -130,6 +297,37 @@ def test_p0_version_without_exact_runtime_hashes_remains_unaudited(monkeypatch):
     assert manifest.operators["add"].provenance is ExecutionProvenance.UNKNOWN
 
 
+def test_cbrt_wheel_audit_admits_only_inherited_base_ops(monkeypatch):
+    from numpilot.backends import npu
+
+    monkeypatch.setattr(npu, "_cbrt_runtime_identity_matches", lambda module: True)
+    manifest = NpuBackend(_fake_asnumpy(
+        version=CBRT_ASNUMPY_VERSION,
+        add=_callable,
+        multiply=_callable,
+        cbrt=_callable,
+    )).capability_manifest(["add", "multiply", "cbrt"])
+
+    assert manifest.audit_id == CBRT_ASNUMPY_AUDIT_ID
+    assert manifest.operators["add"].strict_npu
+    assert manifest.operators["multiply"].strict_npu
+    assert manifest.operators["cbrt"].provenance is ExecutionProvenance.UNKNOWN
+    assert not manifest.operators["cbrt"].strict_npu
+
+
+def test_cbrt_wheel_without_exact_runtime_hashes_remains_unaudited(monkeypatch):
+    from numpilot.backends import npu
+
+    monkeypatch.setattr(npu, "_cbrt_runtime_identity_matches", lambda module: False)
+    manifest = NpuBackend(_fake_asnumpy(
+        version=CBRT_ASNUMPY_VERSION,
+        add=_callable,
+    )).capability_manifest(["add"])
+
+    assert manifest.audit_id == "unaudited-asnumpy-version"
+    assert manifest.operators["add"].provenance is ExecutionProvenance.UNKNOWN
+
+
 def test_p0_linalg_wheel_is_hash_bound_and_profile_scoped(monkeypatch):
     from numpilot.backends import npu
 
@@ -162,6 +360,36 @@ def test_p0_linalg_wheel_is_hash_bound_and_profile_scoped(monkeypatch):
     assert "numel>=1" in subtract.constraints
 
 
+def test_p0_linalg_wheel_admits_hash_bound_inherited_demo_apis(monkeypatch):
+    from numpilot.backends import npu
+
+    monkeypatch.setattr(
+        npu, "_p0_linalg_runtime_identity_matches", lambda module: True
+    )
+    backend = NpuBackend(_fake_asnumpy(
+        version=P0_ASNUMPY_VERSION,
+        absolute=_callable,
+        amax=_callable,
+        cos=_callable,
+        linspace=_callable,
+        sin=_callable,
+        sum=_callable,
+        angle=_callable,
+    ))
+
+    manifest = backend.capability_manifest(
+        ["absolute", "amax", "cos", "linspace", "sin", "sum", "angle"]
+    )
+
+    for name in ("absolute", "amax", "cos", "linspace", "sin", "sum"):
+        capability = manifest.operators[name]
+        assert capability.provenance is ExecutionProvenance.NATIVE_NPU
+        assert capability.strict_npu
+    angle = manifest.operators["angle"]
+    assert angle.provenance is ExecutionProvenance.UNKNOWN
+    assert not angle.strict_npu
+
+
 def test_p0_move_wheel_is_hash_bound_and_keeps_linalg_scope(monkeypatch):
     from numpilot.backends import npu
 
@@ -185,6 +413,36 @@ def test_p0_move_wheel_is_hash_bound_and_keeps_linalg_scope(monkeypatch):
         assert capability.provenance is ExecutionProvenance.NATIVE_NPU
         assert not capability.strict_npu
         assert capability.signature_variants == (OperatorSignature(positional_args=2),)
+
+
+def test_p0_move_wheel_admits_hash_bound_inherited_demo_apis(monkeypatch):
+    from numpilot.backends import npu
+
+    monkeypatch.setattr(
+        npu, "_p0_move_runtime_identity_matches", lambda module: True
+    )
+    backend = NpuBackend(_fake_asnumpy(
+        version=P0_MOVE_ASNUMPY_VERSION,
+        absolute=_callable,
+        amax=_callable,
+        cos=_callable,
+        linspace=_callable,
+        sin=_callable,
+        sum=_callable,
+        angle=_callable,
+    ))
+
+    manifest = backend.capability_manifest(
+        ["absolute", "amax", "cos", "linspace", "sin", "sum", "angle"]
+    )
+
+    for name in ("absolute", "amax", "cos", "linspace", "sin", "sum"):
+        capability = manifest.operators[name]
+        assert capability.provenance is ExecutionProvenance.NATIVE_NPU
+        assert capability.strict_npu
+    angle = manifest.operators["angle"]
+    assert angle.provenance is ExecutionProvenance.UNKNOWN
+    assert not angle.strict_npu
 
 
 def test_p0_move_version_without_exact_runtime_hashes_remains_unaudited(monkeypatch):
@@ -884,6 +1142,76 @@ def test_overlay_failure_never_falls_back_to_unqualified_base(monkeypatch):
 
     with pytest.raises(RuntimeError, match="tampered overlay"):
         backend.capability_manifest(["cbrt"])
+
+
+def test_stricter_move_identity_can_activate_exact_legacy_overlay_base(
+    monkeypatch,
+):
+    from numpilot.backends import npu
+    from numpilot.gaps import qualification
+    from numpilot.gaps.qualification import (
+        CapabilityOverlay,
+        QualificationRef,
+        ZERO_SHA256,
+        capability_manifest_sha256,
+    )
+
+    monkeypatch.setattr(
+        npu, "_p0_move_runtime_identity_matches", lambda module: True
+    )
+    module = _fake_asnumpy(
+        version=P0_MOVE_ASNUMPY_VERSION,
+        apply_gradient_descent=_callable,
+    )
+    plain = NpuBackend(module)._raw_capability_manifest(
+        ("apply_gradient_descent",)
+    )
+    assert plain.audit_id == P0_MOVE_ASNUMPY_AUDIT_ID
+    legacy = npu._overlay_base_with_audit_id(
+        plain,
+        ("apply_gradient_descent",),
+        P0_MOVE_LEGACY_OVERLAY_AUDIT_ID,
+    )
+    overlay = CapabilityOverlay(
+        revision=1,
+        parent_sha256=ZERO_SHA256,
+        base_manifest_sha256=capability_manifest_sha256(legacy),
+        entries=(QualificationRef(
+            "apply_gradient_descent",
+            "apply_gradient_descent/qualification.json",
+            "2" * 64,
+        ),),
+    )
+    monkeypatch.setattr(qualification, "load_overlay", lambda _path: overlay)
+    seen = {}
+
+    def fake_apply(base, _overlay, **_kwargs):
+        seen["audit_id"] = base.audit_id
+        return CapabilityManifest(
+            backend=base.backend,
+            backend_version=base.backend_version,
+            environment=base.environment,
+            audit_id=base.audit_id + "+qualification-test",
+            operators={
+                "apply_gradient_descent": OperatorCapability(
+                    name="apply_gradient_descent",
+                    available=True,
+                    provenance=ExecutionProvenance.CUSTOM_NPU,
+                    evidence="qualification:qual-" + "1" * 20,
+                )
+            },
+        )
+
+    monkeypatch.setattr(qualification, "apply_overlay", fake_apply)
+    manifest = NpuBackend(
+        module,
+        overlay_config=OverlayRuntimeConfig(
+            "/private/overlay.json", "/private/evidence"
+        ),
+    ).capability_manifest(("apply_gradient_descent",))
+
+    assert seen["audit_id"] == P0_MOVE_LEGACY_OVERLAY_AUDIT_ID
+    assert manifest.audit_id.endswith("+qualification-test")
 
 
 def test_overlay_runtime_uses_one_atomic_raw_snapshot(monkeypatch):

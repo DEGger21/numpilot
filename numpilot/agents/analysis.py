@@ -3,22 +3,290 @@ import ast
 import hashlib
 from math import prod
 
+import numpy as _np
+
 from numpilot.capabilities import AnalysisProfileSet, CapabilityMatch
 from numpilot.contracts import AnalysisResult, OpUse
-from numpilot.coverage import is_supported
+from numpilot.coverage import SUPPORTED_OPS, is_supported
 from numpilot.operator_specs import collect_static_operator_specs
 
 
-_ARRAY_BINARY_OPS = frozenset({
-    "add", "subtract", "multiply", "divide", "true_divide", "floor_divide",
-    "matmul", "dot", "maximum", "minimum", "power", "float_power", "fmod",
-    "mod", "remainder", "fmax", "fmin", "copysign", "heaviside", "hypot",
-    "arctan2", "logical_and", "logical_or", "logical_xor", "equal", "not_equal",
-    "greater", "greater_equal", "less", "less_equal",
+_ARRAY_ONLY_BINARY_OPS = frozenset({
+    "add", "arctan2", "copysign", "cross", "divide", "divmod", "dot",
+    "float_power", "floor_divide", "fmax", "fmin", "fmod", "gcd",
+    "heaviside", "hypot", "inner", "lcm", "ldexp", "logaddexp",
+    "logaddexp2", "logical_and", "logical_or", "logical_xor", "matmul",
+    "maximum", "minimum", "mod", "multiply", "outer", "remainder",
+    "subtract", "true_divide", "vdot",
 })
-_UNSUPPORTED_NUMPY_KEYWORDS = frozenset({
-    "out", "where", "casting", "order", "subok", "signature", "extobj",
+_SCALAR_SECOND_BINARY_OPS = frozenset({
+    "equal", "greater", "greater_equal", "less", "less_equal", "not_equal",
 })
+_EXPLICIT_DTYPE_CREATION_OPS = frozenset({
+    "empty", "empty_like", "eye", "full", "full_like", "identity", "ones",
+    "ones_like", "zeros", "zeros_like",
+})
+_EXPLICIT_DTYPE_POSITION = {
+    "empty": 1,
+    "empty_like": 1,
+    "eye": 1,
+    "full": 2,
+    "full_like": 2,
+    "identity": 1,
+    "ones": 1,
+    "ones_like": 1,
+    "zeros": 1,
+    "zeros_like": 1,
+}
+_VECTOR_AXIS_REDUCTIONS = frozenset({"all", "any"})
+_SCALAR_AXIS_REDUCTIONS = frozenset({
+    "amax", "amin", "max", "mean", "min", "nanmax", "nanprod", "nansum",
+    "prod", "sum",
+})
+_REQUIRED_SCALAR_AXIS_OPS = frozenset({
+    "cross", "cumprod", "cumsum", "nancumprod", "nancumsum",
+})
+_SAFE_ARRAY_METADATA = frozenset({
+    "dtype", "itemsize", "nbytes", "ndim", "shape", "strides",
+})
+_STATIC_DTYPE_NAMES = frozenset({
+    "bool", "bool_", "float16", "float32", "float64", "int8", "int16",
+    "int32", "int64", "uint8", "uint16", "uint32", "uint64",
+})
+_STATIC_NUMPY_REAL_CONSTANTS = frozenset({
+    "e", "euler_gamma", "inf", "nan", "pi",
+})
+_ARRAY_INPUT_CONSTRUCTORS = frozenset({
+    "arange", "array", "asarray", "empty", "empty_like", "eye", "full",
+    "full_like", "geomspace", "identity", "linspace", "logspace", "ones",
+    "ones_like", "zeros", "zeros_like",
+})
+
+
+def _build_asnumpy_call_contracts():
+    """Freeze the source-audited call surface used by module-only rewrites."""
+
+    contracts = {}
+
+    def add(
+        names,
+        positional_limit,
+        keywords=(),
+        required=(None,),
+        positional_names=None,
+    ):
+        if positional_names is None:
+            positional_names = (
+                () if positional_limit is None
+                else (None,) * positional_limit
+            )
+        if (
+            positional_limit is not None
+            and len(positional_names) != positional_limit
+        ):
+            raise RuntimeError("invalid AsNumpy positional contract")
+        for name in names.split():
+            if name in contracts:
+                raise RuntimeError("duplicate AsNumpy call contract: " + name)
+            contracts[name] = (
+                tuple(required),
+                positional_limit,
+                frozenset(keywords),
+                tuple(positional_names),
+            )
+
+    # Array creation.  Only keyword spellings shared by NumPy and AsNumpy are
+    # admitted; for example NumPy ``fill_value`` becomes AsNumpy ``value`` and
+    # therefore must remain positional.
+    add(
+        "empty", 2, ("shape", "dtype"), ("shape", "dtype"),
+        ("shape", "dtype")
+    )
+    add(
+        "empty_like",
+        2,
+        ("prototype", "dtype"),
+        ("prototype", "dtype"),
+        ("prototype", "dtype"),
+    )
+    # NumPy's second positional eye argument is M, while AsNumpy's is dtype.
+    add("eye", 1, ("dtype",), (None, "dtype"), (None,))
+    add(
+        "full",
+        3,
+        ("shape", "dtype"),
+        ("shape", None, "dtype"),
+        ("shape", None, "dtype"),
+    )
+    add(
+        "full_like", 3, ("dtype",), (None, None, "dtype"),
+        (None, None, "dtype")
+    )
+    add(
+        "identity", 2, ("n", "dtype"), ("n", "dtype"),
+        ("n", "dtype")
+    )
+    add(
+        "linspace",
+        3,
+        ("start", "dtype"),
+        ("start", None),
+        ("start", None, None),
+    )
+    add(
+        "ones zeros",
+        2,
+        ("shape", "dtype"),
+        ("shape", "dtype"),
+        ("shape", "dtype"),
+    )
+    add(
+        "ones_like zeros_like",
+        2,
+        ("dtype",),
+        required=(None, "dtype"),
+        positional_names=(None, "dtype"),
+    )
+
+    # Direct linear algebra.  ``einsum`` accepts a variable number of
+    # positional operands but no NumPy-only options such as ``optimize``.
+    add(
+        "dot inner outer vdot",
+        2,
+        ("a", "b"),
+        ("a", "b"),
+        ("a", "b"),
+    )
+    add("matmul", 2, required=(None, None))
+    add("einsum", None, required=(None, None))
+
+    add(
+        "all any",
+        2,
+        ("axis", "keepdims"),
+        positional_names=(None, "axis"),
+    )
+    add("isfinite isinf logical_not", 1)
+    add("logical_and logical_or logical_xor", 2, required=(None, None))
+    add(
+        "equal greater greater_equal less less_equal not_equal",
+        2,
+        required=(None, None),
+    )
+
+    add(
+        "absolute arccos arcsin arctan cos deg2rad degrees exp exp2 expm1 "
+        "fabs log log10 log1p log2 modf real rad2deg radians sign signbit "
+        "sin sqrt square tan",
+        1,
+    )
+    add(
+        "arccosh arcsinh arctanh ceil cosh floor negative positive reciprocal "
+        "rint sinh tanh trunc",
+        1,
+    )
+    add(
+        "fix isneginf isposinf sinc", 1, ("x",), ("x",), ("x",)
+    )
+    add(
+        "arctan2 copysign heaviside hypot ldexp logaddexp logaddexp2",
+        2,
+        required=(None, None),
+    )
+    add(
+        "add divide divmod float_power floor_divide fmax fmin fmod gcd lcm "
+        "maximum minimum mod multiply power remainder subtract true_divide",
+        2,
+        required=(None, None),
+    )
+
+    add(
+        "around round_",
+        2,
+        ("decimals",),
+        positional_names=(None, "decimals"),
+    )
+    add(
+        "clip",
+        3,
+        ("a", "a_min", "a_max"),
+        ("a", "a_min", "a_max"),
+        ("a", "a_min", "a_max"),
+    )
+    add(
+        "cross",
+        2,
+        ("a", "b", "axis"),
+        ("a", "b"),
+        ("a", "b"),
+    )
+    add(
+        "cumprod cumsum nancumprod nancumsum",
+        3,
+        ("a", "axis", "dtype"),
+        ("a",),
+        ("a", "axis", "dtype"),
+    )
+    add(
+        "max amax amin min nanmax",
+        2,
+        ("a", "axis", "keepdims"),
+        ("a",),
+        ("a", "axis"),
+    )
+    add(
+        "mean",
+        2,
+        ("a", "axis", "keepdims", "dtype"),
+        ("a",),
+        ("a", "axis"),
+    )
+    add(
+        "nanprod nansum prod sum",
+        2,
+        ("a", "axis", "keepdims", "dtype"),
+        ("a",),
+        ("a", "axis"),
+    )
+    add(
+        "nan_to_num",
+        1,
+        ("x", "nan", "posinf", "neginf"),
+        ("x",),
+        ("x",),
+    )
+    add("sort", 2, ("a", "axis"), ("a",), ("a", "axis"))
+
+    # These names are part of the historical static snapshot.  Runtime
+    # provenance still decides whether an exact wheel may execute them.
+    add("angle gelu relu", 1)
+    add("softmax", 2, ("axis", "dtype"))
+
+    missing = SUPPORTED_OPS.difference(contracts)
+    extra = set(contracts).difference(SUPPORTED_OPS)
+    if missing or extra:
+        raise RuntimeError(
+            "AsNumpy call contracts do not match coverage snapshot: "
+            f"missing={sorted(missing)!r}, extra={sorted(extra)!r}"
+        )
+    return contracts
+
+
+_ASNUMPY_CALL_CONTRACTS = _build_asnumpy_call_contracts()
+_AXIS_NONE_IGNORED_KEYWORD_DEFAULTS = {
+    "all": {"keepdims": False},
+    "amax": {"keepdims": False},
+    "amin": {"keepdims": False},
+    "any": {"keepdims": False},
+    "max": {"keepdims": False},
+    "mean": {"keepdims": False},
+    "min": {"keepdims": False},
+    "nanmax": {"keepdims": False},
+    "nanprod": {"keepdims": False, "dtype": None},
+    "nansum": {"keepdims": False, "dtype": None},
+    "prod": {"keepdims": False, "dtype": None},
+    "sum": {"keepdims": False, "dtype": None},
+}
 _MISSING_API_REASON = "API 不在静态覆盖集"
 
 
@@ -42,12 +310,26 @@ def resolve_numpy_function(func, numpy_bindings):
 
 
 class _OpVisitor(ast.NodeVisitor):
-    def __init__(self, numpy_bindings, domain_specs=None, domain_errors=None):
+    def __init__(
+        self,
+        numpy_bindings,
+        domain_specs=None,
+        domain_errors=None,
+        known_array_names=(),
+        known_scalar_names=(),
+        known_non_array_names=(),
+        strict_operand_types=False,
+    ):
         # Local name -> canonical NumPy object, e.g. {"np": "numpy",
         # "fft": "numpy.fft.fft"}. Bindings come only from real imports.
         self.numpy_bindings = numpy_bindings
         self.domain_specs = dict(domain_specs or {})
         self.domain_errors = dict(domain_errors or {})
+        self.known_array_names = set(known_array_names)
+        self.known_scalar_names = set(known_scalar_names)
+        self.known_non_array_names = set(known_non_array_names)
+        self.strict_operand_types = bool(strict_operand_types)
+        self._call_argument_depth = 0
         self.op_uses = []
 
     def visit_Call(self, node):
@@ -109,13 +391,99 @@ class _OpVisitor(ast.NodeVisitor):
                 col_offset=getattr(node, "col_offset", 0),
                 kind="domain_operator",
             ))
-        self.generic_visit(node)
+        # Do not visit the function attribute as a value (``np.add`` is
+        # already resolved above).  Module constants and dtype markers are
+        # allowed only while visiting actual call arguments.
+        self._call_argument_depth += 1
+        try:
+            for argument in node.args:
+                self.visit(argument)
+            for keyword in node.keywords:
+                self.visit(keyword.value)
+        finally:
+            self._call_argument_depth -= 1
 
     def visit_Import(self, node):
         self._unsupported_python_structure(node, "Import")
 
     def visit_ImportFrom(self, node):
         self._unsupported_python_structure(node, "ImportFrom")
+
+    def visit_Attribute(self, node):
+        root = node
+        while isinstance(root, ast.Attribute):
+            root = root.value
+        # NumPy module attributes are handled by call resolution (or are
+        # static constants/dtype markers).  Every value attribute surviving
+        # migration must exist on both ndarray implementations.
+        numpy_root = (
+            isinstance(root, ast.Name)
+            and root.id in self.numpy_bindings
+        )
+        allowed_numpy_value = (
+            self._call_argument_depth > 0
+            and node.attr in (
+                _STATIC_DTYPE_NAMES
+                | _STATIC_NUMPY_REAL_CONSTANTS
+                | {"ndarray"}
+            )
+        )
+        if (
+            (numpy_root and not allowed_numpy_value)
+            or (not numpy_root and node.attr not in _SAFE_ARRAY_METADATA)
+        ):
+            self.op_uses.append(OpUse(
+                name="python_attribute." + node.attr,
+                lineno=getattr(node, "lineno", 0),
+                supported=False,
+                reason=(
+                    "属性不在 NumPy ndarray 与 AsNumpy ndarray 的共同只读表面"
+                ),
+                col_offset=getattr(node, "col_offset", 0),
+            ))
+        self.generic_visit(node)
+
+    def visit_Assign(self, node):
+        self.visit(node.value)
+        if len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name):
+            self._unsupported_python_structure(node, "DestructuringAssign")
+            names = [
+                item.id for target in node.targets for item in ast.walk(target)
+                if isinstance(item, ast.Name) and isinstance(item.ctx, ast.Store)
+            ]
+            self._record_name_kinds(names, "nonarray")
+            return
+        if not self.strict_operand_types:
+            return
+        kind = self._expression_kind(node.value)
+        for target in node.targets:
+            names = [
+                item.id for item in ast.walk(target)
+                if isinstance(item, ast.Name) and isinstance(item.ctx, ast.Store)
+            ]
+            target_kind = (
+                "array"
+                if kind == "array_tuple" and isinstance(target, (ast.Tuple, ast.List))
+                else "nonarray" if kind == "array_tuple" else kind
+            )
+            self._record_name_kinds(names, target_kind)
+
+    def visit_AnnAssign(self, node):
+        if node.value is not None:
+            self.visit(node.value)
+            kind = self._expression_kind(node.value)
+        else:
+            kind = "nonarray"
+        if not isinstance(node.target, ast.Name):
+            self._unsupported_python_structure(node, "DestructuringAssign")
+            kind = "nonarray"
+        elif not self.strict_operand_types:
+            return
+        names = [
+            item.id for item in ast.walk(node.target)
+            if isinstance(item, ast.Name) and isinstance(item.ctx, ast.Store)
+        ]
+        self._record_name_kinds(names, kind)
 
     # Defining a nested scope runs in forward, but its body does not. Skipping
     # the body also prevents shadowed inner aliases from leaking into results.
@@ -168,22 +536,292 @@ class _OpVisitor(ast.NodeVisitor):
         # as numpy.linalg.matmul is exposed at the same path.
         if qualified_name != "numpy." + name or not is_supported(name):
             return False, _MISSING_API_REASON
+        required, positional_limit, allowed_keywords, positional_names = (
+            _ASNUMPY_CALL_CONTRACTS[name]
+        )
+        if any(isinstance(argument, ast.Starred) for argument in node.args):
+            return False, "AsNumpy 未验证动态位置参数展开: *args"
         risky_keywords = sorted(
-            keyword.arg for keyword in node.keywords
-            if keyword.arg in _UNSUPPORTED_NUMPY_KEYWORDS
+            keyword.arg or "**kwargs"
+            for keyword in node.keywords
+            if keyword.arg is None or keyword.arg not in allowed_keywords
         )
         if risky_keywords:
             return False, "AsNumpy 未验证 NumPy 关键字: " + ", ".join(risky_keywords)
-        if name in _ARRAY_BINARY_OPS:
-            operands = list(node.args[:2])
-            for keyword in node.keywords:
-                if keyword.arg in {"x1", "x2"}:
-                    operands.append(keyword.value)
-            if any(self._is_literal_scalar(value) for value in operands):
+        keyword_names = {keyword.arg for keyword in node.keywords}
+        duplicate_keywords = sorted({
+            positional_name
+            for index, positional_name in enumerate(positional_names)
+            if positional_name is not None
+            and index < len(node.args)
+            and positional_name in keyword_names
+        })
+        if duplicate_keywords:
+            return False, (
+                "NumPy/AsNumpy 调用重复绑定位置与关键字参数: "
+                + ", ".join(duplicate_keywords)
+            )
+        missing_required = [
+            index + 1
+            for index, keyword_name in enumerate(required)
+            if index >= len(node.args)
+            and (
+                keyword_name is None
+                or keyword_name not in keyword_names
+            )
+        ]
+        if missing_required:
+            return False, (
+                "NumPy/AsNumpy 调用缺少共同可验证的必需参数位置: "
+                + ", ".join(str(index) for index in missing_required)
+            )
+        if positional_limit is not None and len(node.args) > positional_limit:
+            return False, (
+                "AsNumpy 与 NumPy 的位置参数语义不兼容: "
+                f"{name} 仅验证前 {positional_limit} 个位置参数"
+            )
+        if name in _EXPLICIT_DTYPE_CREATION_OPS:
+            dtype = self._bound_argument(
+                node, _EXPLICIT_DTYPE_POSITION[name], ("dtype",)
+            )
+            if not self._is_static_dtype(dtype):
+                return False, (
+                    "当前 AsNumpy 创建器要求显式且静态可验证的非 None dtype"
+                )
+        if name in {"full", "full_like"}:
+            value = self._bound_argument(node, 1, ())
+            if not self._is_static_real_scalar(value):
+                return False, (
+                    "当前 AsNumpy full value 仅验证静态实数标量"
+                )
+        if name == "linspace":
+            start = self._bound_argument(node, 0, ("start",))
+            end = self._bound_argument(node, 1, ())
+            if not all(
+                self._is_static_real_scalar(value)
+                for value in (start, end)
+            ):
+                return False, (
+                    "当前 AsNumpy linspace start/end 仅验证静态实数标量"
+                )
+            if len(node.args) > 2 and not self._is_static_positive_int(
+                node.args[2]
+            ):
+                return False, (
+                    "当前 AsNumpy linspace steps 必须是静态正整数"
+                )
+        if name == "einsum":
+            subscripts = self._bound_argument(node, 0, ())
+            if not (
+                isinstance(subscripts, ast.Constant)
+                and isinstance(subscripts.value, str)
+            ):
+                return False, (
+                    "AsNumpy einsum 仅验证首参数为静态字符串的 subscript 形式"
+                )
+
+        axis_position = 2 if name == "cross" else 1
+        axis = self._bound_argument(node, axis_position, ("axis",))
+        if name in _VECTOR_AXIS_REDUCTIONS:
+            if axis is not None and not self._is_literal_value(axis, None):
+                if not self._is_static_single_axis_vector(axis):
+                    return False, (
+                        "当前 AsNumpy all/any axis 仅验证单元素静态整数 tuple"
+                    )
+        elif name in _SCALAR_AXIS_REDUCTIONS:
+            if not self._is_static_integer_axis(axis):
+                return False, (
+                    "当前 AsNumpy reduction 要求静态整数 axis；axis=None "
+                    "会返回与 NumPy dtype 不兼容的 Python scalar"
+                )
+        elif name in _REQUIRED_SCALAR_AXIS_OPS:
+            if not self._is_static_integer_axis(axis):
+                return False, (
+                    "当前 AsNumpy 算子要求显式静态整数 axis"
+                )
+        elif name == "sort" and axis is not None:
+            if not self._is_static_integer_axis(axis):
+                return False, (
+                    "当前 AsNumpy sort 仅验证缺省或静态整数 axis"
+                )
+        ignored_defaults = _AXIS_NONE_IGNORED_KEYWORD_DEFAULTS.get(name)
+        if ignored_defaults:
+            keywords = {
+                keyword.arg: keyword.value
+                for keyword in node.keywords
+                if keyword.arg is not None
+            }
+            risky_axis_keywords = [
+                keyword_name
+                for keyword_name, default in ignored_defaults.items()
+                if keyword_name in keywords
+                and not self._is_literal_value(keywords[keyword_name], default)
+            ]
+            if risky_axis_keywords:
+                axis = (
+                    node.args[1]
+                    if len(node.args) > 1
+                    else keywords.get("axis")
+                )
+                if not self._is_static_non_none_axis(axis):
+                    return False, (
+                        "AsNumpy 在 axis=None 时忽略关键字: "
+                        + ", ".join(sorted(risky_axis_keywords))
+                    )
+        first = self._bound_argument(node, 0, ("x1", "a"))
+        second = self._bound_argument(node, 1, ("x2", "b"))
+        if name in _ARRAY_ONLY_BINARY_OPS:
+            operands_are_arrays = all(
+                self._is_proven_array(value)
+                for value in (first, second)
+            )
+            has_known_non_array = any(
+                self._is_known_non_array(value)
+                for value in (first, second)
+            )
+            if (
+                (self.strict_operand_types and not operands_are_arrays)
+                or has_known_non_array
+            ):
                 if name == "maximum" and self._is_relu_pattern(node):
                     return True, None
-                return False, "当前 AsNumpy 二元 binding 未验证 Python 标量操作数"
+                return False, (
+                    "当前 AsNumpy 二元 binding 要求两个操作数均可静态证明为数组，"
+                    "不接受标量或其他非数组值"
+                )
+        elif name in _SCALAR_SECOND_BINARY_OPS:
+            if (
+                (self.strict_operand_types and not self._is_proven_array(first))
+                or self._is_known_non_array(first)
+            ):
+                return False, (
+                    "当前 AsNumpy comparison 仅验证数组作为第一个操作数"
+                )
+            if (
+                self.strict_operand_types
+                and not self._is_proven_array(second)
+                and not self._is_known_scalar(second)
+            ):
+                return False, (
+                    "当前 AsNumpy comparison 第二个操作数仅验证数组或数值标量"
+                )
+        elif name == "power":
+            if not any(
+                self._is_proven_array(value) for value in (first, second)
+            ) and (
+                self.strict_operand_types
+                or all(
+                    self._is_known_scalar(value) for value in (first, second)
+                )
+            ):
+                return False, "当前 AsNumpy power 要求至少一个数组操作数"
+            if self.strict_operand_types and any(
+                not self._is_proven_array(value)
+                and not self._is_known_scalar(value)
+                for value in (first, second)
+            ):
+                return False, (
+                    "当前 AsNumpy power 仅验证数组与数值标量操作数"
+                )
         return True, None
+
+    @staticmethod
+    def _bound_argument(node, position, keyword_names):
+        if position < len(node.args):
+            return node.args[position]
+        for keyword in node.keywords:
+            if keyword.arg in keyword_names:
+                return keyword.value
+        return None
+
+    @staticmethod
+    def _is_literal_value(node, expected):
+        return isinstance(node, ast.Constant) and node.value is expected
+
+    @classmethod
+    def _is_static_non_none_axis(cls, node):
+        return (
+            cls._is_static_integer_axis(node)
+            or cls._is_static_single_axis_vector(node)
+        )
+
+    @staticmethod
+    def _is_static_integer_axis(node):
+        if isinstance(node, ast.Constant):
+            return isinstance(node.value, int) and not isinstance(node.value, bool)
+        return (
+            isinstance(node, ast.UnaryOp)
+            and isinstance(node.op, (ast.UAdd, ast.USub))
+            and isinstance(node.operand, ast.Constant)
+            and isinstance(node.operand.value, int)
+            and not isinstance(node.operand.value, bool)
+        )
+
+    @classmethod
+    def _is_static_single_axis_vector(cls, node):
+        return (
+            isinstance(node, ast.Tuple)
+            and len(node.elts) == 1
+            and cls._is_static_integer_axis(node.elts[0])
+        )
+
+    def _is_static_dtype(self, node):
+        if isinstance(node, ast.Constant):
+            return isinstance(node.value, str) and node.value in _STATIC_DTYPE_NAMES
+        if isinstance(node, ast.Name):
+            qualified = self.numpy_bindings.get(node.id, "")
+            return (
+                qualified.startswith("numpy.")
+                and qualified.rsplit(".", 1)[-1] in _STATIC_DTYPE_NAMES
+            )
+        if isinstance(node, ast.Attribute):
+            resolved = resolve_numpy_function(node, self.numpy_bindings)
+            return (
+                resolved is not None
+                and resolved[1].count(".") == 1
+                and resolved[0] in _STATIC_DTYPE_NAMES
+            )
+        return False
+
+    def _is_static_real_scalar(self, node):
+        if isinstance(node, ast.Constant):
+            return (
+                isinstance(node.value, (int, float))
+                and not isinstance(node.value, bool)
+            )
+        if (
+            isinstance(node, ast.UnaryOp)
+            and isinstance(node.op, (ast.UAdd, ast.USub))
+        ):
+            return self._is_static_real_scalar(node.operand)
+        if isinstance(node, ast.Attribute):
+            resolved = resolve_numpy_function(node, self.numpy_bindings)
+            return (
+                resolved is not None
+                and resolved[1].count(".") == 1
+                and resolved[0] in _STATIC_NUMPY_REAL_CONSTANTS
+            )
+        return False
+
+    @staticmethod
+    def _is_static_positive_int(node):
+        if isinstance(node, ast.Constant):
+            return (
+                isinstance(node.value, int)
+                and not isinstance(node.value, bool)
+                and node.value > 0
+            )
+        if (
+            isinstance(node, ast.UnaryOp)
+            and isinstance(node.op, ast.UAdd)
+            and isinstance(node.operand, ast.Constant)
+        ):
+            return (
+                isinstance(node.operand.value, int)
+                and not isinstance(node.operand.value, bool)
+                and node.operand.value > 0
+            )
+        return False
 
     @staticmethod
     def _is_literal_scalar(node):
@@ -195,6 +833,72 @@ class _OpVisitor(ast.NodeVisitor):
             and isinstance(node.operand, ast.Constant)
             and isinstance(node.operand.value, (int, float, complex))
         )
+
+    def _is_known_scalar(self, node):
+        return self._is_literal_scalar(node) or (
+            isinstance(node, ast.Name)
+            and node.id in self.known_scalar_names
+        )
+
+    def _is_known_non_array(self, node):
+        return self._is_known_scalar(node) or (
+            isinstance(node, ast.Name)
+            and node.id in self.known_non_array_names
+        )
+
+    def _is_proven_array(self, node):
+        if isinstance(node, ast.Name):
+            if node.id in self.known_array_names:
+                return True
+            return (
+                not self.strict_operand_types
+                and node.id not in self.known_scalar_names
+                and node.id not in self.known_non_array_names
+            )
+        if isinstance(node, ast.Call):
+            resolved = resolve_numpy_function(node.func, self.numpy_bindings)
+            if resolved is not None and resolved[0] in {"divmod", "modf"}:
+                return False
+            if (
+                resolved is not None
+                and resolved[1] == "numpy." + resolved[0]
+                and resolved[0] in SUPPORTED_OPS
+            ):
+                return True
+            if resolved is not None and resolved[1] == "numpy." + resolved[0]:
+                candidate = getattr(_np, resolved[0], None)
+                if isinstance(candidate, _np.ufunc):
+                    return any(
+                        self._is_proven_array(argument)
+                        for argument in node.args[:candidate.nin]
+                    )
+            return False
+        return False
+
+    def _expression_kind(self, node):
+        if isinstance(node, ast.Call):
+            resolved = resolve_numpy_function(node.func, self.numpy_bindings)
+            if resolved is not None and resolved[0] in {"divmod", "modf"}:
+                return "array_tuple"
+        if self._is_proven_array(node):
+            return "array"
+        if self._is_known_scalar(node):
+            return "scalar"
+        if isinstance(node, ast.Name) and node.id in self.known_non_array_names:
+            return "nonarray"
+        return "nonarray"
+
+    def _record_name_kinds(self, names, kind):
+        for name in names:
+            self.known_array_names.discard(name)
+            self.known_scalar_names.discard(name)
+            self.known_non_array_names.discard(name)
+            if kind == "array":
+                self.known_array_names.add(name)
+            elif kind == "scalar":
+                self.known_scalar_names.add(name)
+            else:
+                self.known_non_array_names.add(name)
 
     @classmethod
     def _is_relu_pattern(cls, node):
@@ -361,6 +1065,120 @@ def numpy_bindings_for_forward(tree, forward):
     return bindings
 
 
+def _static_forward_parameter_kinds(tree, forward):
+    """Classify explicit build_inputs leaves without executing user code."""
+
+    builds = [
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "build_inputs"
+    ]
+    if len(builds) != 1:
+        return None
+    build = builds[0]
+    bindings = numpy_bindings_for_forward(tree, build)
+    kinds = {}
+
+    def bound_argument(node, position, keyword):
+        if position < len(node.args):
+            return node.args[position]
+        for item in node.keywords:
+            if item.arg == keyword:
+                return item.value
+        return None
+
+    def is_none(node):
+        return isinstance(node, ast.Constant) and node.value is None
+
+    def classify(node):
+        if isinstance(node, ast.Name):
+            return kinds.get(node.id, "unknown")
+        if isinstance(node, ast.Constant):
+            if isinstance(node.value, (int, float, complex, bool)):
+                return "scalar"
+            return "nonarray"
+        if (
+            isinstance(node, ast.UnaryOp)
+            and isinstance(node.op, (ast.UAdd, ast.USub))
+        ):
+            return classify(node.operand)
+        if isinstance(node, ast.BinOp):
+            sides = (classify(node.left), classify(node.right))
+            if "array" in sides:
+                return "array"
+            return "scalar" if sides == ("scalar", "scalar") else "nonarray"
+        if isinstance(node, (ast.Tuple, ast.List, ast.Dict, ast.Set)):
+            return "nonarray"
+        if isinstance(node, ast.Attribute):
+            resolved = resolve_numpy_function(node, bindings)
+            if (
+                resolved is not None
+                and resolved[1].count(".") == 1
+                and resolved[0] in _STATIC_NUMPY_REAL_CONSTANTS
+            ):
+                return "scalar"
+            return "nonarray"
+        if isinstance(node, ast.Call):
+            resolved = resolve_numpy_function(node.func, bindings)
+            if resolved is None:
+                return "nonarray"
+            name, qualified = resolved
+            if qualified.startswith("numpy.random."):
+                if name in {"rand", "randn"}:
+                    return "array" if node.args else "scalar"
+                if name in {"random", "random_sample", "standard_normal"}:
+                    size = bound_argument(node, 0, "size")
+                    return (
+                        "scalar" if size is None or is_none(size) else "array"
+                    )
+                if name in {"normal", "uniform"}:
+                    size = bound_argument(node, 2, "size")
+                    if size is not None and not is_none(size):
+                        return "array"
+                    data_arguments = [
+                        item for item in node.args[:2]
+                    ] + [
+                        item.value for item in node.keywords
+                        if item.arg in {"loc", "scale", "low", "high"}
+                    ]
+                    return (
+                        "array"
+                        if any(classify(item) == "array" for item in data_arguments)
+                        else "scalar"
+                    )
+                return "nonarray"
+            if qualified == "numpy." + name and name in _ARRAY_INPUT_CONSTRUCTORS:
+                return "array"
+            if qualified == "numpy." + name and name in _STATIC_DTYPE_NAMES:
+                return "scalar"
+        return "nonarray"
+
+    returned = None
+    for statement in build.body:
+        if (
+            isinstance(statement, ast.Assign)
+            and len(statement.targets) == 1
+            and isinstance(statement.targets[0], ast.Name)
+        ):
+            kinds[statement.targets[0].id] = classify(statement.value)
+        elif (
+            isinstance(statement, ast.AnnAssign)
+            and isinstance(statement.target, ast.Name)
+            and statement.value is not None
+        ):
+            kinds[statement.target.id] = classify(statement.value)
+        elif isinstance(statement, ast.Return):
+            returned = statement.value
+    if not isinstance(returned, ast.Tuple):
+        return None
+    arguments = list(forward.args.posonlyargs) + list(forward.args.args)
+    if len(arguments) != len(returned.elts):
+        return None
+    return {
+        argument.arg: classify(value)
+        for argument, value in zip(arguments, returned.elts)
+    }
+
+
 class AnalysisAgent:
     def __init__(self, profile_resolver=None):
         """Create an analyzer with an optional, explicitly injected resolver.
@@ -383,6 +1201,7 @@ class AnalysisAgent:
         source_path: str = "<mem>",
         *,
         profiles: AnalysisProfileSet = None,
+        strict_input_types: bool = False,
     ) -> AnalysisResult:
         if profiles is not None and not isinstance(profiles, AnalysisProfileSet):
             raise TypeError("profiles must be AnalysisProfileSet")
@@ -412,10 +1231,28 @@ class AnalysisAgent:
                 for name, error in static_specs.errors.items()
                 if name not in local_scope.all_bound_names
             }
+            parameter_kinds = (
+                _static_forward_parameter_kinds(tree, forward)
+                if strict_input_types
+                else None
+            )
             visitor = _OpVisitor(
                 numpy_bindings,
                 domain_specs=domain_specs,
                 domain_errors=domain_errors,
+                known_array_names=(
+                    name for name, kind in parameter_kinds.items()
+                    if kind == "array"
+                ) if parameter_kinds is not None else (),
+                known_scalar_names=(
+                    name for name, kind in parameter_kinds.items()
+                    if kind == "scalar"
+                ) if parameter_kinds is not None else (),
+                known_non_array_names=(
+                    name for name, kind in parameter_kinds.items()
+                    if kind == "nonarray"
+                ) if parameter_kinds is not None else (),
+                strict_operand_types=parameter_kinds is not None,
             )
             for statement in forward.body:
                 visitor.visit(statement)
