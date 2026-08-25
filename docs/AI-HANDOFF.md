@@ -1,10 +1,59 @@
 # NumPilot AI 续接手册
 
+> **2026-08-25 `v0.2.0a2` source-first 更新优先于下方旧 P0 wheelhouse 叙述。**
+> 新机器默认只克隆 NumPilot，运行顶层 `install.sh`，由 bootstrap 拉取固定官方 AsNumpy
+> 源码并现场编译、拉取并校验 CANNBot；wheelhouse 仅是 `v0.2.0a1` 的历史发布路径，
+> 不是当前验收输入。当前权威新机步骤是 `docs/FRESH-NOTEBOOK-QUICKSTART.md` 和
+> `docs/FRESH-MACHINE-AI-PROMPT.md`。
+
+## `v0.2.0a2` source-first 检查点
+
+- 顶层 `install.sh` 已新增：要求显式 `--allow-network`，CANNBot 还要求用户显式接受
+  CANN OSL；只创建/复用项目 `.venv`，安装 `.[bootstrap]`，执行 plan → apply → verify →
+  doctor，不运行 sudo、不修改 shell 配置、不保存代理或凭据。
+- 支持两种依赖路径：一键获取固定源码；或用 `--asnumpy-source`/`--cannbot-source`
+  （底层分别映射到 bootstrap cache）校验用户手工 checkout。用户完全自行编译安装
+  AsNumpy 时只能跑基础 smoke，不能声称有源码到二进制的 build lineage。
+- AsNumpy 官方仓库已快进并确认最新 `eec66dd9a3278e16240499b20405ab24acde6bd6`；该版本已在
+  隔离 Python 3.10 环境现场编译，清除污染的 CANN `devlib` 路径后 README smoke 通过。
+  这次拉取用于判断是否是旧版本问题；NumPilot 的可复现源码 profile 仍使用实现内精确 pin，
+  不跟随浮动 master。
+- 用户已确认将 AsNumpy 公开 `matmul` 的 host fallback 当作当前既定行为；后续不再追查其
+  dtype 或底层实现细节，也不纳入 NumPilot 的修复范围。因此 Case01 只能在显式
+  `--fallback-policy accept` 后做兼容性迁移；如需数值实跑，必须对已审核的 GLM 产物另起
+  受信进程执行，不得把 `migrate` 误写成已执行源码。结果固定 `strict_npu=false`、
+  `performance_valid=false`；不得复用历史 P0 wheel 的 180× 结果。
+- CANNBot pin 已更新为 `1ef6372a538f39b0b7ed34666a3e1f465fb4936a`；NumPilot 使用的
+  36 个 bundle 文件与上一 pin 内容逐文件相同，新 manifest bundle SHA-256 为
+  `11dcc3cd05139bcba870ccd540cf1e56a5430a351f27c10707d481a6544ae895`。历史 evidence 中的旧
+  commit/hash 不改写。
+- 源码构建 extra 已同步为 `scikit-build-core>=1.0.0`、`cmake>=3.26`；一键脚本在联网和
+  构建前检查 Python 开发头、G++、CANN 头库以及系统 fmt/spdlog CMake package。
+- 一键脚本已修复“venv 内安装新 CMake，但后续误用系统旧 CMake”的 `PATH` 问题，并增加
+  显式 `--pip-index-url`；默认包镜像缺包时只报错，不会悄悄换源。receipt 默认使用
+  NumPilot XDG 状态路径，不写入 Git 工作树。
+- 当前 `install.sh` SHA-256 为
+  `6da71eed473421cc07d6d743fa32d3b39fdfc710a8a4740c6f134d74999deb00`。源码安装会在
+  bootstrap 前把 receipt 转成绝对路径；默认 parent 创建并规范为 0700，自定义 parent 必须
+  已存在且满足 owner/symlink/write-bit 门禁，后续 shell 提示使用 shell-safe quote。
+- 已用全空 venv/cache/state、未显式传 `--receipt` 的单命令真机安装完成验收：CMake 4.4.2、
+  锁定 AsNumpy build + README smoke、CANNBot verify 与 `doctor --backend npu` 全部通过，
+  默认 receipt 为 mode 0600 且 `status=ready/ready=true`。随后在未设置
+  `NUMPILOT_BOOTSTRAP_RECEIPT`/`PYTHONPATH` 的新隔离进程中，仅凭同一 state 路径完成 Case01
+  静态分类：`divide/exp/full/sum` 为 native NPU，`float32` 为 strict metadata，`matmul` 为
+  expected fallback，`CAPABILITY_AUDIT_REQUIRED=0`、`unsupported=0`，且未调用 GLM、未执行
+  案例源码。上述验收已在当前脚本精确 SHA 上再次从空目录完整复跑；安装前不存在的默认
+  receipt parent 由 preflight 创建为当前用户所有的 0700 目录，最终 receipt 为 0600。
+- 新机不复制 `/home/ma-user/work/.numpilot-config`。`configure-llm --init` 会在新机器创建
+  默认 `~/.config/numpilot/llm.json`；填写 GLM-5.3 后必须 `--check`、`--probe`。只有用户说
+  “开始迁移”后才调用 GLM，仍只处理 Case01。
+
 ## 当前续接摘要（2026-08-25）
 
-权威工作目录是 `/home/ma-user/work/numpilot`，当前分支是 `feat/numpilot-demo`。普通脚本
-MVP 修改目前仍在工作树中，尚未提交或推送；重启后先用 `git status --short` 核对，不要使用
-`git reset --hard` 或 `git checkout --` 覆盖工作树。用户已经明确要求按案例逐个开始迁移；当前只
+权威工作目录是 `/home/ma-user/work/numpilot`，发布分支是 `feat/numpilot-demo`，
+source-first 检查点对应 `v0.2.0a2`。重启后先用 `git status --short --branch` 和
+`git describe --tags --exact-match` 核对实际状态，不要使用 `git reset --hard` 或
+`git checkout --` 覆盖用户工作树。用户已经明确要求按案例逐个开始迁移；当前只
 完成第 01 例，继续前先确认没有重复处理已有 run，也不要越过用户直接批量处理后续案例。
 
 ### 2026-08-25 普通 NumPy 脚本 MVP（最新检查点）
@@ -31,7 +80,8 @@ MVP 修改目前仍在工作树中，尚未提交或推送；重启后先用 `gi
 - `complete-gaps --gap-request ...` 会在任何 LLM readiness、生成或输出前重新扫描源码，
   本地重建 canonical GapSpec，并拒绝 request 注入、源码/签名/目标漂移、布尔 schema、重复
   JSON key、shim replacement 和 unknown provenance。混合缺口会保留 blocked 并返回 1。
-- 当前 AsNumpy `master@1929a3b` 没有任意缺失 API 的通用 NumPy fallback；明确审计的
+- NumPilot 当前锁定的 AsNumpy source profile `1929a3b` 没有任意缺失 API 的通用
+  NumPy fallback；明确审计的
   fallback 只有 `inner/matmul/outer`（CPU）、`dot/vdot/floor`（conditional CPU）和
   `signbit`（host assisted）。`UNKNOWN` 不得询问成“可接受 fallback”。
 - replacement gap 目前只自动完成“准备/生成未验证草稿”的安全接线。仓库另有 adapter
@@ -45,12 +95,11 @@ MVP 修改目前仍在工作树中，尚未提交或推送；重启后先用 `gi
   之间二选一，缓存可由 `--asnumpy-cache PATH`/`--cannbot-cache PATH` 显式定位。
 - official AsNumpy source commit/tree 和 CANNBot commit/bundle 身份固定在实现中。
   实现不内置 wheel URL/hash；本地 wheel expected hash 由可信发布物/用户输入提供，
-  校验后将实际 hash 写入 receipt，资格 profile 仍在 capability 层绑定。普通 Demo
-  优先预编译 wheel，源码构建只有显式 `--build-asnumpy` 才允许。
-  预编译 wheel 路径普通安装即可；源码构建前需用户先安装 `numpilot[bootstrap]`
-  （仓库开发为 `.[dev,bootstrap]`），apply 不会自动从 PyPI 获取构建工具。
-  源码构建子进程没有 OS 级断网沙箱，当前 plan 会保守把 build 标为 `network=true`；新的
-  Notebook Demo 应走本地 P0 wheel，不要现场构建。
+  校验后将实际 hash 写入 receipt，资格 profile 仍在 capability 层绑定。从
+  `v0.2.0a2` 起，全新机器 Demo 默认运行顶层 `install.sh --allow-network`，
+  由它在项目 venv 安装 `.[bootstrap]`、现场构建锁定 AsNumpy source，并拉取/校验
+  CANNBot。本地预编译 wheel/wheelhouse 只是 `v0.2.0a1` 历史高级路径。源码构建
+  子进程没有 OS 级断网沙箱，plan 会保守把 build 标为 `network=true`。
 - 只有显式 `--with-cannbot` 获取或复验 CANNBot 内容时才必须同时给出
   `--accept-cannbot-license`；单独准备 AsNumpy 不要求 CANN OSL。pip 安装钩子、import、
   doctor、migrate、complete-gaps 均不得隐式下载依赖。ordinary migrate 的 GLM 请求是明确
@@ -64,9 +113,10 @@ MVP 修改目前仍在工作树中，尚未提交或推送；重启后先用 `gi
   `__init__.py` SHA-256=`4f4e8083755dde87bd6f0dc8c765da71984cb1346c97e8b6dbb97d714be34c04`，
   native `_core` SHA-256=`4465ce6e0589eb000d450a49c15488a4d2d9f211fa7867646992c56e7c040747`，
   CANNBot bundle SHA-256=`125de566277696abd1f8ec5823533adc4c24323aae29f0b048d577ffc431b4e1`。
-- 基础依赖是 NumPy>=1.26、Loguru>=0.7、Rich>=13；当前 P0 wheel 的已审计 profile 仅覆盖
-  CPython 3.10/aarch64、NumPy 1.26.4、Loguru 0.7.3。fresh CANN+Python 环境仍需可用包索引或
-  发布方提供完整离线 wheelhouse，不能宣称 bootstrap 能在 NumPilot 自身依赖尚未安装时启动。
+- 基础依赖是 NumPy>=1.26、Loguru>=0.7、Rich>=13。全新源码路径还要求 Python 3.10+
+  及开发头、G++>=11.2、CMake>=3.26、系统 fmt/spdlog CMake package、CANN/NPU 和可用
+  包索引；`install.sh` 会先做门禁检查，不会调用 sudo。`v0.2.0a1` P0 wheel 的
+  CPython 3.10/aarch64、NumPy 1.26.4、Loguru 0.7.3 只是历史 profile，不能沿用到源码路径。
 - 新增 P1 待定：真正 `GAP_REQUIRED` 后应先检查匹配 CANN 版本的官方
   `https://gitcode.com/cann/ops-nn`，精确匹配时定向构建官方 kernel、由 GLM 生成 AsNumpy
   adapter；不匹配才进入 CANNBot+GLM 新 kernel 生成。当前没有 resolver、没有
@@ -74,8 +124,10 @@ MVP 修改目前仍在工作树中，尚未提交或推送；重启后先用 `gi
   qualification 追溯改写成官方复用；官方源码须保持 provenance/hash/license，不能冒充 GLM。
 - 用户下一步会在全新 Notebook 中从远端 tag clone，亲自验证 clone → install → bootstrap
   → GLM migration → NPU execution。入口是 `docs/NumPilot-Demo-v1-Quickstart.ipynb`，详细边界
-  在 `docs/FRESH-NOTEBOOK-QUICKSTART.md`；这次验收明确先不做 ops-nn 接入。Notebook 使用
-  write-once 根目录、P0 wheel 精确 SHA、私有 llm.json 和进程内代理，不保存 Token/代理值或输出。
+  在 `docs/FRESH-NOTEBOOK-QUICKSTART.md`；这次验收明确先不做 ops-nn 接入。Notebook 只克隆
+  NumPilot，使用锁定源码、私有 llm.json 和新机器自己的进程内代理，不保存 Token/
+  代理值或模型响应正文。`migrate` 仍是静态迁移；实际执行必须是之后的独立、
+  显式授权步骤。
 - `check-suite`、`wizard`、`bench-cpu`、`bench-npu` 都是 legacy contract 工具。产品内 ordinary
   通用 benchmark 尚未实现；本轮普通 GLM artifact 的真实 NPU 数值/性能只承认外部受信、
   与 source/artifact/runtime/harness 哈希绑定的定向证据，且不得回写成迁移阶段已经执行。
@@ -87,9 +139,10 @@ MVP 修改目前仍在工作树中，尚未提交或推送；重启后先用 `gi
   `http_proxy=http://127.0.0.1:7897` 和
   `https_proxy=http://127.0.0.1:7897`；不得把代理或凭据硬编码进仓库。用户明确说开始测试
   后仍需逐例调用，不能批量预生成。
-- 2026-08-25 当前收口工作树完整回归为 `755 passed in 16.15s`，bootstrap/CLI/Notebook/
-  path/version 定向回归为 `41 passed`；`git diff --check`、draw.io XML/
-  引用和精选 evidence manifest 均通过。提交或构建后仍应在干净 worktree 重新验证，不能把
+- 2026-08-25 `v0.2.0a2` 发布前工作树完整回归为 `775 passed`，bootstrap/receipt/install
+  定向回归为 `128 passed`；`git diff --check`、draw.io XML、Notebook JSON/代码单元和
+  `sdist/wheel` 构建/内容检查均通过（隔离构建需显式使用可提供 `setuptools>=77` 的包索引）。
+  提交后仍应在干净 worktree 重新验证，不能把
   这些工作树数字冒充发布 commit 的验证结果。第 01 例发生一次真实 GLM
   请求；没有在普通迁移阶段执行 demotest 源码，也没有重新执行历史迁移或算子生成。
 - 第 01 例权威产物：`/home/ma-user/work/numpilot-runs/demotest-migration-20260825/case-01-run02/`

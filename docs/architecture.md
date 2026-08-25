@@ -15,10 +15,11 @@ NumPilot 当前默认解决一个直接问题：用户提交带 `import numpy as
 ```mermaid
 flowchart TB
   subgraph Bootstrap[显式依赖准备层]
+    INSTALL[install.sh<br/>显式 --allow-network]
     PLAN[bootstrap 默认 plan<br/>--plan / --json]
-    LOCK[实现锁定 source 身份<br/>+用户提供 wheel expected hash]
-    APPLY[bootstrap --apply<br/>显式 AsNumpy 模式]
-    PLAN --> LOCK --> APPLY
+    LOCK[实现锁定 source commit/tree<br/>可接用户手工 clean checkout]
+    APPLY[bootstrap --apply<br/>默认源码构建]
+    INSTALL --> PLAN --> LOCK --> APPLY
   end
 
   subgraph Product[NumPilot ordinary script 产品面]
@@ -44,6 +45,11 @@ flowchart TB
 ```
 
 - bootstrap 只准备并核对锁定依赖，不决定迁移语义。
+- 现场源码构建的 native hash 可因工具链而变化；capability 层会从默认或显式
+  `NUMPILOT_BOOTSTRAP_RECEIPT` 路径严格复验 source/installed/verification 双向身份，并单独
+  核对全部已审计 Python wrapper hash；不会仅凭 commit 文本放行。
+- receipt 是当前用户边界内的本地 lineage/漂移门，不是签名供应链证明；不承诺对抗同一
+  用户或 root 主动改写 receipt 与安装文件。
 - ordinary script 扫描和迁移阶段都不执行用户源码。
 - 产品内尚未实现 ordinary script 的通用 benchmark。当前比赛中的真实 NPU 数值/性能证据
   由外部受信、与原文件、GLM artifact、运行时及 harness 哈希绑定的定向流程提供。
@@ -54,23 +60,29 @@ flowchart TB
 依赖准备的已落地命令面是：
 
 ```bash
+# 全新机器默认：只克隆 NumPilot，显式允许联网和接受 CANNBot 许可证
+./install.sh --allow-network \
+  --with-cannbot --accept-cannbot-license
+
 # 无模式和 --plan 都是只读；--json 输出机器可读计划
 python -m numpilot bootstrap
 python -m numpilot bootstrap --plan
 python -m numpilot bootstrap --plan --json
 
-# 首选本地预编译 wheel；预期 hash 来自可信发布物/用户输入
+# 默认手工路径：从实现锁定的 official source commit/tree 构建
+python -m numpilot bootstrap --apply --build-asnumpy \
+  --with-cannbot --accept-cannbot-license
+
+# 用户手工准备两个 checkout；仍须满足精确 origin/commit/tree/clean 门禁
+python -m numpilot bootstrap --apply --build-asnumpy \
+  --asnumpy-cache /path/to/asnumpy \
+  --with-cannbot --cannbot-cache /path/to/cannbot-skills \
+  --accept-cannbot-license
+
+# 可选历史路径：本地 wheel 必须带来自可信发布物/用户输入的 hash
 python -m numpilot bootstrap --apply \
   --asnumpy-wheel /trusted/path/asnumpy.whl \
-  --asnumpy-wheel-sha256 "$TRUSTED_ASNUMPY_SHA256" \
-  --receipt /tmp/numpilot-bootstrap-receipt.json
-
-# 与 wheel 模式二选一：从实现锁定的 official source commit/tree 构建
-python -m numpilot bootstrap --apply --build-asnumpy \
-  --receipt /tmp/numpilot-bootstrap-build-receipt.json
-
-# 仅确需 CANNBot 时，在任一 apply 模式上同时增加这两个开关
-# --with-cannbot --accept-cannbot-license
+  --asnumpy-wheel-sha256 "$TRUSTED_ASNUMPY_SHA256"
 
 # 安装后复验当前环境；第二条还会从固定本地 bundle 输出 Ascend C Skill 清单
 python -m numpilot bootstrap --verify
@@ -81,18 +93,20 @@ python -m numpilot bootstrap --verify --with-cannbot --accept-cannbot-license
 
 1. 无模式或 `--plan` 只读环境和动作计划，不 clone、fetch、build 或 install；
 2. `--apply` 必须在 `--asnumpy-wheel PATH --asnumpy-wheel-sha256 HEX` 和
-   `--build-asnumpy` 之间二选一；`--receipt PATH` 可指定原子回执位置；
+   `--build-asnumpy` 之间二选一；`--receipt PATH` 可指定原子回执位置，但必须是绝对路径，
+   且其父目录由当前用户拥有、不是符号链接、不可被 group/world 写入；
 3. 实现内锁定 official AsNumpy source commit/tree，源码构建只能由显式
-   `--build-asnumpy` 触发；用户必须先安装可选 `numpilot[bootstrap]`
-   工具链（仓库开发可用 `.[dev,bootstrap]`），apply 不会自动从 PyPI 补齐；
+   `--build-asnumpy` 触发；手工路径必须先安装 `numpilot[bootstrap]`，
+   `bootstrap --apply` 不会自动从 PyPI 补齐。顶层 `install.sh` 只在用户给出
+   `--allow-network` 后创建项目 venv、安装 `.[bootstrap]` 并编排 plan/apply/verify/doctor；
    上游构建尚无 OS 级断网沙箱，因此 plan 对 build 动作保守标记 `network=true`，即使源码
    cache 已存在也不会声称离线保证；
 4. 实现不内置 wheel URL 或 expected wheel hash。本地 wheel 的预期 SHA-256 来自
    可信发布物或用户输入，安装前校验，实际 hash 写入 receipt；
-5. 普通 Demo 优先使用预编译审计 wheel。当前 P0 wheel 的审计 profile 仅覆盖
-   CPython 3.10/aarch64、NumPy 1.26.4、Loguru 0.7.3；wheel tag、metadata、RECORD、安装后
-   module/native hash 与实际版本都会进入 receipt。未知 wheel 即使 hash 匹配用户输入，也仍需
-   后续 qualification；
+5. 全新机器 Demo 默认从锁定源码构建，不使用 wheelhouse。预编译 wheel 只保留为
+   显式高级/历史路径；wheel tag、metadata、RECORD、安装后 module/native hash 与
+   实际版本都会进入 receipt，未知 wheel 即使 hash 匹配用户输入，也仍需后续
+   qualification；
 6. CANNBot official commit/bundle 身份在实现中固定；只有显式
    `--with-cannbot` 获取或复验其内容时才要求 `--accept-cannbot-license`。单独准备 AsNumpy
    不要求 CANN Open Software License Agreement（CANN OSL）；
@@ -102,7 +116,10 @@ python -m numpilot bootstrap --verify --with-cannbot --accept-cannbot-license
    dtype=ap.float32)` 形状 smoke，并核对实际版本、模块路径和 native hash；带
    `--with-cannbot` 时还会本地回答“现在写 Ascend C 算子有哪些能参考的 Skill？”并列出固定
    bundle 中已校验的 Skill，不发起模型或网络请求；
-9. NumPilot 不得通过 pip 安装钩子、`import`、`doctor`、`migrate` 或
+9. 默认 receipt 位于 NumPilot XDG 状态目录。自定义 `--receipt` 的后续进程必须用
+   `NUMPILOT_BOOTSTRAP_RECEIPT` 指向同一绝对路径；运行时不扫描 cwd，receipt 或
+   wrapper/native/module/interpreter/package 身份任一漂移都 fail closed；
+10. NumPilot 不得通过 pip 安装钩子、`import`、`doctor`、`migrate` 或
    `complete-gaps` 隐式下载依赖。ordinary `migrate` 调用已配置 GLM 是用户请求的模型动作，
    不是依赖安装；它必须保留远端回执，且只在调用进程临时使用用户配置的代理。
 

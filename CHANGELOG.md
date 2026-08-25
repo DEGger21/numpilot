@@ -4,6 +4,28 @@
 
 - 暂无。
 
+## 0.2.0a2 - 2026-08-25
+
+- 新增顶层 `install.sh` 源码安装入口：全新机器只需克隆 NumPilot，即可在项目虚拟环境中
+  安装构建工具、从固定官方源码编译 AsNumpy，并拉取/校验固定 CANNBot Skills；联网和
+  CANNBot 许可证都必须由用户显式确认，脚本不运行 sudo、不修改 shell 配置；
+- 源码安装器会将项目 venv 的工具目录前置到 `PATH`，确保现场安装的 CMake 不会被
+  过旧系统版本遮蔽；新增显式 `--pip-index-url`，默认镜像缺包时不会悄悄换源；
+- 一键安装的默认 bootstrap receipt 改用 NumPilot XDG 状态路径，不污染 Git 工作树；
+- NPU capability 层已接入 pinned-source bootstrap receipt：全部已审计 Python wrapper 继续使用
+  内置 hash，现场编译且不可重现的 `_core.so` 必须同时匹配 wheel 安装记录和 README
+  verification hash；source/trust/path/interpreter/package 任一漂移即回到 unknown；
+- 同时保留用户手工 checkout/安装路径；bootstrap 会校验手工 AsNumpy/CANNBot 的精确
+  origin、commit、tree 和工作树，完全自行安装的 AsNumpy 只能获得基础 smoke 结论；
+- 将源码构建依赖同步到 AsNumpy 上游要求：`scikit-build-core>=1.0.0`、`cmake>=3.26`，
+  并在一键入口前置检查 Python 开发头、系统 fmt/spdlog 和 CANN 头库；
+- CANNBot 精确 pin 更新到 `1ef6372a538f39b0b7ed34666a3e1f465fb4936a`；NumPilot 使用的
+  36 个 Skill/模板文件与上一 pin 内容逐文件一致；
+- 全新机器 Quickstart、Notebook 和 AI Prompt 改为 clone-only 源码流，明确配置文件需在
+  新机器单独创建，不再把 wheelhouse 作为默认验收输入；
+- 明确本轮若接受官方 AsNumpy `matmul` host fallback，只能验证兼容性和数值，报告保持
+  `strict_npu=false`、`performance_valid=false`，不得复用历史 P0 wheel 加速结论。
+
 ## 0.2.0a1 - 2026-08-25
 
 - 将普通纯 NumPy 脚本设为默认迁移通道：先做不执行源码的静态扫描，再按能力结论选择

@@ -1,7 +1,9 @@
-import json
+import copy
 import hashlib
+import json
 from pathlib import Path
 import platform
+import sys
 import types
 
 import numpy as np
@@ -10,6 +12,7 @@ import pytest
 from numpilot.backends import npu as npu_module
 from numpilot.backends.npu import (
     AUDITED_ASNUMPY_VERSION,
+    ASNUMPY_SOURCE_BUILD_AUDIT_ID,
     CBRT_ASNUMPY_AUDIT_ID,
     CBRT_ASNUMPY_VERSION,
     NpuBackend,
@@ -70,8 +73,11 @@ def _callable(*args, **kwargs):
 
 def test_p0_audit_ids_bind_wrapper_dependencies():
     assert "init8761f7f9" in npu_module.ASNUMPY_AUDIT_ID
+    assert "cannac907b3a" in npu_module.ASNUMPY_AUDIT_ID
     assert "coreab71b004" in npu_module.ASNUMPY_AUDIT_ID
-    assert npu_module.ASNUMPY_AUDIT_ID.endswith("-v2")
+    assert npu_module.ASNUMPY_AUDIT_ID.endswith("-v3")
+    assert "cannac907b3a" in ASNUMPY_SOURCE_BUILD_AUDIT_ID
+    assert ASNUMPY_SOURCE_BUILD_AUDIT_ID.endswith("-receipt-v1")
     assert "utilsfd94c025" in P0_ASNUMPY_AUDIT_ID
     assert P0_ASNUMPY_AUDIT_ID.endswith("-v2")
     assert "array16c901f5" in P0_LINALG_ASNUMPY_AUDIT_ID
@@ -151,6 +157,7 @@ def test_generic_audited_identity_rejects_wrapper_drift(tmp_path, monkeypatch):
             "_types.py": b"types",
             "_version.py": b"version",
             "array.py": b"array",
+            "cann.py": b"cann",
             "linalg/__init__.py": b"linalg-init",
             "linalg/direct.py": b"direct",
             "logic.py": b"logic",
@@ -180,6 +187,240 @@ def test_generic_version_without_exact_runtime_hashes_is_unaudited(monkeypatch):
 
     assert manifest.audit_id == "unaudited-asnumpy-version"
     assert not manifest.operators["add"].strict_npu
+
+
+def _source_receipt_runtime(tmp_path, monkeypatch):
+    from numpilot import __version__ as numpilot_version
+    from numpilot.backends import npu
+    from numpilot.bootstrap import (
+        ASNUMPY_COMMIT,
+        ASNUMPY_REPOSITORY,
+        ASNUMPY_TREE,
+        ASNUMPY_VERSION,
+    )
+
+    module, root = _write_runtime_fixture(
+        tmp_path,
+        {
+            "__init__.py": b"init",
+            "_types.py": b"types",
+            "_version.py": b"version",
+            "array.py": b"array",
+            "cann.py": b"cann",
+            "linalg/__init__.py": b"linalg-init",
+            "linalg/direct.py": b"direct",
+            "logic.py": b"logic",
+            "math.py": b"math",
+            "nn.py": b"nn",
+            "sorting.py": b"sorting",
+            "statistics.py": b"statistics",
+            "utils.py": b"utils",
+            "_core.so": b"locally-built-core",
+        },
+        monkeypatch,
+        "_AUDITED_RUNTIME_FILE_SHA256",
+    )
+    expected = dict(npu._AUDITED_RUNTIME_FILE_SHA256)
+    expected["_core"] = hashlib.sha256(b"fixed-release-core").hexdigest()
+    monkeypatch.setattr(npu, "_AUDITED_RUNTIME_FILE_SHA256", expected)
+
+    module.__version__ = ASNUMPY_VERSION
+    module.add = _callable
+    module.matmul = _callable
+    module_hash = hashlib.sha256((root / "__init__.py").read_bytes()).hexdigest()
+    core_path = root / "_core.so"
+    core_hash = hashlib.sha256(core_path.read_bytes()).hexdigest()
+    valid_hash = "a" * 64
+    versions = {
+        "asnumpy": ASNUMPY_VERSION,
+        "numpy": "2.2.6",
+        "loguru": "0.7.3",
+    }
+    monkeypatch.setattr(
+        npu.importlib_metadata,
+        "version",
+        lambda distribution: versions[distribution],
+    )
+    receipt = {
+        "schema_version": 1,
+        "producer": "numpilot-bootstrap-v1",
+        "numpilot_version": numpilot_version,
+        "status": "ready",
+        "ready": True,
+        "plan_sha256": valid_hash,
+        "actions": sorted(npu._ASNUMPY_SOURCE_RECEIPT_ACTIONS),
+        "repositories": {
+            "asnumpy": {
+                "repository": ASNUMPY_REPOSITORY,
+                "commit": ASNUMPY_COMMIT,
+                "tree": ASNUMPY_TREE,
+                "mode": "pinned-source-build",
+                "files_sha256": {
+                    name: valid_hash for name in npu._ASNUMPY_SOURCE_KEY_FILES
+                },
+            }
+        },
+        "wheel": {
+            "kind": "built-from-pinned-source",
+            "distribution": "asnumpy",
+            "version": ASNUMPY_VERSION,
+            "sha256": valid_hash,
+            "metadata_sha256": valid_hash,
+            "record_sha256": valid_hash,
+            "trust": {
+                "kind": "built-from-pinned-source",
+                "repository": ASNUMPY_REPOSITORY,
+                "commit": ASNUMPY_COMMIT,
+                "tree": ASNUMPY_TREE,
+            },
+            "installed_files": {
+                "module": {
+                    "path": "asnumpy/__init__.py",
+                    "sha256": module_hash,
+                },
+                "native_modules": [
+                    {"path": "asnumpy/_core.so", "sha256": core_hash}
+                ],
+            },
+        },
+        "verification": {
+            "asnumpy": {
+                "status": "passed",
+                "source": "official AsNumpy README.md installation verification",
+                "interpreter": str(Path(sys.executable).resolve()),
+                "asnumpy_version": ASNUMPY_VERSION,
+                "numpy_version": versions["numpy"],
+                "loguru_version": versions["loguru"],
+                "module_path": str((root / "__init__.py").resolve()),
+                "module_sha256": module_hash,
+                "native_modules": [
+                    {"path": "_core.so", "sha256": core_hash}
+                ],
+                "wheel_file_identity_verified": True,
+                "shape": [1000, 1000],
+                "dtype": "float32",
+            }
+        },
+    }
+    receipt_path = tmp_path / "bootstrap.json"
+    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+    receipt_path.chmod(0o600)
+    monkeypatch.setenv("NUMPILOT_BOOTSTRAP_RECEIPT", str(receipt_path))
+    return module, root, receipt_path, receipt
+
+
+def _write_source_receipt(receipt_path, receipt):
+    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+    receipt_path.chmod(0o600)
+
+
+def test_pinned_source_receipt_admits_dynamic_core_and_keeps_matmul_fallback(
+    tmp_path, monkeypatch
+):
+    from numpilot.backends import npu
+
+    module, _, _, _ = _source_receipt_runtime(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        npu, "_audited_runtime_identity_matches",
+        _REAL_AUDITED_RUNTIME_IDENTITY_MATCHES,
+    )
+
+    manifest = NpuBackend(module).capability_manifest(["add", "matmul"])
+
+    assert manifest.audit_id == ASNUMPY_SOURCE_BUILD_AUDIT_ID
+    assert manifest.operators["add"].provenance is ExecutionProvenance.NATIVE_NPU
+    assert manifest.operators["matmul"].provenance is ExecutionProvenance.CPU_FALLBACK
+
+
+def test_pinned_source_receipt_rejects_native_and_wrapper_drift(
+    tmp_path, monkeypatch
+):
+    module, root, _, _ = _source_receipt_runtime(tmp_path, monkeypatch)
+
+    assert _REAL_AUDITED_RUNTIME_IDENTITY_MATCHES(module)
+    (root / "_core.so").write_bytes(b"native-drift")
+    assert not _REAL_AUDITED_RUNTIME_IDENTITY_MATCHES(module)
+    (root / "_core.so").write_bytes(b"locally-built-core")
+    assert _REAL_AUDITED_RUNTIME_IDENTITY_MATCHES(module)
+    (root / "cann.py").write_bytes(b"wrapper-drift")
+    assert not _REAL_AUDITED_RUNTIME_IDENTITY_MATCHES(module)
+
+
+@pytest.mark.parametrize(
+    ("keys", "value"),
+    [
+        (("status",), "failed"),
+        (("repositories", "asnumpy", "commit"), "0" * 40),
+        (("repositories", "asnumpy", "tree"), "0" * 40),
+        (("wheel", "trust", "tree"), "0" * 40),
+        (("verification", "asnumpy", "module_path"), "/wrong/asnumpy"),
+        (("verification", "asnumpy", "wheel_file_identity_verified"), False),
+        (
+            ("verification", "asnumpy", "native_modules"),
+            [{"path": "_core.so", "sha256": "0" * 64}],
+        ),
+    ],
+)
+def test_pinned_source_receipt_rejects_identity_field_drift(
+    tmp_path, monkeypatch, keys, value
+):
+    module, _, receipt_path, receipt = _source_receipt_runtime(
+        tmp_path, monkeypatch
+    )
+    changed = copy.deepcopy(receipt)
+    target = changed
+    for key in keys[:-1]:
+        target = target[key]
+    target[keys[-1]] = value
+    _write_source_receipt(receipt_path, changed)
+
+    assert not _REAL_AUDITED_RUNTIME_IDENTITY_MATCHES(module)
+
+
+def test_pinned_source_receipt_rejects_unsafe_file_and_duplicate_keys(
+    tmp_path, monkeypatch
+):
+    module, _, receipt_path, receipt = _source_receipt_runtime(
+        tmp_path, monkeypatch
+    )
+    receipt_path.chmod(0o644)
+    assert not _REAL_AUDITED_RUNTIME_IDENTITY_MATCHES(module)
+
+    duplicate = json.dumps(receipt)
+    duplicate = duplicate.replace(
+        '"schema_version": 1,',
+        '"schema_version": 1, "schema_version": 1,',
+        1,
+    )
+    receipt_path.write_text(duplicate, encoding="utf-8")
+    receipt_path.chmod(0o600)
+    assert not _REAL_AUDITED_RUNTIME_IDENTITY_MATCHES(module)
+
+    real_receipt = tmp_path / "real-bootstrap.json"
+    _write_source_receipt(real_receipt, receipt)
+    receipt_path.unlink()
+    receipt_path.symlink_to(real_receipt)
+    assert not _REAL_AUDITED_RUNTIME_IDENTITY_MATCHES(module)
+
+
+def test_pinned_source_receipt_uses_absolute_default_state_path(
+    tmp_path, monkeypatch
+):
+    module, _, receipt_path, receipt = _source_receipt_runtime(
+        tmp_path, monkeypatch
+    )
+    state_home = tmp_path / "state" / "numpilot"
+    default_receipt = state_home / "bootstrap" / "receipt.json"
+    default_receipt.parent.mkdir(parents=True, mode=0o700)
+    _write_source_receipt(default_receipt, receipt)
+    receipt_path.unlink()
+    monkeypatch.delenv("NUMPILOT_BOOTSTRAP_RECEIPT")
+    monkeypatch.setenv("NUMPILOT_STATE_HOME", str(state_home))
+
+    assert _REAL_AUDITED_RUNTIME_IDENTITY_MATCHES(module)
+
+    monkeypatch.setenv("NUMPILOT_STATE_HOME", "relative-state")
+    assert not _REAL_AUDITED_RUNTIME_IDENTITY_MATCHES(module)
 
 
 def test_p0_linalg_identity_rejects_utils_drift(tmp_path, monkeypatch):

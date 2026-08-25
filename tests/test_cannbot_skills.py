@@ -4,7 +4,18 @@ import subprocess
 
 import pytest
 
-from numpilot.cannbot_skills import CannbotSkillError, load_skill_bundle
+from numpilot.cannbot_skills import (
+    CANNBOT_COMMIT,
+    CannbotSkillError,
+    _BUNDLE_FILES,
+    load_skill_bundle,
+)
+
+
+def test_official_cannbot_pin_and_bundle_shape_are_stable():
+    assert CANNBOT_COMMIT == "1ef6372a538f39b0b7ed34666a3e1f465fb4936a"
+    assert len(_BUNDLE_FILES) == 36
+    assert len(set(_BUNDLE_FILES)) == 36
 
 
 def _run(*args, cwd):

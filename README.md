@@ -61,7 +61,8 @@ capability；满足条件后由配置的 GLM 只做 `numpy/np → asnumpy/ap` �
 - `complete-gaps --provider llm` 在新草稿路径上真实调用配置 endpoint，失败即终止，不回退
   AST；逐次 HTTP 2xx 回执与响应 SHA-256 会进入草稿 manifest。符合当前回执 schema 的
   已有草稿只做离线复验并明确记录 `reused_existing`，不能冒充本次联网。
-- 算子生成固定使用华为官方 `cann/cannbot-skills` 的已审计 commit。远端 Chat Completions
+- 算子生成固定使用华为官方 `cann/cannbot-skills` 的已审计 commit
+  [`1ef6372a538f39b0b7ed34666a3e1f465fb4936a`](https://gitcode.com/cann/cannbot-skills/tree/1ef6372a538f39b0b7ed34666a3e1f465fb4936a)。远端 Chat Completions
   模型无法读取本机路径，因此 NumPilot 会校验 checkout 的 origin/commit/工作树，将所需
   `SKILL.md`、指南和 910B 模板内容连同逐文件 SHA-256 真正嵌入请求，而不是只告诉模型一个
   `/home/...` 路径。
@@ -93,9 +94,41 @@ guard 与 ACLNN 日志证据，不声明 profiler 已验证，也不代表产品
 
 ## 快速运行
 
-从全新目录验证固定 tag、P0 AsNumpy wheel、CANNBot、GLM-5.3 迁移和 NPU 实跑时，直接打开
-[Notebook 模板](docs/NumPilot-Demo-v1-Quickstart.ipynb)，并按
-[全新 Notebook 验收路径](docs/FRESH-NOTEBOOK-QUICKSTART.md)执行。该路径当前不接入 ops-nn。
+全新机器的默认路径只需要克隆 NumPilot。AsNumpy 由安装器拉取固定官方源码并现场编译，
+CANNBot 作为 Skills/模板仓库拉取并校验（它没有需要编译的二进制）。该路径当前不接入
+ops-nn，也不使用 wheelhouse：
+
+```bash
+git clone --branch v0.2.0a2 --depth 1 \
+  https://gitcode.com/li-xingHIT/numpilot.git
+cd numpilot
+./install.sh --allow-network \
+  --with-cannbot --accept-cannbot-license
+source .venv/bin/activate
+```
+
+若机器默认 Python 包镜像不含所需版本，由用户显式指定可信索引，例如附加
+`--pip-index-url https://pypi.org/simple`。安装器不会在失败后悄悄换源。
+
+`install.sh` 只在用户显式传入 `--allow-network` 后工作，并依次创建项目虚拟环境、安装
+`.[bootstrap]`、展示 plan、构建/安装 AsNumpy、准备 CANNBot、运行两项 smoke 与
+`doctor --backend npu`。默认 receipt 写入 `numpilot paths --get bootstrap_receipt` 所示的 XDG
+状态路径，也可显式传入 `--receipt PATH`。运行时 capability 层会重新核对锁定
+source commit/tree、全部已审计 Python wrapper hash、当前 `_core.so` 与 receipt 的双份
+hash、模块/解释器路径和实际包版本；任一漂移都回到 `CAPABILITY_AUDIT_REQUIRED`。
+该 receipt 是当前用户边界内的本地 lineage/意外漂移门，不是带签名的供应链证明，不能
+宣称可对抗同一用户或 root 主动伪造。
+自定义 receipt 路径在后续 shell 中需显式设置
+`NUMPILOT_BOOTSTRAP_RECEIPT=/absolute/path/to/receipt.json`；默认 XDG 路径无需设置。
+安装器不会运行 `sudo`、修改 shell 启动文件、保存代理/凭据或安装到
+系统 Python。完整步骤及手工安装入口见
+[全新机器源码验收路径](docs/FRESH-NOTEBOOK-QUICKSTART.md)。
+
+主机仍需预装 CANN/驱动/NPU、Python 3.10+ 及开发头、Git、GCC 11.2+，以及系统
+`fmt`/`spdlog` CMake 开发包；缺失时安装器会在拉取/构建前明确失败，不会静默提权。
+当前第一轮源码验收允许已知 `matmul` CPU fallback，只验证安装与兼容性迁移；
+如另行授权运行已审核的 GLM 产物，只得到数值兼容证据。两种情况都固定
+`strict_npu=false`、`performance_valid=false`，不得沿用 P0 wheel 的 180× 历史结果。
 
 安装开发版本（这是用户显式执行的开发安装，不代表 `import` 或 `migrate` 可以联网）：
 
@@ -105,16 +138,13 @@ python -m venv .venv
 python -m pip install -e '.[dev]'
 ```
 
-基础运行依赖为 `numpy>=1.26`、`loguru>=0.7`、`rich>=13`。Demo v1 已审计 P0 wheel 的
-运行组合是 CPython 3.10/aarch64、NumPy 1.26.4、Loguru 0.7.3；可用
-`python -m pip install -e '.[dev,demo]'` 固定这组 Python 依赖。该 P0 二进制 profile 不代表
-其他 Python/架构组合已经资格化。使用本地预编译
-AsNumpy wheel 的 bootstrap 路径不需要额外构建工具。只有准备显式
-`--build-asnumpy` 时，才应先由用户安装可选 `numpilot[bootstrap]`；从本仓库
-开发时可用 `python -m pip install -e '.[dev,bootstrap]'`。`bootstrap --apply` 不会
-自动从 PyPI 补齐缺失的构建依赖。
+基础运行依赖为 `numpy>=1.26`、`loguru>=0.7`、`rich>=13`。源码安装必须使用
+`.[bootstrap]`，其中包含 NumPy 2、CMake、PEP 517/C++ 构建工具；不要同时安装
+`.[demo,bootstrap]`，因为历史 P0 wheel 的 NumPy 1.26.4 profile 与官方 AsNumpy 源码的
+NumPy 2 要求不同。`bootstrap --apply` 本身不会临时从 PyPI 猜测或补齐构建依赖，
+一键脚本是在调用它之前显式安装 `.[bootstrap]`。
 `--build-asnumpy` 会执行上游 CMake/PEP 517 构建，目前没有 OS 级断网沙箱；即使源码缓存已
-存在，plan 也会保守标记该动作 `network=true`。全新 Notebook 的 Demo v1 首选本地审计 wheel。
+存在，plan 也会保守标记该动作 `network=true`。
 
 依赖准备使用显式 bootstrap 层。不传模式或显式传入 `--plan` 都是只读计划；
 `--json` 可输出机器可读计划：
@@ -125,22 +155,20 @@ python -m numpilot bootstrap
 python -m numpilot bootstrap --plan
 python -m numpilot bootstrap --plan --json
 
-# 普通 Demo 首选：安装本地 wheel 前用可信发布物/用户输入的预期 hash 校验
+# 可选高级路径：安装本地 wheel 前用可信发布物/用户输入的预期 hash 校验
 python -m numpilot bootstrap --apply \
   --asnumpy-wheel /trusted/path/asnumpy.whl \
-  --asnumpy-wheel-sha256 "$TRUSTED_ASNUMPY_SHA256" \
-  --receipt /tmp/numpilot-bootstrap-receipt.json
+  --asnumpy-wheel-sha256 "$TRUSTED_ASNUMPY_SHA256"
 
-# 与本地 wheel 模式二选一：需先显式安装 numpilot[bootstrap]
+# 默认源码路径：需先显式安装 numpilot[bootstrap]
 python -m numpilot bootstrap --apply --build-asnumpy \
-  --receipt /tmp/numpilot-bootstrap-build-receipt.json
+  --with-cannbot --accept-cannbot-license
 
-# 仅在确需 CANNBot 时附加；这时才必须显式接受 CANN OSL
-python -m numpilot bootstrap --apply \
-  --asnumpy-wheel /trusted/path/asnumpy.whl \
-  --asnumpy-wheel-sha256 "$TRUSTED_ASNUMPY_SHA256" \
-  --with-cannbot --accept-cannbot-license \
-  --receipt /tmp/numpilot-bootstrap-with-cannbot.json
+# 手工准备源码：两个 checkout 都必须处于 plan 所列的精确 commit，origin 正确且工作树干净
+python -m numpilot bootstrap --apply --build-asnumpy \
+  --asnumpy-cache /path/to/asnumpy \
+  --with-cannbot --cannbot-cache /path/to/cannbot-skills \
+  --accept-cannbot-license
 
 # 安装后真实复验 AsNumpy README smoke（shape=(1000, 1000)，float32）
 python -m numpilot bootstrap --verify
@@ -148,6 +176,16 @@ python -m numpilot bootstrap --verify
 # 同时从已固定的本地 bundle 回答 Ascend C Skill 清单；不联网
 python -m numpilot bootstrap --verify --with-cannbot --accept-cannbot-license
 ```
+
+以上命令默认写入 NumPilot 自己的 XDG state 目录。若高级流程需要 `--receipt PATH`，PATH
+必须是绝对路径，父目录须由当前用户拥有、不可为符号链接且不可被 group/world 写入；例如先
+执行 `install -d -m 700 "$HOME/.local/state/numpilot-manual"`，再把 receipt 放入该目录。
+后续 shell 还需把 `NUMPILOT_BOOTSTRAP_RECEIPT` 设置为同一绝对路径。
+
+如果用户已经完全自行编译安装 AsNumpy，可运行 `bootstrap --verify`，并用
+`setup-skills --root /path/to/cannbot-skills --check` 校验手工 CANNBot checkout。这只能证明
+当前安装能运行，不能追溯证明二进制来自指定源码；需要完整来源回执时应使用上面的
+`--asnumpy-cache` 构建路径。
 
 实现内锁定 official AsNumpy source commit/tree 和 official CANNBot commit/bundle 身份，
 但不内置 wheel URL 或预期 wheel hash。本地 wheel 的预期 SHA-256 必须来自可信

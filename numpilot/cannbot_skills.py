@@ -23,7 +23,7 @@ class CannbotSkillError(RuntimeError):
 
 
 CANNBOT_REPOSITORY = "https://gitcode.com/cann/cannbot-skills.git"
-CANNBOT_COMMIT = "abcb35fc0ff77f4bc5eda74de6bbcf28cbc1572b"
+CANNBOT_COMMIT = "1ef6372a538f39b0b7ed34666a3e1f465fb4936a"
 CANNBOT_SKILL_NAME = "ascendc-registry-invoke-template"
 CANNBOT_LICENSE = "CANN Open Software License Agreement Version 2.0"
 _SKILL_PREFIX = "ops/ascendc-registry-invoke-template"

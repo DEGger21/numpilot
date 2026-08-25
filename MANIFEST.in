@@ -1,4 +1,5 @@
 include CHANGELOG.md
+include install.sh
 include CONTRIBUTING.md
 include SECURITY.md
 include THIRD_PARTY_NOTICES.md

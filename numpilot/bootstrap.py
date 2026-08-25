@@ -149,7 +149,7 @@ _RUNTIME_PACKAGES = {
 _SOURCE_BUILD_PACKAGES = {
     "numpy": (2, 0, 0),
     "build": (1, 0, 0),
-    "scikit-build-core": (0, 12, 1),
+    "scikit-build-core": (1, 0, 0),
     "pybind11": (3, 0, 0),
     "setuptools-scm": (9, 2, 2),
     "towncrier": (24, 0, 0),

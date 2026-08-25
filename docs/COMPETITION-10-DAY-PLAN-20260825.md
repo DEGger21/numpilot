@@ -7,7 +7,8 @@
 ## 1. 冻结后的默认用户流程
 
 ```text
-显式依赖准备：numpilot bootstrap（默认只读 plan）/ --apply
+全新机器：install.sh（显式 --allow-network）
+手工路径：numpilot bootstrap（默认只读 plan）/ --apply
                     │
                     ▼
 用户给一个纯 NumPy .py 文件（import numpy as np）
@@ -72,15 +73,18 @@ python -m numpilot bootstrap
 python -m numpilot bootstrap --plan
 python -m numpilot bootstrap --plan --json
 
-# 普通 Demo 首选本地预编译 wheel
+# 全新机器默认：只克隆 NumPilot，从锁定源码构建 AsNumpy 并准备 CANNBot
+./install.sh --allow-network \
+  --with-cannbot --accept-cannbot-license
+
+# 等价手工路径
+python -m numpilot bootstrap --apply --build-asnumpy \
+  --with-cannbot --accept-cannbot-license
+
+# 可选历史路径：可信本地 wheel + expected hash
 python -m numpilot bootstrap --apply \
   --asnumpy-wheel /trusted/path/asnumpy.whl \
-  --asnumpy-wheel-sha256 "$TRUSTED_ASNUMPY_SHA256" \
-  --receipt /tmp/numpilot-bootstrap-receipt.json
-
-# 与 wheel 模式二选一：仅显式源码构建
-python -m numpilot bootstrap --apply --build-asnumpy \
-  --receipt /tmp/numpilot-bootstrap-build-receipt.json
+  --asnumpy-wheel-sha256 "$TRUSTED_ASNUMPY_SHA256"
 
 # 安装后 AsNumpy smoke；可选固定本地 CANNBot Skill 清单
 python -m numpilot bootstrap --verify
@@ -94,13 +98,13 @@ python -m numpilot bootstrap --verify --with-cannbot --accept-cannbot-license
   `--asnumpy-cache PATH`/`--cannbot-cache PATH` 只显式改变 checkout 缓存位置；
 - 实现不内置 wheel URL/hash。本地 wheel 的 expected SHA-256 由可信发布物/用户
   输入提供，校验后将实际 hash 写入 receipt；资格 profile 仍在 capability 层绑定；
-- 普通 Demo 优先预编译审计 wheel；只有 `--build-asnumpy` 才允许从锁定源码构建；
-  源码构建前必须由用户显式安装 `numpilot[bootstrap]`（开发环境可
-  `.[dev,bootstrap]`），apply 不会从 PyPI 补齐构建工具；
-- 源码构建子进程尚无 OS 级断网沙箱，plan 必须保守标记 build 为 `network=true`；全新
-  Notebook 验收使用本地审计 wheel，不依赖现场源码构建；
-- 当前 P0 wheel 的已审计二进制 profile 仅为 CPython 3.10/aarch64、NumPy 1.26.4、
-  Loguru 0.7.3；其他组合不能沿用 Case 01 资格证据；
+- 全新机器 Demo 默认只 clone NumPilot，由 `install.sh` 在项目 venv 安装
+  `.[bootstrap]`、从锁定源码构建 AsNumpy，并拉取/校验 CANNBot；不使用
+  wheelhouse，不运行 sudo，不修改 shell 配置；
+- 源码构建子进程尚无 OS 级断网沙箱，plan 必须保守标记 build 为 `network=true`；
+- 当前锁定官方源码的公开 `matmul` 是 host NumPy fallback；接受该路径时只验收
+  安装、兼容性和数值，必须标记 `strict_npu=false`、`performance_valid=false`，不复用
+  历史 P0 wheel 的性能结论；
 - `--verify` 必须真实执行 AsNumpy `ap.ones((1000, 1000), dtype=ap.float32)` smoke；带
   `--with-cannbot` 时还要从固定本地 bundle 输出“现在写 Ascend C 算子有哪些能参考的 Skill？”
   的已校验清单，不联网、不调用模型；

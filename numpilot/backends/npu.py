@@ -1,9 +1,11 @@
 """真实 asnumpy(NPU)后端适配器。需已 build/install asnumpy。"""
 from dataclasses import dataclass
 import hashlib
+from importlib import metadata as importlib_metadata
 import os
 from pathlib import Path
 import stat
+import sys
 from typing import Tuple
 
 from numpilot.capabilities import (
@@ -18,6 +20,7 @@ from numpilot.capabilities import (
     detect_runtime_environment,
     match_capability_profile,
     tensor_profile_from_value,
+    _strict_json_loads,
 )
 from numpilot.backends.base import ExecutionBackend
 from numpilot.coverage import SUPPORTED_OPS
@@ -29,13 +32,18 @@ from numpilot.coverage import SUPPORTED_OPS
 AUDITED_ASNUMPY_VERSION = "0.3.1.dev4+g1929a3ba4"
 ASNUMPY_AUDIT_ID = (
     "asnumpy-0.3.1.dev4-g1929a3ba4-runtime-"
-    "init8761f7f9-coreab71b004-v2"
+    "init8761f7f9-cannac907b3a-coreab71b004-v3"
+)
+ASNUMPY_SOURCE_BUILD_AUDIT_ID = (
+    "asnumpy-0.3.1.dev4-g1929a3ba4-"
+    "init8761f7f9-cannac907b3a-pinned-source-receipt-v1"
 )
 _AUDITED_RUNTIME_FILE_SHA256 = {
     "__init__.py": "8761f7f9fe557606df6c6683245f4dfc3b8ac69385689a0673f3c90e33afd28e",
     "_types.py": "3686cc4be153e88950357aacdc71e90d98a71f2d01e659c3376ff4e0b2d66fa7",
     "_version.py": "c5fa636eada219c1045482d84a2a1f91fb2951fdf3ee075ed3abeae1a5db9c77",
     "array.py": "16c901f5937027d2ce6ae6f9d58813d389d20252315333c954ec5ccb9a3b4cc3",
+    "cann.py": "ac907b3a294e597e5429629387b9615abed963026a879ef411ba4a4ddecbcc3e",
     "linalg/__init__.py": "bae3efa81d9840d622c3f29ed677dfd834e7e2c2769b9a35daea0b9b55e52a83",
     "linalg/direct.py": "c56b61be41eea589d3d1c15b9afd606e7e26f0a25fc601cb1563a4279e7244c3",
     "logic.py": "56b9c8c6815a99f9734fb90cf84cb6df2ac7e810455f4d8b4d65e997decf8f29",
@@ -159,6 +167,27 @@ _P0_MOVE_RUNTIME_FILE_SHA256 = {
     "_core": "4465ce6e0589eb000d450a49c15488a4d2d9f211fa7867646992c56e7c040747",
 }
 _MAX_AUDITED_RUNTIME_FILE_BYTES = 64 * 1024 * 1024
+_MAX_BOOTSTRAP_RECEIPT_BYTES = 2 * 1024 * 1024
+_BOOTSTRAP_RECEIPT_ENV = "NUMPILOT_BOOTSTRAP_RECEIPT"
+_ASNUMPY_SOURCE_RECEIPT_ACTIONS = frozenset(
+    {
+        "environment_gates_passed",
+        "pinned_asnumpy_source_verified",
+        "asnumpy_wheel_built",
+        "built_wheel_installed",
+        "asnumpy_official_readme_smoke_passed",
+    }
+)
+_ASNUMPY_SOURCE_KEY_FILES = frozenset(
+    {
+        "LICENSE",
+        "README.md",
+        "pyproject.toml",
+        "CMakeLists.txt",
+        "bindings/python/CMakeLists.txt",
+        "csrc/CMakeLists.txt",
+    }
+)
 
 
 _CPU_FALLBACKS = {
@@ -328,29 +357,266 @@ def _p0_runtime_identity_matches(module):
     return observed == _P0_RUNTIME_FILE_SHA256
 
 
-def _audited_runtime_identity_matches(module):
-    """Bind the generic audited wheel to every executable public wrapper."""
+def _audited_runtime_observation(module):
+    """Return the hash-bound generic runtime files, or ``None`` on drift."""
 
     raw_path = getattr(module, "__file__", None)
     if not isinstance(raw_path, str) or not raw_path:
-        return False
+        return None
     init_path = Path(raw_path)
-    if init_path.is_symlink() or init_path.name != "__init__.py":
-        return False
+    if (
+        not init_path.is_absolute()
+        or init_path.is_symlink()
+        or init_path.name != "__init__.py"
+    ):
+        return None
     parent = init_path.parent
     linalg_dir = parent / "linalg"
     if linalg_dir.is_symlink() or not linalg_dir.is_dir():
-        return False
+        return None
     core_paths = tuple(parent.glob("_core*.so"))
     if len(core_paths) != 1 or core_paths[0].is_symlink():
-        return False
+        return None
     observed = {
         relative: _sha256_private_regular_file(parent / relative)
         for relative in _AUDITED_RUNTIME_FILE_SHA256
         if relative != "_core"
     }
     observed["_core"] = _sha256_private_regular_file(core_paths[0])
-    return observed == _AUDITED_RUNTIME_FILE_SHA256
+    if any(value is None for value in observed.values()):
+        return None
+    return init_path, core_paths[0], observed
+
+
+def _fixed_audited_runtime_identity_matches(module):
+    observation = _audited_runtime_observation(module)
+    return (
+        observation is not None
+        and observation[2] == _AUDITED_RUNTIME_FILE_SHA256
+    )
+
+
+def _bootstrap_receipt_path():
+    explicit = os.getenv(_BOOTSTRAP_RECEIPT_ENV)
+    if explicit:
+        path = Path(explicit).expanduser()
+    else:
+        from numpilot.paths import default_bootstrap_receipt
+
+        path = default_bootstrap_receipt()
+    return path if path.is_absolute() else None
+
+
+def _read_private_bootstrap_receipt(path):
+    if not isinstance(path, Path):
+        return None
+    try:
+        parent_stat = path.parent.stat()
+    except OSError:
+        return None
+    if (
+        path.parent.is_symlink()
+        or not stat.S_ISDIR(parent_stat.st_mode)
+        or parent_stat.st_mode & 0o022
+        or (
+            hasattr(os, "getuid")
+            and parent_stat.st_uid != os.getuid()
+        )
+    ):
+        return None
+    flags = os.O_RDONLY
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(str(path), flags)
+    except OSError:
+        return None
+    try:
+        file_stat = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(file_stat.st_mode)
+            or file_stat.st_mode & 0o077
+            or file_stat.st_size <= 0
+            or file_stat.st_size > _MAX_BOOTSTRAP_RECEIPT_BYTES
+            or (
+                hasattr(os, "getuid")
+                and file_stat.st_uid != os.getuid()
+            )
+        ):
+            return None
+        payload = bytearray()
+        while True:
+            block = os.read(descriptor, min(1024 * 1024, _MAX_BOOTSTRAP_RECEIPT_BYTES + 1))
+            if not block:
+                break
+            payload.extend(block)
+            if len(payload) > _MAX_BOOTSTRAP_RECEIPT_BYTES:
+                return None
+        parsed = _strict_json_loads(payload.decode("utf-8"))
+        return parsed if type(parsed) is dict else None
+    except (OSError, UnicodeError, ValueError, TypeError):
+        return None
+    finally:
+        try:
+            os.close(descriptor)
+        except OSError:
+            pass
+
+
+def _sha256_text(value):
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def _source_build_receipt_identity_matches(module):
+    """Admit a non-reproducible native build only through its exact receipt."""
+
+    observation = _audited_runtime_observation(module)
+    receipt_path = _bootstrap_receipt_path()
+    if observation is None or receipt_path is None:
+        return False
+    init_path, core_path, observed = observation
+
+    # Every audited Python wrapper remains tied to the reviewed source.  Only
+    # the native module hash is allowed to vary between deterministic source
+    # inputs, and it must be bound by the bootstrap receipt below.
+    expected_python = {
+        name: digest
+        for name, digest in _AUDITED_RUNTIME_FILE_SHA256.items()
+        if name != "_core"
+    }
+    if {name: observed[name] for name in expected_python} != expected_python:
+        return False
+
+    receipt = _read_private_bootstrap_receipt(receipt_path)
+    if receipt is None:
+        return False
+    try:
+        from numpilot import __version__ as numpilot_version
+        from numpilot.bootstrap import (
+            ASNUMPY_COMMIT,
+            ASNUMPY_REPOSITORY,
+            ASNUMPY_TREE,
+            ASNUMPY_VERSION,
+        )
+
+        repositories = receipt["repositories"]
+        source = repositories["asnumpy"]
+        wheel = receipt["wheel"]
+        trust = wheel["trust"]
+        installed = wheel["installed_files"]
+        verification = receipt["verification"]["asnumpy"]
+        verification_native = verification["native_modules"]
+        installed_native = installed["native_modules"]
+        source_key_hashes = source["files_sha256"]
+        actions = receipt["actions"]
+    except (KeyError, TypeError):
+        return False
+
+    if (
+        receipt.get("schema_version") != 1
+        or receipt.get("producer") != "numpilot-bootstrap-v1"
+        or receipt.get("numpilot_version") != numpilot_version
+        or receipt.get("status") != "ready"
+        or receipt.get("ready") is not True
+        or not _sha256_text(receipt.get("plan_sha256"))
+        or not isinstance(actions, list)
+        or any(not isinstance(action, str) for action in actions)
+        or not _ASNUMPY_SOURCE_RECEIPT_ACTIONS.issubset(actions)
+    ):
+        return False
+
+    if (
+        type(source) is not dict
+        or source.get("repository") != ASNUMPY_REPOSITORY
+        or source.get("commit") != ASNUMPY_COMMIT
+        or source.get("tree") != ASNUMPY_TREE
+        or source.get("mode") != "pinned-source-build"
+        or type(source_key_hashes) is not dict
+        or set(source_key_hashes) != _ASNUMPY_SOURCE_KEY_FILES
+        or any(not _sha256_text(value) for value in source_key_hashes.values())
+    ):
+        return False
+
+    if (
+        type(wheel) is not dict
+        or wheel.get("kind") != "built-from-pinned-source"
+        or wheel.get("distribution") != "asnumpy"
+        or wheel.get("version") != ASNUMPY_VERSION
+        or not _sha256_text(wheel.get("sha256"))
+        or not _sha256_text(wheel.get("metadata_sha256"))
+        or not _sha256_text(wheel.get("record_sha256"))
+        or type(trust) is not dict
+        or trust.get("kind") != "built-from-pinned-source"
+        or trust.get("repository") != ASNUMPY_REPOSITORY
+        or trust.get("commit") != ASNUMPY_COMMIT
+        or trust.get("tree") != ASNUMPY_TREE
+    ):
+        return False
+
+    try:
+        module_path = str(init_path.resolve(strict=True))
+        interpreter = str(Path(sys.executable).resolve(strict=True))
+        receipt_interpreter = str(
+            Path(verification["interpreter"]).resolve(strict=True)
+        )
+        installed_module = installed["module"]
+    except (KeyError, OSError, RuntimeError, TypeError, ValueError):
+        return False
+
+    native_hash = observed["_core"]
+    module_hash = observed["__init__.py"]
+    if (
+        verification.get("status") != "passed"
+        or verification.get("source")
+        != "official AsNumpy README.md installation verification"
+        or verification.get("asnumpy_version") != ASNUMPY_VERSION
+        or verification.get("module_path") != module_path
+        or verification.get("module_sha256") != module_hash
+        or verification.get("wheel_file_identity_verified") is not True
+        or verification.get("shape") != [1000, 1000]
+        or verification.get("dtype") != "float32"
+        or receipt_interpreter != interpreter
+        or type(installed_module) is not dict
+        or installed_module.get("path") != "asnumpy/__init__.py"
+        or installed_module.get("sha256") != module_hash
+        or not isinstance(verification_native, list)
+        or not isinstance(installed_native, list)
+        or len(verification_native) != 1
+        or len(installed_native) != 1
+        or type(verification_native[0]) is not dict
+        or type(installed_native[0]) is not dict
+        or verification_native[0].get("path") != core_path.name
+        or verification_native[0].get("sha256") != native_hash
+        or installed_native[0].get("path") != "asnumpy/" + core_path.name
+        or installed_native[0].get("sha256") != native_hash
+    ):
+        return False
+
+    try:
+        installed_asnumpy_version = importlib_metadata.version("asnumpy")
+        installed_numpy_version = importlib_metadata.version("numpy")
+        installed_loguru_version = importlib_metadata.version("loguru")
+    except importlib_metadata.PackageNotFoundError:
+        return False
+    return (
+        installed_asnumpy_version == ASNUMPY_VERSION
+        and verification.get("numpy_version") == installed_numpy_version
+        and verification.get("loguru_version") == installed_loguru_version
+    )
+
+
+def _audited_runtime_identity_matches(module):
+    """Bind either the fixed wheel or an exact pinned-source build receipt."""
+
+    return _fixed_audited_runtime_identity_matches(
+        module
+    ) or _source_build_receipt_identity_matches(module)
 
 
 def _p0_linalg_runtime_identity_matches(module):
@@ -432,11 +698,15 @@ def _cbrt_runtime_identity_matches(module):
 
 
 def _runtime_audit_id(module, version):
-    if (
-        version == AUDITED_ASNUMPY_VERSION
-        and _audited_runtime_identity_matches(module)
-    ):
-        return ASNUMPY_AUDIT_ID
+    if version == AUDITED_ASNUMPY_VERSION:
+        if _fixed_audited_runtime_identity_matches(module):
+            return ASNUMPY_AUDIT_ID
+        if _source_build_receipt_identity_matches(module):
+            return ASNUMPY_SOURCE_BUILD_AUDIT_ID
+        # Preserve the narrow injection seam used by unit/private backends.
+        # Production modules reach one of the two concrete checks above.
+        if _audited_runtime_identity_matches(module):
+            return ASNUMPY_AUDIT_ID
     if version == P0_ASNUMPY_VERSION:
         if _p0_linalg_runtime_identity_matches(module):
             return P0_LINALG_ASNUMPY_AUDIT_ID
@@ -496,6 +766,7 @@ def _provenance_profile(name, version, audit_id):
         )
     if audit_id not in {
         ASNUMPY_AUDIT_ID,
+        ASNUMPY_SOURCE_BUILD_AUDIT_ID,
         P0_ASNUMPY_AUDIT_ID,
         P0_LINALG_ASNUMPY_AUDIT_ID,
         P0_MOVE_ASNUMPY_AUDIT_ID,
@@ -564,8 +835,13 @@ def _provenance_profile(name, version, audit_id):
                 "delegates to ACLNN"
                 if audit_id == P0_ASNUMPY_AUDIT_ID
                 or audit_id in _P0_LINALG_AUDIT_IDS
-                else "asnumpy@1929a3ba4 source audit: public wrapper delegates "
-                "to an NPU binding"
+                else (
+                    "asnumpy@1929a3ba4 pinned-source receipt and wrapper audit: "
+                    "public wrapper delegates to an NPU binding"
+                    if audit_id == ASNUMPY_SOURCE_BUILD_AUDIT_ID
+                    else "asnumpy@1929a3ba4 source audit: public wrapper "
+                    "delegates to an NPU binding"
+                )
             )
         ),
         (),

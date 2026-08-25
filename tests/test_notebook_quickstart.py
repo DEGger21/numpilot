@@ -26,22 +26,13 @@ def test_fresh_notebook_template_is_clean_and_covers_the_release_path():
                 "exec",
             )
 
-    assert "v0.2.0a1" in code
-    assert "bootstrap', '--apply'" in code
+    assert "install.sh" in code
+    assert "--allow-network" in code
     assert "bootstrap', '--verify'" in code
     assert "--accept-cannbot-license" in code
-    assert "configure-llm', '--check'" in code
-    assert "migrate" in code and "migrated.py" in code
-    assert "NUMPILOT_NOTEBOOK_ROOT" in code
-    assert "cwd=cwd or TEST_ROOT" in code
-    assert "not name.startswith('NUMPILOT_')" in code
-    assert "NUMPILOT_LLM_MAX_TOKENS" in code
-    assert "NUMPILOT_LLM_TIMEOUT" in code
-    assert "NUMPILOT_LLM_INSECURE" in code
-    assert "env['PYTHONPATH']" in code
-    assert "'-I', '-m', 'pip', '--isolated'" in code
-    assert "source=user-config" in code
-    assert "row_sum_checksum" in code and "math.isclose" in code
+    assert "doctor', '--backend', 'npu'" in code
+    assert "ALLOW_NETWORK = False" in code
+    assert "ACCEPT_CANNBOT_LICENSE = False" in code
     assert "127.0.0.1:7897" not in code
     assert "auth_token" not in code
 
@@ -50,5 +41,9 @@ def test_fresh_notebook_template_is_clean_and_covers_the_release_path():
         for cell in payload["cells"]
         if cell["cell_type"] == "markdown"
     )
-    assert "numpilot-demo-v1-cp310-aarch64-wheelhouse.tar.gz" in markdown
-    assert "abcb35fc0ff77f4bc5eda74de6bbcf28cbc1572b/LICENSE" in markdown
+    assert "不使用 wheelhouse" in markdown
+    assert "1ef6372a538f39b0b7ed34666a3e1f465fb4936a" in markdown
+    assert "model=glm-5.3" in markdown
+    assert "strict_npu=false" in markdown
+    assert "performance_valid=false" in markdown
+    assert "开始迁移" in markdown

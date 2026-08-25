@@ -8,6 +8,7 @@
 - [当前整体架构图（draw.io）](numpilot-architecture.drawio)：三页可编辑架构图，依次为 ordinary 用户主流程、gap/资格化恢复流、安装与可信边界；
 - [初赛 10 天冲刺计划](COMPETITION-10-DAY-PLAN-20260825.md)：范围冻结、每日交付、里程碑与止损线；
 - [全新 Notebook 验收路径](FRESH-NOTEBOOK-QUICKSTART.md)：从固定 tag、安装与 bootstrap 到 GLM 迁移和 NPU 实跑；
+- [全新机器 AI Prompt](FRESH-MACHINE-AI-PROMPT.md)：只克隆 NumPilot、源码安装并在迁移前停点；
 - [ops-nn 官方算子复用评估](OPS-NN-REUSE-ASSESSMENT-20260825.md)：缺口后的官方候选优先级、门禁与 P1 待定范围；
 - [质量场景](quality-scenarios.md)：关键质量属性与验收场景；
 - [CodeArts 接入](codearts-integration.md)：比赛多智能体配置与演示；

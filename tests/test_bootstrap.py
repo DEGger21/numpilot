@@ -75,7 +75,7 @@ def _version_reader(name):
     versions = {
         "asnumpy": bootstrap.ASNUMPY_VERSION,
         "build": "1.2.2",
-        "scikit-build-core": "0.12.1",
+        "scikit-build-core": "1.0.0",
         "pybind11": "3.0.0",
         "numpy": "2.1.0",
         "loguru": "0.7.3",
