@@ -124,16 +124,54 @@ def test_ordinary_input_file_rejects_a_symlink(tmp_path):
 
 
 def test_qualification_spec_changes_only_the_three_scope_fields():
-    original_path = (
-        Path(__file__).resolve().parents[2]
-        / "numpilot-showcases"
-        / "cbrt_sensor_calibration"
-        / "01-gap-analysis"
-        / "gaps"
-        / "cbrt-a48e7704b679eb02"
-        / "gap-spec.json"
-    )
-    original = json.loads(original_path.read_text(encoding="utf-8"))
+    # Keep this regression self-contained: a fresh NumPilot clone must not
+    # require the separately maintained numpilot-showcases repository.
+    original = {
+        "api_name": "cbrt",
+        "asnumpy_api": "asnumpy.cbrt",
+        "callsites": [{
+            "call_expr": "numpy.cbrt(<arg0>)",
+            "col_offset": 17,
+            "lineno": 18,
+            "qualified_api": "numpy.cbrt",
+            "reason": "API 不在静态覆盖集",
+        }],
+        "cann_version": "9.0.0",
+        "dtype_rules": ["runtime_profile_required"],
+        "gap_id": "cbrt-a48e7704b679eb02",
+        "qualified_api": "numpy.cbrt",
+        "reference_cases": [],
+        "route": "ascendc_registry_candidate",
+        "route_decisions": [
+            {
+                "reason": "requires a semantic composition resolver",
+                "route": "asnumpy_composite",
+                "status": "not_evaluated",
+            },
+            {
+                "reason": "check a pinned CANN operator catalog before new kernel work",
+                "route": "cann_existing",
+                "status": "review_required",
+            },
+            {
+                "reason": "explicit draft generation is allowed; execution remains gated",
+                "route": "ascendc_registry",
+                "status": "candidate_for_draft",
+            },
+        ],
+        "schema_version": 1,
+        "semantic_source": "numpy.cbrt",
+        "shape_rules": ["runtime_profile_required"],
+        "signature_variants": [{"keyword_args": [], "positional_args": 1}],
+        "source_path": (
+            "/home/ma-user/work/numpilot-showcases/cbrt_sensor_calibration/"
+            "source/cube_root_sensor_calibration.py"
+        ),
+        "source_sha256": (
+            "9022b2174d5e1dde99eb110728edb6708b42b7cbc86374accc2fe3a2c94f1453"
+        ),
+        "target_soc": "Ascend910B",
+    }
 
     qualified = harness._qualification_spec(original)
 
