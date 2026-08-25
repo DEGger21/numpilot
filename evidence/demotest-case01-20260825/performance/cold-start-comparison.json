@@ -1,0 +1,43 @@
+{
+  "cpu_affinity": [
+    168
+  ],
+  "cpu_blas_threads_requested": 1,
+  "cpu_faster_factor": 4.435087719298245,
+  "cpu_median_ms": 1140.0,
+  "cpu_over_npu_ratio": 0.2254746835443038,
+  "cpu_samples_file_sha256": "e4dcb1d33e933533ba28efb247c7fb65bb38637cd9ecc38b4383c6f7f5c5a893",
+  "cpu_samples_ms": [
+    1140.0,
+    1108.0,
+    1047.0,
+    1249.0,
+    1140.0
+  ],
+  "migrated_sha256": "f58979c0a16a0ba7414621337cb998f122c7363d5f361190c5fd665bf895dd91",
+  "npu_affinity": [
+    168
+  ],
+  "npu_median_ms": 5056.0,
+  "npu_samples_file_sha256": "b2895f2915418e30015957b072d72967cf572767385375f86fdc57864a38a755",
+  "npu_samples_ms": [
+    4879.0,
+    5107.0,
+    5073.0,
+    5056.0,
+    4823.0
+  ],
+  "schema_version": 1,
+  "source_sha256": "eb07e1aa682d882f83c59f02b85c52a2ecc8a5054b9d856ae82760326f86fe2b",
+  "status": "pass",
+  "timing_scope": {
+    "clock": "bash_time_keyword_elapsed",
+    "device_initialization_included": true,
+    "full_script_body_included": true,
+    "kernel_only": false,
+    "module_import_included": true,
+    "name": "cold_process_end_to_end",
+    "python_startup_included": true,
+    "stdout_redirected_to_devnull": true
+  }
+}

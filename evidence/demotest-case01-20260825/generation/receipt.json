@@ -1,0 +1,24 @@
+{
+  "content_sha256": "3e57ae6dd9f58873c72f963a808908829a33a64880285c028f5699cf78eb138a",
+  "http_status": 200,
+  "request_body_sha256": "0665bfc72629952adf87d08d25225488c2b28caadeb87ae48781230384ba34b6",
+  "request_id": null,
+  "requested_model": "glm-5.3",
+  "response_body_sha256": "7f4da83665c6306e4b309f69dc6051ea43958843031efbac8e09df2f34ffe87e",
+  "response_created": 1787641300,
+  "response_id": "msg_2026082515013696ad25a72e51437d",
+  "response_model": "glm-5.3",
+  "schema_version": 1,
+  "tls_verification": "enabled",
+  "usage": {
+    "claude_cache_creation_1_h_tokens": 0,
+    "claude_cache_creation_5_m_tokens": 0,
+    "completion_tokens": 377,
+    "input_tokens": 966,
+    "output_tokens": 0,
+    "prompt_tokens": 966,
+    "total_tokens": 1343
+  },
+  "utc_end": "2026-08-25T07:01:40.465639Z",
+  "utc_start": "2026-08-25T07:01:36.506084Z"
+}

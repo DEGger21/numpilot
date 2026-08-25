@@ -203,6 +203,10 @@ _REPAIRED_ADAPTER_REPORT_FIELDS = frozenset({
     "gates",
 })
 _SAFE_RECEIPT_TEXT = re.compile(r"^[A-Za-z0-9._:?-]{1,512}$")
+_GLM_MODEL_IDENTITY = re.compile(
+    r"^glm-[A-Za-z0-9][A-Za-z0-9._:-]{0,507}$",
+    re.IGNORECASE,
+)
 _EXPECTED_UNVERIFIED_GATES = {
     "spec": "prepared",
     "generation": "passed",
@@ -805,6 +809,57 @@ def _validate_remote_receipt(
     return dict(receipt)
 
 
+def validate_remote_receipt(
+    receipt: object, response: object = _RESPONSE_NOT_PROVIDED
+) -> Dict[str, object]:
+    """Public validation boundary for a redacted real-model receipt."""
+
+    return _validate_remote_receipt(receipt, response)
+
+
+def require_glm_configuration(provider: object, model: object) -> str:
+    """Return the configured model only for an explicit GLM identity."""
+
+    if not isinstance(provider, str) or provider.strip().lower() != "glm":
+        raise DraftGenerationError(
+            "model-generated code requires provider=glm"
+        )
+    if (
+        not isinstance(model, str)
+        or _GLM_MODEL_IDENTITY.fullmatch(model.strip()) is None
+    ):
+        raise DraftGenerationError(
+            "model-generated code requires an explicit glm-* model"
+        )
+    return model.strip()
+
+
+def validate_glm_remote_receipt(
+    receipt: object,
+    response: object = _RESPONSE_NOT_PROVIDED,
+    *,
+    expected_model: object,
+) -> Dict[str, object]:
+    """Validate one response as evidence from the configured GLM model."""
+
+    expected = require_glm_configuration("glm", expected_model)
+    validated = _validate_remote_receipt(receipt, response)
+    requested = validated.get("requested_model")
+    actual = validated.get("response_model")
+    if (
+        not isinstance(requested, str)
+        or _GLM_MODEL_IDENTITY.fullmatch(requested) is None
+        or not isinstance(actual, str)
+        or _GLM_MODEL_IDENTITY.fullmatch(actual) is None
+        or requested != expected
+        or actual != expected
+    ):
+        raise DraftGenerationError(
+            "remote model receipt does not prove one consistent glm-* identity"
+        )
+    return validated
+
+
 def _adapter_artifact_id(report: Dict[str, object]) -> str:
     """Return the reproducible identity for an AsNumpy adapter report.
 
@@ -989,7 +1044,11 @@ def _validate_adapter_report(
         or report.get("gates") != _EXPECTED_UNVERIFIED_GATES
     ):
         raise DraftGenerationError("AsNumpy adapter transport evidence is invalid")
-    normalized_receipts = [_validate_remote_receipt(item) for item in receipts]
+    model = require_glm_configuration(report.get("provider"), report.get("model"))
+    normalized_receipts = [
+        validate_glm_remote_receipt(item, expected_model=model)
+        for item in receipts
+    ]
     content_hashes = [
         item["content_sha256"]
         for item in normalized_receipts
@@ -997,7 +1056,6 @@ def _validate_adapter_report(
     ]
     if (
         content_hashes != response_hashes
-        or any(item["requested_model"] != report["model"] for item in normalized_receipts)
     ):
         raise DraftGenerationError(
             "AsNumpy adapter receipt/content hashes are inconsistent"
@@ -1308,7 +1366,21 @@ def _validate_generation(
         or len(raw_receipts) > maximum_attempts
     ):
         raise DraftGenerationError("existing draft remote receipts are invalid")
-    receipts = [_validate_remote_receipt(item) for item in raw_receipts]
+    if mode == "remote_llm":
+        try:
+            model = require_glm_configuration(
+                generation.get("provider"), generation.get("model")
+            )
+            receipts = [
+                validate_glm_remote_receipt(item, expected_model=model)
+                for item in raw_receipts
+            ]
+        except DraftGenerationError as exc:
+            raise DraftGenerationError(
+                "existing remote draft GLM identity is invalid: %s" % exc
+            ) from exc
+    else:
+        receipts = [_validate_remote_receipt(item) for item in raw_receipts]
 
     normalized = dict(generation)
     normalized["response_sha256"] = list(response_hashes)
@@ -1334,13 +1406,6 @@ def _validate_generation(
         if receipt_content_hashes != response_hashes:
             raise DraftGenerationError(
                 "existing remote draft receipt/content hashes are inconsistent"
-            )
-        if any(
-            item["requested_model"] != generation["model"]
-            for item in receipts
-        ):
-            raise DraftGenerationError(
-                "existing remote draft receipt model mismatch"
             )
     else:
         if (
@@ -1701,7 +1766,11 @@ def _load_repair_candidate(
         or len(raw_receipts) > report_attempts
     ):
         raise DraftGenerationError("repair base transport evidence is invalid")
-    receipts = [_validate_remote_receipt(item) for item in raw_receipts]
+    model = require_glm_configuration(report.get("provider"), report.get("model"))
+    receipts = [
+        validate_glm_remote_receipt(item, expected_model=model)
+        for item in raw_receipts
+    ]
     content_hashes = [
         item["content_sha256"]
         for item in receipts
@@ -1709,7 +1778,6 @@ def _load_repair_candidate(
     ]
     if (
         content_hashes != response_hashes
-        or any(item["requested_model"] != report["model"] for item in receipts)
     ):
         raise DraftGenerationError(
             "repair base receipt/content hashes are inconsistent"
@@ -2079,10 +2147,11 @@ class LlmDraftProvider:
             raise DraftGenerationError(
                 "LLM is not configured; run configure-llm --check"
             )
+        model = require_glm_configuration(status.provider, status.model)
         return LlmEngine._chat_with_receipt, {
             "mode": "remote_llm",
-            "provider": status.provider or "unlabeled",
-            "model": status.model or os.environ["NUMPILOT_LLM_MODEL"],
+            "provider": "glm",
+            "model": model,
             "configuration_source": status.source,
             "origin_action": "fresh_remote",
             "remote_receipts": [],
@@ -2141,14 +2210,11 @@ class LlmDraftProvider:
                             "remote model call returned no auditable receipt"
                         )
                     response, receipt = result
-                    validated_receipt = _validate_remote_receipt(receipt, response)
-                    if (
-                        validated_receipt["requested_model"]
-                        != generation_base["model"]
-                    ):
-                        raise DraftGenerationError(
-                            "remote model receipt requested model mismatch"
-                        )
+                    validated_receipt = validate_glm_remote_receipt(
+                        receipt,
+                        response,
+                        expected_model=generation_base["model"],
+                    )
                     remote_receipts.append(validated_receipt)
                     if isinstance(response, str):
                         response_hashes.append(
@@ -2168,14 +2234,11 @@ class LlmDraftProvider:
                     from numpilot.engines.llm import LlmResponseError
 
                     if isinstance(exc, LlmResponseError):
-                        failed_receipt = _validate_remote_receipt(exc.receipt, None)
-                        if (
-                            failed_receipt["requested_model"]
-                            != generation_base["model"]
-                        ):
-                            raise DraftGenerationError(
-                                "remote model receipt requested model mismatch"
-                            ) from None
+                        failed_receipt = validate_glm_remote_receipt(
+                            exc.receipt,
+                            None,
+                            expected_model=generation_base["model"],
+                        )
                         remote_receipts.append(failed_receipt)
                     status_code = getattr(exc, "status_code", None)
                     if isinstance(status_code, int) and not isinstance(
@@ -2355,11 +2418,11 @@ class LlmDraftProvider:
                             "remote repair call returned no auditable receipt"
                         )
                     response, receipt = result
-                    validated_receipt = _validate_remote_receipt(receipt, response)
-                    if validated_receipt["requested_model"] != generation_base["model"]:
-                        raise DraftGenerationError(
-                            "remote repair receipt requested model mismatch"
-                        )
+                    validated_receipt = validate_glm_remote_receipt(
+                        receipt,
+                        response,
+                        expected_model=generation_base["model"],
+                    )
                     receipts.append(validated_receipt)
                     response_hashes.append(
                         _sha256_bytes(response.encode("utf-8"))
@@ -2377,17 +2440,11 @@ class LlmDraftProvider:
                     from numpilot.engines.llm import LlmResponseError
 
                     if isinstance(exc, LlmResponseError):
-                        failed_receipt = _validate_remote_receipt(
+                        failed_receipt = validate_glm_remote_receipt(
                             exc.receipt,
                             None,
+                            expected_model=generation_base["model"],
                         )
-                        if (
-                            failed_receipt["requested_model"]
-                            != generation_base["model"]
-                        ):
-                            raise DraftGenerationError(
-                                "remote repair receipt requested model mismatch"
-                            ) from None
                         receipts.append(failed_receipt)
                     status_code = getattr(exc, "status_code", None)
                     if isinstance(status_code, int) and not isinstance(
@@ -2610,11 +2667,11 @@ class LlmDraftProvider:
                             "remote adapter call returned no auditable receipt"
                         )
                     response, receipt = result
-                    validated_receipt = _validate_remote_receipt(receipt, response)
-                    if validated_receipt["requested_model"] != generation_base["model"]:
-                        raise DraftGenerationError(
-                            "remote adapter receipt requested model mismatch"
-                        )
+                    validated_receipt = validate_glm_remote_receipt(
+                        receipt,
+                        response,
+                        expected_model=generation_base["model"],
+                    )
                     receipts.append(validated_receipt)
                     response_hashes.append(
                         _sha256_bytes(response.encode("utf-8"))
@@ -2643,7 +2700,11 @@ class LlmDraftProvider:
                     from numpilot.engines.llm import LlmResponseError
 
                     if isinstance(exc, LlmResponseError):
-                        failed_receipt = _validate_remote_receipt(exc.receipt, None)
+                        failed_receipt = validate_glm_remote_receipt(
+                            exc.receipt,
+                            None,
+                            expected_model=generation_base["model"],
+                        )
                         receipts.append(failed_receipt)
                     failure = "remote adapter call failed: %s" % type(exc).__name__
                     failures.append(
@@ -2872,11 +2933,11 @@ class LlmDraftProvider:
                         "remote AsNumpy repair call returned no auditable receipt"
                     )
                 response, receipt = result
-                validated_receipt = _validate_remote_receipt(receipt, response)
-                if validated_receipt["requested_model"] != generation_base["model"]:
-                    raise DraftGenerationError(
-                        "remote AsNumpy repair receipt requested model mismatch"
-                    )
+                validated_receipt = validate_glm_remote_receipt(
+                    receipt,
+                    response,
+                    expected_model=generation_base["model"],
+                )
                 receipts.append(validated_receipt)
                 response_hashes.append(_sha256_bytes(response.encode("utf-8")))
                 _summary, files = _validate_stage_bundle(response, (normalized_path,))
@@ -2908,7 +2969,11 @@ class LlmDraftProvider:
                 from numpilot.engines.llm import LlmResponseError
 
                 if isinstance(exc, LlmResponseError):
-                    failed_receipt = _validate_remote_receipt(exc.receipt, None)
+                    failed_receipt = validate_glm_remote_receipt(
+                        exc.receipt,
+                        None,
+                        expected_model=generation_base["model"],
+                    )
                     receipts.append(failed_receipt)
                 status_code = getattr(exc, "status_code", None)
                 failure = (
@@ -3067,7 +3132,10 @@ class LlmDraftProvider:
             ):
                 raise DraftGenerationError("repair chain transport evidence is invalid")
             normalized_receipts = [
-                _validate_remote_receipt(receipt)
+                validate_glm_remote_receipt(
+                    receipt,
+                    expected_model=generation["model"],
+                )
                 for receipt in report_receipts
             ]
             content_hashes = [
@@ -3078,10 +3146,6 @@ class LlmDraftProvider:
             if (
                 any(not _is_sha256(digest) for digest in report_hashes)
                 or content_hashes != report_hashes
-                or any(
-                    receipt["requested_model"] != generation["model"]
-                    for receipt in normalized_receipts
-                )
             ):
                 raise DraftGenerationError(
                     "repair chain receipt/content hashes are inconsistent"
@@ -3285,6 +3349,13 @@ class LlmDraftProvider:
         if os.path.lexists(draft_dir):
             if draft_dir.is_dir() and not draft_dir.is_symlink():
                 draft = _load_existing_draft(draft_dir, spec)
+                if (
+                    self._chat is None
+                    and draft.generation.get("mode") != "remote_llm"
+                ):
+                    raise DraftGenerationError(
+                        "production reuse requires a receipt-bound GLM draft"
+                    )
                 self._run_actions[draft.workspace] = "reused_existing"
                 return draft
             raise DraftGenerationError("draft target exists and is not a directory")
@@ -3363,16 +3434,11 @@ class LlmDraftProvider:
                             "remote model call returned no auditable receipt"
                         )
                     response, receipt = result
-                    validated_receipt = _validate_remote_receipt(
-                        receipt, response
+                    validated_receipt = validate_glm_remote_receipt(
+                        receipt,
+                        response,
+                        expected_model=generation_base["model"],
                     )
-                    if (
-                        validated_receipt["requested_model"]
-                        != generation_base["model"]
-                    ):
-                        raise DraftGenerationError(
-                            "remote model receipt requested model mismatch"
-                        )
                     remote_receipts.append(validated_receipt)
                 else:
                     response = result
@@ -3394,14 +3460,11 @@ class LlmDraftProvider:
                     generation_base["mode"] == "remote_llm"
                     and isinstance(exc, LlmResponseError)
                 ):
-                    failed_receipt = _validate_remote_receipt(exc.receipt, None)
-                    if (
-                        failed_receipt["requested_model"]
-                        != generation_base["model"]
-                    ):
-                        raise DraftGenerationError(
-                            "remote model receipt requested model mismatch"
-                        ) from None
+                    failed_receipt = validate_glm_remote_receipt(
+                        exc.receipt,
+                        None,
+                        expected_model=generation_base["model"],
+                    )
                     remote_receipts.append(failed_receipt)
                 status_code = getattr(exc, "status_code", None)
                 if isinstance(status_code, int) and not isinstance(status_code, bool):

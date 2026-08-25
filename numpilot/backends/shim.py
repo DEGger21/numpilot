@@ -88,6 +88,17 @@ def _require_integer_axis(axis, operation):
 def _make_module():
     m = types.ModuleType("asnumpy")
 
+    # Match the public metadata aliases exposed by real AsNumpy.  Ordinary
+    # whole-file migration changes ``np.float32`` to ``ap.float32`` as part of
+    # the same namespace-only rewrite.
+    for name in (
+        "float16", "float32", "float64",
+        "int8", "int16", "int32", "int64",
+        "uint8", "uint16", "uint32", "uint64",
+        "complex64", "complex128", "bool_",
+    ):
+        setattr(m, name, getattr(np, name))
+
     def _u(name, npfunc):
         setattr(m, name, lambda a, *args, **kw: _wrap(npfunc(_unwrap(a), *args, **kw)))
 

@@ -1,9 +1,9 @@
-"""CLI: python -m numpilot <migrate|check-suite|complete-gaps|setup-skills|bench-cpu|bench-npu|doctor|configure-llm|paths> ...
+"""CLI: python -m numpilot <migrate|bootstrap|complete-gaps|doctor|...> ...
 
 演示三步:
   1) bench-cpu <file>   纯 NumPy 基线，默认请求 BLAS 1 线程并记录实际线程池
   2) bench-npu <file>   审计迁移算子执行来源；仅严格 NPU 结果可与 1) 计算加速比
-  migrate <file>        迁移 + 正确性 + "真用了 asnumpy" 叙事(不做性能对比)
+  migrate <file>        默认把普通纯 NumPy 文件做静态分类 + GLM 精确迁移
 """
 import argparse
 import hashlib
@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import shutil
 import sys
 import tempfile
@@ -51,6 +52,7 @@ def _early_pin_for_bench_cpu():
 
 _early_pin_for_bench_cpu()                # 在下面 import numpy(经 numpilot 传递)前完成
 
+from numpilot import __version__                              # noqa: E402
 from numpilot.backends.base import select_backend            # noqa: E402
 from numpilot.asnumpy_skill import (                         # noqa: E402
     ASNUMPY_INTEGRATION_SKILL_FILES,
@@ -77,9 +79,11 @@ from numpilot.llm_config import (LlmConfigError,               # noqa: E402
                                  init_llm_config_template,
                                  load_llm_config)
 from numpilot.orchestrator import Orchestrator, _make_engine  # noqa: E402
-from numpilot.paths import (default_benchmark_dir, default_gap_dir,  # noqa: E402
-                            path_summary)
+from numpilot.paths import (default_benchmark_dir,                    # noqa: E402
+                            default_bootstrap_receipt, default_demo_dir,
+                            default_gap_dir, path_summary)
 from numpilot.report import save_migration_report            # noqa: E402
+from numpilot.script_migration import ScriptMigrationError   # noqa: E402
 
 
 class RuntimeActivationConfigError(ValueError):
@@ -255,6 +259,141 @@ def _cmd_paths(args):
         print("NumPilot 路径（本命令不会创建目录）:")
         for name, path in paths.items():
             print(f"  {name:14} {path}")
+    return 0
+
+
+def _bootstrap_arguments(args):
+    """Map the public CLI to the deliberately small bootstrap API."""
+
+    return {
+        "asnumpy_wheel": (
+            Path(args.asnumpy_wheel).expanduser()
+            if args.asnumpy_wheel is not None
+            else None
+        ),
+        "expected_wheel_sha256": args.asnumpy_wheel_sha256,
+        "build_asnumpy": bool(args.build_asnumpy),
+        "use_cannbot": bool(args.with_cannbot),
+        "accept_cannbot_license": bool(args.accept_cannbot_license),
+        "asnumpy_cache": (
+            Path(args.asnumpy_cache).expanduser()
+            if args.asnumpy_cache is not None
+            else None
+        ),
+        "cannbot_cache": (
+            Path(args.cannbot_cache).expanduser()
+            if args.cannbot_cache is not None
+            else None
+        ),
+    }
+
+
+def _render_bootstrap_plan(plan):
+    request = plan["request"]
+    print("[bootstrap] mode=read-only-plan · 未联网 · 未修改环境")
+    print(
+        "[环境] Python=%s (ok=%s) · venv=%s · CANN=%s · OPP=%s · NPU=%s"
+        % (
+            plan["python"]["version"],
+            plan["python"]["ok"],
+            plan["venv"]["active"],
+            plan["cann"]["toolkit_directory"],
+            plan["cann"]["opp_directory"],
+            plan["npu_smi"]["available"],
+        )
+    )
+    print(
+        "[选择] AsNumpy=%s · CANNBot=%s · license-accepted=%s"
+        % (
+            request["asnumpy_mode"] or "未选择",
+            request["use_cannbot"],
+            request["cannbot_license_accepted"],
+        )
+    )
+    for action in plan["planned_actions"]:
+        print(
+            "[计划] %s · network=%s"
+            % (action["action"], str(bool(action["network"])).lower())
+        )
+    for issue in plan["issues"]:
+        print("[待处理] %s" % issue)
+    print("[提示] 使用 --json 查看固定仓库身份、工具版本和完整计划。")
+
+
+def _cmd_bootstrap(args):
+    """Inspect locally by default; mutate only after an explicit ``--apply``."""
+
+    from numpilot.bootstrap import (
+        BootstrapError,
+        apply_bootstrap,
+        build_bootstrap_plan,
+        verify_bootstrap_installation,
+    )
+
+    values = _bootstrap_arguments(args)
+    if args.verify:
+        if any(
+            (
+                values["asnumpy_wheel"] is not None,
+                values["expected_wheel_sha256"] is not None,
+                values["build_asnumpy"],
+                values["asnumpy_cache"] is not None,
+            )
+        ):
+            print(
+                "[bootstrap] --verify 不接受 AsNumpy 安装/构建参数；"
+                "它只复验当前解释器。",
+                file=sys.stderr,
+            )
+            return 2
+        try:
+            result = verify_bootstrap_installation(
+                use_cannbot=values["use_cannbot"],
+                accept_cannbot_license=values["accept_cannbot_license"],
+                cannbot_cache=values["cannbot_cache"],
+            )
+        except BootstrapError as exc:
+            print("[bootstrap] verify 失败: %s" % exc, file=sys.stderr)
+            return 2
+        if args.json:
+            print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+        else:
+            smoke = result["asnumpy"]
+            print(
+                "[AsNumpy] 安装验证通过 · ap.ones(shape=%s, dtype=%s)"
+                % (tuple(smoke["shape"]), smoke["dtype"])
+            )
+            cannbot = result["cannbot"]
+            if cannbot["status"] == "passed":
+                print("[CANNBot] %s" % cannbot["question"])
+                for item in cannbot["skills"]:
+                    print("  - %s：%s" % (item["phase"], item["name"]))
+            else:
+                print("[CANNBot] 未请求；增加 --with-cannbot 可复验本地固定 bundle。")
+            print("[bootstrap] verification network_requested_by_numpilot=false")
+        return 0
+    if not args.apply:
+        plan = build_bootstrap_plan(**values)
+        if args.json:
+            print(json.dumps(plan, ensure_ascii=False, indent=2, sort_keys=True))
+        else:
+            _render_bootstrap_plan(plan)
+        return 0
+
+    receipt = Path(args.receipt).expanduser()
+    try:
+        result = apply_bootstrap(receipt_path=receipt, **values)
+    except BootstrapError as exc:
+        print("[bootstrap] apply 失败: %s" % exc, file=sys.stderr)
+        print("[bootstrap] 失败 receipt: %s" % receipt, file=sys.stderr)
+        return 2
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+    else:
+        print("[bootstrap] status=ready · receipt=%s" % receipt)
+        print("[bootstrap] AsNumpy wheel SHA-256=%s" % result["wheel"]["sha256"])
+        if args.with_cannbot:
+            print("[bootstrap] CANNBot 固定版本与许可证回执已验证。")
     return 0
 
 
@@ -743,6 +882,18 @@ def _cmd_setup_skills(args):
     """Fetch or verify the pinned official CANNBot registry-invoke skill."""
 
     skill_root = args.root or "auto"
+    if (
+        skill_root == "auto"
+        and not args.check
+        and not args.accept_cannbot_license
+    ):
+        print(
+            "[CANNBot] 获取官方 Skill 前必须显式接受 CANN Open Software "
+            "License Agreement v2.0；请审阅许可证后重试并传入 "
+            "--accept-cannbot-license。",
+            file=sys.stderr,
+        )
+        return 2
     bundle = resolve_skill_bundle(skill_root, allow_fetch=not args.check)
     action = "verified" if args.check or args.root else "ready"
     print(
@@ -759,8 +910,37 @@ def _cmd_setup_skills(args):
 
 def _cmd_complete_gaps(args):
     """Prepare gap specs or ask the configured LLM for an unverified draft."""
-    from numpilot.gaps.pipeline import GapCompletionError, GapCompletionPipeline
-    from numpilot.gaps.provider import LlmDraftProvider
+    from numpilot.gaps.pipeline import (
+        GapCompletionError,
+        GapCompletionPipeline,
+        load_script_gap_request,
+    )
+    from numpilot.gaps.provider import (
+        DraftGenerationError,
+        LlmDraftProvider,
+        require_glm_configuration,
+        validate_glm_remote_receipt,
+    )
+
+    requested_specs = None
+    requested_blocked = ()
+    if args.gap_request:
+        try:
+            selection = load_script_gap_request(
+                args.gap_request,
+                args.file,
+                target_soc=args.target_soc,
+                cann_version=args.cann_version,
+            )
+        except GapCompletionError as exc:
+            print("[缺口请求] 本地校验失败: %s" % exc, file=sys.stderr)
+            return 2
+        requested_specs = selection.specs
+        requested_blocked = selection.blocked
+        print(
+            "[缺口请求] 已绑定普通脚本 GapSpec=%d blocked=%d；尚未调用模型"
+            % (len(requested_specs), len(requested_blocked))
+        )
 
     configuration_status = None
     llm_gate = None
@@ -769,6 +949,12 @@ def _cmd_complete_gaps(args):
     if args.provider == "llm":
         operator_goal = _resolve_operator_goal(args)
         if operator_goal == "performance":
+            return 2
+        if str(args.cann_version).strip().lower() in {"", "unknown", "auto"}:
+            print(
+                "[生成门禁 0/2] CANN 版本必须明确，已在联网前拦截",
+                file=sys.stderr,
+            )
             return 2
         raw_timeout = (
             str(args.llm_timeout)
@@ -789,10 +975,27 @@ def _cmd_complete_gaps(args):
             print("[生成门禁 1/2] fail · LLM 本地配置不可用", file=sys.stderr)
             return 4
         try:
+            configured_model = require_glm_configuration(
+                configuration_status.provider,
+                configuration_status.model,
+            )
+        except DraftGenerationError as exc:
+            print("[生成门禁 1/2] fail · %s" % exc, file=sys.stderr)
+            return 4
+        try:
             llm_gate = _run_llm_readiness_gate(
                 configuration_status, require_marker=True
             )
-        except (LlmHttpError, LlmTransportError, LlmResponseError) as exc:
+            validate_glm_remote_receipt(
+                llm_gate.get("receipt"),
+                expected_model=configured_model,
+            )
+        except (
+            DraftGenerationError,
+            LlmHttpError,
+            LlmTransportError,
+            LlmResponseError,
+        ) as exc:
             print(
                 "[生成门禁 1/2] fail · 简单问答没有取得可验证响应: %s" % exc,
                 file=sys.stderr,
@@ -816,21 +1019,23 @@ def _cmd_complete_gaps(args):
             "timeout=%ss"
             % (
                 probe_receipt.get("http_status"),
-                probe_receipt.get("response_model") or configuration_status.model,
+                probe_receipt.get("response_model"),
                 timeout_seconds,
             )
         )
 
-    # This checkout is independent from the NumPilot source tree.  Auto mode
-    # fetches the pinned official commit only when the user cache is absent.
-    bundle = resolve_skill_bundle(
-        args.skill_root,
-        allow_fetch=not args.offline_skills,
-    )
-    skill_gate = _run_cannbot_skill_gate(
-        bundle, required_files=CANNBOT_GENERATION_SKILL_FILES
-    )
+    # ``prepare`` is deliberately a local-only operation: it serializes the
+    # canonical GapSpec and must never read or fetch an external Skill.  The
+    # LLM lane consumes only a checkout that an explicit bootstrap/setup step
+    # has already pinned and cached; gap completion itself has no hidden
+    # network side effect or implicit CANNBot licence acceptance.
+    bundle = None
+    skill_gate = None
     if args.provider == "llm":
+        bundle = resolve_skill_bundle(args.skill_root, allow_fetch=False)
+        skill_gate = _run_cannbot_skill_gate(
+            bundle, required_files=CANNBOT_GENERATION_SKILL_FILES
+        )
         print(
             "[生成门禁 2/2] pass · 已读取 CANNBot Skill · commit=%s · "
             "files=%s · bundle_sha256=%s"
@@ -850,12 +1055,12 @@ def _cmd_complete_gaps(args):
                 file=sys.stderr,
             )
             return 2
-    print(
-        "[CANNBot] 使用官方 skill=%s commit=%s bundle_sha256=%s"
-        % (bundle.skill_name, bundle.commit, bundle.bundle_sha256)
-    )
     provider = None
     if args.provider == "llm":
+        print(
+            "[CANNBot] 使用已缓存官方 skill=%s commit=%s bundle_sha256=%s"
+            % (bundle.skill_name, bundle.commit, bundle.bundle_sha256)
+        )
         provider = LlmDraftProvider(
             max_attempts=args.max_attempts,
             configuration_status=configuration_status,
@@ -866,7 +1071,7 @@ def _cmd_complete_gaps(args):
 
     pipeline = GapCompletionPipeline(
         provider=provider,
-        skill_root=bundle.root,
+        skill_root=bundle.root if bundle is not None else "",
         asnumpy_reference=args.asnumpy_reference,
         skill_bundle=bundle,
     )
@@ -876,6 +1081,8 @@ def _cmd_complete_gaps(args):
             args.out,
             target_soc=args.target_soc,
             cann_version=args.cann_version,
+            requested_specs=requested_specs,
+            requested_blocked=requested_blocked,
         )
         if provider is not None and result.drafts:
             report_path = os.path.join(result.out_dir, "gap-report.json")
@@ -1617,13 +1824,310 @@ def _preflight(backend_name, skip):
 
 
 def _cmd_migrate(args):
-    backend_name = _resolve_backend_name(args)
+    from numpilot.script_migration import (
+        ScriptMigrationError,
+        build_gap_request,
+        classify_script,
+        detect_source_mode,
+        generate_script_with_glm,
+        read_script_source,
+        scan_numpy_script,
+        write_script_artifacts,
+    )
+
+    source = read_script_source(args.file)
+    # Demo v1 has one unsurprising product entry: an ordinary NumPy file.  The
+    # legacy build_inputs/forward contract remains available only when the
+    # caller explicitly asks for ``--mode contract``.  ``auto`` is retained as
+    # a compatibility switch for older automation, but it is no longer the
+    # default because innocent function names must not silently change the
+    # migration product.
+    mode = detect_source_mode(source) if args.mode == "auto" else args.mode
+    if mode == "script" and args.backend is None and not os.getenv(
+        "NUMPILOT_BACKEND"
+    ):
+        # The ordinary user lane must inspect the actually installed AsNumpy,
+        # not silently classify everything through the offline NumPy shim.
+        backend_name = "npu"
+    else:
+        backend_name = _resolve_backend_name(args)
     backend, analysis_profiles = _qualified_runtime_inputs(args, backend_name)
     _preflight(backend_name, args.skip_env_check)
 
+    if mode == "script":
+        if analysis_profiles is not None:
+            print(
+                "[普通脚本] --analysis-profiles 只用于 build_inputs/forward 严格模式",
+                file=sys.stderr,
+            )
+            return 2
+        if args.engine == "ast":
+            print(
+                "[普通脚本] 迁移代码必须由 GLM 生成，不能使用 --engine ast",
+                file=sys.stderr,
+            )
+            return 2
+        if args.out:
+            out_dir = args.out
+        else:
+            default_root = default_demo_dir()
+            default_root.mkdir(parents=True, exist_ok=True, mode=0o700)
+            out_dir = tempfile.mkdtemp(
+                prefix=_net_name(args.file) + "-",
+                dir=str(default_root),
+            )
+        scan = scan_numpy_script(source, str(Path(args.file).absolute()))
+        analysis = classify_script(scan, backend)
+        print(
+            "── NumPilot 普通脚本迁移 · %s ──" % _net_name(args.file)
+        )
+        print(
+            "[扫描] mode=script · NumPy 使用=%d · strict=%d · scoped=%d · "
+            "fallback=%d · audit_required=%d · unsupported=%d"
+            % (
+                len(scan.uses),
+                len(analysis.strict),
+                len(analysis.scoped),
+                len(analysis.fallbacks),
+                len(analysis.audit_required),
+                len(analysis.unsupported),
+            )
+        )
+        print(
+            "[能力] backend=%s version=%s audit=%s"
+            % (
+                analysis.backend,
+                analysis.backend_version or "unknown",
+                analysis.audit_id,
+            )
+        )
+        for decision in analysis.decisions:
+            print(
+                "[%s] %s · provenance=%s"
+                % (decision.status, decision.qualified_api, decision.provenance)
+            )
+
+        if not scan.ok:
+            for issue in scan.issues:
+                print("[普通脚本阻断] " + issue, file=sys.stderr)
+            paths = write_script_artifacts(
+                out_dir,
+                analysis,
+                status="blocked",
+                fallback_accepted=False,
+            )
+            print("[报告] %s" % paths["report"])
+            return 2
+
+        if analysis.audit_required:
+            for decision in analysis.audit_required:
+                print(
+                    "[能力审计待办] %s · %s"
+                    % (decision.qualified_api, decision.evidence),
+                    file=sys.stderr,
+                )
+            paths = write_script_artifacts(
+                out_dir,
+                analysis,
+                status="capability_audit_required",
+                fallback_accepted=False,
+            )
+            print(
+                "[能力审计] API 已存在但来源/适用范围尚未完成版本绑定审计；"
+                "不会把它误当成缺失算子，也不会调用迁移 GLM。",
+                file=sys.stderr,
+            )
+            print("[报告] %s" % paths["report"])
+            return 1
+
+        if analysis.unsupported:
+            gap_request = build_gap_request(
+                analysis,
+                analysis.unsupported,
+                target_soc=args.target_soc,
+                cann_version=args.cann_version,
+            )
+            status = gap_request["status"]
+            paths = write_script_artifacts(
+                out_dir,
+                analysis,
+                status=status,
+                fallback_accepted=False,
+                gap_request=gap_request,
+            )
+            print(
+                "[缺口] 当前不会调用迁移模型；先处理 unsupported，再重新扫描。"
+            )
+            print("[缺口] request=%s" % paths["gap_request"])
+            if gap_request["gap_specs"]:
+                print("[下一步] " + shlex.join([
+                    sys.executable,
+                    "-m",
+                    "numpilot",
+                    "complete-gaps",
+                    str(Path(args.file).absolute()),
+                    "--gap-request",
+                    paths["gap_request"],
+                    "--out",
+                    str(Path(out_dir).absolute() / "operator-gaps"),
+                    "--target-soc",
+                    args.target_soc,
+                    "--cann-version",
+                    args.cann_version,
+                    "--provider",
+                    "prepare",
+                ]))
+            print("[报告] %s" % paths["report"])
+            return 1
+
+        fallback_accepted = False
+        if analysis.fallbacks:
+            policy = args.fallback_policy
+            if policy == "ask":
+                print("[fallback] 发现以下非 strict-NPU 路径:")
+                for decision in analysis.fallbacks:
+                    print(
+                        "  - %s: %s · %s"
+                        % (
+                            decision.qualified_api,
+                            decision.provenance,
+                            decision.evidence,
+                        )
+                    )
+                if not sys.stdin.isatty():
+                    paths = write_script_artifacts(
+                        out_dir,
+                        analysis,
+                        status="confirmation_required",
+                        fallback_accepted=False,
+                    )
+                    print(
+                        "[fallback] 非交互环境不会默认同意；请重新运行并显式传入 "
+                        "--fallback-policy accept 或 reject。",
+                        file=sys.stderr,
+                    )
+                    print("[报告] %s" % paths["report"])
+                    return 1
+                answer = input(
+                    "接受上述 fallback 并继续迁移？"
+                    "[a=接受 / g=准备缺口生成 / q=终止]: "
+                ).strip().lower()
+                if answer in {"a", "accept", "y", "yes"}:
+                    policy = "accept"
+                elif answer in {"g", "gap", "reject", "n", "no"}:
+                    policy = "reject"
+                else:
+                    print("[fallback] 用户终止，未调用 GLM，未生成迁移文件。")
+                    return 130
+            if policy == "reject":
+                gap_request = build_gap_request(
+                    analysis,
+                    analysis.fallbacks,
+                    target_soc=args.target_soc,
+                    cann_version=args.cann_version,
+                )
+                paths = write_script_artifacts(
+                    out_dir,
+                    analysis,
+                    status=(
+                        "gap_generation_required"
+                        if gap_request["gap_specs"]
+                        else "gap_generation_unavailable"
+                    ),
+                    fallback_accepted=False,
+                    gap_request=gap_request,
+                )
+                print(
+                    "[fallback] 用户拒绝；未调用迁移 GLM，%s。"
+                    % (
+                        "已准备 replacement gap hand-off"
+                        if gap_request["gap_specs"]
+                        else "当前缺口不可由现有顶层算子生成通道处理"
+                    )
+                )
+                print("[缺口] request=%s" % paths["gap_request"])
+                if gap_request["gap_specs"]:
+                    print("[下一步] " + shlex.join([
+                        sys.executable,
+                        "-m",
+                        "numpilot",
+                        "complete-gaps",
+                        str(Path(args.file).absolute()),
+                        "--gap-request",
+                        paths["gap_request"],
+                        "--out",
+                        str(Path(out_dir).absolute() / "operator-gaps"),
+                        "--target-soc",
+                        args.target_soc,
+                        "--cann-version",
+                        args.cann_version,
+                        "--provider",
+                        "prepare",
+                    ]))
+                print("[报告] %s" % paths["report"])
+                return 1
+            fallback_accepted = True
+
+        configuration_status = _load_llm_or_report()
+        if configuration_status is None:
+            paths = write_script_artifacts(
+                out_dir,
+                analysis,
+                status="llm_configuration_required",
+                fallback_accepted=fallback_accepted,
+            )
+            print("[报告] %s" % paths["report"])
+            return 4
+        try:
+            artifact = generate_script_with_glm(
+                analysis,
+                expected_model=configuration_status.model,
+                expected_provider=configuration_status.provider,
+            )
+        except ScriptMigrationError:
+            raise
+        if fallback_accepted:
+            status = "migrated_with_fallback"
+        elif analysis.scoped:
+            status = "migrated_scoped_npu"
+        else:
+            status = "migrated_strict_npu"
+        paths = write_script_artifacts(
+            out_dir,
+            analysis,
+            status=status,
+            fallback_accepted=fallback_accepted,
+            artifact=artifact,
+        )
+        print(
+            "[迁移] status=%s model=%s generated_by=glm ast_audit=pass"
+            % (status, artifact.model or configuration_status.model)
+        )
+        if fallback_accepted:
+            print(
+                "[真实性] strict_npu=false performance_valid=false；"
+                "该产物是用户明确接受的兼容性迁移。"
+            )
+        elif analysis.scoped:
+            print(
+                "[真实性] strict_npu=false performance_valid=false；调用签名在资格范围内，"
+                "本次未执行 profile guard；需进入 guarded contract/benchmark 验证。"
+            )
+        else:
+            print("[真实性] 所有已扫描 API 均通过当前 strict-NPU capability。")
+        print("[产物] %s" % paths["migrated"])
+        print("[报告] %s" % paths["report"])
+        return 0
+
+    if mode != "contract":
+        raise ScriptMigrationError("unknown migration mode: %s" % mode)
+    contract_engine = args.engine or "llm"
+    if contract_engine == "llm" and _load_llm_or_report() is None:
+        return 4
+
     orch = Orchestrator(
         backend=backend,
-        engine=_make_engine(args.engine),
+        engine=_make_engine(contract_engine),
         threshold=args.threshold,
         analysis_profiles=analysis_profiles,
     )
@@ -1710,12 +2214,116 @@ def _migrate_report_info(res):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="numpilot")
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
+    )
     sub = parser.add_subparsers(dest="cmd", required=True)
+
+    bootstrap = sub.add_parser(
+        "bootstrap",
+        help="只读检查依赖，或显式准备固定 AsNumpy/CANNBot 版本",
+    )
+    bootstrap_mode = bootstrap.add_mutually_exclusive_group()
+    bootstrap_mode.add_argument(
+        "--plan",
+        action="store_true",
+        help="只读展示计划（默认）；不联网、不修改环境",
+    )
+    bootstrap_mode.add_argument(
+        "--apply",
+        action="store_true",
+        help="执行显式计划并原子写入 ready/failed receipt",
+    )
+    bootstrap_mode.add_argument(
+        "--verify",
+        action="store_true",
+        help="复验当前 AsNumpy；可同时本地校验 CANNBot Skill 清单（不联网）",
+    )
+    bootstrap.add_argument("--json", action="store_true", help="输出完整 JSON")
+    asnumpy_mode = bootstrap.add_mutually_exclusive_group()
+    asnumpy_mode.add_argument(
+        "--asnumpy-wheel",
+        metavar="PATH",
+        help="可信发布物提供的本地 AsNumpy wheel；不会自动猜测下载地址",
+    )
+    asnumpy_mode.add_argument(
+        "--build-asnumpy",
+        action="store_true",
+        help="从固定官方 commit 显式构建 AsNumpy（可能联网获取固定源码）",
+    )
+    bootstrap.add_argument(
+        "--asnumpy-wheel-sha256",
+        metavar="HEX",
+        help="本地 wheel 的可信 SHA-256；与 --asnumpy-wheel 成对使用",
+    )
+    bootstrap.add_argument(
+        "--with-cannbot",
+        action="store_true",
+        help="同时准备固定 CANNBot Skills（缺口算子流程才需要）",
+    )
+    bootstrap.add_argument(
+        "--accept-cannbot-license",
+        action="store_true",
+        help="确认已审阅并接受 CANN Open Software License Agreement v2.0",
+    )
+    bootstrap.add_argument(
+        "--asnumpy-cache",
+        metavar="PATH",
+        help="固定 AsNumpy 源码缓存路径；默认使用版本化用户缓存",
+    )
+    bootstrap.add_argument(
+        "--cannbot-cache",
+        metavar="PATH",
+        help="固定 CANNBot 缓存路径；默认使用版本化用户缓存",
+    )
+    bootstrap.add_argument(
+        "--receipt",
+        default=str(default_bootstrap_receipt()),
+        help="apply 结果路径（默认 %(default)s）",
+    )
 
     mig = sub.add_parser("migrate", help="迁移一个 numpy 程序到 AsNumpy(NPU)")
     mig.add_argument("file")
     mig.add_argument("--backend", choices=["shim", "npu"], default=None)
-    mig.add_argument("--engine", choices=["ast", "llm"], default=None)
+    mig.add_argument(
+        "--engine",
+        choices=["ast", "llm"],
+        default=None,
+        help=(
+            "普通脚本始终要求 GLM；contract 默认 llm，ast 只保留给框架离线回归"
+        ),
+    )
+    mig.add_argument(
+        "--mode",
+        choices=["auto", "script", "contract"],
+        default="script",
+        help=(
+            "默认 script：整个普通纯 NumPy 文件走扫描/询问/GLM 迁移；"
+            "旧 build_inputs+forward 严格通道必须显式选择 contract；"
+            "auto 仅为旧自动化兼容"
+        ),
+    )
+    mig.add_argument(
+        "--fallback-policy",
+        choices=["ask", "accept", "reject"],
+        default="ask",
+        help=(
+            "普通脚本发现已审计 CPU/host fallback 时的策略；默认交互询问，"
+            "非交互环境必须显式选择"
+        ),
+    )
+    mig.add_argument(
+        "--target-soc",
+        default=os.getenv("ASCEND_SOC_VERSION", "ascend910b"),
+        help="拒绝 fallback 后 replacement gap hand-off 的目标 SoC",
+    )
+    mig.add_argument(
+        "--cann-version",
+        default=os.getenv("CANN_VERSION", "unknown"),
+        help="拒绝 fallback 后 replacement gap hand-off 的 CANN 版本",
+    )
     mig.add_argument("--out", default=None, help="结构化报告与迁移代码输出目录")
     mig.add_argument(
         "--reports-dir",
@@ -1809,7 +2417,7 @@ def main(argv=None):
     paths.add_argument(
         "--get",
         choices=("state", "runs", "reports", "benchmark", "wizard", "gaps",
-                 "demo", "llm_config", "cannbot_cache"),
+                 "demo", "bootstrap_receipt", "llm_config", "cannbot_cache"),
         help="只输出一个路径值",
     )
 
@@ -1893,12 +2501,27 @@ def main(argv=None):
         action="store_true",
         help="只检查，不在缓存缺失时联网拉取",
     )
+    skills.add_argument(
+        "--accept-cannbot-license",
+        action="store_true",
+        help=(
+            "获取默认缓存前确认已审阅并接受 CANN Open Software License "
+            "Agreement v2.0；--check 或显式 --root 不触发下载"
+        ),
+    )
 
     gaps = sub.add_parser(
         "complete-gaps",
         help="检测真正缺失的 NumPy API，并准备或生成未验证的 Ascend C 算子草稿",
     )
     gaps.add_argument("file", help="待分析的 NumPy Python 源文件")
+    gaps.add_argument(
+        "--gap-request",
+        help=(
+            "读取 migrate 在缺口/拒绝 fallback 时生成的 gap-request.json；"
+            "会在联网或读取远程 Skill 前重新校验源码、调用点、签名和目标绑定"
+        ),
+    )
     gaps.add_argument(
         "--out",
         default=str(default_gap_dir()),
@@ -1948,12 +2571,15 @@ def main(argv=None):
     gaps.add_argument(
         "--skill-root",
         default=os.getenv("NUMPILOT_CANNBOT_SKILLS", "auto"),
-        help="cannbot-skills 根目录；默认自动获取固定官方版本并嵌入模型提示",
+        help=(
+            "llm 模式使用的固定 cannbot-skills 根目录；auto 只读显式 "
+            "bootstrap/setup 已准备的版本化缓存，绝不在本命令中下载"
+        ),
     )
     gaps.add_argument(
         "--offline-skills",
         action="store_true",
-        help="禁止自动联网获取 Skill；缓存或显式 --skill-root 缺失时失败",
+        help="兼容旧命令；complete-gaps 现在始终不联网获取 Skill",
     )
     gaps.add_argument(
         "--asnumpy-reference",
@@ -2129,6 +2755,8 @@ def main(argv=None):
 
     args = parser.parse_args(argv)
     try:
+        if args.cmd == "bootstrap":
+            return _cmd_bootstrap(args)
         if args.cmd == "configure-llm":
             return _cmd_configure_llm(args)
         if args.cmd == "setup-skills":
@@ -2170,8 +2798,6 @@ def main(argv=None):
                                    allow_cpu_fallback=args.allow_cpu_fallback,
                                    backend=backend,
                                    analysis_profiles=analysis_profiles)
-        if args.engine == "llm" and _load_llm_or_report() is None:
-            return 4
         return _cmd_migrate(args)
     except LlmError as e:
         print(f"\n[LLM] 迁移终止:{e}", file=sys.stderr)
@@ -2179,6 +2805,9 @@ def main(argv=None):
         return 4
     except RuntimeActivationConfigError as e:
         print(f"[qualification runtime] {e}", file=sys.stderr)
+        return 2
+    except ScriptMigrationError as e:
+        print(f"[普通脚本迁移] {e}", file=sys.stderr)
         return 2
     except CannbotSkillError as e:
         print(f"[CANNBot skill] {e}", file=sys.stderr)

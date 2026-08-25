@@ -4,7 +4,7 @@ import ast
 import hashlib
 import json
 import re
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from numpilot.contracts import AnalysisResult, OpUse
 from numpilot.gaps.models import GapCallsite, GapSpec
@@ -79,6 +79,200 @@ def _gap_id(
     ).encode("utf-8")
     stem = qualified_api.split(".", 1)[-1].replace(".", "_")
     return "%s-%s" % (stem, hashlib.sha256(identity).hexdigest()[:16])
+
+
+def gap_spec_identity_matches(spec: GapSpec) -> bool:
+    """Return whether a serialized spec still has its deterministic identity."""
+
+    return spec.gap_id == _gap_id(
+        spec.qualified_api,
+        tuple(dict(item) for item in spec.signature_variants),
+        spec.target_soc,
+        spec.cann_version,
+    )
+
+
+_SCRIPT_REPLACEABLE_PROVENANCE = frozenset({
+    "cpu_fallback",
+    "conditional_cpu_fallback",
+    "host_assisted",
+})
+
+
+def build_script_gap_specs(
+    source: str,
+    source_path: str,
+    decisions: Sequence[Mapping[str, object]],
+    *,
+    target_soc: str,
+    cann_version: str,
+) -> Tuple[GapSpec, ...]:
+    """Build bound GapSpecs for missing or explicitly rejected script APIs.
+
+    Ordinary-script decisions are accepted only for direct ``numpy.<api>``
+    calls.  An existing callable can enter this lane only when its provenance
+    is an audited fallback class that the user explicitly rejected.  Unknown
+    callable provenance therefore cannot be turned into generation work.
+    """
+
+    if not target_soc.strip() or not cann_version.strip():
+        raise ValueError("script gap target and CANN version must be non-empty")
+    source_hash = hashlib.sha256(source.encode("utf-8")).hexdigest()
+    specs: List[GapSpec] = []
+    seen = set()
+    for decision in decisions:
+        api_path = str(decision.get("api_path", ""))
+        qualified_api = str(decision.get("qualified_api", ""))
+        kind = str(decision.get("kind", ""))
+        status = str(decision.get("status", ""))
+        provenance = str(decision.get("provenance", ""))
+        available = decision.get("available")
+        if (
+            kind != "call"
+            or not _SAFE_COMPONENT.fullmatch(api_path)
+            or qualified_api != "numpy." + api_path
+            or decision.get("generatable") is not True
+        ):
+            raise ValueError(
+                "script gap must be an explicitly generatable top-level NumPy call"
+            )
+        if qualified_api in seen:
+            raise ValueError("duplicate script gap decision for %s" % qualified_api)
+        seen.add(qualified_api)
+
+        replacement = status == "fallback_available"
+        missing = (
+            status == "unsupported"
+            and available is False
+            and provenance == "unknown"
+        )
+        if replacement:
+            if available is not True or provenance not in _SCRIPT_REPLACEABLE_PROVENANCE:
+                raise ValueError(
+                    "only an audited available fallback can become a replacement gap"
+                )
+            callsite_reason = (
+                "user rejected audited AsNumpy %s; a separate NPU runtime must "
+                "be generated, integrated, and qualified" % provenance
+            )
+            route_decisions = (
+                {
+                    "route": "existing_asnumpy_fallback",
+                    "status": "user_rejected",
+                    "reason": provenance,
+                },
+                {
+                    "route": "replacement_runtime",
+                    "status": "required_before_qualification",
+                    "reason": (
+                        "integrate a new/private AsNumpy callable; do not relabel "
+                        "or overwrite the audited fallback runtime"
+                    ),
+                },
+                {
+                    "route": "ascendc_registry",
+                    "status": "candidate_for_draft",
+                    "reason": (
+                        "GLM may prepare an isolated draft; execution and activation "
+                        "remain gated"
+                    ),
+                },
+            )
+        elif missing:
+            callsite_reason = "AsNumpy runtime does not expose this NumPy API"
+            route_decisions = (
+                {
+                    "route": "asnumpy_runtime",
+                    "status": "missing",
+                    "reason": "audited AsNumpy runtime did not expose this API",
+                },
+                {
+                    "route": "replacement_runtime",
+                    "status": "required_before_qualification",
+                    "reason": "integrate a new/private AsNumpy callable",
+                },
+                {
+                    "route": "ascendc_registry",
+                    "status": "candidate_for_draft",
+                    "reason": (
+                        "GLM may prepare an isolated draft; execution and activation "
+                        "remain gated"
+                    ),
+                },
+            )
+        else:
+            raise ValueError(
+                "script gap is neither a missing API nor a user-rejected audited fallback"
+            )
+
+        raw_callsites = decision.get("callsites")
+        if not isinstance(raw_callsites, (list, tuple)) or not raw_callsites:
+            raise ValueError("script gap requires at least one callsite")
+        callsites = []
+        signature_keys = set()
+        for raw in raw_callsites:
+            if not isinstance(raw, Mapping):
+                raise ValueError("script gap callsite must be an object")
+            if (
+                str(raw.get("api_path", "")) != api_path
+                or str(raw.get("qualified_api", "")) != qualified_api
+                or str(raw.get("kind", "")) != "call"
+            ):
+                raise ValueError("script gap callsite identity is inconsistent")
+            try:
+                lineno = int(raw["lineno"])
+                col_offset = int(raw.get("col_offset", 0))
+                positional_args = int(raw.get("positional_args", 0))
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ValueError("script gap callsite location/signature is invalid") from exc
+            keywords_raw = raw.get("keyword_args", ())
+            if not isinstance(keywords_raw, (list, tuple)):
+                raise ValueError("script gap keyword signature is invalid")
+            keywords = tuple(str(item) for item in keywords_raw)
+            if (
+                lineno < 1
+                or col_offset < 0
+                or positional_args < 0
+                or positional_args > 64
+                or len(keywords) > 64
+                or any(len(item) > 128 for item in keywords)
+            ):
+                raise ValueError("script gap callsite location/signature is invalid")
+            callsites.append(GapCallsite(
+                lineno=lineno,
+                col_offset=col_offset,
+                qualified_api=qualified_api,
+                call_expr=qualified_api + "(...)",
+                reason=callsite_reason,
+            ))
+            signature_keys.add((positional_args, keywords))
+        signatures = tuple(
+            {
+                "positional_args": positional,
+                "keyword_args": list(keywords),
+            }
+            for positional, keywords in sorted(signature_keys)
+        )
+        specs.append(GapSpec(
+            gap_id=_gap_id(
+                qualified_api, signatures, target_soc, cann_version
+            ),
+            api_name=api_path,
+            qualified_api=qualified_api,
+            asnumpy_api="asnumpy." + api_path,
+            source_path=source_path,
+            source_sha256=source_hash,
+            callsites=tuple(callsites),
+            signature_variants=signatures,
+            target_soc=target_soc,
+            cann_version=cann_version,
+            route="ascendc_registry_candidate",
+            route_decisions=route_decisions,
+            shape_rules=("runtime_profile_required",),
+            dtype_rules=("runtime_profile_required",),
+            semantic_source=qualified_api,
+        ))
+    return tuple(specs)
 
 
 def build_gap_specs(

@@ -76,18 +76,29 @@ def test_p0_audit_ids_bind_wrapper_dependencies():
     assert P0_ASNUMPY_AUDIT_ID.endswith("-v2")
     assert "array16c901f5" in P0_LINALG_ASNUMPY_AUDIT_ID
     assert "utilsfd94c025" in P0_LINALG_ASNUMPY_AUDIT_ID
-    assert P0_LINALG_ASNUMPY_AUDIT_ID.endswith("-v3")
+    assert P0_LINALG_ASNUMPY_AUDIT_ID.endswith("-v4")
     assert P0_LINALG_ASNUMPY_AUDIT_ID != (
         "asnumpy-0.1.dev106-g21368abf9-poisson-linalg-"
         "init4f4e8083-math62e0ba09-direct4479c588-cored3ccb39f-v1"
     )
+    assert P0_LINALG_ASNUMPY_AUDIT_ID != (
+        "asnumpy-0.1.dev106-g21368abf9-poisson-linalg-"
+        "init4f4e8083-array16c901f5-math62e0ba09-direct4479c588-"
+        "utilsfd94c025-cored3ccb39f-v3"
+    )
     assert "array16c901f5" in P0_MOVE_ASNUMPY_AUDIT_ID
-    assert P0_MOVE_ASNUMPY_AUDIT_ID.endswith("-v2")
+    assert P0_MOVE_ASNUMPY_AUDIT_ID.endswith("-v3")
     assert P0_MOVE_ASNUMPY_AUDIT_ID != (
         "asnumpy-0.1.dev106-g21368abf9-poisson-move-"
         "init4f4e8083-math62e0ba09-direct4479c588-"
         "utils1b298145-core4465ce6e-v1"
     )
+    assert P0_MOVE_ASNUMPY_AUDIT_ID != (
+        "asnumpy-0.1.dev106-g21368abf9-poisson-move-"
+        "init4f4e8083-array16c901f5-math62e0ba09-direct4479c588-"
+        "utils1b298145-core4465ce6e-v2"
+    )
+    assert P0_MOVE_LEGACY_OVERLAY_AUDIT_ID.endswith("-v1")
     assert "utils1b298145" in CBRT_ASNUMPY_AUDIT_ID
     assert CBRT_ASNUMPY_AUDIT_ID.endswith("-v2")
 
@@ -264,12 +275,20 @@ def test_p0_wheel_audit_is_hash_bound_and_limited_to_poisson_core(monkeypatch):
         add=_callable,
         multiply=_callable,
         clip=_callable,
+        full=_callable,
         subtract=_callable,
         apply_gradient_descent=_callable,
     ))
 
     manifest = backend.capability_manifest(
-        ["add", "multiply", "clip", "subtract", "apply_gradient_descent"]
+        [
+            "add",
+            "multiply",
+            "clip",
+            "full",
+            "subtract",
+            "apply_gradient_descent",
+        ]
     )
 
     assert manifest.audit_id == P0_ASNUMPY_AUDIT_ID
@@ -277,6 +296,7 @@ def test_p0_wheel_audit_is_hash_bound_and_limited_to_poisson_core(monkeypatch):
         manifest.operators[name].strict_npu
         for name in ("add", "multiply", "clip")
     )
+    assert manifest.operators["full"].provenance is ExecutionProvenance.UNKNOWN
     assert manifest.operators["subtract"].provenance is ExecutionProvenance.UNKNOWN
     assert (
         manifest.operators["apply_gradient_descent"].provenance
@@ -371,6 +391,7 @@ def test_p0_linalg_wheel_admits_hash_bound_inherited_demo_apis(monkeypatch):
         absolute=_callable,
         amax=_callable,
         cos=_callable,
+        full=_callable,
         linspace=_callable,
         sin=_callable,
         sum=_callable,
@@ -378,10 +399,19 @@ def test_p0_linalg_wheel_admits_hash_bound_inherited_demo_apis(monkeypatch):
     ))
 
     manifest = backend.capability_manifest(
-        ["absolute", "amax", "cos", "linspace", "sin", "sum", "angle"]
+        [
+            "absolute",
+            "amax",
+            "cos",
+            "full",
+            "linspace",
+            "sin",
+            "sum",
+            "angle",
+        ]
     )
 
-    for name in ("absolute", "amax", "cos", "linspace", "sin", "sum"):
+    for name in ("absolute", "amax", "cos", "full", "linspace", "sin", "sum"):
         capability = manifest.operators[name]
         assert capability.provenance is ExecutionProvenance.NATIVE_NPU
         assert capability.strict_npu
@@ -426,6 +456,7 @@ def test_p0_move_wheel_admits_hash_bound_inherited_demo_apis(monkeypatch):
         absolute=_callable,
         amax=_callable,
         cos=_callable,
+        full=_callable,
         linspace=_callable,
         sin=_callable,
         sum=_callable,
@@ -433,16 +464,45 @@ def test_p0_move_wheel_admits_hash_bound_inherited_demo_apis(monkeypatch):
     ))
 
     manifest = backend.capability_manifest(
-        ["absolute", "amax", "cos", "linspace", "sin", "sum", "angle"]
+        [
+            "absolute",
+            "amax",
+            "cos",
+            "full",
+            "linspace",
+            "sin",
+            "sum",
+            "angle",
+        ]
     )
 
-    for name in ("absolute", "amax", "cos", "linspace", "sin", "sum"):
+    for name in ("absolute", "amax", "cos", "full", "linspace", "sin", "sum"):
         capability = manifest.operators[name]
         assert capability.provenance is ExecutionProvenance.NATIVE_NPU
         assert capability.strict_npu
     angle = manifest.operators["angle"]
     assert angle.provenance is ExecutionProvenance.UNKNOWN
     assert not angle.strict_npu
+
+
+def test_p0_full_audit_does_not_expand_legacy_overlay_identity():
+    from numpilot.backends import npu
+
+    current, _, _ = npu._provenance_profile(
+        "full",
+        P0_MOVE_ASNUMPY_VERSION,
+        P0_MOVE_ASNUMPY_AUDIT_ID,
+    )
+    legacy, evidence, constraints = npu._provenance_profile(
+        "full",
+        P0_MOVE_ASNUMPY_VERSION,
+        P0_MOVE_LEGACY_OVERLAY_AUDIT_ID,
+    )
+
+    assert current is ExecutionProvenance.NATIVE_NPU
+    assert legacy is ExecutionProvenance.UNKNOWN
+    assert "outside the limited audited set" in evidence
+    assert constraints == ("requires an operator-specific source audit",)
 
 
 def test_p0_move_version_without_exact_runtime_hashes_remains_unaudited(monkeypatch):

@@ -1,0 +1,10 @@
+include CHANGELOG.md
+include CONTRIBUTING.md
+include SECURITY.md
+include THIRD_PARTY_NOTICES.md
+recursive-include docs *.md *.drawio *.ipynb
+exclude docs/RESTART-HANDOFF-20260824.md
+exclude docs/evidence/poisson-ritz-large-single-core-20260824.md
+recursive-include evidence/demotest-case01-20260825 *
+recursive-include .codeartsdoer/skills/asnumpy-custom-op-integration *.md *.yaml
+global-exclude __pycache__ *.py[cod]

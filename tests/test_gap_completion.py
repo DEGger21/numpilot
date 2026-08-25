@@ -347,6 +347,44 @@ def _configured_status(tmp_path, source="user-config"):
     )
 
 
+@pytest.mark.parametrize(
+    ("provider_name", "model"),
+    (("openai", "glm-audited"), ("glm", "gpt-audited")),
+)
+def test_remote_provider_requires_explicit_glm_identity_before_model_access(
+    tmp_path, monkeypatch, provider_name, model
+):
+    source = _write_gap_source(tmp_path)
+    calls = []
+    status = LlmConfigStatus(
+        path=tmp_path / "llm.json",
+        configured=True,
+        missing=(),
+        source="user-config",
+        model=model,
+        provider=provider_name,
+        token_present=True,
+    )
+    monkeypatch.setattr(
+        LlmEngine,
+        "_chat_with_receipt",
+        staticmethod(lambda *_args, **_kwargs: calls.append(1)),
+    )
+
+    with pytest.raises(GapCompletionError, match="provider=glm|glm-\\* model"):
+        GapCompletionPipeline(provider=LlmDraftProvider(
+            max_attempts=1,
+            configuration_status=status,
+        )).run(
+            str(source),
+            str(tmp_path / (provider_name + "-" + model)),
+            target_soc="ascend910b",
+            cann_version="9.0.0",
+        )
+
+    assert calls == []
+
+
 def test_provider_rejects_unimplemented_performance_goal_before_model_access():
     calls = []
 
@@ -892,6 +930,22 @@ def test_existing_draft_loader_bounds_metadata_and_tree_before_hashing(
 
 def _write_operator_repair_base(tmp_path, monkeypatch=None):
     spec, draft_path, signed = _write_simple_signed_draft(tmp_path, monkeypatch)
+    if signed.generation["mode"] != "remote_llm":
+        manifest_path = draft_path / "operator-artifact.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        generation_response = _valid_bundle()
+        manifest["generation"].update({
+            "mode": "remote_llm",
+            "provider": "glm",
+            "model": "glm-audited",
+            "configuration_source": "test-fixture",
+            "origin_action": "fresh_remote",
+            "successful_http_response_count": 1,
+            "remote_receipts": [_remote_receipt(generation_response)],
+        })
+        _refresh_artifact_id(manifest)
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        signed = _load_existing_draft(draft_path, spec)
     candidate = tmp_path / "operator-repair-base"
     shutil.copytree(draft_path, candidate)
     response = "audited operator repair response"
@@ -1572,6 +1626,8 @@ def test_remote_generation_persists_receipt_and_distinguishes_reuse(
         "bool_attempt_count",
         "counter_mismatch",
         "receipt_model_mismatch",
+        "receipt_response_model_mismatch",
+        "non_glm_identity",
         "response_hash_mismatch",
         "legacy_without_receipts",
     ),
@@ -1602,6 +1658,13 @@ def test_existing_remote_draft_revalidates_complete_generation_evidence(
         generation["successful_http_response_count"] = 0
     elif mutation == "receipt_model_mismatch":
         generation["remote_receipts"][0]["requested_model"] = "other-model"
+    elif mutation == "receipt_response_model_mismatch":
+        generation["remote_receipts"][0]["response_model"] = "glm-other"
+    elif mutation == "non_glm_identity":
+        generation["provider"] = "openai"
+        generation["model"] = "gpt-old"
+        generation["remote_receipts"][0]["requested_model"] = "gpt-old"
+        generation["remote_receipts"][0]["response_model"] = "gpt-old"
     elif mutation == "response_hash_mismatch":
         generation["response_sha256"][0] = "f" * 64
     else:
@@ -2007,6 +2070,47 @@ def test_complete_gaps_llm_gate_failure_prevents_skill_read_and_generation(
     assert not (tmp_path / "gate-one-fail").exists()
 
 
+@pytest.mark.parametrize(
+    ("provider_name", "model"),
+    (("openai", "glm-audited"), ("glm", "gpt-audited")),
+)
+def test_complete_gaps_rejects_non_glm_configuration_before_network_or_skill(
+    tmp_path, monkeypatch, capsys, provider_name, model
+):
+    from numpilot import __main__ as cli
+
+    source = _write_gap_source(tmp_path)
+    status = LlmConfigStatus(
+        path=tmp_path / "llm.json",
+        configured=True,
+        missing=(),
+        source="user-config",
+        model=model,
+        provider=provider_name,
+        token_present=True,
+    )
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("non-GLM configuration crossed a side-effect boundary")
+
+    monkeypatch.setattr(cli, "_load_llm_or_report", lambda: status)
+    monkeypatch.setattr(cli, "_run_llm_readiness_gate", forbidden)
+    monkeypatch.setattr(cli, "resolve_skill_bundle", forbidden)
+
+    result = cli.main([
+        "complete-gaps", str(source),
+        "--out", str(tmp_path / "non-glm-cli"),
+        "--target-soc", "ascend910b",
+        "--cann-version", "9.0.0",
+        "--provider", "llm",
+    ])
+
+    captured = capsys.readouterr()
+    assert result == 4
+    assert "provider=glm" in captured.err or "glm-* model" in captured.err
+    assert not (tmp_path / "non-glm-cli").exists()
+
+
 def test_complete_gaps_skill_gate_failure_prevents_operator_generation(
     tmp_path, monkeypatch, capsys
 ):
@@ -2089,7 +2193,7 @@ def test_complete_gaps_cli_runs_gates_but_no_generation_when_there_is_no_gap(
     assert "没有可生成的合格缺口" in captured.out
 
 
-def test_complete_gaps_cli_runs_gates_then_reuses_existing_draft(
+def test_complete_gaps_cli_refuses_injected_existing_draft_in_production(
     tmp_path, monkeypatch, capsys
 ):
     from numpilot import __main__ as cli
@@ -2132,13 +2236,15 @@ def test_complete_gaps_cli_runs_gates_then_reuses_existing_draft(
         "llm",
     ])
 
-    assert result == 0
-    output = capsys.readouterr().out
+    assert result == 2
+    terminal = capsys.readouterr()
+    output = terminal.out
     assert calls == [1]
     assert "生成门禁 1/2] pass" in output
     assert "生成门禁 2/2] pass" in output
-    assert "action=reused_existing" in output
-    assert "actual_remote_generation_call=no" in output
+    assert "action=reused_existing" not in output
+    assert "receipt-bound GLM draft" in terminal.err
+    assert "verified_new_remote_artifact=no" in terminal.err
 
 
 def _repair_cli_args(tmp_path, out_name):

@@ -128,3 +128,18 @@ def test_unpinned_commit_is_rejected(tmp_path):
                 "ops/ascendc-registry-invoke-template/SKILL.md",
             ),
         )
+
+
+def test_setup_skills_requires_explicit_license_acceptance_before_fetch(
+    monkeypatch, capsys
+):
+    from numpilot import __main__ as cli
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("license gate must run before CANNBot fetch")
+
+    monkeypatch.setattr(cli, "resolve_skill_bundle", forbidden)
+
+    assert cli.main(["setup-skills"]) == 2
+    captured = capsys.readouterr()
+    assert "--accept-cannbot-license" in captured.err

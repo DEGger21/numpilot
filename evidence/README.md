@@ -6,6 +6,18 @@
 
 ## 内容
 
+### `demotest-case01-20260825/`
+
+- GLM 生成的 `2048 × 2048`、`float32` 普通 NumPy 脚本及经 NumPilot 门禁的 AsNumpy 迁移产物；
+- 源码生成/迁移回执、AST 门禁、CPU/NPU 原始采样、runtime profile/call-count guard、
+  ACLNN 日志、设备状态和目录级 SHA-256 manifest；
+- 稳定脚本体中位数为 CPU `809.784 ms`、NPU `4.499 ms`，即 NPU 加速 `180.004×`；
+  冷进程启动成本另行报告，不混入稳定计算结论；
+- 两个大体积数值数组未收入 Git 精选包，JSON 仅保留其哈希和数值比较结果。
+
+完整口径与可信边界见
+[`demotest-case01-20260825/README.md`](demotest-case01-20260825/README.md)。
+
 ### `heat-diffusion-20260813/`
 
 - `shim/`：离线迁移产物与结构化报告；

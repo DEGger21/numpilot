@@ -4,32 +4,40 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "numpilot"
-version = "0.1.0"
+version = "0.2.0a1"
 description = "面向科学计算的 NumPy 到 Ascend NPU 可审计迁移工具"
 readme = "README.md"
 license = "Apache-2.0"
-license-files = ["LICENSE"]
-requires-python = ">=3.9"
-dependencies = ["numpy", "rich>=13"]
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.26", "loguru>=0.7", "rich>=13"]
 keywords = ["numpy", "ascend", "npu", "migration", "scientific-computing"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Operating System :: POSIX :: Linux",
   "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
   "Topic :: Scientific/Engineering",
 ]
 
 [project.urls]
 Repository = "https://gitcode.com/li-xingHIT/numpilot"
-Documentation = "https://gitcode.com/li-xingHIT/numpilot/tree/feat/numpilot-demo/docs"
+Documentation = "https://gitcode.com/li-xingHIT/numpilot/tree/v0.2.0a1/docs"
 
 [project.scripts]
 numpilot = "numpilot.__main__:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=7", "build>=1"]
+demo = ["numpy==1.26.4", "loguru==0.7.3"]
+bootstrap = [
+  "numpy>=2.0",
+  "build>=1",
+  "scikit-build-core>=0.12.1",
+  "pybind11>=3.0.0",
+  "setuptools-scm==9.2.2",
+  "towncrier>=24",
+]
 # 真机可选:asnumpy(NPU 后端)、threadpoolctl(备用 BLAS 限核)
 npu = ["threadpoolctl"]
 

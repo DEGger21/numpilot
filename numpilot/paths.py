@@ -52,6 +52,12 @@ def default_demo_dir() -> Path:
     return runs_dir() / "demo"
 
 
+def default_bootstrap_receipt() -> Path:
+    """Return the default supply-chain receipt path without creating it."""
+
+    return state_home() / "bootstrap" / "receipt.json"
+
+
 def path_summary() -> Dict[str, str]:
     """Return display-safe paths; no directory is created as a side effect."""
     from numpilot.cannbot_skills import default_skill_checkout
@@ -65,6 +71,7 @@ def path_summary() -> Dict[str, str]:
         "wizard": str(default_wizard_dir()),
         "gaps": str(default_gap_dir()),
         "demo": str(default_demo_dir()),
+        "bootstrap_receipt": str(default_bootstrap_receipt()),
         "llm_config": str(llm_config_path()),
         "cannbot_cache": str(default_skill_checkout()),
     }

@@ -369,7 +369,9 @@ def test_cli_init_rejects_inline_configuration(isolated_config, capsys):
     assert not isolated_config.exists()
 
 
-def test_llm_cli_loads_saved_config_without_source(isolated_config, monkeypatch):
+def test_llm_cli_delegates_configuration_loading_to_migrate_handler(
+    isolated_config, monkeypatch
+):
     save_llm_config("https://gateway.example/v1", "saved-token", "saved-model")
     for key in _LLM_ENV[:4]:
         monkeypatch.delenv(key, raising=False)
@@ -378,7 +380,7 @@ def test_llm_cli_loads_saved_config_without_source(isolated_config, monkeypatch)
     rc = cli.main(["migrate", "example.py", "--engine", "llm"])
 
     assert rc == 0
-    assert os.environ["NUMPILOT_LLM_AUTH_TOKEN"] == "saved-token"
+    assert "NUMPILOT_LLM_AUTH_TOKEN" not in os.environ
 
 
 def test_config_path_does_not_depend_on_current_directory(isolated_config, tmp_path, monkeypatch):

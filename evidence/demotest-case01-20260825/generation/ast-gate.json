@@ -1,0 +1,26 @@
+{
+  "checks": {
+    "exact_call_multiset": true,
+    "http_200": true,
+    "license_preserved": true,
+    "no_control_or_definitions": true,
+    "one_exact_print": true,
+    "proxy_http": true,
+    "proxy_https": true,
+    "requested_model_glm_5_3": true,
+    "response_hash_bound": true,
+    "response_model_glm_5_3": true,
+    "seven_exact_assignments": true,
+    "single_numpy_import": true,
+    "tls_enabled": true
+  },
+  "dtype": "float32",
+  "matrix_shape": [
+    2048,
+    2048
+  ],
+  "schema_version": 1,
+  "source_path": "/home/ma-user/work/numpilot-runs/demotest-migration-20260825/case-01-large-run04/01_numpy_large.py",
+  "source_sha256": "eb07e1aa682d882f83c59f02b85c52a2ecc8a5054b9d856ae82760326f86fe2b",
+  "status": "passed"
+}

@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+- 暂无。
+
+## 0.2.0a1 - 2026-08-25
+
+- 将普通纯 NumPy 脚本设为默认迁移通道：先做不执行源码的静态扫描，再按能力结论选择
+  直接迁移、询问是否接受 NumPy fallback，或交接到缺口补全；统一自动完成
+  `integrate → qualify → activate → rescan` 的恢复编排尚未实现；
+- 将 callable 但 provenance 为 `UNKNOWN` 的 API 单列为 `CAPABILITY_AUDIT_REQUIRED`，避免把
+  尚未审计的已有接口误判为缺口并生成同名替代算子；
+- 普通脚本迁移代码只能由配置并校验身份的 GLM 生成；报告绑定模型回执、源码与产物
+  SHA-256，生成失败时不写入候选迁移文件；
+- 增加普通脚本安全门：限制 NumPy-only 输入，审计 import/别名、API、签名、profile、
+  fallback、输出边界和迁移 AST，并保持静态扫描、LLM 生成与代码执行相互隔离；
+- 保留 `build_inputs` / `forward` contract 作为可选严格验证与 benchmark 通道，不再把它们
+  作为普通脚本迁移的前置条件；
+- 新增显式 `numpilot bootstrap`：默认 plan 只读且不联网；apply 必须选择可信本地
+  AsNumpy wheel + SHA-256 或固定官方源码构建，CANNBot 获取另有许可证确认与原子 receipt；
+  `bootstrap --verify` 可真实复验 AsNumpy smoke 与已固定的本地 CANNBot Skill 清单；
+- 基础运行依赖保持 Python 3.10+、NumPy 1.26+ 和 Loguru；Demo v1 P0 wheel 的已审计 profile
+  固定为 CPython 3.10/aarch64、NumPy 1.26.4、Loguru 0.7.3；源码构建依赖通过
+  `numpilot[bootstrap]` 显式安装，不在迁移或 import 阶段补取；
+- 记录 P1 待定的 ops-nn 官方算子复用层：缺口优先做版本/许可证/语义匹配，命中后只构建
+  选中官方算子并由 GLM 生成 AsNumpy adapter，无精确匹配才生成新 kernel；默认安装不拉取；
+- 新增可直接打开的全新 Notebook 验收模板，覆盖固定 tag、`numpilot[demo]`、P0 wheel、
+  CANNBot、GLM-5.3 ordinary migration 与 NPU 实跑；当前验收明确不接入 ops-nn；
+- 新增 Demo Case 01 精选证据：2048×2048 float32 稳态计算中 CPU 单线程中位数
+  `809.784 ms`、NPU `4.499 ms`，NPU 约快 `180.004×`；冷启动成本单独报告；
 - 将默认报告、benchmark、向导和缺口补全产物移到仓库外的 XDG 状态目录；
 - 新增 `numpilot paths` 与 `NUMPILOT_STATE_HOME`、`NUMPILOT_RUNS_DIR`、
   `NUMPILOT_REPORTS_DIR` 覆盖；

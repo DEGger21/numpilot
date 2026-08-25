@@ -1,142 +1,283 @@
 # NumPilot 当前架构
 
-> 版本：demo hardening，2026-07-18。本文描述已经落地的行为，不把设计愿景写成现有能力。
+> 版本：Demo v1 ordinary-script 收口，2026-08-25。本文区分“已经落地的接口/原语”
+> 和“下一阶段闭环”，不把设计目标写成当前能力。
 
-NumPilot 当前解决的是一个受约束的迁移问题：识别顶层同步 `forward()` 中已建模的 NumPy 调用，把整个 `forward` 迁移为一个 AsNumpy 设备岛，并用产物级测试与执行来源证据判断结果能否被接受。它还不是通用的 CPU/NPU 图切分器，也没有完成缺口算子自动生成闭环。
+NumPilot 当前默认解决一个直接问题：用户提交带 `import numpy as np` 的普通纯 NumPy 文件，
+系统不执行源码，先检查实际 AsNumpy capability，再由 GLM 生成受精确 AST/回执约束的迁移
+文件。用户不需要为了迁移而增加 `build_inputs()` 或 `forward()`。
 
-## 1. 两层系统边界
+旧 `build_inputs + forward` 设备岛只保留为显式 `--mode contract` 的 legacy 严格通道。
+`--mode auto` 仅用于兼容旧调用，不能出现在新的默认用户流程、比赛脚本或能力承诺中。
+
+## 1. 三层边界
 
 ```mermaid
 flowchart TB
-  subgraph Control[协作控制面]
-    CA[CodeArts AgentTeam]
-    LEAD[orchestrator]
-    ANA[analyzer]
-    OPE[operator engineer]
-    AUD[evidence auditor]
-    CA --> LEAD
-    LEAD --> ANA
-    LEAD --> OPE
-    LEAD --> AUD
+  subgraph Bootstrap[显式依赖准备层]
+    PLAN[bootstrap 默认 plan<br/>--plan / --json]
+    LOCK[实现锁定 source 身份<br/>+用户提供 wheel expected hash]
+    APPLY[bootstrap --apply<br/>显式 AsNumpy 模式]
+    PLAN --> LOCK --> APPLY
   end
 
-  subgraph Execution[NumPilot 确定性执行面]
-    CLI[CLI / Skill]
-    A[AnalysisAgent]
-    D[DecisionAgent]
-    M[MigrationAgent]
-    V[VerificationAgent]
-    CAP[CapabilityManifest]
-    BENCH[独立 benchmark]
-    CLI --> A --> D --> M --> V
-    CAP --> V
-    CAP --> BENCH
+  subgraph Product[NumPilot ordinary script 产品面]
+    SRC[普通纯 NumPy 文件]
+    SCAN[惰性 AST 扫描]
+    CAP[版本/哈希绑定 capability]
+    DECIDE[五类确定结果]
+    GLM[GLM 精确迁移]
+    AUDIT[AST / 注释 / 回执 / hash 门]
+    SRC --> SCAN --> CAP --> DECIDE
+    DECIDE --> GLM --> AUDIT
   end
 
-  Control -->|结构化任务、Diff、人工确认| CLI
-  V -->|报告与反例| AUD
-  BENCH -->|JSON / Markdown 证据| AUD
+  subgraph Optional[可选证据与 legacy 面]
+    HARNESS[外部受信、哈希绑定定向 harness]
+    CONTRACT[显式 --mode contract]
+    TOOLS[check-suite / wizard / bench-cpu / bench-npu]
+    CONTRACT --> TOOLS
+  end
+
+  APPLY --> CAP
+  AUDIT -->|精确 GLM artifact| HARNESS
 ```
 
-- CodeArts 负责需求拆解、角色协作、过程展示和人工审批。
-- NumPilot CLI、contracts、capability registry 和比较器负责可复现的工程动作及门禁。
-- CodeArts 智能体不能用自然语言“确认执行在 NPU”；该结论只能来自版本绑定的 capability 与运行证据。
+- bootstrap 只准备并核对锁定依赖，不决定迁移语义。
+- ordinary script 扫描和迁移阶段都不执行用户源码。
+- 产品内尚未实现 ordinary script 的通用 benchmark。当前比赛中的真实 NPU 数值/性能证据
+  由外部受信、与原文件、GLM artifact、运行时及 harness 哈希绑定的定向流程提供。
+- legacy contract 工具不能反向成为普通脚本的输入格式要求，也不能替代上述 artifact 证据。
 
-## 2. 迁移流水线
+## 2. 显式依赖准备层
+
+依赖准备的已落地命令面是：
+
+```bash
+# 无模式和 --plan 都是只读；--json 输出机器可读计划
+python -m numpilot bootstrap
+python -m numpilot bootstrap --plan
+python -m numpilot bootstrap --plan --json
+
+# 首选本地预编译 wheel；预期 hash 来自可信发布物/用户输入
+python -m numpilot bootstrap --apply \
+  --asnumpy-wheel /trusted/path/asnumpy.whl \
+  --asnumpy-wheel-sha256 "$TRUSTED_ASNUMPY_SHA256" \
+  --receipt /tmp/numpilot-bootstrap-receipt.json
+
+# 与 wheel 模式二选一：从实现锁定的 official source commit/tree 构建
+python -m numpilot bootstrap --apply --build-asnumpy \
+  --receipt /tmp/numpilot-bootstrap-build-receipt.json
+
+# 仅确需 CANNBot 时，在任一 apply 模式上同时增加这两个开关
+# --with-cannbot --accept-cannbot-license
+
+# 安装后复验当前环境；第二条还会从固定本地 bundle 输出 Ascend C Skill 清单
+python -m numpilot bootstrap --verify
+python -m numpilot bootstrap --verify --with-cannbot --accept-cannbot-license
+```
+
+命令的行为约束如下：
+
+1. 无模式或 `--plan` 只读环境和动作计划，不 clone、fetch、build 或 install；
+2. `--apply` 必须在 `--asnumpy-wheel PATH --asnumpy-wheel-sha256 HEX` 和
+   `--build-asnumpy` 之间二选一；`--receipt PATH` 可指定原子回执位置；
+3. 实现内锁定 official AsNumpy source commit/tree，源码构建只能由显式
+   `--build-asnumpy` 触发；用户必须先安装可选 `numpilot[bootstrap]`
+   工具链（仓库开发可用 `.[dev,bootstrap]`），apply 不会自动从 PyPI 补齐；
+   上游构建尚无 OS 级断网沙箱，因此 plan 对 build 动作保守标记 `network=true`，即使源码
+   cache 已存在也不会声称离线保证；
+4. 实现不内置 wheel URL 或 expected wheel hash。本地 wheel 的预期 SHA-256 来自
+   可信发布物或用户输入，安装前校验，实际 hash 写入 receipt；
+5. 普通 Demo 优先使用预编译审计 wheel。当前 P0 wheel 的审计 profile 仅覆盖
+   CPython 3.10/aarch64、NumPy 1.26.4、Loguru 0.7.3；wheel tag、metadata、RECORD、安装后
+   module/native hash 与实际版本都会进入 receipt。未知 wheel 即使 hash 匹配用户输入，也仍需
+   后续 qualification；
+6. CANNBot official commit/bundle 身份在实现中固定；只有显式
+   `--with-cannbot` 获取或复验其内容时才要求 `--accept-cannbot-license`。单独准备 AsNumpy
+   不要求 CANN Open Software License Agreement（CANN OSL）；
+7. `--asnumpy-cache PATH` 和 `--cannbot-cache PATH` 只用于显式指定锁定 checkout
+   缓存；不放宽 origin/commit/tree/hash 校验；
+8. `--verify` 使用隔离 Python 进程执行 AsNumpy 官方 README 的 `ap.ones((1000, 1000),
+   dtype=ap.float32)` 形状 smoke，并核对实际版本、模块路径和 native hash；带
+   `--with-cannbot` 时还会本地回答“现在写 Ascend C 算子有哪些能参考的 Skill？”并列出固定
+   bundle 中已校验的 Skill，不发起模型或网络请求；
+9. NumPilot 不得通过 pip 安装钩子、`import`、`doctor`、`migrate` 或
+   `complete-gaps` 隐式下载依赖。ordinary `migrate` 调用已配置 GLM 是用户请求的模型动作，
+   不是依赖安装；它必须保留远端回执，且只在调用进程临时使用用户配置的代理。
+
+## 3. 默认 ordinary script 流程
 
 ```mermaid
-sequenceDiagram
-  participant C as CLI/CodeArts Skill
-  participant A as AnalysisAgent
-  participant D as DecisionAgent
-  participant M as MigrationAgent
-  participant V as VerificationAgent
-  participant B as Backend/Capability
-
-  C->>A: analyze(source)
-  A-->>C: 仅 forward 的 callsite + 签名风险
-  alt 缺口或无法建模
-    C-->>C: unsupported，生成原因并停止
-  else 静态门禁通过
-    C->>D: plan(analysis)
-    D-->>C: whole_forward_npu
-    C->>M: migrate(source, plan)
-    M-->>C: migrated_source + 直接 ap.* 清单
-    C->>V: verify(original, artifact, required_ops)
-    V->>B: 加载实际模块并审计版本/环境/实现来源
-    V-->>C: 三层语义结果 + provenance
-  end
+flowchart LR
+  S[纯 NumPy 源文件] --> A[惰性全文件 AST 扫描]
+  A --> C[实际 AsNumpy capability 分类]
+  C --> D{确定结果}
+  D -->|DIRECT| G[GLM 精确 namespace 改写]
+  D -->|FALLBACK_CONSENT| Q{用户选择}
+  Q -->|接受| G
+  Q -->|拒绝已审计 fallback| P[GAP_REQUIRED]
+  D -->|API 确实缺失| P
+  D -->|callable + UNKNOWN 或身份漂移| U[CAPABILITY_AUDIT_REQUIRED]
+  D -->|动态或未建模表面| B[BLOCKED]
+  G --> V[回执 + AST + 注释 + hash 二次门]
+  V --> O[migrated.py + report]
+  P --> R[缺口恢复流；官方复用层为 P1 待定，当前非自动闭环]
+  U --> X[资格/源码审计；禁止盲目生成]
+  B --> Y[结构化原因；不调用迁移 GLM]
 ```
 
-关键约束：
+五类结果的含义是：
 
-1. 只接受一个顶层同步 `forward()`；`build_inputs()` 和顶层展示代码不迁移。
-2. AST 引擎只改写这个 `forward`，并在函数入口把 NumPy ndarray 幂等上传；设备数组和标量保持原样。
-3. `DecisionAgent` 当前只产生 `whole_forward_npu`。保留的 `--threshold` 仅用于旧接口兼容，不制造尚未实现的数据流切分。
-4. Python 二元/比较 dunder、未验证的 NumPy keyword、风险标量签名等会在分析阶段阻断。
-5. LLM 引擎是 strict 策略：失败即失败，不静默回退 AST；其产物仍须通过同一静态和运行门禁。
+| 结果 | 条件 | 下一步 |
+|---|---|---|
+| `DIRECT` | 所有使用均在当前 runtime/audit 的 strict 或受限 qualified 范围 | 调用 GLM，随后做精确本地审计 |
+| `FALLBACK_CONSENT` | 已审计为 CPU、conditional CPU 或 host-assisted | 等待用户接受、拒绝或终止；非交互环境不默认接受 |
+| `GAP_REQUIRED` | API 确实缺失，或用户拒绝已审计 fallback | 生成 source/callsite/SoC/CANN 绑定的 GapSpec |
+| `CAPABILITY_AUDIT_REQUIRED` | callable 但 provenance 为 `UNKNOWN`，或 runtime/version/hash/path 尚未审计 | 先资格化或源码审计，不生成同名替代算子 |
+| `BLOCKED` | 动态 alias、未建模 operator/method/nested path、签名或 Python 表面无法安全处理 | 失败关闭并记录原因 |
 
-strict 执行表面还要求 `forward` 是当前能够证明的直线设备数据流：不允许残留 NumPy/host escape、未知 helper、全局预计算或丢弃 `ap.*` 结果；同一规范输入和独立产物两条路径都必须实际执行全部静态 `ap.*` callsite。该 Python API trace 与版本化源码审计构成当前证据模型，但仍不能替代后续 profiler/kernel trace。
+普通脚本当前要求一个顶层 `import numpy as np`，并对 alias 重绑定、动态 `np`、星号实参、
+未审计 Python 数组运算符、ndarray method 和 nested namespace 失败关闭。函数、类或控制流的
+存在本身不构成支持承诺；只有整个文件的具体执行表面通过扫描才可继续。
 
-## 3. 三层语义验证
+GLM 输出必须来自配置的 `glm-*` 模型，只允许 source-bound 改写计划。完整 AST、注释、模型
+身份、内容 hash 和远程回执任一不一致都拒绝发布；本地 transformer 只是比较 oracle，不能
+作为模型失败时的迁移产物。
 
-迁移产物必须被真实加载，并调用自身 `build_inputs()`。验证器保留 NumPy/Python RNG 状态，分别检查：
+普通脚本 run 是 write-once：`migrated.py`、`gap-request.json` 和
+`script-migration-report.json` 不得与历史 run 混用。迁移报告固定如实写明是否执行、是否完成
+数值验证和性能是否有效。
+
+## 4. 缺口恢复与资格化状态
+
+当前已经存在的原语包括：
+
+- source-bound GapSpec 和 generation request；
+- CANNBot bundle 校验、GLM draft generation、诊断驱动 repair 和离线 seal；
+- AsNumpy adapter generation/repair；
+- 六门 qualification evidence schema、capability overlay 与 runtime guard。
+
+当前尚未存在一个自动编排器完成：
+
+```text
+integrate → qualify → activate → rescan → final GLM migration
+```
+
+在生成新 kernel 之前增加官方 [`cann/ops-nn`](https://gitcode.com/cann/ops-nn) 复用层是
+**P1 待定设计**，不是当前已实现能力：
+
+```text
+GapSpec
+  → ops-nn 版本化 catalog 查询
+  → 精确语义 / dtype / shape / SoC / license 匹配
+    ├─ 匹配：只构建选中官方算子到私有 OPP → GLM 生成 AsNumpy adapter
+    └─ 不匹配：进入现有 CANNBot Skill + GLM 新 kernel generation
+  → 统一经过 integrate / 六门 qualification / activate / rescan
+```
+
+该路径不能放进默认安装：必须匹配当前 CANN 分支/tag，显式接受 CANN OSL，固定 official
+origin/commit/file hashes，避免全量构建和系统 OPP 覆盖。名称命中不代表语义命中；mutation、
+返回值、参数默认值、broadcast、dtype、shape、layout 和异常边界都必须逐项对照 GapSpec。
+现有 qualification 只接受封存的模型 Artifact；因此 P1 还必须新增 hash-bound、不会伪装成
+`remote_llm` 的 `official_source` Artifact/manifest，并扩展 adapter/qualification validator。
+六门固定为 artifact integrity、build、UT、NumPy numerical、public AsNumpy API 和真实 NPU
+execution；activation 是之后的独立状态。
+详细评估见 [ops-nn 官方算子复用评估](OPS-NN-REUSE-ASSESSMENT-20260825.md)。
+
+因此状态必须逐级如实记录：
+
+```text
+prepared
+  → generated_unverified / repaired_unverified
+  → integrated_candidate
+  → qualified
+  → activated
+  → rescanned
+  → final_migrated
+```
+
+现阶段通常只由 NumPilot 自动到达 `prepared` 或 `generated_unverified`；ops-nn resolver
+尚未实现，adapter 与
+qualification/overlay 是可独立调用的安全原语，不是统一的自动恢复流。封存不等于构建通过，
+adapter candidate 不等于已接入，qualification schema 存在也不等于六门已经通过。
+
+只有 missing API 或用户拒绝的 audited fallback 可以生成 gap。callable + `UNKNOWN` 必须进入
+capability/source audit；旧 fallback runtime 不能被 overlay 直接重命名为 NPU 实现。完成独立
+接入和激活后，还必须重新扫描原文件，再由 GLM 生成最终迁移文件。该自动恢复编排属于下一阶段。
+
+## 5. 显式 legacy contract 通道
+
+legacy 通道只能显式进入：
+
+```bash
+python -m numpilot migrate task.py --mode contract --engine llm
+```
+
+它保留 AnalysisAgent → DecisionAgent → MigrationAgent → VerificationAgent：
+
+1. 要求唯一顶层同步 `build_inputs()` 和 `forward()`；
+2. 只迁移 `forward()`，输入构造与顶层展示留在 CPU；
+3. `DecisionAgent` 只产生 `whole_forward_npu`，不宣称通用 CPU/NPU 子图切分；
+4. `check-suite`、`wizard`、`bench-cpu`、`bench-npu` 都属于这条 legacy contract 工具链；
+5. 比赛案例仍必须使用 strict LLM；AST 只保留给框架离线回归。
+
+### 5.1 Legacy contract 的三层语义门
 
 | 门禁 | 两侧输入 | 目的 |
 |---|---|---|
 | 输入生成一致性 | 原始与迁移产物各自的 `build_inputs` | 防止迁移器篡改测试数据 |
 | 计算主体一致性 | 两个 `forward` 使用同一份规范输入 | 防止错误 forward 被补偿性输入掩盖 |
-| 产物完整性 | 原始输出 vs 迁移产物自身 `build_inputs + forward` | 验证实际交付文件可独立运行 |
+| 产物完整性 | 原始输出 vs 迁移产物自身 `build_inputs + forward` | 验证 contract 文件可独立运行 |
 
-统一比较器先检查嵌套容器、shape 和 dtype。浮点按实际 dtype 使用 `atol + rtol * abs(reference)`，整数/布尔精确相等，并显式处理零参考、NaN 与 Inf。异常会落成结构化失败，而不是被吞掉。
+这些门只描述 legacy contract，不能被写成 ordinary script 的当前内置验证能力。
 
-当前 `asnumpy` 模块临时注入由进程内全局锁保护并可靠恢复，但用户代码尚未在 OS 子进程/沙箱中隔离；这仍是正式系统的 P0 安全项。
+## 6. 能力与证据边界
 
-## 4. 执行来源与能力注册
+`coverage.py` 只回答“静态名称是否已建模”；`capabilities.py` 和 NPU backend 还必须回答：
 
-`coverage.py` 只回答“静态名称是否已建模”；`capabilities.py` 回答更严格的问题：
+- 当前 wheel 是否暴露 API；
+- version、文件和二进制 hash 是否匹配审计身份；
+- provenance 是 native/custom/composite NPU、host-assisted、CPU fallback 还是 unknown；
+- 调用签名、dtype/rank/layout/numel profile 与 CANN/SoC 是否落在证据范围。
 
-- 实际 wheel 是否存在这个 API；
-- 当前 AsNumpy 版本是否完成源码审计；
-- 实现来源是 `native_npu`、`custom_npu`、`composite_npu`、host assisted、CPU fallback 还是 unknown；
-- CANN、SoC、模块路径是否与证据绑定。
+通用基线 wheel 中 `matmul/inner/outer` 是已知 CPU fallback；P0 move wheel 只有在精确 runtime
+身份和绑定的 float32/rank/profile 范围内，才可放行已审计的 `outer/matmul` NPU 路径。二者不
+矛盾，也不能相互扩大能力声明。版本漂移、CPU fallback、host-assisted 或 unknown 都不能发布
+strict-NPU 性能数字。
 
-版本漂移、API 缺失、CPU fallback、host assisted 或 unknown 都不能发布 strict-NPU 性能数字。当前已审计版本中 `matmul/inner/outer` 是明确 CPU fallback，`dot/vdot/floor` 存在条件性 host/CPU 路径，`signbit` 包含 host 辅助。因此 MLP/GEMM 只能用于迁移诊断，不能充当 NPU GEMM 加速案例。
+普通 GLM artifact 的本轮真实 NPU evidence 由外部受信定向 harness 生成，并必须绑定：
 
-## 5. 性能证据链
+- 原始源码、迁移 artifact 与 harness hash；
+- AsNumpy wheel、capability audit/overlay、CANN 和 SoC 身份；
+- 数值 oracle、实际 NPU 调用/deny-fallback 证据和明确计时口径。
 
-性能比较拆成两个独立进程：
+产品内 ordinary 通用 benchmark 尚未实现。legacy `bench-cpu/bench-npu` 只对其 contract 输入
+和由该链生成的产物负责；它们不得重新迁移普通 artifact 后冒充同一证据。
 
-```text
-bench-cpu → cpu_baseline.json + cpu_baseline.npy
-bench-npu → provenance → 三层语义 → 基线一致性 → npu_benchmark.json
-                                                       → benchmark_report.md
-```
+当前精选例子是
+[Demo v1 Case 01 定向证据](../evidence/demotest-case01-20260825/README.md)。该证据明确拆分
+稳态脚本体与冷进程启动口径，并明确记录未采集 kernel profiler；它展示的是上述外部 harness
+边界，不会把产品内尚未实现的 ordinary benchmark 写成已完成。
 
-`bench-npu` 的当前 NPU 计时口径是“输入预驻留设备，排除 H2D，每轮包含递归 D2H 同步”；它既不是 kernel-only，也不是端到端。只有 provenance、三层语义和 CPU 基线全部通过时，`performance_valid=true` 并计算 speedup。`--allow-cpu-fallback` 仅继续诊断，永远不发布加速比。
-
-## 6. 包结构与扩展点
+## 7. 包结构与当前扩展点
 
 ```text
 numpilot/
-├── contracts.py          Agent 数据契约
-├── coverage.py           静态 API 名称快照
+├── __main__.py            ordinary/legacy CLI 与显式用户门
+├── bootstrap.py           只读 plan、锁定依赖 apply 与原子 receipt
+├── script_migration.py   ordinary 扫描、分类、GLM/AST 门和报告
 ├── capabilities.py       版本化 capability/provenance
-├── comparison.py         统一语义比较器
-├── module_injection.py   受锁保护的临时模块注入
-├── agents/               analysis / decision / migration / verification
-├── engines/              AST 与 strict LLM
-├── backends/             shim 与真实 NPU adapter
-├── orchestrator.py       确定性流水线
-└── bench.py              独立性能评测和证据落盘
+├── backends/             shim 与真实 NPU runtime adapter
+├── gaps/                 spec、draft/repair、adapter、qualification、overlay 原语
+├── contracts.py          legacy agent 数据契约
+├── agents/               legacy analysis / decision / migration / verification
+├── engines/              legacy AST 与 strict LLM engine
+├── orchestrator.py       legacy contract 编排
+└── bench.py              legacy contract 性能评测
 ```
 
-后端扩展需要实现 `ExecutionBackend` 及 capability manifest；迁移引擎扩展需要实现 `MigrationEngine`。任何新后端或引擎都不能绕过统一验证器。
-
-## 7. 下一阶段
-
-1. 建立 callsite/value 级 IR、shape guard 和真实数据流边界，再讨论 CPU/NPU 子图切分。
-2. 把分析、构建和执行放入独立受限进程，收敛文件、网络和设备权限。
-3. 将 H2D/D2H 字节、kernel trace、profiler artifact 纳入证据 schema。
-4. 定义 GapSpec 与 OperatorArtifact 契约，接入 Ascend C 生成、构建、UT/ST、版本化注册和回滚。
-5. 在 CodeArts 中先使用仓库级 Agent/Skill；稳定后再以白名单 MCP 暴露 `analyze/doctor/capabilities/migrate/verify`，不暴露任意 shell。
+下一阶段只做最小闭环：保持 bootstrap plan/apply/receipt 契约稳定；用测试集收敛
+五类能力结果；选择一个真实 gap，
+把现有原语串成可恢复的 integrate/qualify/activate/rescan 状态；最后让 ordinary runner 消费
+已有的精确 GLM artifact。通用图 IR、CPU/NPU 自动切分和通用 profiler runner 不属于 Demo v1。

@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "status": "pass",
+  "headline": {
+    "winner": "NPU",
+    "npu_speedup": 180.00424467634383,
+    "scope": "steady_exact_script_body"
+  },
+  "steady_compute": {
+    "winner": "NPU",
+    "npu_speedup": 180.00424467634383,
+    "cpu_median_ms": 809.7840155,
+    "npu_median_ms": 4.498694,
+    "cpu_blas_threads": 1,
+    "cpu_affinity": [
+      168
+    ],
+    "npu_affinity": [
+      168
+    ],
+    "warmup_iterations": 3,
+    "measurement_iterations": 10,
+    "allocations_included": true,
+    "npu_output_transfer_included": true,
+    "terminal_io_included": false
+  },
+  "cold_process": {
+    "winner": "CPU",
+    "cpu_faster_factor": 4.435087719298245,
+    "npu_speedup": 0.2254746835443038,
+    "cpu_median_ms": 1140,
+    "npu_median_ms": 5056,
+    "samples_per_backend": 5,
+    "scope": "python_startup_plus_imports_plus_device_initialization_plus_full_script",
+    "interpretation": "Cold-process latency is reported separately and is not used as the compute-speed headline."
+  },
+  "numerical_validation": {
+    "consistent": true,
+    "elements_compared": 20973569,
+    "atol": 1e-05,
+    "rtol": 0.0001,
+    "max_abs_diff": 0.000244140625,
+    "max_rel_diff": 5.602423698292114e-06
+  },
+  "workload": {
+    "source": "01_numpy_large.py",
+    "source_sha256": "eb07e1aa682d882f83c59f02b85c52a2ecc8a5054b9d856ae82760326f86fe2b",
+    "migrated": "migration/migrated.py",
+    "migrated_sha256": "f58979c0a16a0ba7414621337cb998f122c7363d5f361190c5fd665bf895dd91",
+    "matrix_shape": [
+      2048,
+      2048
+    ],
+    "dtype": "float32",
+    "numpy_api_calls_per_body": {
+      "divide": 1,
+      "exp": 1,
+      "full": 2,
+      "matmul": 1,
+      "sum": 3
+    }
+  },
+  "npu_validation": {
+    "device": "Ascend 910B4",
+    "device_id": 7,
+    "device_health": "OK",
+    "strict_npu_runtime_guard": true,
+    "runtime_profile_matched": true,
+    "runtime_target_integrity": true,
+    "runtime_call_counts_matched": true,
+    "aclnn_logs_present": true,
+    "kernel_profiler_verified": false,
+    "profiler_note": "No kernel-profiler artifact was collected; the result is guarded by runtime target/profile/call-count checks and ACLNN logs."
+  },
+  "generation": {
+    "source_generated_by": "GLM",
+    "migration_generated_by": "GLM",
+    "requested_model": "glm-5.3",
+    "source_response_model": "glm-5.3",
+    "migration_response_model": "glm-5.3",
+    "source_generation_http_status": 200,
+    "migration_http_status": 200,
+    "tls_verification": "enabled",
+    "proxy": "http://127.0.0.1:7897",
+    "source_generation_content_sha256": "3e57ae6dd9f58873c72f963a808908829a33a64880285c028f5699cf78eb138a",
+    "migration_content_sha256": "1edbb70fc042d88d22fdb292dc115a5dd199187496f9cc14787ecc5529cd176d"
+  },
+  "runtime": {
+    "asnumpy_version": "0.1.dev106+g21368abf9.d20260822",
+    "asnumpy_wheel_sha256": "afe845c45d17e7f5cd619831f555fba3c2344296ffe02f1d251017b04cf0282d",
+    "capability_audit_id": "asnumpy-0.1.dev106-g21368abf9-poisson-move-init4f4e8083-array16c901f5-math62e0ba09-direct4479c588-utils1b298145-core4465ce6e-v3"
+  },
+  "source_reports": {
+    "steady_comparison": "execution/performance-comparison.json",
+    "cpu_benchmark": "execution/cpu-benchmark.json",
+    "npu_benchmark": "execution/npu-benchmark.json",
+    "cold_comparison": "execution/cold-start-comparison.json",
+    "migration_report": "migration/script-migration-report.json",
+    "generation_gate": "generation/ast-gate.json"
+  }
+}

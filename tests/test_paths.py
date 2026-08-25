@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from numpilot.paths import (default_benchmark_dir, default_gap_dir,
-                            default_wizard_dir, reports_dir, runs_dir,
-                            state_home)
+from numpilot.paths import (default_benchmark_dir, default_bootstrap_receipt,
+                            default_gap_dir, default_wizard_dir, reports_dir,
+                            runs_dir, state_home)
 
 
 def test_paths_follow_xdg_state_home(monkeypatch, tmp_path):
@@ -17,6 +17,7 @@ def test_paths_follow_xdg_state_home(monkeypatch, tmp_path):
     assert default_benchmark_dir() == runs_dir() / "benchmark"
     assert default_wizard_dir() == runs_dir() / "wizard"
     assert default_gap_dir() == runs_dir() / "gaps"
+    assert default_bootstrap_receipt() == state_home() / "bootstrap" / "receipt.json"
 
 
 def test_explicit_paths_override_xdg(monkeypatch, tmp_path):

@@ -1,0 +1,392 @@
+{
+  "analysis": {
+    "audit_id": "asnumpy-0.1.dev106-g21368abf9-poisson-move-init4f4e8083-array16c901f5-math62e0ba09-direct4479c588-utils1b298145-core4465ce6e-v3",
+    "backend": "npu",
+    "backend_version": "0.1.dev106+g21368abf9.d20260822",
+    "counts": {
+      "fallback_available": 0,
+      "scoped_npu": 3,
+      "strict_npu": 3,
+      "unsupported": 0
+    },
+    "decisions": [
+      {
+        "api_path": "divide",
+        "available": true,
+        "callsites": [
+          {
+            "api_path": "divide",
+            "col_offset": 8,
+            "keyword_args": [],
+            "kind": "call",
+            "lineno": 32,
+            "positional_args": 2,
+            "qualified_api": "numpy.divide",
+            "synthetic": false
+          }
+        ],
+        "constraints": [
+          "dtype=float32",
+          "rank>=1",
+          "contiguous=true",
+          "numel>=1"
+        ],
+        "evidence": "asnumpy P0 hash-bound math audit: float32 public path delegates to ACLNN; call signature is qualified; dtype/shape/layout remain subject to the runtime profile guard",
+        "generatable": false,
+        "kind": "call",
+        "provenance": "native_npu",
+        "qualified_api": "numpy.divide",
+        "status": "scoped_npu"
+      },
+      {
+        "api_path": "exp",
+        "available": true,
+        "callsites": [
+          {
+            "api_path": "exp",
+            "col_offset": 13,
+            "keyword_args": [],
+            "kind": "call",
+            "lineno": 31,
+            "positional_args": 1,
+            "qualified_api": "numpy.exp",
+            "synthetic": false
+          }
+        ],
+        "constraints": [
+          "dtype=float32",
+          "rank>=1",
+          "contiguous=true",
+          "numel>=1"
+        ],
+        "evidence": "asnumpy P0 hash-bound math audit: float32 public path delegates to ACLNN; call signature is qualified; dtype/shape/layout remain subject to the runtime profile guard",
+        "generatable": false,
+        "kind": "call",
+        "provenance": "native_npu",
+        "qualified_api": "numpy.exp",
+        "status": "scoped_npu"
+      },
+      {
+        "api_path": "float32",
+        "available": true,
+        "callsites": [
+          {
+            "api_path": "float32",
+            "col_offset": 38,
+            "keyword_args": [],
+            "kind": "reference",
+            "lineno": 26,
+            "positional_args": 0,
+            "qualified_api": "numpy.float32",
+            "synthetic": false
+          },
+          {
+            "api_path": "float32",
+            "col_offset": 38,
+            "keyword_args": [],
+            "kind": "reference",
+            "lineno": 27,
+            "positional_args": 0,
+            "qualified_api": "numpy.float32",
+            "synthetic": false
+          }
+        ],
+        "constraints": [],
+        "evidence": "AsNumpy exposes the NumPy-compatible metadata alias",
+        "generatable": false,
+        "kind": "reference",
+        "provenance": "metadata",
+        "qualified_api": "numpy.float32",
+        "status": "strict_npu"
+      },
+      {
+        "api_path": "full",
+        "available": true,
+        "callsites": [
+          {
+            "api_path": "full",
+            "col_offset": 4,
+            "keyword_args": [
+              "dtype"
+            ],
+            "kind": "call",
+            "lineno": 26,
+            "positional_args": 2,
+            "qualified_api": "numpy.full",
+            "synthetic": false
+          },
+          {
+            "api_path": "full",
+            "col_offset": 4,
+            "keyword_args": [
+              "dtype"
+            ],
+            "kind": "call",
+            "lineno": 27,
+            "positional_args": 2,
+            "qualified_api": "numpy.full",
+            "synthetic": false
+          }
+        ],
+        "constraints": [],
+        "evidence": "asnumpy P0 hash-bound source/binary audit: public wrapper delegates to ACLNN",
+        "generatable": false,
+        "kind": "call",
+        "provenance": "native_npu",
+        "qualified_api": "numpy.full",
+        "status": "strict_npu"
+      },
+      {
+        "api_path": "matmul",
+        "available": true,
+        "callsites": [
+          {
+            "api_path": "matmul",
+            "col_offset": 9,
+            "keyword_args": [],
+            "kind": "call",
+            "lineno": 28,
+            "positional_args": 2,
+            "qualified_api": "numpy.matmul",
+            "synthetic": false
+          }
+        ],
+        "constraints": [
+          "dtype=float32",
+          "rank>=1",
+          "rank<=2",
+          "contiguous=true",
+          "numel>=1"
+        ],
+        "evidence": "asnumpy P0 hash-bound linalg audit: float32 rank-1/2 public path delegates to ACLNN; call signature is qualified; dtype/shape/layout remain subject to the runtime profile guard",
+        "generatable": false,
+        "kind": "call",
+        "provenance": "native_npu",
+        "qualified_api": "numpy.matmul",
+        "status": "scoped_npu"
+      },
+      {
+        "api_path": "sum",
+        "available": true,
+        "callsites": [
+          {
+            "api_path": "sum",
+            "col_offset": 30,
+            "keyword_args": [
+              "axis",
+              "keepdims"
+            ],
+            "kind": "call",
+            "lineno": 32,
+            "positional_args": 1,
+            "qualified_api": "numpy.sum",
+            "synthetic": false
+          },
+          {
+            "api_path": "sum",
+            "col_offset": 11,
+            "keyword_args": [
+              "axis",
+              "keepdims"
+            ],
+            "kind": "call",
+            "lineno": 35,
+            "positional_args": 1,
+            "qualified_api": "numpy.sum",
+            "synthetic": false
+          },
+          {
+            "api_path": "sum",
+            "col_offset": 11,
+            "keyword_args": [
+              "axis",
+              "keepdims"
+            ],
+            "kind": "call",
+            "lineno": 36,
+            "positional_args": 1,
+            "qualified_api": "numpy.sum",
+            "synthetic": false
+          }
+        ],
+        "constraints": [],
+        "evidence": "asnumpy P0 hash-bound source/binary audit: public wrapper delegates to ACLNN",
+        "generatable": false,
+        "kind": "call",
+        "provenance": "native_npu",
+        "qualified_api": "numpy.sum",
+        "status": "strict_npu"
+      }
+    ],
+    "mode": "script",
+    "scan": {
+      "issues": [],
+      "ok": true,
+      "output_boundary_count": 1,
+      "rewrite_count": 10,
+      "schema_version": 1,
+      "source_path": "/home/ma-user/work/numpilot-runs/demotest-migration-20260825/case-01-large-run04/01_numpy_large.py",
+      "source_sha256": "eb07e1aa682d882f83c59f02b85c52a2ecc8a5054b9d856ae82760326f86fe2b",
+      "synthetic_divide_count": 0,
+      "uses": [
+        {
+          "api_path": "full",
+          "col_offset": 4,
+          "keyword_args": [
+            "dtype"
+          ],
+          "kind": "call",
+          "lineno": 26,
+          "positional_args": 2,
+          "qualified_api": "numpy.full",
+          "synthetic": false
+        },
+        {
+          "api_path": "float32",
+          "col_offset": 38,
+          "keyword_args": [],
+          "kind": "reference",
+          "lineno": 26,
+          "positional_args": 0,
+          "qualified_api": "numpy.float32",
+          "synthetic": false
+        },
+        {
+          "api_path": "full",
+          "col_offset": 4,
+          "keyword_args": [
+            "dtype"
+          ],
+          "kind": "call",
+          "lineno": 27,
+          "positional_args": 2,
+          "qualified_api": "numpy.full",
+          "synthetic": false
+        },
+        {
+          "api_path": "float32",
+          "col_offset": 38,
+          "keyword_args": [],
+          "kind": "reference",
+          "lineno": 27,
+          "positional_args": 0,
+          "qualified_api": "numpy.float32",
+          "synthetic": false
+        },
+        {
+          "api_path": "matmul",
+          "col_offset": 9,
+          "keyword_args": [],
+          "kind": "call",
+          "lineno": 28,
+          "positional_args": 2,
+          "qualified_api": "numpy.matmul",
+          "synthetic": false
+        },
+        {
+          "api_path": "exp",
+          "col_offset": 13,
+          "keyword_args": [],
+          "kind": "call",
+          "lineno": 31,
+          "positional_args": 1,
+          "qualified_api": "numpy.exp",
+          "synthetic": false
+        },
+        {
+          "api_path": "divide",
+          "col_offset": 8,
+          "keyword_args": [],
+          "kind": "call",
+          "lineno": 32,
+          "positional_args": 2,
+          "qualified_api": "numpy.divide",
+          "synthetic": false
+        },
+        {
+          "api_path": "sum",
+          "col_offset": 30,
+          "keyword_args": [
+            "axis",
+            "keepdims"
+          ],
+          "kind": "call",
+          "lineno": 32,
+          "positional_args": 1,
+          "qualified_api": "numpy.sum",
+          "synthetic": false
+        },
+        {
+          "api_path": "sum",
+          "col_offset": 11,
+          "keyword_args": [
+            "axis",
+            "keepdims"
+          ],
+          "kind": "call",
+          "lineno": 35,
+          "positional_args": 1,
+          "qualified_api": "numpy.sum",
+          "synthetic": false
+        },
+        {
+          "api_path": "sum",
+          "col_offset": 11,
+          "keyword_args": [
+            "axis",
+            "keepdims"
+          ],
+          "kind": "call",
+          "lineno": 36,
+          "positional_args": 1,
+          "qualified_api": "numpy.sum",
+          "synthetic": false
+        }
+      ]
+    },
+    "schema_version": 1
+  },
+  "ast_audit": "passed",
+  "execution_performed": false,
+  "fallback_accepted": false,
+  "generated_by": "glm",
+  "llm_receipt": {
+    "content_sha256": "1edbb70fc042d88d22fdb292dc115a5dd199187496f9cc14787ecc5529cd176d",
+    "http_status": 200,
+    "request_body_sha256": "a537da8d393fa48083c2797efcfbebc6d3498df440ad44de3afb9ce77acc4f9d",
+    "request_id": null,
+    "requested_model": "glm-5.3",
+    "response_body_sha256": "bc1da7e10394c7d8b221fb6c34880171bc158e9c5b0f10c509b77bbb8677068e",
+    "response_created": 1787641752,
+    "response_id": "msg_202608251509007af9e212f1014e8b",
+    "response_model": "glm-5.3",
+    "schema_version": 1,
+    "tls_verification": "enabled",
+    "usage": {
+      "claude_cache_creation_1_h_tokens": 0,
+      "claude_cache_creation_5_m_tokens": 0,
+      "completion_tokens": 897,
+      "input_tokens": 660,
+      "output_tokens": 0,
+      "prompt_tokens": 660,
+      "total_tokens": 1557
+    },
+    "utc_end": "2026-08-25T07:09:12.440356Z",
+    "utc_start": "2026-08-25T07:09:00.613971Z"
+  },
+  "migrated_sha256": "f58979c0a16a0ba7414621337cb998f122c7363d5f361190c5fd665bf895dd91",
+  "mode": "script",
+  "model": "glm-5.3",
+  "numerical_verification": "not_run",
+  "performance_valid": false,
+  "provider": "glm",
+  "published_files": [
+    "migrated.py"
+  ],
+  "requested_model": "glm-5.3",
+  "response_model": "glm-5.3",
+  "schema_version": 1,
+  "source_sha256": "eb07e1aa682d882f83c59f02b85c52a2ecc8a5054b9d856ae82760326f86fe2b",
+  "status": "migrated_scoped_npu",
+  "strict_npu": false
+}

@@ -1,0 +1,45 @@
+{
+  "comparison": {
+    "atol": 1e-05,
+    "consistent": true,
+    "failure_index": null,
+    "failure_path": null,
+    "max_abs_diff": 0.000244140625,
+    "max_rel_diff": 5.602423698292114e-06,
+    "n_elements": 20973569,
+    "reason": null,
+    "rtol": 0.0001
+  },
+  "cpu_faster_factor": 0.005555424550115734,
+  "cpu_median_ms_per_body": 809.7840155,
+  "cpu_outputs": {
+    "path": "/home/ma-user/work/numpilot-runs/demotest-migration-20260825/case-01-large-run04/execution/cpu-outputs.npz",
+    "sha256": "66c9cd9fe2d907740371de364aaf996834c84108ba20f0f5d7679111c3cbcac3"
+  },
+  "cpu_over_npu_ratio": 180.00424467634383,
+  "cpu_report": {
+    "path": "/home/ma-user/work/numpilot-runs/demotest-migration-20260825/case-01-large-run04/execution/cpu-benchmark.json",
+    "sha256": "f79dc67573fd278900912cce8a7b15ddd55bc7df938b30cdeff8299ccf721bca"
+  },
+  "evidence_checks": {
+    "cpu_single_blas_thread": true,
+    "numerically_consistent": true,
+    "same_scope": true,
+    "same_single_cpu_affinity": true,
+    "strict_npu_runtime_guard": true
+  },
+  "npu_median_ms_per_body": 4.498694,
+  "npu_outputs": {
+    "path": "/home/ma-user/work/numpilot-runs/demotest-migration-20260825/case-01-large-run04/execution/npu-outputs.npz",
+    "sha256": "a57f84e763e887b93476adc905994209e663dcb16fb7b77e2680bb291ffd7745"
+  },
+  "npu_report": {
+    "path": "/home/ma-user/work/numpilot-runs/demotest-migration-20260825/case-01-large-run04/execution/npu-benchmark.json",
+    "sha256": "fd7d4129d0fa58d95542b948749649bd7eda8641d26f993e05982da6a4e373ef"
+  },
+  "performance_valid": true,
+  "profiler_verified": false,
+  "schema_version": 1,
+  "status": "pass",
+  "timing_scope": "steady_exact_script_body"
+}

@@ -1,0 +1,14 @@
+{
+  "config_source": "user-config",
+  "http_proxy": "http://127.0.0.1:7897",
+  "https_proxy": "http://127.0.0.1:7897",
+  "provider": "glm",
+  "receipt_content_sha256": "3e57ae6dd9f58873c72f963a808908829a33a64880285c028f5699cf78eb138a",
+  "requested_model": "glm-5.3",
+  "response_sha256": "3e57ae6dd9f58873c72f963a808908829a33a64880285c028f5699cf78eb138a",
+  "schema_version": 1,
+  "system_path": "/home/ma-user/work/numpilot-runs/demotest-migration-20260825/case-01-large-run04/generation/system.md",
+  "system_sha256": "58a56fd172199e115a0ac85038d73c1a5cb7c0c048c45ec7eefb7808c14c6fd9",
+  "user_path": "/home/ma-user/work/numpilot-runs/demotest-migration-20260825/case-01-large-run04/generation/user-sent.md",
+  "user_sha256": "ec185d7ee9b0fad1511785cfe7c822cc9efa139178a024d30f19cdf0f4e2f5bc"
+}

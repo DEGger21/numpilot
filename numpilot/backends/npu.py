@@ -64,7 +64,7 @@ _P0_RUNTIME_FILE_SHA256 = {
 P0_LINALG_ASNUMPY_AUDIT_ID = (
     "asnumpy-0.1.dev106-g21368abf9-poisson-linalg-"
     "init4f4e8083-array16c901f5-math62e0ba09-direct4479c588-"
-    "utilsfd94c025-cored3ccb39f-v3"
+    "utilsfd94c025-cored3ccb39f-v4"
 )
 P0_LINALG_AUDITED_NATIVE_OPS = frozenset(
     {
@@ -75,6 +75,7 @@ P0_LINALG_AUDITED_NATIVE_OPS = frozenset(
         "cos",
         "divide",
         "exp",
+        "full",
         "linspace",
         "matmul",
         "multiply",
@@ -90,7 +91,7 @@ P0_MOVE_ASNUMPY_VERSION = "0.1.dev106+g21368abf9.d20260822"
 P0_MOVE_ASNUMPY_AUDIT_ID = (
     "asnumpy-0.1.dev106-g21368abf9-poisson-move-"
     "init4f4e8083-array16c901f5-math62e0ba09-direct4479c588-"
-    "utils1b298145-core4465ce6e-v2"
+    "utils1b298145-core4465ce6e-v3"
 )
 # The published Poisson qualification/profiler receipts predate the array.py
 # extension of the runtime identity.  They may be activated only when the
@@ -101,11 +102,20 @@ P0_MOVE_LEGACY_OVERLAY_AUDIT_ID = (
     "init4f4e8083-math62e0ba09-direct4479c588-"
     "utils1b298145-core4465ce6e-v1"
 )
-_P0_LINALG_AUDIT_IDS = frozenset({
+_P0_CURRENT_LINALG_AUDIT_IDS = frozenset({
     P0_LINALG_ASNUMPY_AUDIT_ID,
     P0_MOVE_ASNUMPY_AUDIT_ID,
+})
+_P0_LINALG_AUDIT_IDS = frozenset({
+    *_P0_CURRENT_LINALG_AUDIT_IDS,
     P0_MOVE_LEGACY_OVERLAY_AUDIT_ID,
 })
+# ``full`` was admitted only in the v4/v3 source audit.  The historical v1
+# identity must retain its original capability semantics when reconstructing a
+# published qualification-overlay base.
+_P0_LEGACY_LINALG_AUDITED_NATIVE_OPS = (
+    P0_LINALG_AUDITED_NATIVE_OPS - {"full"}
+)
 # The cbrt showcase wheel preserves the hash-audited P0 add/multiply wrappers
 # while adding one generated custom operator.  Only the inherited base
 # operators are admitted here; cbrt remains unknown until an explicit
@@ -470,8 +480,11 @@ def _provenance_profile(name, version, audit_id):
             ("requires an operator-specific source audit",),
         )
     if (
-        audit_id in _P0_LINALG_AUDIT_IDS
+        audit_id in _P0_CURRENT_LINALG_AUDIT_IDS
         and name not in P0_LINALG_AUDITED_NATIVE_OPS
+    ) or (
+        audit_id == P0_MOVE_LEGACY_OVERLAY_AUDIT_ID
+        and name not in _P0_LEGACY_LINALG_AUDITED_NATIVE_OPS
     ):
         return (
             ExecutionProvenance.UNKNOWN,

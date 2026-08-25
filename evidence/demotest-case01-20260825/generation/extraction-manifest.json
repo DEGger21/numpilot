@@ -1,0 +1,9 @@
+{
+  "output_path": "/home/ma-user/work/numpilot-runs/demotest-migration-20260825/case-01-large-run04/01_numpy_large.py",
+  "output_sha256": "eb07e1aa682d882f83c59f02b85c52a2ecc8a5054b9d856ae82760326f86fe2b",
+  "receipt_path": "/home/ma-user/work/numpilot-runs/demotest-migration-20260825/case-01-large-run04/generation/receipt.json",
+  "response_path": "/home/ma-user/work/numpilot-runs/demotest-migration-20260825/case-01-large-run04/generation/response.md",
+  "response_sha256": "3e57ae6dd9f58873c72f963a808908829a33a64880285c028f5699cf78eb138a",
+  "schema_version": 1,
+  "syntax_valid": true
+}

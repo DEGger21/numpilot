@@ -8,9 +8,10 @@ Token、私有 endpoint、未修复的可利用细节或用户运行产物。
 
 ## 支持范围
 
-当前维护分支为 `feat/numpilot-demo`，发布标签对应的代码优先获得安全修复。NumPilot 会加载
-用户 Python 程序并可调用本机 CANN/NPU 工具，因此只应处理可信源码。LLM 生成的算子固定为
-`generated_unverified`，必须经过独立构建、测试、NPU 数值和激活门禁后才能使用。
+当前支持的发布系列为 `0.2.x` Alpha；安全修复会通过新的版本标签发布，不把临时开发分支
+当作稳定支持入口。NumPilot 会加载用户 Python 程序并可调用本机 CANN/NPU 工具，因此只应
+处理可信源码。LLM 生成的算子固定为 `generated_unverified`，必须经过独立构建、测试、NPU
+数值和激活门禁后才能使用。
 
 凭据应只放在 `python -m numpilot configure-llm` 创建的私有配置或 CI secret 中。真实凭据、
 授权头和原始模型响应不得进入仓库或公开证据包。
