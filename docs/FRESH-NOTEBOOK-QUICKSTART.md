@@ -108,17 +108,19 @@ assert ASNUMPY_WHEEL.is_file(), ASNUMPY_WHEEL
 assert (LLM_CONFIG_HOME / "llm.json").is_file(), LLM_CONFIG_HOME / "llm.json"
 assert CANN_HOME.is_dir(), CANN_HOME
 
-env = os.environ.copy()
+env = {
+    name: value
+    for name, value in os.environ.items()
+    if not name.startswith("NUMPILOT_")
+}
 for name in (
-    "NUMPILOT_LLM_BASE_URL",
-    "NUMPILOT_LLM_AUTH_TOKEN",
-    "NUMPILOT_LLM_MODEL",
-    "NUMPILOT_LLM_PROVIDER",
-    "NUMPILOT_LLM_CONFIG_FILE",
     "HTTP_PROXY",
     "HTTPS_PROXY",
     "ALL_PROXY",
     "all_proxy",
+    "PYTHONHOME",
+    "PYTHONSTARTUP",
+    "PYTHONUSERBASE",
 ):
     env.pop(name, None)
 env.update({
@@ -130,8 +132,16 @@ env.update({
     "ASCEND_AICPU_PATH": str(CANN_HOME),
     "NUMPILOT_CONFIG_HOME": str(LLM_CONFIG_HOME),
     "NUMPILOT_STATE_HOME": str(TEST_ROOT / "state"),
+    "NUMPILOT_LLM_MAX_TOKENS": "8192",
+    "NUMPILOT_LLM_TIMEOUT": "300",
+    "NUMPILOT_LLM_INSECURE": "0",
     "XDG_CACHE_HOME": str(TEST_ROOT / "cache"),
+    "PYTHONNOUSERSITE": "1",
 })
+env["PYTHONPATH"] = os.pathsep.join([
+    str(CANN_HOME / "python/site-packages"),
+    str(CANN_HOME / "opp/built-in/op_impl/ai_core/tbe"),
+])
 env["LD_LIBRARY_PATH"] = ":".join([
     "/usr/local/Ascend/driver/lib64",
     "/usr/local/Ascend/driver/lib64/common",
@@ -184,13 +194,18 @@ run("python3.10", "-m", "venv", VENV)
 
 if WHEELHOUSE is not None:
     assert WHEELHOUSE.is_dir(), WHEELHOUSE
+    # -I prevents an old source checkout or CANN Python package metadata from
+    # being mistaken for the package installed in this fresh venv.
     run(
-        PYTHON, "-m", "pip", "--isolated", "install", "--no-index",
+        PYTHON, "-I", "-m", "pip", "--isolated", "install", "--no-index",
         "--find-links", WHEELHOUSE, "numpilot[demo]==0.2.0a1",
     )
 else:
     # 这一步会通过显式 pip 命令访问包索引；不是 import/migrate 隐式下载。
-    run(PYTHON, "-m", "pip", "install", "-e", f"{REPO}[demo]")
+    run(
+        PYTHON, "-I", "-m", "pip", "--isolated", "install", "-e",
+        f"{REPO}[demo]",
+    )
 
 run(PYTHON, "-m", "numpilot", "--version")
 run(PYTHON, "-m", "numpilot", "paths", "--json")

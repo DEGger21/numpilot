@@ -34,7 +34,12 @@ def test_fresh_notebook_template_is_clean_and_covers_the_release_path():
     assert "migrate" in code and "migrated.py" in code
     assert "NUMPILOT_NOTEBOOK_ROOT" in code
     assert "cwd=cwd or TEST_ROOT" in code
-    assert "NUMPILOT_LLM_CONFIG_FILE" in code and "env.pop(name, None)" in code
+    assert "not name.startswith('NUMPILOT_')" in code
+    assert "NUMPILOT_LLM_MAX_TOKENS" in code
+    assert "NUMPILOT_LLM_TIMEOUT" in code
+    assert "NUMPILOT_LLM_INSECURE" in code
+    assert "env['PYTHONPATH']" in code
+    assert "'-I', '-m', 'pip', '--isolated'" in code
     assert "source=user-config" in code
     assert "row_sum_checksum" in code and "math.isclose" in code
     assert "127.0.0.1:7897" not in code
