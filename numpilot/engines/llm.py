@@ -9,6 +9,7 @@ CLI 会优先读取以下环境变量，并可通过 ``numpilot configure-llm`` 
   NUMPILOT_LLM_MAX_TOKENS  (可选)生成上限, 默认 8192(部分网关强制要求此字段)
   NUMPILOT_LLM_INSECURE    (可选)"1"=显式跳过 TLS 证书校验(仅限受信内网), 默认 "0"
   NUMPILOT_LLM_TIMEOUT     (可选)单次请求超时秒, 默认 120
+  NUMPILOT_LLM_REQUIRE_PROXY (可选)"1"=强制请求经标准 HTTP(S) 代理, 默认 "0"
 
 ``strict`` 参数仅为 API 兼容保留。所有 configured-model 路径现在均 fail
 closed；配置缺失、调用失败或响应不合格时绝不回退成本地 AST 产物。
@@ -98,6 +99,7 @@ _MAX_RESPONSE_BODY_BYTES = 3 * 1024 * 1024
 _MAX_STREAM_EVENTS = 100_000
 _MIN_PER_CALL_MAX_TOKENS = 1
 _MAX_PER_CALL_MAX_TOKENS = 1_000_000
+_REQUIRE_PROXY_ENV = "NUMPILOT_LLM_REQUIRE_PROXY"
 _SENSITIVE_METADATA_ENV = (
     "HTTP_PROXY",
     "HTTPS_PROXY",
@@ -108,6 +110,61 @@ _SENSITIVE_METADATA_ENV = (
     "all_proxy",
     "no_proxy",
 )
+
+
+def _proxy_is_required() -> bool:
+    """Return the explicit fail-closed proxy policy for remote LLM calls."""
+
+    value = os.getenv(_REQUIRE_PROXY_ENV, "0")
+    if value not in ("0", "1"):
+        raise LlmConfigError(
+            "%s must be exactly 0 or 1" % _REQUIRE_PROXY_ENV
+        )
+    return value == "1"
+
+
+def _open_remote_request(
+    request: urllib.request.Request,
+    *,
+    timeout: float,
+    context: Optional[ssl.SSLContext],
+):
+    """Open one request, optionally proving and pinning its proxy route.
+
+    The default path preserves urllib's standard environment-proxy behaviour.
+    When the caller opts into the fail-closed policy, take one proxy snapshot,
+    reject missing or bypassed routes before transport, and build a per-request
+    opener from that same snapshot.  This avoids relying on a process-global
+    opener that may have cached an older environment.
+    """
+
+    if not _proxy_is_required():
+        return urllib.request.urlopen(
+            request,
+            timeout=timeout,
+            context=context,
+        )
+
+    scheme = request.type.lower()
+    host = request.host
+    proxies = urllib.request.getproxies()
+    selected_proxy = proxies.get(scheme)
+    if not isinstance(selected_proxy, str) or not selected_proxy.strip():
+        raise LlmConfigError(
+            "%s=1 but no matching HTTP(S) proxy is configured"
+            % _REQUIRE_PROXY_ENV
+        )
+    if not host or urllib.request.proxy_bypass(host):
+        raise LlmConfigError(
+            "%s=1 but the LLM endpoint is excluded by proxy bypass policy"
+            % _REQUIRE_PROXY_ENV
+        )
+
+    handlers = [urllib.request.ProxyHandler({scheme: selected_proxy})]
+    if scheme == "https":
+        handlers.append(urllib.request.HTTPSHandler(context=context))
+    opener = urllib.request.build_opener(*handlers)
+    return opener.open(request, timeout=timeout)
 
 
 def _utc_now() -> str:
@@ -586,7 +643,13 @@ class LlmEngine(MigrationEngine):
         request_deadline = time.monotonic() + timeout
         started_at = _utc_now()
         try:
-            response = urllib.request.urlopen(req, timeout=timeout, context=ctx)
+            response = _open_remote_request(
+                req,
+                timeout=timeout,
+                context=ctx,
+            )
+        except LlmConfigError:
+            raise
         except urllib.error.HTTPError as exc:
             status_code = (
                 exc.code

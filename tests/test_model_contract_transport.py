@@ -11,7 +11,7 @@ from numpilot.contracts import OffloadPlan
 from numpilot.engines.llm import LlmEngine, LlmError
 from numpilot.gaps.pipeline import GapCompletionPipeline
 from numpilot.gaps.provider import LlmDraftProvider
-from numpilot.llm_config import load_llm_config, save_llm_config
+from numpilot.llm_config import LlmConfigError, load_llm_config, save_llm_config
 from numpilot.model_contract import validate_configured_model_receipt
 
 
@@ -32,6 +32,7 @@ _MODEL_ENV = (
     "NUMPILOT_LLM_MAX_TOKENS",
     "NUMPILOT_LLM_TIMEOUT",
     "NUMPILOT_LLM_INSECURE",
+    "NUMPILOT_LLM_REQUIRE_PROXY",
 )
 _PROXY_ENV = (
     "HTTP_PROXY",
@@ -137,6 +138,50 @@ class _FakeEndpoint:
         self.thread.join(timeout=5)
 
 
+class _FakeHttpProxy:
+    """A local forward-proxy double that terminates the request itself."""
+
+    def __init__(self, response):
+        self.response = response
+        self.request_count = 0
+        self.request_targets = []
+        owner = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                length = int(self.headers.get("Content-Length", "0"))
+                self.rfile.read(length)
+                owner.request_count += 1
+                owner.request_targets.append(self.path)
+                payload = json.dumps(owner.response).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(payload)))
+                self.send_header("X-Request-Id", "fake-proxy-request")
+                self.end_headers()
+                self.wfile.write(payload)
+
+            def log_message(self, _format, *_args):
+                return
+
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.thread = Thread(target=self.server.serve_forever, daemon=True)
+
+    @property
+    def url(self):
+        host, port = self.server.server_address
+        return "http://%s:%d" % (host, port)
+
+    def __enter__(self):
+        self.thread.start()
+        return self
+
+    def __exit__(self, *_args):
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join(timeout=5)
+
+
 @pytest.fixture
 def isolated_model_environment(tmp_path, monkeypatch):
     for name in _MODEL_ENV + _PROXY_ENV:
@@ -167,6 +212,90 @@ def _configure(endpoint, path):
         path=str(path),
     )
     return load_llm_config(str(path))
+
+
+def _configure_url(base_url, path):
+    save_llm_config(
+        base_url,
+        TOKEN,
+        MODEL,
+        provider=PROVIDER,
+        path=str(path),
+    )
+    return load_llm_config(str(path))
+
+
+def test_required_proxy_routes_request_through_explicit_proxy_snapshot(
+    isolated_model_environment, monkeypatch
+):
+    target = "http://model-origin.invalid/v1"
+    with _FakeHttpProxy(_chat_response("proxied-response")) as proxy:
+        monkeypatch.setenv("NUMPILOT_LLM_REQUIRE_PROXY", "1")
+        monkeypatch.setenv("http_proxy", proxy.url)
+        status = _configure_url(target, isolated_model_environment)
+
+        actual, receipt = LlmEngine._chat_with_receipt("system", "user")
+        validated = validate_configured_model_receipt(
+            receipt,
+            actual,
+            expected_model=status.model,
+            expected_provider=status.provider,
+            expected_protocol=status.protocol,
+            response_model_aliases=status.response_model_aliases,
+        )
+
+    assert actual == "proxied-response"
+    assert validated["http_status"] == 200
+    assert proxy.request_count == 1
+    assert proxy.request_targets == [
+        target + "/chat/completions"
+    ]
+
+
+def test_required_proxy_fails_before_transport_when_matching_proxy_is_missing(
+    isolated_model_environment, monkeypatch
+):
+    _configure_url(
+        "https://model-origin.invalid/v1",
+        isolated_model_environment,
+    )
+    monkeypatch.setenv("NUMPILOT_LLM_REQUIRE_PROXY", "1")
+    monkeypatch.setattr(urllib.request, "getproxies", lambda: {})
+
+    def forbidden_transport(*_args, **_kwargs):
+        raise AssertionError("network transport must not start")
+
+    monkeypatch.setattr(urllib.request, "urlopen", forbidden_transport)
+    monkeypatch.setattr(urllib.request, "build_opener", forbidden_transport)
+
+    with pytest.raises(LlmConfigError, match="no matching HTTP.S. proxy"):
+        LlmEngine._chat_with_receipt("system", "user")
+
+
+def test_required_proxy_fails_before_transport_when_endpoint_is_bypassed(
+    isolated_model_environment, monkeypatch
+):
+    _configure_url(
+        "https://model-origin.invalid/v1",
+        isolated_model_environment,
+    )
+    monkeypatch.setenv("NUMPILOT_LLM_REQUIRE_PROXY", "1")
+    monkeypatch.setattr(
+        urllib.request,
+        "getproxies",
+        lambda: {"https": "http://proxy-secret.invalid:8080"},
+    )
+    monkeypatch.setattr(urllib.request, "proxy_bypass", lambda _host: True)
+
+    def forbidden_transport(*_args, **_kwargs):
+        raise AssertionError("network transport must not start")
+
+    monkeypatch.setattr(urllib.request, "urlopen", forbidden_transport)
+    monkeypatch.setattr(urllib.request, "build_opener", forbidden_transport)
+
+    with pytest.raises(LlmConfigError, match="proxy bypass policy") as caught:
+        LlmEngine._chat_with_receipt("system", "user")
+    assert "proxy-secret" not in str(caught.value)
 
 
 def test_public_engine_rejects_response_without_model(
