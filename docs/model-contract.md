@@ -34,6 +34,25 @@ NumPilot 的生成路径使用用户自己配置的 OpenAI-compatible endpoint�
 不联网；`--probe` 才执行真实请求。probe 与 gap/repair/adapter 的远端 readiness 都要求响应
 包含固定 `NUMPILOT_LLM_READY` marker，不能出现 probe 成功而真正生成门禁拒绝的分叉。
 
+## 强制代理门禁
+
+NumPilot 读取标准 `HTTP_PROXY` / `HTTPS_PROXY` 和对应小写变量，不把代理地址写入
+`llm.json`。需要确保模型流量只能经代理时，显式设置：
+
+```bash
+proxy=http://127.0.0.1:<port>
+export HTTP_PROXY="$proxy" HTTPS_PROXY="$proxy"
+export http_proxy="$proxy" https_proxy="$proxy"
+export NUMPILOT_LLM_REQUIRE_PROXY=1
+python -m numpilot configure-llm --probe
+```
+
+门禁按 endpoint 协议要求匹配的 `HTTP_PROXY` 或 `HTTPS_PROXY`，并检查 `NO_PROXY` / `no_proxy`
+没有绕过目标。缺少匹配代理或命中 bypass 时，请求会在任何网络传输前 fail closed；启用门禁后
+每次请求都从当前环境快照构造独立 proxy opener，避免复用缓存了旧代理环境的全局 opener。
+`--check` 仍只验证本地模型配置，`--probe` 才同时验证实际代理路径与远端合同。代理 URL、Token、
+endpoint 和响应正文都不得进入回执、日志或 Git。
+
 ## 身份规则
 
 1. configured model 必须与请求 body 的 model 精确一致。

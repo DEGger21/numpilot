@@ -1,7 +1,7 @@
 # NumPilot 文档中心
 
 这里仅保留面向使用、评审、架构复核和发布验收的当前文档。开发交接稿、阶段计划、失败轮次
-和历史性能原始文件不进入比赛发布分支。
+和历史性能原始文件不进入始终可发布的 `main`。
 
 ## 快速入口
 
@@ -12,9 +12,9 @@
 | 现场逐项验收 | [可执行 Notebook](NumPilot-Demo-v1-Quickstart.ipynb) |
 | 理解 ordinary 与 gap 两条路径 | [系统架构](architecture.md) |
 | 查看三页可编辑架构图 | [NumPilot 架构图](numpilot-architecture.drawio) |
-| 用于论文或答辩主图 | [中文可编辑架构 PPT](numpilot-architecture-paper-style-zh-readable.pptx) |
+| 用于论文或答辩主图 | [中文可编辑架构 PPT](numpilot-architecture-paper-style-zh-readable.pptx) · [English editable PPT](numpilot-architecture-paper-style-en.pptx) |
 | 复核比赛证据 | [证据索引](../evidence/README.md) |
-| 在发布分支继续开发 | [比赛提交分支约定](SUBMISSION.md) |
+| 了解 `main` / `develop` 双分支治理 | [分支治理与比赛提交约定](SUBMISSION.md) |
 | 准备提交包 | [比赛 RC 发布清单](RELEASE-CHECKLIST-DEMO-V1.md) |
 
 ## 核心合同
@@ -45,4 +45,4 @@
 - [只读 benchmark 审计器](../tools/audit_script_benchmark_receipt.py)：不导入 NumPy/AsNumpy、
   不访问网络或 NPU，独立复核哈希链、门禁和统计。
 
-若文档示例与命令行帮助不一致，以当前发布分支的 `python -m numpilot --help` 和结构化回执为准。
+若文档示例与命令行帮助不一致，以当前 `main` 的 `python -m numpilot --help` 和结构化回执为准。

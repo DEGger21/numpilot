@@ -2,6 +2,11 @@
 
 ## 0.3.0a1.dev0 - Unreleased
 
+- 增加可选的 `NUMPILOT_LLM_REQUIRE_PROXY=1` fail-closed 门禁：真实模型请求必须命中与
+  endpoint 协议匹配的标准 HTTP(S) 代理，缺失代理或命中 `NO_PROXY` 时在联网前终止；每次
+  请求使用当前代理快照构造独立 opener，代理地址继续不进入配置、日志与回执；
+- 长期分支收敛为 `main`（始终可发布、比赛交付）与 `develop`（日常集成），完善无 force
+  push 的 `develop → main → annotated tag` 发布门禁，并增加英文可编辑论文风格架构 PPT；
 - 增加 ordinary `benchmark-script`（`bench-script` 短别名）：只接受真实 configured-model
   `migrated_strict_npu` 产物，以显式 marker 划分一次输入准备和 steady resident 计算区；CPU/NPU
   独立 worker 在导入 NumPy 前固定到同一逻辑核，实测 CPU BLAS 单线程，并以 runtime identity、

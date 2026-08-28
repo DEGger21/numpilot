@@ -3,7 +3,7 @@
 本文从零验证比赛 ordinary 主链：安装固定 AsNumpy → 配置模型 → 静态分析 → 迁移 → 数值
 对拍 → strict-NPU resident 评测。运行产物和凭据全部位于仓库外。
 
-> 当前源码版本为 `0.3.0a1.dev0`。比赛冻结时应将下面的发布分支替换为已验证的不可变 tag，
+> 当前源码版本为 `0.3.0a1.dev0`。比赛冻结时应将下面的 `main` 替换为已验证的不可变 tag，
 > 并从干净 checkout 重跑证据；不要把开发态回执称为最终 RC。
 
 ## 1. 前置条件
@@ -16,17 +16,19 @@
 
 不要复制其他机器的 `.venv`、LLM Token、`llm.json`、bootstrap receipt 或 AsNumpy wheel。
 
-## 2. 获取发布分支
+## 2. 获取可发布分支
 
 ```bash
-git clone --branch release/competition-submission --depth 1 \
+git clone --branch main --depth 1 \
   https://gitcode.com/li-xingHIT/numpilot.git
 cd numpilot
 git status --short --branch
 git rev-parse HEAD
 ```
 
-冻结比赛版本后应改用 `git clone --branch <immutable-tag>`。工作树必须干净。
+`main` 始终保持可发布；日常集成在 `develop` 完成并通过正常 merge/fast-forward 进入 `main`，
+两个分支均禁止 force push。冻结比赛版本后应改用 `git clone --branch <immutable-tag>`，该 tag
+必须创建自已验证的 `main` commit。工作树必须干净。
 
 ## 3. 固定来源安装
 
@@ -80,6 +82,10 @@ python -m numpilot configure-llm --probe
 精确 `model`、`provider` 审计标签和 `protocol=openai-chat-completions`。默认路径通常为
 `~/.config/numpilot/llm.json`，目录权限应为 `0700`、文件权限为 `0600`。Token、代理、私有
 endpoint 和模型响应正文不得进入仓库或证据包。
+
+若环境要求模型流量经过代理，应同时设置大小写 `HTTP_PROXY` / `HTTPS_PROXY`，并设置
+`NUMPILOT_LLM_REQUIRE_PROXY=1` 后再执行 `--probe`。强制模式会在请求前拒绝缺失代理或被
+`NO_PROXY` 绕过的 endpoint；只设置 `ALL_PROXY` 不能替代与 endpoint 协议匹配的代理变量。
 
 ## 6. 运行 3–5 分钟主演示
 

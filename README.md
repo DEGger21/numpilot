@@ -127,6 +127,10 @@ python -m numpilot configure-llm --probe   # 显式执行一次真实轻量请�
 `~/.config/numpilot/llm.json`；目录权限应为 `0700`、文件权限应为 `0600`。Token、Base URL 和
 响应正文不会写入迁移回执，真实凭据不得提交到仓库。
 
+网络必须经过代理时，使用标准 `HTTP_PROXY` / `HTTPS_PROXY`（建议同时设置对应小写变量），并
+设置 `NUMPILOT_LLM_REQUIRE_PROXY=1`。此时 `--probe` 和所有真实模型调用都会在联网前核验与
+endpoint 协议匹配的代理；代理缺失或被 `NO_PROXY` 绕过会直接失败，代理地址不会进入回执。
+
 ### 3. 运行主链
 
 ```bash
@@ -204,7 +208,8 @@ NumPilot 将“可变的模型判断”与“确定性的工程事实”分开�
 
 完整设计见 [架构说明](docs/architecture.md) 与
 [三页可编辑 draw.io 架构图](docs/numpilot-architecture.drawio)；面向论文/答辩的单页版本见
-[中文可编辑架构 PPT](docs/numpilot-architecture-paper-style-zh-readable.pptx)。
+[中文可编辑架构 PPT](docs/numpilot-architecture-paper-style-zh-readable.pptx) 与
+[English editable architecture PPT](docs/numpilot-architecture-paper-style-en.pptx)。
 
 ## 为什么证据可信
 

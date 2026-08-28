@@ -4,15 +4,16 @@
 不得继续复用历史 `v0.2.0a1`/`v0.2.0a2` 标签。每项都是手工发布门禁；任一必需项失败都应
 停止发布、保留日志并修复后从干净源码重新开始。
 
-发布工作统一在 `release/competition-submission` 分支进行。该分支是持续整理的提交候选；只有
-完成本清单、冻结版本并创建 annotated tag 后，才能称为 RC。
+日常发布准备统一在 `develop` 完成；只有通过本清单的提交才能通过正常 merge 或 fast-forward
+进入始终可发布的 `main`。比赛交付、RC 和 annotated tag 只能从已复核的 `main` commit
+生成。两个长期分支均禁止 force push，也不得通过历史改写绕过门禁。
 
 ## 1. 冻结发布身份
 
 - [ ] `pyproject.toml`、`numpilot/__init__.py` 和 CHANGELOG 的版本完全一致，且版本尚未被发布；
 - [ ] Python 支持范围与测试矩阵一致，Demo v1 最低版本为 Python 3.10；
 - [ ] CHANGELOG 的 Unreleased 内容已冻结到目标版本/date，且与待发布 commit 一致；
-- [ ] README、架构图、文档链接和安全支持策略不再指向临时开发分支；
+- [ ] README、架构图、文档链接和安全支持策略与 `main`/`develop` 双分支约定一致；
 - [ ] 确认待发布 commit、固定 AsNumpy wheel、CANN/算子材料和精选 evidence 的身份与
   SHA-256，记录到 release manifest；
 - [ ] 完成 secret scan，确认源码、文档、测试、LLM 回执和精选 evidence 不包含凭据或
@@ -105,9 +106,13 @@ python tools/release_artifact_manifest.py \
 
 ## 7. Push、Tag 与 Release
 
-- [ ] 复核最终 clean HEAD 与所有测试、包、manifest 中记录的 commit 完全一致；
-- [ ] 先正常 push 发布分支/目标分支；禁止 force push；
-- [ ] 在同一已验证 commit 创建与冻结版本一致的 annotated tag；
+- [ ] 正常 push 已完成集成验证的 `develop`；禁止 force push；
+- [ ] 通过正常 merge 或 fast-forward 将同一批已验证提交提升到 `main`，不得复制提交、
+  rebase 已共享历史或跳过评审门禁；
+- [ ] 在 `main` 的干净 checkout 重跑发布门禁，复核 HEAD 与所有测试、包、manifest 中记录的
+  commit 完全一致；
+- [ ] 正常 push `main`，确认远端 commit 与本地一致；禁止 force push；
+- [ ] 仅在该已验证的 `main` commit 创建与冻结版本一致的 annotated tag；
 - [ ] push 该 tag，再次确认远端 tag 指向已验证 commit；
 - [ ] 创建与冻结版本一致的比赛 RC release，上传本次新构建产物、SHA-256、SBOM、
   许可证清单、release manifest 和选定 evidence；
