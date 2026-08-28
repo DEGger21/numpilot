@@ -33,6 +33,17 @@ class ScriptGapRequest:
     blocked: Tuple[Mapping[str, Any], ...] = ()
 
 
+@dataclass(frozen=True)
+class GapPreparation:
+    """Pure local gap selection completed before any model or Skill access."""
+
+    source_path: str
+    source: str
+    unsupported: Tuple[str, ...]
+    specs: Tuple[GapSpec, ...]
+    blocked: Tuple[Mapping[str, Any], ...]
+
+
 _MAX_SOURCE_BYTES = 4 * 1024 * 1024
 _MAX_GAP_REQUEST_BYTES = 2 * 1024 * 1024
 _MAX_GAPS_PER_RUN = 32
@@ -69,14 +80,19 @@ def _reject_json_constant(value):
 
 
 def _read_regular_bounded(path: Path, maximum: int, label: str) -> bytes:
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_NONBLOCK", 0)
+        | getattr(os, "O_CLOEXEC", 0)
+    )
     fd = -1
     try:
         fd = os.open(str(path), flags)
-        metadata = os.fstat(fd)
-        if not stat.S_ISREG(metadata.st_mode):
+        before = os.fstat(fd)
+        if not stat.S_ISREG(before.st_mode):
             raise GapCompletionError("%s must be a regular file" % label)
-        if metadata.st_size > maximum:
+        if before.st_size > maximum:
             raise GapCompletionError("%s exceeds the size limit" % label)
         chunks = []
         remaining = maximum + 1
@@ -89,6 +105,28 @@ def _read_regular_bounded(path: Path, maximum: int, label: str) -> bytes:
         payload = b"".join(chunks)
         if len(payload) > maximum:
             raise GapCompletionError("%s exceeds the size limit" % label)
+        after = os.fstat(fd)
+        if (
+            before.st_dev != after.st_dev
+            or before.st_ino != after.st_ino
+            or before.st_size != after.st_size
+            or before.st_mtime_ns != after.st_mtime_ns
+            or before.st_ctime_ns != after.st_ctime_ns
+        ):
+            raise GapCompletionError("%s changed while it was being read" % label)
+        # Some filesystems expose coarse timestamps.  A second read from the
+        # already-open inode closes that gap without resolving the path again.
+        os.lseek(fd, 0, os.SEEK_SET)
+        verification_chunks = []
+        verification_remaining = maximum + 1
+        while verification_remaining:
+            chunk = os.read(fd, min(verification_remaining, 64 * 1024))
+            if not chunk:
+                break
+            verification_chunks.append(chunk)
+            verification_remaining -= len(chunk)
+        if b"".join(verification_chunks) != payload:
+            raise GapCompletionError("%s changed while it was being read" % label)
         return payload
     except GapCompletionError:
         raise
@@ -489,6 +527,80 @@ class GapCompletionResult:
         return result
 
 
+def prepare_gap_completion(
+    source_path: str,
+    *,
+    target_soc: str,
+    cann_version: str,
+    requested_specs: Optional[Sequence[GapSpec]] = None,
+    requested_blocked: Sequence[Mapping[str, Any]] = (),
+) -> GapPreparation:
+    """Read and statically classify a source before any remote readiness gate.
+
+    This split lets local official-operator resolvers inspect canonical GapSpecs
+    before NumPilot decides whether a new-kernel model request is necessary.
+    It deliberately performs no output writes and reads no external Skill.
+    """
+
+    source_file = Path(source_path)
+    try:
+        source_bytes = _read_regular_bounded(
+            source_file, _MAX_SOURCE_BYTES, "source"
+        )
+        source = source_bytes.decode("utf-8")
+    except GapCompletionError:
+        raise
+    except (OSError, UnicodeError) as exc:
+        raise GapCompletionError(
+            "cannot read source %s: %s"
+            % (source_file, type(exc).__name__)
+        ) from exc
+
+    if requested_specs is None:
+        try:
+            analysis = AnalysisAgent().analyze(source, str(source_file))
+        except SyntaxError as exc:
+            raise GapCompletionError(
+                "cannot parse source %s at line %s"
+                % (source_file, exc.lineno or "?")
+            ) from exc
+        try:
+            specs = build_gap_specs(
+                source,
+                analysis,
+                target_soc=target_soc,
+                cann_version=cann_version,
+            )
+        except ValueError as exc:
+            raise GapCompletionError(
+                "cannot build a target-consistent gap specification: %s" % exc
+            ) from exc
+        blocked = blocked_unsupported(analysis)
+        unsupported = tuple(analysis.unsupported)
+    else:
+        specs = _validate_requested_specs(
+            source,
+            str(source_file),
+            requested_specs,
+            target_soc=target_soc,
+            cann_version=cann_version,
+        )
+        blocked = tuple(dict(item) for item in requested_blocked)
+        unsupported = tuple(spec.qualified_api for spec in specs)
+    if len(specs) > _MAX_GAPS_PER_RUN:
+        raise GapCompletionError(
+            "source contains too many generatable gaps (%d > %d)"
+            % (len(specs), _MAX_GAPS_PER_RUN)
+        )
+    return GapPreparation(
+        source_path=str(source_file),
+        source=source,
+        unsupported=unsupported,
+        specs=tuple(specs),
+        blocked=tuple(blocked),
+    )
+
+
 def _atomic_write(path: Path, payload: bytes, *, replace: bool) -> None:
     _ensure_directory(path.parent, private=True)
     fd = -1
@@ -569,59 +681,33 @@ class GapCompletionPipeline:
         cann_version: str,
         requested_specs: Optional[Sequence[GapSpec]] = None,
         requested_blocked: Sequence[Mapping[str, Any]] = (),
+        preparation: Optional[GapPreparation] = None,
     ) -> GapCompletionResult:
-        source_file = Path(source_path)
-        if requested_specs is not None and (
-            source_file.is_symlink() or not source_file.is_file()
-        ):
-            raise GapCompletionError("requested source must be a regular file")
-        try:
-            source_bytes = source_file.read_bytes()
-            if len(source_bytes) > _MAX_SOURCE_BYTES:
-                raise GapCompletionError(
-                    "source exceeds the %d-byte analysis limit"
-                    % _MAX_SOURCE_BYTES
-                )
-            source = source_bytes.decode("utf-8")
-        except GapCompletionError:
-            raise
-        except (OSError, UnicodeError) as exc:
-            raise GapCompletionError(
-                "cannot read source %s: %s"
-                % (source_file, type(exc).__name__)
-            ) from exc
-
-        if requested_specs is None:
-            try:
-                analysis = AnalysisAgent().analyze(source, str(source_file))
-            except SyntaxError as exc:
-                raise GapCompletionError(
-                    "cannot parse source %s at line %s"
-                    % (source_file, exc.lineno or "?")
-                ) from exc
-            try:
-                specs = build_gap_specs(
-                    source,
-                    analysis,
-                    target_soc=target_soc,
-                    cann_version=cann_version,
-                )
-            except ValueError as exc:
-                raise GapCompletionError(
-                    "cannot build a target-consistent gap specification: %s" % exc
-                ) from exc
-            blocked = blocked_unsupported(analysis)
-            unsupported = tuple(analysis.unsupported)
-        else:
-            specs = _validate_requested_specs(
-                source,
-                str(source_file),
-                requested_specs,
+        if preparation is None:
+            preparation = prepare_gap_completion(
+                source_path,
                 target_soc=target_soc,
                 cann_version=cann_version,
+                requested_specs=requested_specs,
+                requested_blocked=requested_blocked,
             )
-            blocked = tuple(dict(item) for item in requested_blocked)
-            unsupported = tuple(spec.qualified_api for spec in specs)
+        elif (
+            not isinstance(preparation, GapPreparation)
+            or preparation.source_path != str(Path(source_path))
+            or any(
+                spec.target_soc != target_soc
+                or spec.cann_version != cann_version
+                for spec in preparation.specs
+            )
+        ):
+            raise GapCompletionError(
+                "prepared gap selection does not match the requested source/target"
+            )
+        source_file = Path(preparation.source_path)
+        source = preparation.source
+        specs = preparation.specs
+        blocked = preparation.blocked
+        unsupported = preparation.unsupported
         output = Path(out_dir)
         _ensure_directory(output, private=True)
         gaps_dir = output / "gaps"
@@ -631,11 +717,6 @@ class GapCompletionPipeline:
                 output / "skill-bundle.json",
                 self.skill_bundle.manifest(),
                 replace=False,
-            )
-        if len(specs) > _MAX_GAPS_PER_RUN:
-            raise GapCompletionError(
-                "source contains too many generatable gaps (%d > %d)"
-                % (len(specs), _MAX_GAPS_PER_RUN)
             )
         drafts = []
         for spec in specs:

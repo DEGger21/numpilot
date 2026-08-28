@@ -13,6 +13,7 @@ they can be persisted in reports and consumed by benchmark/verification gates.
 from dataclasses import dataclass, field
 import copy
 from enum import Enum
+import hashlib
 import json
 import os
 import platform
@@ -24,6 +25,7 @@ from typing import Any, Dict, Iterable, Mapping, Optional, Sequence, Tuple
 
 CAPABILITY_SCHEMA_VERSION = "1.1"
 ANALYSIS_PROFILE_SCHEMA_VERSION = 1
+RUNTIME_IDENTITY_SCHEMA_VERSION = 1
 UNKNOWN_ENVIRONMENT_VALUE = "unknown"
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _QUALIFIED_SOURCE_API = re.compile(
@@ -133,6 +135,290 @@ def detect_runtime_environment(module: Any) -> Dict[str, str]:
         "soc_version": soc_version,
         "python_version": platform.python_version(),
     }
+
+
+_RUNTIME_IDENTITY_STATUSES = frozenset({"matched", "audit_required"})
+_GIT_OBJECT_ID = re.compile(r"^[0-9a-f]{40}$")
+_IDENTITY_TOKEN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+:-]{0,255}$")
+_WRAPPER_PATH = re.compile(
+    r"^[A-Za-z0-9_][A-Za-z0-9_.-]*(?:/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$"
+)
+
+
+def _runtime_identity_text(value: Any, field_name: str, *, limit: int = 4096) -> str:
+    if (
+        not isinstance(value, str)
+        or not value
+        or len(value) > limit
+        or value != value.strip()
+        or any(ord(character) < 32 or ord(character) == 127 for character in value)
+    ):
+        raise ValueError("runtime identity %s is invalid" % field_name)
+    return value
+
+
+def _runtime_identity_hash(value: Any, field_name: str) -> str:
+    value = _runtime_identity_text(value, field_name, limit=64)
+    if value != UNKNOWN_ENVIRONMENT_VALUE and not _SHA256.fullmatch(value):
+        raise ValueError("runtime identity %s is invalid" % field_name)
+    return value
+
+
+def _runtime_identity_path(value: Any, field_name: str) -> str:
+    value = _runtime_identity_text(value, field_name)
+    if value != UNKNOWN_ENVIRONMENT_VALUE and not os.path.isabs(value):
+        raise ValueError("runtime identity %s must be absolute" % field_name)
+    return value
+
+
+@dataclass(frozen=True)
+class RuntimeIdentity:
+    """Canonical, fail-closed identity of one concrete AsNumpy runtime."""
+
+    asnumpy_repository: str
+    asnumpy_commit: str
+    asnumpy_tree: str
+    asnumpy_version: str
+    wrapper_sha256: Mapping[str, str]
+    module_path: str
+    module_sha256: str
+    native_module_path: str
+    native_module_sha256: str
+    cann_home: str
+    cann_version: str
+    soc_model: str
+    python_executable: str
+    python_version: str
+    bootstrap_receipt_path: str
+    bootstrap_receipt_sha256: str
+    audit_id: str
+    status: str
+    issues: Tuple[str, ...]
+    schema_version: int = RUNTIME_IDENTITY_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        if (
+            type(self.schema_version) is not int
+            or self.schema_version != RUNTIME_IDENTITY_SCHEMA_VERSION
+        ):
+            raise ValueError("unsupported runtime identity schema version")
+        if (
+            not isinstance(self.status, str)
+            or self.status not in _RUNTIME_IDENTITY_STATUSES
+        ):
+            raise ValueError("runtime identity status is invalid")
+
+        repository = _runtime_identity_text(
+            self.asnumpy_repository, "AsNumpy repository"
+        )
+        if repository != UNKNOWN_ENVIRONMENT_VALUE and "://" not in repository:
+            raise ValueError("runtime identity AsNumpy repository is invalid")
+        for field_name, value in (
+            ("AsNumpy commit", self.asnumpy_commit),
+            ("AsNumpy tree", self.asnumpy_tree),
+        ):
+            text = _runtime_identity_text(value, field_name, limit=40)
+            if text != UNKNOWN_ENVIRONMENT_VALUE and not _GIT_OBJECT_ID.fullmatch(text):
+                raise ValueError("runtime identity %s is invalid" % field_name)
+        for field_name, value in (
+            ("AsNumpy version", self.asnumpy_version),
+            ("CANN version", self.cann_version),
+            ("SoC model", self.soc_model),
+            ("Python version", self.python_version),
+            ("audit ID", self.audit_id),
+        ):
+            text = _runtime_identity_text(value, field_name, limit=256)
+            if text != UNKNOWN_ENVIRONMENT_VALUE and not _IDENTITY_TOKEN.fullmatch(text):
+                raise ValueError("runtime identity %s is invalid" % field_name)
+
+        for field_name, value in (
+            ("module path", self.module_path),
+            ("native module path", self.native_module_path),
+            ("CANN home", self.cann_home),
+            ("Python executable", self.python_executable),
+            ("bootstrap receipt path", self.bootstrap_receipt_path),
+        ):
+            _runtime_identity_path(value, field_name)
+        for field_name, value in (
+            ("module SHA-256", self.module_sha256),
+            ("native module SHA-256", self.native_module_sha256),
+            ("bootstrap receipt SHA-256", self.bootstrap_receipt_sha256),
+        ):
+            _runtime_identity_hash(value, field_name)
+
+        if not isinstance(self.wrapper_sha256, Mapping) or not self.wrapper_sha256:
+            raise ValueError("runtime identity wrapper hashes are invalid")
+        wrappers = {}
+        for name, digest in self.wrapper_sha256.items():
+            if (
+                not isinstance(name, str)
+                or len(name) > 256
+                or not _WRAPPER_PATH.fullmatch(name)
+            ):
+                raise ValueError("runtime identity wrapper path is invalid")
+            wrappers[name] = _runtime_identity_hash(
+                digest, "wrapper SHA-256 for %s" % name
+            )
+        object.__setattr__(
+            self, "wrapper_sha256", MappingProxyType(dict(sorted(wrappers.items())))
+        )
+
+        if (
+            not isinstance(self.issues, tuple)
+            or any(
+                not isinstance(issue, str)
+                or not issue
+                or len(issue) > 512
+                or issue != issue.strip()
+                or any(
+                    ord(character) < 32 or ord(character) == 127
+                    for character in issue
+                )
+                for issue in self.issues
+            )
+            or tuple(sorted(set(self.issues))) != self.issues
+        ):
+            raise ValueError("runtime identity issues are invalid")
+        if self.status == "matched" and self.issues:
+            raise ValueError("matched runtime identity cannot contain issues")
+        if self.status == "audit_required" and not self.issues:
+            raise ValueError("audit-required runtime identity must contain issues")
+
+        critical = (
+            repository,
+            self.asnumpy_commit,
+            self.asnumpy_tree,
+            self.asnumpy_version,
+            self.module_path,
+            self.module_sha256,
+            self.native_module_path,
+            self.native_module_sha256,
+            self.cann_home,
+            self.cann_version,
+            self.soc_model,
+            self.python_executable,
+            self.python_version,
+            self.bootstrap_receipt_path,
+            self.bootstrap_receipt_sha256,
+            self.audit_id,
+            *self.wrapper_sha256.values(),
+        )
+        if self.status == "matched" and UNKNOWN_ENVIRONMENT_VALUE in critical:
+            raise ValueError("matched runtime identity contains unknown critical value")
+
+    def _identity_dict(self) -> Dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "asnumpy_repository": self.asnumpy_repository,
+            "asnumpy_commit": self.asnumpy_commit,
+            "asnumpy_tree": self.asnumpy_tree,
+            "asnumpy_version": self.asnumpy_version,
+            "wrapper_sha256": dict(self.wrapper_sha256),
+            "module_path": self.module_path,
+            "module_sha256": self.module_sha256,
+            "native_module_path": self.native_module_path,
+            "native_module_sha256": self.native_module_sha256,
+            "cann_home": self.cann_home,
+            "cann_version": self.cann_version,
+            "soc_model": self.soc_model,
+            "python_executable": self.python_executable,
+            "python_version": self.python_version,
+            "bootstrap_receipt_path": self.bootstrap_receipt_path,
+            "bootstrap_receipt_sha256": self.bootstrap_receipt_sha256,
+            "audit_id": self.audit_id,
+            "status": self.status,
+            "issues": list(self.issues),
+        }
+
+    @property
+    def identity_sha256(self) -> str:
+        canonical = json.dumps(
+            self._identity_dict(),
+            ensure_ascii=True,
+            allow_nan=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        return hashlib.sha256(canonical).hexdigest()
+
+    def to_dict(self) -> Dict[str, Any]:
+        result = self._identity_dict()
+        result["identity_sha256"] = self.identity_sha256
+        return result
+
+    def to_json(self, *, indent: Optional[int] = 2) -> str:
+        return json.dumps(
+            self.to_dict(),
+            ensure_ascii=False,
+            allow_nan=False,
+            indent=indent,
+            sort_keys=True,
+        )
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "RuntimeIdentity":
+        fields = {
+            "schema_version",
+            "asnumpy_repository",
+            "asnumpy_commit",
+            "asnumpy_tree",
+            "asnumpy_version",
+            "wrapper_sha256",
+            "module_path",
+            "module_sha256",
+            "native_module_path",
+            "native_module_sha256",
+            "cann_home",
+            "cann_version",
+            "soc_model",
+            "python_executable",
+            "python_version",
+            "bootstrap_receipt_path",
+            "bootstrap_receipt_sha256",
+            "audit_id",
+            "identity_sha256",
+            "status",
+            "issues",
+        }
+        if not isinstance(data, Mapping) or set(data) != fields:
+            raise ValueError("runtime identity fields are invalid")
+        if not isinstance(data["wrapper_sha256"], Mapping):
+            raise ValueError("runtime identity wrapper hashes must be an object")
+        if not isinstance(data["issues"], (list, tuple)):
+            raise ValueError("runtime identity issues must be a list")
+        identity = cls(
+            schema_version=data["schema_version"],
+            asnumpy_repository=data["asnumpy_repository"],
+            asnumpy_commit=data["asnumpy_commit"],
+            asnumpy_tree=data["asnumpy_tree"],
+            asnumpy_version=data["asnumpy_version"],
+            wrapper_sha256=dict(data["wrapper_sha256"]),
+            module_path=data["module_path"],
+            module_sha256=data["module_sha256"],
+            native_module_path=data["native_module_path"],
+            native_module_sha256=data["native_module_sha256"],
+            cann_home=data["cann_home"],
+            cann_version=data["cann_version"],
+            soc_model=data["soc_model"],
+            python_executable=data["python_executable"],
+            python_version=data["python_version"],
+            bootstrap_receipt_path=data["bootstrap_receipt_path"],
+            bootstrap_receipt_sha256=data["bootstrap_receipt_sha256"],
+            audit_id=data["audit_id"],
+            status=data["status"],
+            issues=tuple(data["issues"]),
+        )
+        supplied_hash = data["identity_sha256"]
+        if not isinstance(supplied_hash, str) or supplied_hash != identity.identity_sha256:
+            raise ValueError("runtime identity identity_sha256 mismatch")
+        return identity
+
+    @classmethod
+    def from_json(cls, payload: str) -> "RuntimeIdentity":
+        data = _strict_json_loads(payload)
+        if not isinstance(data, dict):
+            raise ValueError("runtime identity JSON must contain an object")
+        return cls.from_dict(data)
 
 
 class ExecutionProvenance(str, Enum):

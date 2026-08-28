@@ -8,10 +8,12 @@ runtime, or precision attempt failed.
 1. Preserve the model overlay and its report as immutable input.
 2. Mechanically apply it to an isolated AsNumpy worktree.
 3. Regenerate glue and run the generator's check mode.
-4. Inventory every required private vendor, header, library, symbol, and kernel
-   metadata path.
-5. Build with custom operators required (`ON` or the target's strict
-   equivalent). AUTO/off builds cannot qualify the operator.
+4. Inventory every required official binary or private vendor, header,
+   library, symbol, and (for custom OPP only) kernel metadata path.
+5. For a custom-OPP route, build with custom operators required (`ON` or the
+   target's strict equivalent); AUTO/off builds cannot qualify that route. For
+   `official_binary`, prove the exact installed official library and do not
+   introduce `cust_opapi` or a private OPP.
 6. Build a wheel with bounded parallelism and install it into a fresh isolated
    Python environment.
 7. With the same private OPP roots, import the public API and run the dedicated
@@ -48,13 +50,15 @@ diagnostic hash, selected skill-file hashes, response hash, and remote receipt.
 
 A customer-ready accuracy-first integration requires all of the following:
 
-- deterministic generator check passes;
-- strict custom-op wheel build passes;
+- the route-specific deterministic plan passes (generator check for manifest,
+  exact overlay allow-list for an existing module);
+- the route-correct wheel build passes;
 - isolated wheel installation and public import pass;
 - the requested test does not skip and invokes the custom NPU path;
 - NumPy comparison passes for admitted dtypes/shapes and edge cases;
 - no CPU fallback or unknown execution source;
-- artifact, overlay, private OPP, wheel, logs, and reports are hash-bound.
+- candidate, overlay, applicable official/private operator inputs, wheel, logs,
+  and reports are hash-bound.
 
 Performance optimization is outside the default pass criteria. If requested,
 start it only after the above gates pass and after warning the user that the

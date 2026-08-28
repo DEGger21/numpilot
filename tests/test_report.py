@@ -32,6 +32,29 @@ def test_build_report_has_sections():
     assert "relu" in md and "8.3" in md
 
 
+def test_build_report_renders_configured_model_evidence_without_secrets():
+    info = _info()
+    info["model_identity"] = {
+        "provider": "gateway",
+        "protocol": "openai-chat-completions",
+        "configured_model": "org/model",
+        "response_model": "org/model",
+        "response_model_identity": "exact",
+        "artifact_sha256": "a" * 64,
+    }
+    info["model_receipt"] = {
+        "content_sha256": "b" * 64,
+    }
+
+    md = build_report_md(info)
+
+    assert "Configured model 身份" in md
+    assert "org/model" in md
+    assert "`exact`" in md
+    assert "a" * 64 in md
+    assert "b" * 64 in md
+
+
 def test_build_report_unsupported():
     md = build_report_md({"net": "x", "status": "unsupported", "unsupported": ["fft"]})
     assert "缺口算子" in md and "fft" in md

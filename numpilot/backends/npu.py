@@ -1,11 +1,15 @@
 """真实 asnumpy(NPU)后端适配器。需已 build/install asnumpy。"""
 from dataclasses import dataclass
 import hashlib
+import importlib.util as importlib_util
 from importlib import metadata as importlib_metadata
 import os
 from pathlib import Path
+import platform
+import re
 import stat
 import sys
+from types import SimpleNamespace
 from typing import Tuple
 
 from numpilot.capabilities import (
@@ -16,27 +20,42 @@ from numpilot.capabilities import (
     OperatorCapability,
     OperatorSignature,
     RuntimeProfileGuard,
+    RuntimeIdentity,
     TensorProfile,
+    UNKNOWN_ENVIRONMENT_VALUE,
+    _read_cann_version,
     detect_runtime_environment,
     match_capability_profile,
     tensor_profile_from_value,
     _strict_json_loads,
 )
 from numpilot.backends.base import ExecutionBackend
+from numpilot.capability_catalog import (
+    ASNUMPY_CAPABILITY_CATALOG,
+    CapabilityCatalogError,
+    validate_canonical_key,
+)
 from numpilot.coverage import SUPPORTED_OPS
+from numpilot.capability_profile import OPS_NN_MATMUL_ASNUMPY_AUDIT_ID
 
 
 # This is deliberately an exact version match.  A different wheel may change a
 # Python wrapper without changing whether its public name exists, so version
 # drift must be re-audited before it can make a strict-NPU performance claim.
 AUDITED_ASNUMPY_VERSION = "0.3.1.dev4+g1929a3ba4"
+AUDITED_CANN_HOME = "/usr/local/Ascend/cann-9.0.0"
+AUDITED_CANN_VERSION = "9.0.0"
+AUDITED_SOC_MODEL = "Ascend910B4"
+AUDITED_PYTHON_VERSION = "3.10.20"
 ASNUMPY_AUDIT_ID = (
     "asnumpy-0.3.1.dev4-g1929a3ba4-runtime-"
-    "init8761f7f9-cannac907b3a-coreab71b004-v3"
+    "init8761f7f9-cannac907b3a-linalgd2965c2e-"
+    "random6c9c7891-coreab71b004-v4"
 )
 ASNUMPY_SOURCE_BUILD_AUDIT_ID = (
     "asnumpy-0.3.1.dev4-g1929a3ba4-"
-    "init8761f7f9-cannac907b3a-pinned-source-receipt-v1"
+    "init8761f7f9-cannac907b3a-linalgd2965c2e-"
+    "random6c9c7891-pinned-source-receipt-v2"
 )
 _AUDITED_RUNTIME_FILE_SHA256 = {
     "__init__.py": "8761f7f9fe557606df6c6683245f4dfc3b8ac69385689a0673f3c90e33afd28e",
@@ -45,15 +64,61 @@ _AUDITED_RUNTIME_FILE_SHA256 = {
     "array.py": "16c901f5937027d2ce6ae6f9d58813d389d20252315333c954ec5ccb9a3b4cc3",
     "cann.py": "ac907b3a294e597e5429629387b9615abed963026a879ef411ba4a4ddecbcc3e",
     "linalg/__init__.py": "bae3efa81d9840d622c3f29ed677dfd834e7e2c2769b9a35daea0b9b55e52a83",
+    "linalg/_linalg.py": "d2965c2e3f7a6019e20c8e526a9ef78730f3836cb900d7d9fec5234a7eb70e88",
     "linalg/direct.py": "c56b61be41eea589d3d1c15b9afd606e7e26f0a25fc601cb1563a4279e7244c3",
     "logic.py": "56b9c8c6815a99f9734fb90cf84cb6df2ac7e810455f4d8b4d65e997decf8f29",
     "math.py": "62e0ba09576ead5d3b44f6b0b33311e849efd47ab0bb11f7875c0a43f499085c",
     "nn.py": "c0b2ed95d70fa15e92e2939d76cc93da116b64b2b94579aeb684b03e1cf07748",
+    "random/__init__.py": "3324a11a240100c612d157d17b4d653446281a4ebd8dcfabdec731ad61481b0a",
+    "random/_random.py": "6c9c7891bd44892caad282c16bfd469f0ffee54f5616576777f8416d4a547b65",
     "sorting.py": "bc206227bbb2709cef9242db9b3de32e4eec15c58a9b83d568e9181729d9cf2c",
     "statistics.py": "175315eec27c8fa2875e236b3c88cb047d5e9d3cbc7735a3f1fae6231a14d3cd",
     "utils.py": "d4105619f540f7f98dd29b9967fe925c6355c96769f54862dc245c0851666cb1",
     "_core": "ab71b0041f872bd25f4581a9f269414af9accd37f83e4ad8d99b3e713d63ff53",
 }
+
+# Narrow official-operator integration used by the ops-nn MatMul case.  The
+# base checkout is recorded separately from the hash-bound working-tree patch
+# and wheel in the private qualification receipt.
+OPS_NN_MATMUL_ASNUMPY_VERSION = "0.1.dev118+g48de2d208.d20260827"
+OPS_NN_MATMUL_ASNUMPY_REPOSITORY = (
+    "https://gitcode.com/li-xingHIT/numpyexample.git"
+)
+OPS_NN_MATMUL_ASNUMPY_BASE_COMMIT = (
+    "48de2d2082a0ea46c3ed23dd208b01f4e2a21c35"
+)
+OPS_NN_MATMUL_ASNUMPY_BASE_TREE = (
+    "842ead54d7e15ee87b37ca6dc277e9ca38988680"
+)
+OPS_NN_MATMUL_AUDITED_NATIVE_OPS = frozenset({"full", "matmul"})
+_OPS_NN_MATMUL_RUNTIME_FILE_SHA256 = {
+    "__init__.py": "c89e0683a33300b9b9a7bb3ec3f02d12e93142454a2761d2b7d4ce7e54ea9111",
+    "_types.py": "3686cc4be153e88950357aacdc71e90d98a71f2d01e659c3376ff4e0b2d66fa7",
+    "_version.py": "bc5586754dff637d88ebb3c757ec77879bcab9a812e9eba7c4859a8cba6db97b",
+    "array.py": "16c901f5937027d2ce6ae6f9d58813d389d20252315333c954ec5ccb9a3b4cc3",
+    "cann.py": "ac907b3a294e597e5429629387b9615abed963026a879ef411ba4a4ddecbcc3e",
+    "linalg/__init__.py": "bae3efa81d9840d622c3f29ed677dfd834e7e2c2769b9a35daea0b9b55e52a83",
+    "linalg/_linalg.py": "d2965c2e3f7a6019e20c8e526a9ef78730f3836cb900d7d9fec5234a7eb70e88",
+    "linalg/direct.py": "c710c02718193f49f0c0e0e66d8e314e356868f77fa2f75ed1f391a3af1c698b",
+    "logic.py": "58746575dfbfd873cb9db2763e6f3acf960c4767829dae785c376ad266c65ac9",
+    "math.py": "4244a978ecd7ec6bdc56fdf3a63121a455e7341f5a6df7f2e236ff46a404b9cc",
+    "nn.py": "c0b2ed95d70fa15e92e2939d76cc93da116b64b2b94579aeb684b03e1cf07748",
+    "random/__init__.py": "3324a11a240100c612d157d17b4d653446281a4ebd8dcfabdec731ad61481b0a",
+    "random/_random.py": "6c9c7891bd44892caad282c16bfd469f0ffee54f5616576777f8416d4a547b65",
+    "sorting.py": "bc206227bbb2709cef9242db9b3de32e4eec15c58a9b83d568e9181729d9cf2c",
+    "statistics.py": "175315eec27c8fa2875e236b3c88cb047d5e9d3cbc7735a3f1fae6231a14d3cd",
+    "utils.py": "a0c09ce1c26d3cfa36df539d316fe37d40e7402d56da6785e18681b8508ca3c8",
+    "_core": "ec559b94668176dc4104514a67866743778acd6ce4e67af0485ff0b7b51967bc",
+}
+_OPS_NN_MATMUL_AUDIT_RECEIPT_ENV = (
+    "NUMPILOT_OPS_NN_MATMUL_AUDIT_RECEIPT"
+)
+_OPS_NN_MATMUL_AUDIT_RECEIPT_SHA256 = (
+    "6d26144af1ef0aae8bfc6ac90e18d3fac1b415ac9c2bc9909487c471dfc9e6fb"
+)
+_OPS_NN_MATMUL_WHEEL_SHA256 = (
+    "c08b8a3b0ca034926f42d1594aab42cd8c793faeebee5376d611f62d8638f953"
+)
 
 # Competition P0 wheel.  This is deliberately a narrow source/binary audit,
 # not a declaration that every API in the locally built wheel is strict NPU.
@@ -238,6 +303,73 @@ _CPU_FALLBACKS = {
 }
 
 
+_GENERIC_LINALG_PROVENANCE = {
+    "linalg.det": (
+        ExecutionProvenance.COMPOSITE_NPU,
+        "asnumpy@1929a3ba4: linalg.det composes audited NPU bindings",
+        (),
+    ),
+    "linalg.inv": (
+        ExecutionProvenance.NATIVE_NPU,
+        "asnumpy@1929a3ba4: linalg.inv delegates to an NPU binding",
+        (),
+    ),
+    "linalg.matrix_power": (
+        ExecutionProvenance.CPU_FALLBACK,
+        "asnumpy@1929a3ba4: linalg.matrix_power computes with NumPy on the host",
+        ("all inputs execute on CPU",),
+    ),
+    "linalg.norm": (
+        ExecutionProvenance.CPU_FALLBACK,
+        "asnumpy@1929a3ba4: linalg.norm computes with NumPy on the host",
+        ("all inputs execute on CPU",),
+    ),
+    "linalg.qr": (
+        ExecutionProvenance.NATIVE_NPU,
+        "asnumpy@1929a3ba4: linalg.qr delegates to an NPU binding",
+        (),
+    ),
+    "linalg.slogdet": (
+        ExecutionProvenance.CONDITIONAL_CPU_FALLBACK,
+        "asnumpy@1929a3ba4: linalg.slogdet includes a conditional host fallback",
+        ("some inputs execute on CPU",),
+    ),
+}
+_GENERIC_RANDOM_NATIVE = frozenset(
+    {
+        "random.normal",
+        "random.standard_normal",
+        "random.uniform",
+    }
+)
+_GENERIC_RANDOM_KEYS = ASNUMPY_CAPABILITY_CATALOG.keys_for_namespace("random")
+_GENERIC_RANDOM_PROVENANCE = {
+    name: (
+        (
+            ExecutionProvenance.NATIVE_NPU
+            if name in _GENERIC_RANDOM_NATIVE
+            else ExecutionProvenance.COMPOSITE_NPU
+        ),
+        (
+            "asnumpy@1929a3ba4: %s delegates to an NPU binding" % name
+            if name in _GENERIC_RANDOM_NATIVE
+            else "asnumpy@1929a3ba4: %s composes audited NPU bindings" % name
+        ),
+        (),
+    )
+    for name in _GENERIC_RANDOM_KEYS
+}
+_GENERIC_NESTED_PROVENANCE = {
+    **_GENERIC_LINALG_PROVENANCE,
+    **_GENERIC_RANDOM_PROVENANCE,
+}
+
+if set(_GENERIC_LINALG_PROVENANCE) != set(
+    ASNUMPY_CAPABILITY_CATALOG.keys_for_namespace("linalg")
+):
+    raise RuntimeError("generic linalg provenance does not match the fixed catalog")
+
+
 # ``coverage.py`` contains a demo snapshot that also lists ``angle``, but the
 # audited 1929a3ba4 public mapping/source does not contain that API.  If a wheel
 # with the same claimed version unexpectedly exposes it, runtime availability is
@@ -271,6 +403,49 @@ class OverlayRuntimeConfig:
             raise ValueError("trusted_producers must be a non-empty tuple")
 
 
+def _canonical_capability_key(value):
+    """Return one safe internal key without a source namespace."""
+
+    try:
+        return validate_canonical_key(value)
+    except CapabilityCatalogError as exc:
+        raise ValueError("canonical capability key is invalid: %s" % exc) from exc
+
+
+def _canonical_key_from_qualified_source_api(qualified_name):
+    """Translate an exact public NumPy/operator path to one manifest key."""
+
+    if not isinstance(qualified_name, str):
+        raise ValueError("profile capability requires a canonical source API")
+    source_namespace, separator, remainder = qualified_name.partition(".")
+    if not separator or source_namespace not in {"numpy", "operator"}:
+        raise ValueError("profile capability requires a canonical source API")
+    key = _canonical_capability_key(remainder)
+    if source_namespace == "operator" and "." in key:
+        raise ValueError("operator profile capability must be top-level")
+    return key
+
+
+def _resolve_canonical_runtime_api(module, canonical_key):
+    """Safely traverse a validated public dotted path on the runtime module."""
+
+    key = _canonical_capability_key(canonical_key)
+    value = module
+    for component in key.split("."):
+        value = getattr(value, component)
+    return value
+
+
+class _CanonicalRuntimeModuleView:
+    """Expose dotted canonical names to RuntimeProfileGuard integrity checks."""
+
+    def __init__(self, module):
+        self._module = module
+
+    def __getattr__(self, canonical_key):
+        return _resolve_canonical_runtime_api(self._module, canonical_key)
+
+
 @dataclass(frozen=True)
 class _AnalysisManifestResolver:
     """Immutable capability snapshot used for every callsite in one analysis."""
@@ -282,15 +457,9 @@ class _AnalysisManifestResolver:
         qualified_name: str,
         profile: OperatorCallProfile,
     ) -> CapabilityMatch:
-        if (
-            not isinstance(qualified_name, str)
-            or qualified_name.split(".", 1)[0] not in {"numpy", "operator"}
-            or qualified_name.count(".") != 1
-        ):
-            raise ValueError("profile capability requires a top-level source API")
+        name = _canonical_key_from_qualified_source_api(qualified_name)
         if not isinstance(profile, OperatorCallProfile):
             raise TypeError("profile must be OperatorCallProfile")
-        name = qualified_name.split(".", 1)[1]
         capability = self.manifest.operators.get(name)
         if capability is None:
             capability = OperatorCapability(name=name, available=False)
@@ -371,8 +540,15 @@ def _audited_runtime_observation(module):
     ):
         return None
     parent = init_path.parent
-    linalg_dir = parent / "linalg"
-    if linalg_dir.is_symlink() or not linalg_dir.is_dir():
+    nested_directories = {
+        (parent / relative).parent
+        for relative in _AUDITED_RUNTIME_FILE_SHA256
+        if relative != "_core" and "/" in relative
+    }
+    if any(
+        directory.is_symlink() or not directory.is_dir()
+        for directory in nested_directories
+    ):
         return None
     core_paths = tuple(parent.glob("_core*.so"))
     if len(core_paths) != 1 or core_paths[0].is_symlink():
@@ -393,6 +569,14 @@ def _fixed_audited_runtime_identity_matches(module):
     return (
         observation is not None
         and observation[2] == _AUDITED_RUNTIME_FILE_SHA256
+    )
+
+
+def _ops_nn_matmul_runtime_identity_matches(module):
+    observation = _audited_runtime_observation(module)
+    return (
+        observation is not None
+        and observation[2] == _OPS_NN_MATMUL_RUNTIME_FILE_SHA256
     )
 
 
@@ -463,6 +647,46 @@ def _read_private_bootstrap_receipt(path):
             os.close(descriptor)
         except OSError:
             pass
+
+
+def _ops_nn_matmul_audit_receipt():
+    raw_path = os.getenv(_OPS_NN_MATMUL_AUDIT_RECEIPT_ENV)
+    if not isinstance(raw_path, str) or not raw_path:
+        return None
+    path = Path(raw_path)
+    if not path.is_absolute():
+        return None
+    receipt = _read_private_bootstrap_receipt(path)
+    digest = _sha256_private_regular_file(path)
+    if (
+        receipt is None
+        or digest != _OPS_NN_MATMUL_AUDIT_RECEIPT_SHA256
+        or receipt.get("schema_version") != 1
+        or receipt.get("producer")
+        != "numpilot-ops-nn-matmul-qualification-v1"
+        or receipt.get("status") != "qualified"
+        or receipt.get("audit_id") != OPS_NN_MATMUL_ASNUMPY_AUDIT_ID
+    ):
+        return None
+    try:
+        asnumpy = receipt["asnumpy"]
+        qualification = receipt["qualification"]
+    except (KeyError, TypeError):
+        return None
+    if (
+        type(asnumpy) is not dict
+        or asnumpy.get("repository") != OPS_NN_MATMUL_ASNUMPY_REPOSITORY
+        or asnumpy.get("base_commit") != OPS_NN_MATMUL_ASNUMPY_BASE_COMMIT
+        or asnumpy.get("base_tree") != OPS_NN_MATMUL_ASNUMPY_BASE_TREE
+        or asnumpy.get("version") != OPS_NN_MATMUL_ASNUMPY_VERSION
+        or asnumpy.get("wheel_sha256") != _OPS_NN_MATMUL_WHEEL_SHA256
+        or asnumpy.get("runtime_file_sha256")
+        != _OPS_NN_MATMUL_RUNTIME_FILE_SHA256
+        or type(qualification) is not dict
+        or qualification.get("all_gates_passed") is not True
+    ):
+        return None
+    return path, digest, receipt
 
 
 def _sha256_text(value):
@@ -619,6 +843,318 @@ def _audited_runtime_identity_matches(module):
     ) or _source_build_receipt_identity_matches(module)
 
 
+_RUNTIME_IDENTITY_TOKEN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+:-]{0,255}$")
+_RUNTIME_IDENTITY_GIT_ID = re.compile(r"^[0-9a-f]{40}$")
+
+
+def _identity_token(value):
+    if isinstance(value, str) and _RUNTIME_IDENTITY_TOKEN.fullmatch(value):
+        return value
+    return UNKNOWN_ENVIRONMENT_VALUE
+
+
+def _identity_repository(value):
+    if (
+        isinstance(value, str)
+        and value == value.strip()
+        and 0 < len(value) <= 4096
+        and "://" in value
+        and not any(ord(character) < 32 or ord(character) == 127 for character in value)
+    ):
+        return value
+    return UNKNOWN_ENVIRONMENT_VALUE
+
+
+def _identity_git_id(value):
+    if isinstance(value, str) and _RUNTIME_IDENTITY_GIT_ID.fullmatch(value):
+        return value
+    return UNKNOWN_ENVIRONMENT_VALUE
+
+
+def _identity_path(value, *, require_existing=False, require_directory=False):
+    """Return one bounded absolute path, or the fail-closed unknown marker."""
+
+    if not isinstance(value, (str, os.PathLike)):
+        return UNKNOWN_ENVIRONMENT_VALUE
+    try:
+        path = Path(value)
+        if not path.is_absolute():
+            return UNKNOWN_ENVIRONMENT_VALUE
+        if require_existing:
+            path = path.resolve(strict=True)
+            if require_directory and not path.is_dir():
+                return UNKNOWN_ENVIRONMENT_VALUE
+        text = str(path)
+    except (OSError, RuntimeError, TypeError, ValueError):
+        return UNKNOWN_ENVIRONMENT_VALUE
+    if (
+        not text
+        or len(text) > 4096
+        or text != text.strip()
+        or any(ord(character) < 32 or ord(character) == 127 for character in text)
+    ):
+        return UNKNOWN_ENVIRONMENT_VALUE
+    return text
+
+
+def _metadata_only_asnumpy_module():
+    """Locate AsNumpy without importing it or initialising its native runtime."""
+
+    try:
+        specification = importlib_util.find_spec("asnumpy")
+    except Exception:
+        specification = None
+    origin = getattr(specification, "origin", None)
+    try:
+        version = importlib_metadata.version("asnumpy")
+    except Exception:
+        version = None
+    return SimpleNamespace(__file__=origin, __version__=version)
+
+
+def _ops_nn_matmul_runtime_identity(module):
+    """Build the exact local qualification identity for the MatMul case."""
+
+    from numpilot.env_check import _probe_npu_smi_soc_model
+
+    unknown = UNKNOWN_ENVIRONMENT_VALUE
+    try:
+        version = _identity_token(getattr(module, "__version__", None))
+    except Exception:
+        version = unknown
+    file_facts = _runtime_identity_file_facts(module)
+    cann_home, cann_version = _runtime_identity_cann_facts()
+    try:
+        soc_model = _identity_token(_probe_npu_smi_soc_model())
+    except Exception:
+        soc_model = unknown
+    python_executable = _identity_path(sys.executable, require_existing=True)
+    try:
+        python_version = _identity_token(platform.python_version())
+    except Exception:
+        python_version = unknown
+    try:
+        audit_id = _identity_token(_runtime_audit_id(module, version))
+    except Exception:
+        audit_id = unknown
+
+    receipt_result = _ops_nn_matmul_audit_receipt()
+    if receipt_result is None:
+        receipt_path = unknown
+        receipt_sha256 = unknown
+        receipt = {}
+    else:
+        raw_receipt_path, receipt_sha256, receipt = receipt_result
+        receipt_path = _identity_path(raw_receipt_path, require_existing=True)
+
+    issues = set()
+    if version != OPS_NN_MATMUL_ASNUMPY_VERSION:
+        issues.add("AsNumpy version does not match the MatMul integration audit")
+    if audit_id != OPS_NN_MATMUL_ASNUMPY_AUDIT_ID:
+        issues.add("AsNumpy runtime hashes do not match the MatMul integration audit")
+
+    expected_wrappers = {
+        relative: digest
+        for relative, digest in _OPS_NN_MATMUL_RUNTIME_FILE_SHA256.items()
+        if relative != "_core"
+    }
+    if file_facts["wrapper_sha256"] != expected_wrappers:
+        issues.add("AsNumpy wrapper hashes do not match the MatMul integration audit")
+    if file_facts["module_path"] == unknown:
+        issues.add("AsNumpy module path is unavailable")
+    if file_facts["module_sha256"] != expected_wrappers["__init__.py"]:
+        issues.add("AsNumpy module hash does not match the MatMul integration audit")
+    if file_facts["native_module_path"] == unknown:
+        issues.add("AsNumpy native module path is unavailable")
+    if (
+        file_facts["native_module_sha256"]
+        != _OPS_NN_MATMUL_RUNTIME_FILE_SHA256["_core"]
+    ):
+        issues.add("AsNumpy native module hash does not match the MatMul integration audit")
+
+    if receipt_result is None:
+        issues.add("MatMul qualification receipt is missing, invalid, or drifted")
+    else:
+        try:
+            receipt_runtime = receipt["runtime"]
+        except (KeyError, TypeError):
+            receipt_runtime = {}
+        if (
+            type(receipt_runtime) is not dict
+            or receipt_runtime.get("python_executable") != python_executable
+            or receipt_runtime.get("module_path") != file_facts["module_path"]
+            or receipt_runtime.get("native_module_path")
+            != file_facts["native_module_path"]
+        ):
+            issues.add("MatMul qualification receipt does not bind this runtime")
+
+    expected_cann_home = _identity_path(AUDITED_CANN_HOME)
+    if (
+        cann_home == unknown
+        or expected_cann_home == unknown
+        or cann_home != expected_cann_home
+    ):
+        issues.add("CANN home does not match the MatMul integration audit")
+    if cann_version != AUDITED_CANN_VERSION:
+        issues.add("CANN version does not match the MatMul integration audit")
+    if soc_model != AUDITED_SOC_MODEL:
+        issues.add("SoC model does not match the MatMul integration audit")
+    if python_version != AUDITED_PYTHON_VERSION:
+        issues.add("Python version does not match the MatMul integration audit")
+    if python_executable == unknown:
+        issues.add("Python executable is unavailable")
+
+    status = "matched" if not issues else "audit_required"
+    return RuntimeIdentity(
+        asnumpy_repository=OPS_NN_MATMUL_ASNUMPY_REPOSITORY,
+        asnumpy_commit=OPS_NN_MATMUL_ASNUMPY_BASE_COMMIT,
+        asnumpy_tree=OPS_NN_MATMUL_ASNUMPY_BASE_TREE,
+        asnumpy_version=version,
+        wrapper_sha256=file_facts["wrapper_sha256"],
+        module_path=file_facts["module_path"],
+        module_sha256=file_facts["module_sha256"],
+        native_module_path=file_facts["native_module_path"],
+        native_module_sha256=file_facts["native_module_sha256"],
+        cann_home=cann_home,
+        cann_version=cann_version,
+        soc_model=soc_model,
+        python_executable=python_executable,
+        python_version=python_version,
+        bootstrap_receipt_path=receipt_path,
+        bootstrap_receipt_sha256=receipt_sha256,
+        audit_id=audit_id,
+        status=status,
+        issues=tuple(sorted(issues)),
+    )
+
+
+def _runtime_identity_file_facts(module):
+    """Hash audited files without importing AsNumpy or following final symlinks."""
+
+    unknown = UNKNOWN_ENVIRONMENT_VALUE
+    wrapper_hashes = {
+        relative: unknown
+        for relative in _AUDITED_RUNTIME_FILE_SHA256
+        if relative != "_core"
+    }
+    facts = {
+        "module_path": unknown,
+        "module_sha256": unknown,
+        "native_module_path": unknown,
+        "native_module_sha256": unknown,
+        "wrapper_sha256": wrapper_hashes,
+    }
+    try:
+        raw_path = getattr(module, "__file__", None)
+    except Exception:
+        return facts
+    if not isinstance(raw_path, str) or not raw_path:
+        return facts
+    init_path = Path(raw_path)
+    if (
+        not init_path.is_absolute()
+        or init_path.is_symlink()
+        or init_path.name != "__init__.py"
+    ):
+        return facts
+    try:
+        resolved_init = init_path.resolve(strict=True)
+    except (OSError, RuntimeError):
+        return facts
+    facts["module_path"] = _identity_path(resolved_init, require_existing=True)
+    module_hash = _sha256_private_regular_file(init_path)
+    if module_hash is not None:
+        facts["module_sha256"] = module_hash
+
+    parent = init_path.parent
+    for relative in wrapper_hashes:
+        candidate = parent / relative
+        relative_path = Path(relative)
+        directory = parent
+        safe = True
+        for component in relative_path.parts[:-1]:
+            directory = directory / component
+            if directory.is_symlink() or not directory.is_dir():
+                safe = False
+                break
+        if not safe:
+            continue
+        digest = _sha256_private_regular_file(candidate)
+        if digest is not None:
+            wrapper_hashes[relative] = digest
+
+    try:
+        core_paths = tuple(parent.glob("_core*.so"))
+    except (OSError, ValueError):
+        core_paths = ()
+    if len(core_paths) == 1 and not core_paths[0].is_symlink():
+        core_path = core_paths[0]
+        try:
+            resolved_core = core_path.resolve(strict=True)
+        except (OSError, RuntimeError):
+            resolved_core = None
+        if resolved_core is not None:
+            facts["native_module_path"] = _identity_path(
+                resolved_core, require_existing=True
+            )
+            core_hash = _sha256_private_regular_file(core_path)
+            if core_hash is not None:
+                facts["native_module_sha256"] = core_hash
+    return facts
+
+
+def _runtime_identity_receipt_facts():
+    unknown = UNKNOWN_ENVIRONMENT_VALUE
+    try:
+        receipt_path = _bootstrap_receipt_path()
+    except (OSError, RuntimeError, TypeError, ValueError):
+        receipt_path = None
+    receipt_path_text = _identity_path(receipt_path)
+    receipt = _read_private_bootstrap_receipt(receipt_path)
+    receipt_hash = unknown
+    if receipt is not None:
+        observed_hash = _sha256_private_regular_file(receipt_path)
+        if observed_hash is not None:
+            receipt_hash = observed_hash
+
+    try:
+        source = receipt["repositories"]["asnumpy"]
+    except (KeyError, TypeError):
+        source = {}
+    if type(source) is not dict:
+        source = {}
+    return {
+        "receipt": receipt,
+        "bootstrap_receipt_path": receipt_path_text,
+        "bootstrap_receipt_sha256": receipt_hash,
+        "asnumpy_repository": _identity_repository(source.get("repository")),
+        "asnumpy_commit": _identity_git_id(source.get("commit")),
+        "asnumpy_tree": _identity_git_id(source.get("tree")),
+    }
+
+
+def _runtime_identity_cann_facts():
+    unknown = UNKNOWN_ENVIRONMENT_VALUE
+    raw_home = (
+        os.getenv("ASCEND_HOME_PATH")
+        or os.getenv("ASCEND_TOOLKIT_HOME")
+        or os.getenv("CANN_HOME")
+    )
+    cann_home = _identity_path(
+        raw_home, require_existing=True, require_directory=True
+    )
+    version = None if cann_home == unknown else _read_cann_version(cann_home)
+    return cann_home, _identity_token(version)
+
+
+def _runtime_identity_receipt_interpreter(receipt):
+    try:
+        value = receipt["verification"]["asnumpy"]["interpreter"]
+    except (KeyError, TypeError):
+        return UNKNOWN_ENVIRONMENT_VALUE
+    return _identity_path(value, require_existing=True)
+
+
 def _p0_linalg_runtime_identity_matches(module):
     raw_path = getattr(module, "__file__", None)
     if not isinstance(raw_path, str) or not raw_path:
@@ -698,6 +1234,11 @@ def _cbrt_runtime_identity_matches(module):
 
 
 def _runtime_audit_id(module, version):
+    if (
+        version == OPS_NN_MATMUL_ASNUMPY_VERSION
+        and _ops_nn_matmul_runtime_identity_matches(module)
+    ):
+        return OPS_NN_MATMUL_ASNUMPY_AUDIT_ID
     if version == AUDITED_ASNUMPY_VERSION:
         if _fixed_audited_runtime_identity_matches(module):
             return ASNUMPY_AUDIT_ID
@@ -727,6 +1268,38 @@ def _runtime_audit_id(module, version):
 
 def _provenance_profile(name, version, audit_id):
     """Return source-audited provenance independently of runtime availability."""
+
+    if audit_id == OPS_NN_MATMUL_ASNUMPY_AUDIT_ID:
+        if name not in OPS_NN_MATMUL_AUDITED_NATIVE_OPS:
+            return (
+                ExecutionProvenance.UNKNOWN,
+                (
+                    "the ops-nn MatMul integration runtime is hash-bound, "
+                    "but API %r is outside its two-operator case audit" % name
+                ),
+                ("requires an operator-specific source audit",),
+            )
+        if name == "matmul":
+            return (
+                ExecutionProvenance.NATIVE_NPU,
+                (
+                    "hash-bound AsNumPy public wrapper delegates qualified "
+                    "2-D float32 inputs to installed CANN aclnnMatmul; pinned "
+                    "ops-nn v9.0.0 is the reviewed source provenance"
+                ),
+                (
+                    "dtype=float32",
+                    "rank>=2",
+                    "rank<=2",
+                    "contiguous=true",
+                    "numel>=1",
+                ),
+            )
+        return (
+            ExecutionProvenance.NATIVE_NPU,
+            "hash-bound case audit: asnumpy.full delegates to an NPU binding",
+            (),
+        )
 
     if (
         audit_id == CBRT_ASNUMPY_AUDIT_ID
@@ -778,6 +1351,11 @@ def _provenance_profile(name, version, audit_id):
             "asnumpy version/runtime identity %r has no provenance audit" % version,
             ("requires a version-specific source audit",),
         )
+    if (
+        audit_id in {ASNUMPY_AUDIT_ID, ASNUMPY_SOURCE_BUILD_AUDIT_ID}
+        and name in _GENERIC_NESTED_PROVENANCE
+    ):
+        return _GENERIC_NESTED_PROVENANCE[name]
     if name not in SUPPORTED_OPS:
         return (
             ExecutionProvenance.UNKNOWN,
@@ -849,6 +1427,8 @@ def _provenance_profile(name, version, audit_id):
 
 
 def _signature_variants(name, audit_id):
+    if audit_id == OPS_NN_MATMUL_ASNUMPY_AUDIT_ID and name == "matmul":
+        return (OperatorSignature(positional_args=2),)
     if (
         audit_id in _P0_LINALG_AUDIT_IDS
         and name in {"outer", "matmul"}
@@ -994,12 +1574,154 @@ class NpuBackend(ExecutionBackend):
             self._module = asnumpy
         return self._module
 
+    def runtime_identity(self):
+        """Capture the generic audited runtime identity using read-only probes.
+
+        Unlike execution and capability discovery, this method deliberately
+        does not call :meth:`get_module`: locating an installed package,
+        hashing its files, parsing the private bootstrap receipt and running
+        ``npu-smi info`` do not initialise AsNumpy, CANN, or an NPU context.
+        """
+
+        from numpilot.bootstrap import (
+            ASNUMPY_COMMIT,
+            ASNUMPY_REPOSITORY,
+            ASNUMPY_TREE,
+        )
+        from numpilot.env_check import _probe_npu_smi_soc_model
+
+        unknown = UNKNOWN_ENVIRONMENT_VALUE
+        module = (
+            self._module
+            if self._module is not None
+            else _metadata_only_asnumpy_module()
+        )
+        try:
+            raw_version = getattr(module, "__version__", None)
+        except Exception:
+            raw_version = None
+        version = _identity_token(raw_version)
+
+        if version == OPS_NN_MATMUL_ASNUMPY_VERSION:
+            return _ops_nn_matmul_runtime_identity(module)
+
+        file_facts = _runtime_identity_file_facts(module)
+        receipt_facts = _runtime_identity_receipt_facts()
+        receipt = receipt_facts.pop("receipt")
+        cann_home, cann_version = _runtime_identity_cann_facts()
+        try:
+            soc_model = _identity_token(_probe_npu_smi_soc_model())
+        except Exception:
+            soc_model = unknown
+        python_executable = _identity_path(
+            sys.executable, require_existing=True
+        )
+        try:
+            python_version = _identity_token(platform.python_version())
+        except Exception:
+            python_version = unknown
+
+        try:
+            audit_id = _identity_token(_runtime_audit_id(module, version))
+        except Exception:
+            audit_id = unknown
+        try:
+            source_receipt_matches = _source_build_receipt_identity_matches(module)
+        except Exception:
+            source_receipt_matches = False
+
+        issues = set()
+        if receipt_facts["asnumpy_repository"] != ASNUMPY_REPOSITORY:
+            issues.add("AsNumpy repository does not match pinned source")
+        if receipt_facts["asnumpy_commit"] != ASNUMPY_COMMIT:
+            issues.add("AsNumpy commit does not match pinned source")
+        if receipt_facts["asnumpy_tree"] != ASNUMPY_TREE:
+            issues.add("AsNumpy tree does not match pinned source")
+        if version != AUDITED_ASNUMPY_VERSION:
+            issues.add("AsNumpy version does not match the generic audit")
+
+        expected_wrappers = {
+            relative: digest
+            for relative, digest in _AUDITED_RUNTIME_FILE_SHA256.items()
+            if relative != "_core"
+        }
+        for relative, expected_hash in expected_wrappers.items():
+            if file_facts["wrapper_sha256"].get(relative) != expected_hash:
+                issues.add("AsNumpy wrapper hash drift: %s" % relative)
+        if file_facts["module_path"] == unknown:
+            issues.add("AsNumpy module path is unavailable")
+        if file_facts["module_sha256"] != expected_wrappers["__init__.py"]:
+            issues.add("AsNumpy module hash does not match the generic audit")
+        if file_facts["native_module_path"] == unknown:
+            issues.add("AsNumpy native module path is unavailable")
+        if file_facts["native_module_sha256"] == unknown:
+            issues.add("AsNumpy native module hash is unavailable")
+
+        if receipt is None:
+            issues.add("bootstrap receipt is missing or invalid")
+        if receipt_facts["bootstrap_receipt_path"] == unknown:
+            issues.add("bootstrap receipt path is unavailable")
+        if receipt_facts["bootstrap_receipt_sha256"] == unknown:
+            issues.add("bootstrap receipt hash is unavailable")
+        if not source_receipt_matches:
+            issues.add("bootstrap receipt does not bind the observed runtime")
+        if audit_id != ASNUMPY_SOURCE_BUILD_AUDIT_ID:
+            issues.add("generic AsNumpy audit ID is not receipt-bound")
+
+        expected_cann_home = _identity_path(AUDITED_CANN_HOME)
+        if (
+            cann_home == unknown
+            or expected_cann_home == unknown
+            or cann_home != expected_cann_home
+        ):
+            issues.add("CANN home does not match the audited runtime")
+        if cann_version != AUDITED_CANN_VERSION:
+            issues.add("CANN version does not match the audited runtime")
+        if soc_model != AUDITED_SOC_MODEL:
+            issues.add("SoC model does not match the audited runtime")
+        if python_version != AUDITED_PYTHON_VERSION:
+            issues.add("Python version does not match the audited runtime")
+        receipt_interpreter = _runtime_identity_receipt_interpreter(receipt)
+        if python_executable == unknown:
+            issues.add("Python executable is unavailable")
+        if receipt_interpreter == unknown:
+            issues.add("bootstrap receipt interpreter is unavailable")
+        if python_executable != receipt_interpreter:
+            issues.add("Python executable does not match the bootstrap receipt")
+
+        status = "matched" if not issues else "audit_required"
+        return RuntimeIdentity(
+            asnumpy_repository=receipt_facts["asnumpy_repository"],
+            asnumpy_commit=receipt_facts["asnumpy_commit"],
+            asnumpy_tree=receipt_facts["asnumpy_tree"],
+            asnumpy_version=version,
+            wrapper_sha256=file_facts["wrapper_sha256"],
+            module_path=file_facts["module_path"],
+            module_sha256=file_facts["module_sha256"],
+            native_module_path=file_facts["native_module_path"],
+            native_module_sha256=file_facts["native_module_sha256"],
+            cann_home=cann_home,
+            cann_version=cann_version,
+            soc_model=soc_model,
+            python_executable=python_executable,
+            python_version=python_version,
+            bootstrap_receipt_path=receipt_facts["bootstrap_receipt_path"],
+            bootstrap_receipt_sha256=receipt_facts[
+                "bootstrap_receipt_sha256"
+            ],
+            audit_id=audit_id,
+            status=status,
+            issues=tuple(sorted(issues)),
+        )
+
     def _raw_capability_manifest(self, required_ops, *, runtime_targets=None):
         module = self.get_module()
         raw_version = getattr(module, "__version__", None)
         version = None if raw_version is None else str(raw_version)
         audit_id = _runtime_audit_id(module, version)
-        names = tuple(sorted({str(name) for name in required_ops}))
+        names = tuple(sorted({
+            _canonical_capability_key(name) for name in required_ops
+        }))
         capabilities = {}
         for name in names:
             provenance, evidence, constraints = _provenance_profile(
@@ -1007,7 +1729,7 @@ class NpuBackend(ExecutionBackend):
             )
             signatures = _signature_variants(name, audit_id)
             try:
-                api = getattr(module, name)
+                api = _resolve_canonical_runtime_api(module, name)
             except Exception as exc:  # asnumpy resolves public APIs lazily
                 capabilities[name] = OperatorCapability(
                     name=name,
@@ -1152,7 +1874,9 @@ class NpuBackend(ExecutionBackend):
     def prepare_profile_guard(self, required_ops):
         """Prepare a runtime session that guards every scoped call pre-dispatch."""
 
-        required = tuple(sorted({str(name) for name in required_ops}))
+        required = tuple(sorted({
+            _canonical_capability_key(name) for name in required_ops
+        }))
         runtime_targets = {}
         module = self.get_module()
         if type(self).capability_manifest is NpuBackend.capability_manifest:
@@ -1168,7 +1892,7 @@ class NpuBackend(ExecutionBackend):
             manifest = self.capability_manifest(required)
             for name in required:
                 try:
-                    target = getattr(module, name)
+                    target = _resolve_canonical_runtime_api(module, name)
                 except Exception:
                     continue
                 if callable(target):
@@ -1177,7 +1901,7 @@ class NpuBackend(ExecutionBackend):
             manifest,
             required,
             tensor_profile_extractor=self._extract_tensor_profile,
-            runtime_module=module,
+            runtime_module=_CanonicalRuntimeModuleView(module),
             runtime_targets=runtime_targets,
         )
 
@@ -1186,7 +1910,7 @@ class NpuBackend(ExecutionBackend):
         qualified_name: str,
         profile: OperatorCallProfile,
     ) -> CapabilityMatch:
-        """Resolve one exact top-level source call against the active overlay."""
+        """Resolve one exact canonical source call against the active overlay."""
 
         resolver = self.prepare_analysis_profile_resolver((qualified_name,))
         return resolver.resolve_profile_capability(qualified_name, profile)
@@ -1196,15 +1920,9 @@ class NpuBackend(ExecutionBackend):
 
         names = []
         for qualified_name in qualified_names:
-            if (
-                not isinstance(qualified_name, str)
-                or qualified_name.split(".", 1)[0] not in {"numpy", "operator"}
-                or qualified_name.count(".") != 1
-            ):
-                raise ValueError(
-                    "profile capability requires top-level source APIs"
-                )
-            names.append(qualified_name.split(".", 1)[1])
+            names.append(
+                _canonical_key_from_qualified_source_api(qualified_name)
+            )
         return _AnalysisManifestResolver(
             self.capability_manifest(tuple(sorted(set(names))))
         )

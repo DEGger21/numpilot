@@ -1,6 +1,12 @@
 __pycache__/
 *.pyc
 *.egg-info/
+.venv/
+.numpilot-config/
+.numpilot-state/
+.numpilot-cache/
+.numpilot-artifacts/
+/activate-numpilot.sh
 .pytest_cache/
 build/
 dist/
@@ -14,3 +20,7 @@ RUN_LLM_TEMP.md
 
 # 精选公开证据中有经过脱敏审查的日志与历史 reports 子目录。
 !evidence/**
+
+# 公开 evidence 的反向规则不能重新纳入本地模型配置或 dotenv 凭据。
+evidence/**/.env*
+evidence/**/llm.json

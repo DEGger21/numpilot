@@ -148,20 +148,16 @@ def _git(root: Path, *arguments: str) -> str:
     return completed.stdout.strip()
 
 
-def default_skill_checkout() -> Path:
-    """Return the versioned per-user checkout without creating it."""
+def default_skill_checkout(environment=None) -> Path:
+    """Return an explicit exact checkout or the versioned cache checkout."""
 
-    explicit = os.getenv("NUMPILOT_CANNBOT_CACHE")
-    if explicit:
-        base = Path(explicit).expanduser()
-    else:
-        xdg_cache = os.getenv("XDG_CACHE_HOME")
-        base = (
-            Path(xdg_cache).expanduser() / "numpilot" / "cannbot-skills"
-            if xdg_cache
-            else Path.home() / ".cache" / "numpilot" / "cannbot-skills"
-        )
-    return base / CANNBOT_COMMIT
+    values = os.environ if environment is None else environment
+    exact = values.get("NUMPILOT_CANNBOT_SKILLS")
+    if exact:
+        return Path(exact).expanduser()
+    from numpilot.paths import cannbot_cache_base
+
+    return cannbot_cache_base(values) / CANNBOT_COMMIT
 
 
 @dataclass(frozen=True)

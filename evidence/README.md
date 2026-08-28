@@ -6,6 +6,49 @@
 
 ## 内容
 
+### `competition-poisson-stage-20260828/`
+
+- 当前更适合评委叙事的 ordinary 应用阶段：Poisson 解析源项与
+  `SmoothL1(beta=1)` 未规约逐配点残差图；明确不是完整求解器；
+- 9,000,000 个 `float32` 配点，21/21 调用点 DIRECT；实际 `glm-5.3` 迁移、数值门和
+  16/16 strict-NPU 性能门全部通过；
+- CPU 单核/NPU 各 20 样本的 resident 中位为 `458.698 ms / 178.658 ms`，即
+  `2.567×`；保守 `2.471×`，bootstrap 95% 区间 `[2.538×, 2.592×]`；
+- 首次单次组件和 NPU 反而慢（诊断 `0.789×`），因此只把重复设备驻留阶段作为优势区；
+  回执不把组件和冒充直接端到端；
+- 同目录 bootstrap receipt 将 NumPilot `0.3.0a1.dev0`、固定 AsNumpy source build 与
+  benchmark runtime hash 闭合；捕获时工作树仍非净，所以不是 RC。
+
+完整解释见
+[`competition-poisson-stage-20260828/README.md`](competition-poisson-stage-20260828/README.md)。
+
+### `competition-ordinary-20260828/`
+
+- 当前 ordinary 主路径的开发态真机证据：静态 `DIRECT` 资格化 → 实际 configured
+  `glm-5.3` 迁移 → 独立数值验证 → 产品内 strict-NPU resident benchmark；
+- Ascend 910B4/CANN 9.0.0，9,000,000 元素 `float32` 合成逐元素链，CPU 与 NPU 分离进程
+  固定同一单核，各 20 个样本；16/16 性能门通过；
+- resident 中位数为 CPU `616.333 ms`、NPU `76.289 ms`，即 `8.079×`；保守结果
+  `7.503×`，bootstrap 95% 区间 `[7.954×, 8.147×]`；
+- 不把冷启动、输入准备或最终 D2H 混入 headline；组件和只为 `1.220×` 且不是直接 E2E
+  样本；捕获时工作树非净，因此不冒充正式 RC。
+
+完整边界、冻结文件和标准库独立审计命令见
+[`competition-ordinary-20260828/README.md`](competition-ordinary-20260828/README.md)。
+
+### `ops-nn-matmul-20260827/`
+
+- 从包含 `numpy.matmul` 缺口的纯 NumPy 小型推理脚本出发，保留迁移前 GapSpec、官方候选
+  解析、已配置模型迁移报告、限定范围资格化回执和独立真机执行证据；
+- 历史真机结果证明 `_core.matmul` 原生执行与数值，但 2026-08-28 审查发现旧 candidate
+  绑定 `libopapi_nn.so`、实际 loader 使用 `libopapi.so`；旧 DSO provenance 已否决，新
+  `official-resolution-linkage-v2.json` 目前只到 discovery/candidate，尚未重新资格化；
+- Ascend 910B4 上封死宿主回退后原生调用一次，8×16 与 16×4 的 `float32` 结果相对
+  NumPy 最大绝对误差为 `6.984919309616089e-10`；不发布性能结论。
+
+完整范围和复核命令见
+[`ops-nn-matmul-20260827/README.md`](ops-nn-matmul-20260827/README.md)。
+
 ### `demotest-case01-20260825/`
 
 - GLM 生成的 `2048 × 2048`、`float32` 普通 NumPy 脚本及经 NumPilot 门禁的 AsNumpy 迁移产物；

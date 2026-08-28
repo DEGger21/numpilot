@@ -17,6 +17,7 @@ import shutil
 import subprocess
 import sys
 from dataclasses import dataclass, field
+from pathlib import Path
 
 OK = "ok"
 WARN = "warn"
@@ -77,6 +78,101 @@ def _run(cmd):
         return -1, ""
 
 
+_NPU_SMI_NO_DEVICE = re.compile(
+    r"\bno\s+"
+    r"(?:(?:ascend\s*(?:(?:310|610|910)"
+    r"(?:\s*[A-Za-z][A-Za-z0-9_-]*)?)?|npu)\s+)?"
+    r"devices?\s+(?:(?:is|are|was|were)\s+)?"
+    r"(?:found|detected|available|present)\b",
+    re.IGNORECASE,
+)
+_NPU_SMI_HEALTH = re.compile(r"\b(?:OK|Healthy|Normal)\b", re.IGNORECASE)
+_NPU_SMI_UNHEALTHY = re.compile(
+    r"\b(?:Not\s+OK|Unhealthy|Abnormal|Warning|Warn|Error|Fault|Critical|Offline)\b",
+    re.IGNORECASE,
+)
+_NPU_SMI_MODEL = (
+    r"(?:Ascend\s*)?"
+    r"(?P<family>310|610|910)"
+    r"(?P<attached>[A-Za-z][A-Za-z0-9_-]*)?"
+    r"(?:\s+(?P<spaced>B[0-9]+|P[0-9]+|Pro|Premium|Lite))?"
+)
+_NPU_SMI_INDEXED_MODEL = re.compile(
+    r"^\s*(?:"
+    r"(?:\|\s*)?\d+\s+(?:\|\s*)?" + _NPU_SMI_MODEL
+    + r"|NPU\s*(?:ID\s*)?[:#]?\s*\d+\s*[:|,-]?\s*"
+    + _NPU_SMI_MODEL.replace("?P<family>", "?P<npu_family>")
+    .replace("?P<attached>", "?P<npu_attached>")
+    .replace("?P<spaced>", "?P<npu_spaced>")
+    + r")(?![A-Za-z0-9])",
+    re.IGNORECASE,
+)
+
+
+def _canonical_soc_model(family: str, suffix: str) -> str:
+    normalized = suffix.strip().replace("_", "").replace("-", "")
+    known_words = {
+        "premium": "Premium",
+        "pro": "Pro",
+        "lite": "Lite",
+    }
+    normalized = known_words.get(normalized.lower(), normalized.upper())
+    return "Ascend%s%s" % (family, normalized)
+
+
+def _npu_smi_healthy_models(output: str):
+    """Return canonical model names from healthy ``npu-smi info`` rows."""
+
+    if (
+        not isinstance(output, str)
+        or not output.strip()
+        or len(output) > 1024 * 1024
+        or _NPU_SMI_NO_DEVICE.search(output)
+    ):
+        return ()
+
+    models = set()
+    for line in output.splitlines()[:4096]:
+        if (
+            len(line) > 8192
+            or not _NPU_SMI_HEALTH.search(line)
+            or _NPU_SMI_UNHEALTHY.search(line)
+        ):
+            continue
+        match = _NPU_SMI_INDEXED_MODEL.search(line)
+        if match is None:
+            continue
+        family = match.group("family") or match.group("npu_family")
+        suffix = (
+            match.group("attached")
+            or match.group("spaced")
+            or match.group("npu_attached")
+            or match.group("npu_spaced")
+            or ""
+        )
+        models.add(_canonical_soc_model(family, suffix))
+    return tuple(sorted(models))
+
+
+def _parse_npu_smi_soc_model(output: str):
+    """Return one healthy canonical SoC model, failing closed on ambiguity."""
+
+    models = _npu_smi_healthy_models(output)
+    return models[0] if len(models) == 1 else None
+
+
+def _probe_npu_smi_soc_model():
+    """Read the healthy SoC model through ``npu-smi info`` only."""
+
+    executable = shutil.which("npu-smi")
+    if not executable:
+        return None
+    code, output = _run([executable, "info"])
+    if code != 0:
+        return None
+    return _parse_npu_smi_soc_model(output)
+
+
 def _npu_smi_has_device(output: str) -> bool:
     """Recognise both legacy and current ``npu-smi info`` device tables.
 
@@ -88,48 +184,82 @@ def _npu_smi_has_device(output: str) -> bool:
     alone are not device evidence.
     """
 
-    if not isinstance(output, str) or not output.strip():
-        return False
+    return bool(_npu_smi_healthy_models(output))
 
-    # npu-smi may echo the requested product in a negative result, for example
-    # ``No Ascend910 devices found``.  Treat explicit no-device statements as
-    # authoritative before looking for a model token anywhere else.
-    no_device = re.compile(
-        r"\bno\s+"
-        r"(?:(?:ascend\s*(?:(?:310|610|910)"
-        r"(?:\s*[A-Za-z][A-Za-z0-9_-]*)?)?|npu)\s+)?"
-        r"devices?\s+(?:(?:is|are|was|were)\s+)?"
-        r"(?:found|detected|available|present)\b",
-        re.IGNORECASE,
-    )
-    if no_device.search(output):
-        return False
 
-    # Require a device-index prefix, an explicit supported model token and a
-    # health-state token on the same line.  This accepts both compact table
-    # rows (``| 2 910B4 | OK``) and legacy/current named rows such as
-    # ``0 Ascend910 Premium OK`` or ``NPU 0: Ascend 910B4 Health: OK`` while
-    # rejecting headings, documentation and model names in error prose.
-    model_token = (
-        r"(?:Ascend\s*)?(?:310|610|910)"
-        r"(?:\s*[A-Za-z][A-Za-z0-9_-]*)?"
-    )
-    indexed_model = re.compile(
-        r"^\s*(?:"
-        r"(?:\|\s*)?\d+\s+(?:\|\s*)?" + model_token
-        + r"|NPU\s*(?:ID\s*)?[:#]?\s*\d+\s*[:|,-]?\s*"
-        + model_token
-        + r")(?![A-Za-z0-9])",
-        re.IGNORECASE,
-    )
-    health = re.compile(
-        r"\b(?:OK|Healthy|Normal)\b",
-        re.IGNORECASE,
-    )
-    return any(
-        indexed_model.search(line) and health.search(line)
-        for line in output.splitlines()
-    )
+_CANN_PATH_VARIABLES = (
+    "PATH",
+    "LD_LIBRARY_PATH",
+    "PYTHONPATH",
+    "CMAKE_PREFIX_PATH",
+)
+
+
+def _cann_toolkit_root(entry: str):
+    """Extract only toolkit-owned roots, excluding driver/NNAL/custom paths."""
+
+    parts = Path(entry).expanduser().parts
+    for index, part in enumerate(parts):
+        lowered = part.lower()
+        has_ascend_parent = any(
+            parent.lower() == "ascend" for parent in parts[:index]
+        )
+        if has_ascend_parent and (
+            lowered == "cann" or lowered.startswith(("cann-", "cann_"))
+        ):
+            return Path(*parts[:index + 1])
+        if (
+            has_ascend_parent
+            and lowered == "ascend-toolkit"
+            and index + 1 < len(parts)
+        ):
+            return Path(*parts[:index + 2])
+    return None
+
+
+def _audit_cann_paths(toolkit: str):
+    """Return severity/detail for stale, duplicate, alias and devlib entries."""
+
+    active_text = os.path.abspath(os.path.expanduser(toolkit)) if toolkit else ""
+    active_real = os.path.realpath(active_text) if active_text else ""
+    devlibs = []
+    conflicts = []
+    aliases = []
+    duplicates = []
+    for variable in _CANN_PATH_VARIABLES:
+        entries = [entry for entry in os.getenv(variable, "").split(":") if entry]
+        seen = set()
+        for index, entry in enumerate(entries):
+            location = "%s[%d]=%s" % (variable, index, entry)
+            normalized_entry = os.path.normpath(
+                os.path.abspath(os.path.expanduser(entry))
+            )
+            if normalized_entry in seen:
+                duplicates.append(location)
+            seen.add(normalized_entry)
+            root = _cann_toolkit_root(entry)
+            if root is None or not active_real:
+                continue
+            if any(part.lower() == "devlib" for part in Path(entry).parts):
+                devlibs.append(location)
+            root_text = os.path.abspath(str(root))
+            root_real = os.path.realpath(root_text)
+            if root_real != active_real:
+                conflicts.append("%s -> %s" % (location, root_text))
+            elif root_text != active_text:
+                aliases.append("%s -> %s" % (location, root_text))
+
+    hard = []
+    soft = []
+    if devlibs:
+        hard.append("devlib=%s" % ",".join(dict.fromkeys(devlibs)))
+    if conflicts:
+        hard.append("冲突 toolkit=%s" % ",".join(dict.fromkeys(conflicts)))
+    if duplicates:
+        soft.append("重复=%s" % ",".join(dict.fromkeys(duplicates)))
+    if aliases:
+        soft.append("同根别名=%s" % ",".join(dict.fromkeys(aliases)))
+    return hard, soft
 
 
 class Env:
@@ -143,6 +273,19 @@ class Env:
         hard = (backend == "npu")     # 硬依赖是否阻断
         miss = ERROR if hard else WARN
         rep = EnvReport(backend=backend)
+        toolkit = os.getenv("ASCEND_TOOLKIT_HOME") or os.getenv("ASCEND_HOME_PATH")
+
+        hard_path_issues, soft_path_issues = _audit_cann_paths(toolkit or "")
+        if hard_path_issues:
+            path_status = ERROR if hard else WARN
+            path_detail = "; ".join((*hard_path_issues, *soft_path_issues))
+        elif soft_path_issues:
+            path_status = WARN
+            path_detail = "; ".join(soft_path_issues)
+        else:
+            path_status = OK
+            path_detail = "未发现冲突、重复或 devlib"
+        rep.add("CANN 动态库路径", path_status, path_detail[:4096])
 
         # 1) Python 版本(asnumpy 用 PEP 604 联合类型,需 3.10+)
         v = sys.version_info
@@ -177,7 +320,6 @@ class Env:
             return rep
 
         # 3) CANN Toolkit(npu 后端硬依赖)
-        toolkit = os.getenv("ASCEND_TOOLKIT_HOME") or os.getenv("ASCEND_HOME_PATH")
         if toolkit and os.path.isdir(toolkit):
             rep.add("CANN Toolkit", OK, toolkit)
             opp = os.getenv("ASCEND_OPP_PATH")

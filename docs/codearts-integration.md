@@ -12,8 +12,8 @@ CodeArts AgentTeam / 自定义智能体
   └─ Skill / 终端 / 后续 MCP 调用
           ↓ 结构化任务与工件
 NumPilot CLI + contracts + capability registry
-  ├─ 分析 → whole-forward 迁移 → 语义验证 → strict-NPU 评测
-  └─ AsNumpy / CANN / 自定义 OPP → 裸金属 Ascend NPU
+  ├─ ordinary 五态分析 → configured-model 迁移 → 数值验证 → strict-NPU resident benchmark
+  └─ 缺口时 official-first 解析 → 候选/资格化/激活门 → AsNumpy / CANN / Ascend NPU
 ```
 
 这样比赛中的“多智能体”来自真实 CodeArts AgentTeam 和项目级自定义智能体，NumPilot 则承担必须可重复、可测试、可审计的领域逻辑。
@@ -52,9 +52,12 @@ CodeArts [Skill](https://support.huaweicloud.com/usermanual-codeartssnap/codeart
 
 1. 在 CodeArts Agent Space 选择 AgentTeam，输入一个真实科学网络迁移需求。
 2. Leader 让 analyzer 生成 callsite、shape/dtype 和 capability 缺口清单。
-3. 无缺口时调用 `numpilot-migration-gate`；有缺口时生成 GapSpec 并交给 operator engineer。
-4. 在 Remote SSH 的 NPU 机运行 shim 与裸金属 NPU 两层验证，展示迁移 diff。
-5. evidence auditor 独立复跑，若命中 CPU fallback，则界面明确显示 `performance_valid=false`。
+3. 无缺口时调用 `numpilot-migration-gate`，依次执行 configured GLM migrate、
+   `verify-script` 与 `benchmark-script`；有缺口时生成 GapSpec 并交给 operator engineer。
+4. 在 Remote SSH 的 NPU 机展示迁移 diff、exact AST 门、named-output 数值门和
+   runtime/profile/call-count/sync 门。
+5. evidence auditor 独立复跑；任一门失败或命中 CPU fallback 时，界面明确显示
+   `performance_valid=false`，不得发布 speedup。
 6. 最后展示报告中从需求、任务、代码、测试、capability、kernel/profiler 到性能数字的证据链。
 
 ## 边界与下一步

@@ -173,7 +173,7 @@ def build_script_gap_specs(
                     "route": "ascendc_registry",
                     "status": "candidate_for_draft",
                     "reason": (
-                        "GLM may prepare an isolated draft; execution and activation "
+                        "the configured model may prepare an isolated draft; execution and activation "
                         "remain gated"
                     ),
                 },
@@ -195,7 +195,7 @@ def build_script_gap_specs(
                     "route": "ascendc_registry",
                     "status": "candidate_for_draft",
                     "reason": (
-                        "GLM may prepare an isolated draft; execution and activation "
+                        "the configured model may prepare an isolated draft; execution and activation "
                         "remain gated"
                     ),
                 },

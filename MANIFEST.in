@@ -1,11 +1,26 @@
 include CHANGELOG.md
 include install.sh
+include run_demo.sh
 include CONTRIBUTING.md
 include SECURITY.md
 include THIRD_PARTY_NOTICES.md
-recursive-include docs *.md *.drawio *.ipynb
-exclude docs/RESTART-HANDOFF-20260824.md
-exclude docs/evidence/poisson-ritz-large-single-core-20260824.md
+recursive-include docs *.md *.drawio *.ipynb *.json
+recursive-include examples *.py
+include evidence/README.md
+include evidence/MANIFEST.sha256
+include evidence/ARCHIVE_MANIFEST.sha256
 recursive-include evidence/demotest-case01-20260825 *
+recursive-include evidence/competition-ordinary-20260828 *
+recursive-include evidence/competition-poisson-stage-20260828 *
+recursive-include evidence/heat-diffusion-20260813 *
+recursive-include evidence/ops-nn-matmul-20260827 *
+recursive-include evidence/poisson-ritz-p0-20260821 *
+recursive-include integrations/asnumpy *.md *.patch
+recursive-include tools *.py
+recursive-include .codeartsdoer/agents *.md
+include .codeartsdoer/skills/ProjectSkillStatus.txt
+recursive-include .codeartsdoer/skills/numpilot-migration-gate *.md
 recursive-include .codeartsdoer/skills/asnumpy-custom-op-integration *.md *.yaml
+exclude todo.md
+exclude NumPilot20260615-v1.pdf
 global-exclude __pycache__ *.py[cod]

@@ -11,6 +11,7 @@ from numpilot.capabilities import (
     ExecutionProvenance,
     OperatorCapability,
     OperatorSignature,
+    RuntimeIdentity,
 )
 from numpilot.gaps.models import GapSpec
 from numpilot.gaps.pipeline import (
@@ -25,9 +26,11 @@ from numpilot.script_migration import (
     classify_script,
     detect_source_mode,
     generate_script_with_glm,
+    generate_qualified_script_with_configured_model,
     scan_numpy_script,
     write_script_artifacts,
 )
+from numpilot.qualified_analysis import analyze_qualified_script
 
 
 SIMPLE_SOURCE = """\
@@ -66,6 +69,55 @@ row_sums = ap.sum(probs, axis=1)
 print(f"logits={logits.to_numpy()}")
 print(f"probs={probs.to_numpy()}")
 print(f"row_sums={row_sums.to_numpy()}")
+"""
+
+
+ELEMENTWISE_OUTPUT_SOURCE = """\
+import numpy as np
+base = np.full((4,), 2.0, dtype=np.float32)
+power = np.power(base, base)
+logged = np.log(power)
+result = np.equal(power, logged)
+print(f"power={power}")
+print(f"logged={logged}")
+print(f"result={result}")
+"""
+
+
+ELEMENTWISE_OUTPUT_MIGRATED = """\
+import asnumpy as ap
+base = ap.full((4,), 2.0, dtype=ap.float32)
+power = ap.power(base, base)
+logged = ap.log(power)
+result = ap.equal(power, logged)
+print(f"power={power.to_numpy()}")
+print(f"logged={logged.to_numpy()}")
+print(f"result={result.to_numpy()}")
+"""
+
+
+NUMPY_PI_SOURCE = """\
+import numpy as np
+t = np.linspace(0, 2 * np.pi, 8, dtype=np.float32)
+signal = np.add(np.sin(t), np.cos(t))
+abs_signal = np.absolute(signal)
+max_val = np.amax(abs_signal)
+print(f"signal={signal}")
+print(f"abs={abs_signal}")
+print(f"max={max_val}")
+"""
+
+
+NUMPY_PI_MIGRATED = """\
+import math
+import asnumpy as ap
+t = ap.linspace(0, 2 * math.pi, 8, dtype=ap.float32)
+signal = ap.add(ap.sin(t), ap.cos(t))
+abs_signal = ap.absolute(signal)
+max_val = ap.amax(abs_signal)
+print(f"signal={signal.to_numpy()}")
+print(f"abs={abs_signal.to_numpy()}")
+print(f"max={max_val}")
 """
 
 
@@ -131,6 +183,38 @@ def _receipt(content, model="glm-5.3"):
         "usage": {"total_tokens": 101},
         "tls_verification": "enabled",
     }
+
+
+def _matched_runtime(native_hash="6" * 64):
+    return RuntimeIdentity(
+        asnumpy_repository="https://gitcode.com/cann/asnumpy.git",
+        asnumpy_commit="1" * 40,
+        asnumpy_tree="2" * 40,
+        asnumpy_version="0.3.1.dev4+g1929a3ba4",
+        wrapper_sha256={"math.py": "3" * 64},
+        module_path="/opt/asnumpy/__init__.py",
+        module_sha256="4" * 64,
+        native_module_path="/opt/asnumpy/_core.so",
+        native_module_sha256=native_hash,
+        cann_home="/usr/local/Ascend/cann-9.0.0",
+        cann_version="9.0.0",
+        soc_model="Ascend910B4",
+        python_executable="/opt/numpilot/bin/python",
+        python_version="3.10.20",
+        bootstrap_receipt_path="/opt/numpilot/receipt.json",
+        bootstrap_receipt_sha256="7" * 64,
+        audit_id="test-runtime-audit-v1",
+        status="matched",
+        issues=(),
+    )
+
+
+def _qualified(source=SIMPLE_SOURCE, runtime=None):
+    return analyze_qualified_script(
+        source,
+        "<memory>",
+        runtime_identity=runtime or _matched_runtime(),
+    )
 
 
 def _strict_backend():
@@ -241,6 +325,92 @@ print(f"checksum={checksum.to_numpy()}")
     assert scan.synthetic_divide_count == 0
     assert scan.output_boundary_count == 1
     assert analysis.can_migrate_directly
+    audit_glm_script(source, migrated, analysis)
+
+
+def test_qualified_elementwise_results_reach_explicit_host_output_boundaries():
+    backend = _Backend({
+        name: _cap(name, ExecutionProvenance.NATIVE_NPU)
+        for name in ("full", "power", "log", "equal")
+    })
+    analysis = classify_script(
+        scan_numpy_script(ELEMENTWISE_OUTPUT_SOURCE), backend
+    )
+
+    assert analysis.scan.ok, analysis.scan.issues
+    assert analysis.scan.output_boundary_count == 3
+    audit_glm_script(
+        ELEMENTWISE_OUTPUT_SOURCE,
+        ELEMENTWISE_OUTPUT_MIGRATED,
+        analysis,
+    )
+
+
+def test_qualified_logic_reduction_is_a_device_output_boundary():
+    source = """\
+import numpy as np
+x = np.ones((4,), dtype=np.float32)
+flags = np.equal(x, x)
+value = np.any(flags)
+print(f"any={value}")
+"""
+    migrated = """\
+import asnumpy as ap
+x = ap.ones((4,), dtype=ap.float32)
+flags = ap.equal(x, x)
+value = ap.any(flags)
+print(f"any={value.to_numpy()}")
+"""
+    qualified = _qualified(source)
+    backend = _Backend({
+        name: _cap(name, ExecutionProvenance.NATIVE_NPU)
+        for name in ("any", "equal", "ones")
+    }, module=types.SimpleNamespace(
+        any=lambda value: value,
+        equal=lambda left, right: left,
+        float32=np.float32,
+        ones=lambda *args, **kwargs: None,
+    ))
+
+    scan = scan_numpy_script(source, qualified_analysis=qualified)
+    analysis = classify_script(
+        scan, backend, qualified_analysis=qualified
+    )
+
+    call = next(
+        item for item in qualified.calls if item.canonical_key == "any"
+    )
+    assert call.effective_route.value == "NATIVE_NPU"
+    assert call.performance_eligible is True
+    assert scan.output_boundary_count == 1
+    assert not analysis.scoped
+    audit_glm_script(source, migrated, analysis)
+
+
+def test_formatted_scalar_array_output_preserves_the_format_specification():
+    source = """\
+import numpy as np
+x = np.eye(2, dtype=np.float32)
+y = np.linalg.det(x)
+print(f"det={y:.6f}")
+"""
+    migrated = """\
+import asnumpy as ap
+x = ap.eye(2, dtype=ap.float32)
+y = ap.linalg.det(x)
+print(f"det={y.to_numpy():.6f}")
+"""
+    backend = _Backend(
+        {"eye": _cap("eye", ExecutionProvenance.NATIVE_NPU)},
+        module=types.SimpleNamespace(
+            eye=lambda *args, **kwargs: None,
+            float32=np.float32,
+            linalg=types.SimpleNamespace(det=lambda value: value),
+        ),
+    )
+    analysis = classify_script(scan_numpy_script(source), backend)
+
+    assert analysis.scan.output_boundary_count == 1
     audit_glm_script(source, migrated, analysis)
 
 
@@ -400,6 +570,164 @@ def test_nested_api_is_not_promoted_by_hasattr_alone():
     assert nested.generatable is False
 
 
+def test_exact_qualified_nested_call_is_scoped_by_manifest_and_call_profile():
+    source = """\
+import numpy as np
+x = np.eye(2, dtype=np.float32)
+y = np.linalg.det(x)
+print(f"det={y:.6f}")
+"""
+    migrated = """\
+import asnumpy as ap
+x = ap.eye(2, dtype=ap.float32)
+y = ap.linalg.det(x)
+print(f"det={y.to_numpy():.6f}")
+"""
+    qualified = _qualified(source)
+    backend = _Backend(
+        {
+            "eye": _cap("eye", ExecutionProvenance.NATIVE_NPU),
+            "linalg.det": _cap(
+                "linalg.det", ExecutionProvenance.COMPOSITE_NPU
+            ),
+        },
+        module=types.SimpleNamespace(
+            eye=lambda *args, **kwargs: None,
+            float32=np.float32,
+            linalg=types.SimpleNamespace(det=lambda value: value),
+        ),
+    )
+
+    scan = scan_numpy_script(source, qualified_analysis=qualified)
+    analysis = classify_script(
+        scan, backend, qualified_analysis=qualified
+    )
+
+    nested = next(
+        item for item in analysis.decisions if item.api_path == "linalg.det"
+    )
+    assert nested.status == "scoped_npu"
+    assert nested.provenance == "composite_npu"
+    assert not analysis.audit_required
+    assert analysis.can_migrate_directly
+    audit_glm_script(source, migrated, analysis)
+
+
+def test_qualified_numpy_pi_rewrite_is_exact_and_keeps_host_scalar_terminal():
+    qualified = _qualified(NUMPY_PI_SOURCE)
+    backend = _Backend({
+        name: _cap(name, ExecutionProvenance.NATIVE_NPU)
+        for name in ("absolute", "add", "amax", "cos", "linspace", "sin")
+    }, module=types.SimpleNamespace(
+        absolute=lambda value: value,
+        add=lambda left, right: left,
+        amax=lambda value: 0.0,
+        cos=lambda value: value,
+        float32=np.float32,
+        linspace=lambda *args, **kwargs: None,
+        sin=lambda value: value,
+    ))
+    scan = scan_numpy_script(
+        NUMPY_PI_SOURCE, qualified_analysis=qualified
+    )
+    analysis = classify_script(
+        scan, backend, qualified_analysis=qualified
+    )
+    raw = "```python\n" + NUMPY_PI_MIGRATED + "```"
+    calls = []
+
+    artifact = generate_qualified_script_with_configured_model(
+        analysis,
+        qualified_analysis=qualified,
+        runtime_identity_provider=lambda: _matched_runtime(),
+        fallback_accepted=False,
+        expected_model="glm-5.3",
+        expected_provider="glm",
+        chat=lambda system, user: (
+            calls.append((system, user)) or raw,
+            _receipt(raw),
+        ),
+    )
+
+    assert scan.ok, scan.issues
+    assert scan.numpy_pi_rewrite_count == 1
+    assert scan.output_boundary_count == 2
+    assert all(item.api_path != "pi" for item in analysis.decisions)
+    assert [item.api_path for item in analysis.scoped] == ["amax"]
+    assert artifact.migrated_source == NUMPY_PI_MIGRATED
+    assert len(calls) == 1
+    assert "np.pi` with `math.pi" in calls[0][0]
+    assert "Authorized numpy.pi-to-math.pi locations" in calls[0][1]
+
+
+def test_qualified_numpy_pi_overlay_rejects_binding_and_source_drift():
+    rebound = NUMPY_PI_SOURCE.replace(
+        "t = np.linspace", "math = 1\nt = np.linspace"
+    )
+    qualified = _qualified(rebound)
+    scan = scan_numpy_script(rebound, qualified_analysis=qualified)
+    assert not scan.ok
+    assert any("reserved rewrite name `math`" in issue for issue in scan.issues)
+
+    with pytest.raises(ScriptMigrationError, match="source binding"):
+        scan_numpy_script(
+            NUMPY_PI_SOURCE + "\n",
+            qualified_analysis=_qualified(NUMPY_PI_SOURCE),
+        )
+
+
+def test_qualified_terminal_item_surface_preserves_explicit_fallback_boundary():
+    source = """\
+import numpy as np
+a = np.ones(5, dtype=np.float32)
+b = np.full((5,), 1.5, dtype=np.float32)
+value = np.dot(a, b)
+rounded = np.floor(value)
+value_host = value.item()
+rounded_host = rounded.item()
+print(f"value={value_host:.2f} rounded={rounded_host:.1f}")
+"""
+    migrated = source.replace(
+        "import numpy as np", "import asnumpy as ap"
+    ).replace("np.", "ap.").replace(
+        "value.item()", "value.to_numpy().item()"
+    ).replace(
+        "rounded.item()", "rounded.to_numpy().item()"
+    )
+    qualified = _qualified(source)
+    backend = _Backend({
+        "dot": _cap("dot", ExecutionProvenance.CONDITIONAL_CPU_FALLBACK),
+        "floor": _cap(
+            "floor", ExecutionProvenance.CONDITIONAL_CPU_FALLBACK
+        ),
+        "full": _cap("full", ExecutionProvenance.NATIVE_NPU),
+        "ones": _cap("ones", ExecutionProvenance.NATIVE_NPU),
+    }, module=types.SimpleNamespace(
+        dot=lambda left, right: left,
+        floor=lambda value: value,
+        float32=np.float32,
+        full=lambda *args, **kwargs: None,
+        ones=lambda *args, **kwargs: None,
+    ))
+
+    scan = scan_numpy_script(source, qualified_analysis=qualified)
+    analysis = classify_script(
+        scan, backend, qualified_analysis=qualified
+    )
+
+    assert qualified.decision.value == "FALLBACK_CONSENT"
+    assert scan.ok, scan.issues
+    assert scan.terminal_item_count == 2
+    assert [item.api_path for item in analysis.fallbacks] == ["dot", "floor"]
+    audit_glm_script(source, migrated, analysis)
+    with pytest.raises(ScriptMigrationError, match="outside the exact"):
+        audit_glm_script(
+            source,
+            migrated.replace(".to_numpy().item()", ".item()", 1),
+            analysis,
+        )
+
+
 def test_glm_generates_exact_namespace_rewrite_and_receipt_is_bound():
     analysis = classify_script(scan_numpy_script(SIMPLE_SOURCE), _strict_backend())
     migrated = """\
@@ -426,6 +754,96 @@ print(y)
     assert artifact.model == "glm-5.3"
     assert artifact.response_model == "glm-5.3"
     assert artifact.migrated_sha256 == hashlib.sha256(migrated.encode()).hexdigest()
+
+
+def test_qualified_generation_revalidates_runtime_and_source_before_model():
+    analysis = classify_script(scan_numpy_script(SIMPLE_SOURCE), _strict_backend())
+    qualified = _qualified()
+    migrated = SIMPLE_SOURCE.replace(
+        "import numpy as np", "import asnumpy as ap"
+    ).replace("np.", "ap.")
+    raw = "```python\n" + migrated + "```"
+    calls = []
+
+    artifact = generate_qualified_script_with_configured_model(
+        analysis,
+        qualified_analysis=qualified,
+        runtime_identity_provider=lambda: _matched_runtime(),
+        fallback_accepted=False,
+        expected_model="glm-5.3",
+        expected_provider="glm",
+        chat=lambda _s, _u: (calls.append("called") or raw, _receipt(raw)),
+    )
+
+    assert calls == ["called"]
+    assert artifact.migrated_source == migrated
+
+
+def test_qualified_generation_blocks_runtime_drift_before_model():
+    analysis = classify_script(scan_numpy_script(SIMPLE_SOURCE), _strict_backend())
+    qualified = _qualified()
+
+    with pytest.raises(ScriptMigrationError, match="runtime identity changed"):
+        generate_qualified_script_with_configured_model(
+            analysis,
+            qualified_analysis=qualified,
+            runtime_identity_provider=lambda: _matched_runtime("8" * 64),
+            fallback_accepted=False,
+            expected_model="glm-5.3",
+            expected_provider="glm",
+            chat=lambda _s, _u: pytest.fail("model must not be called"),
+        )
+
+
+def test_qualified_generation_blocks_contract_rewrite_before_model():
+    source = """\
+import numpy as np
+x = np.full((4,), 2.0, dtype=np.float32)
+y = np.cumsum(x)
+print(y)
+"""
+    backend = _Backend({
+        "full": _cap("full", ExecutionProvenance.NATIVE_NPU),
+        "cumsum": _cap("cumsum", ExecutionProvenance.NATIVE_NPU),
+    })
+    analysis = classify_script(scan_numpy_script(source), backend)
+
+    with pytest.raises(ScriptMigrationError, match="qualified decision is BLOCKED"):
+        generate_qualified_script_with_configured_model(
+            analysis,
+            qualified_analysis=_qualified(source),
+            runtime_identity_provider=lambda: _matched_runtime(),
+            fallback_accepted=False,
+            expected_model="glm-5.3",
+            expected_provider="glm",
+            chat=lambda _s, _u: pytest.fail("model must not be called"),
+        )
+
+
+def test_qualified_generation_requires_explicit_fallback_consent():
+    source = """\
+import numpy as np
+a = np.ones((2, 2), dtype=np.float32)
+b = np.ones((2, 2), dtype=np.float32)
+c = np.matmul(a, b)
+print(c)
+"""
+    backend = _Backend({
+        "ones": _cap("ones", ExecutionProvenance.NATIVE_NPU),
+        "matmul": _cap("matmul", ExecutionProvenance.CPU_FALLBACK),
+    })
+    analysis = classify_script(scan_numpy_script(source), backend)
+
+    with pytest.raises(ScriptMigrationError, match="explicit fallback consent"):
+        generate_qualified_script_with_configured_model(
+            analysis,
+            qualified_analysis=_qualified(source),
+            runtime_identity_provider=lambda: _matched_runtime(),
+            fallback_accepted=False,
+            expected_model="glm-5.3",
+            expected_provider="glm",
+            chat=lambda _s, _u: pytest.fail("model must not be called"),
+        )
 
 
 def test_glm_alone_emits_proved_divide_and_print_output_boundary_rewrites():
@@ -552,7 +970,7 @@ def test_incomplete_glm_receipt_is_rejected():
     ).replace("np.", "ap.")
     raw = "```python\n" + migrated + "```"
 
-    with pytest.raises(ScriptMigrationError, match="incomplete receipt"):
+    with pytest.raises(ScriptMigrationError, match="receipt schema is invalid"):
         generate_script_with_glm(
             analysis,
             expected_model="glm-5.3",
@@ -564,9 +982,9 @@ def test_incomplete_glm_receipt_is_rejected():
 @pytest.mark.parametrize(
     "response_model, message",
     [
-        (None, "no valid GLM response_model"),
-        ("other-model", "no valid GLM response_model"),
-        ("glm-5.2", "does not match requested/configured model"),
+        (None, "exact configured identity"),
+        ("other-model", "exact configured identity"),
+        ("glm-5.2", "exact configured identity"),
     ],
 )
 def test_glm_receipt_requires_matching_actual_response_model(
@@ -677,7 +1095,7 @@ def calculate():
 
 @pytest.mark.parametrize(
     "formatted",
-    ["{value!r}", "{value!s}", "{value:.3f}"],
+    ["{value!r}", "{value!s}"],
 )
 def test_print_output_conversion_does_not_expand_to_formatted_values(formatted):
     source = (

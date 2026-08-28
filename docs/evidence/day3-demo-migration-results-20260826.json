@@ -1,0 +1,125 @@
+{
+  "schema_version": 1,
+  "date": "2026-08-26",
+  "source_root": "/home/ma-user/work/demo",
+  "configured_provider": "glm",
+  "configured_model": "glm-5.3",
+  "runtime_identity_sha256": "7d443cb390fdd8bb398e10ed00b82d1a5aed624c1ed777ca8d6652fc9cf1b124",
+  "execution_performed": false,
+  "numerical_verification": "not_run",
+  "summary": {
+    "migrated_strict_npu": 3,
+    "migrated_scoped_npu": 2,
+    "migrated_with_fallback": 2,
+    "blocked": 3,
+    "actual_remote_calls_with_published_artifacts": 7
+  },
+  "transport_notes": [
+    "Case 01's first invocation returned HTTP 504 and published no managed files; one clean retry succeeded.",
+    "Case 08 v1 was superseded after execution exposed that current AsNumpy ndarray has no item() method; v2 uses the source-bound to_numpy().item() rewrite at all five qualified boundaries. Its first v2 model invocation returned HTTP 504 with no published files, and one clean retry succeeded.",
+    "Case 10 v1 was superseded by the v2 run after the audited AsNumpy any-return contract was corrected from a host scalar to a zero-dimensional device ndarray; v2 adds the required fourth output-boundary conversion.",
+    "No migration response body or configured-model secret is stored in this index."
+  ],
+  "cases": [
+    {
+      "case": "01",
+      "decision": "FALLBACK_CONSENT",
+      "status": "migrated_with_fallback",
+      "actual_remote_call": true,
+      "source_sha256": "0acec80476546d4036607cd205b522a9ad7147b9ea623bf2f3e1546946d3da27",
+      "migrated_sha256": "e935a38a5684238ed3f2d175a801d0d863dbecd2e5505358c272de7c2c0cbf8a",
+      "report_sha256": "9c21ef63e8d16dd432db45aba77de39c9bbb824703014f81907c4419f18da931",
+      "run_dir": "/home/ma-user/work/.numpilot-state/runs/day3-real-glm-case01-20260826"
+    },
+    {
+      "case": "02",
+      "decision": "DIRECT",
+      "status": "migrated_scoped_npu",
+      "actual_remote_call": true,
+      "source_sha256": "76d0c01f2b0f233b4f205b922731f26049af1d32a505cf00cdf6529103de5d03",
+      "migrated_sha256": "b7c6c70fdc6bb0c7d01a16c19f9534f70ba6796e7992a2a01af27c093a31384d",
+      "report_sha256": "813c9c2193d10c4b35240660f95954b3cb7521dcdd749d2c9168135bb874725b",
+      "run_dir": "/home/ma-user/work/.numpilot-state/runs/day3-real-glm-case02-20260826"
+    },
+    {
+      "case": "03",
+      "decision": "DIRECT",
+      "status": "migrated_strict_npu",
+      "actual_remote_call": true,
+      "source_sha256": "ccc4d429104a72d2179763966cc57f9f06700b95ad84daa5d42a1f4760a6da80",
+      "migrated_sha256": "e250a3a6fac3e2cd81a677fc860aab3a5c7db3a9e2190d6603e2f2970eda5129",
+      "report_sha256": "957d2c3866980f86a8c280831f3a08c03b9653c2678b55c039fc5323ffb45da4",
+      "run_dir": "/home/ma-user/work/.numpilot-state/runs/day3-real-glm-case03-20260826"
+    },
+    {
+      "case": "04",
+      "decision": "DIRECT",
+      "status": "migrated_scoped_npu",
+      "actual_remote_call": true,
+      "source_sha256": "cfd0c925d206dedc41492b48151b0344715f7205d5e79df670134384d7b9d6ed",
+      "migrated_sha256": "59e1cae49e79754709b9683b2188fdcee6a15436bcf024d5d79c56b65efba61c",
+      "report_sha256": "1e7d4ac979bcebd7dc97d00a147a3b222349538b7548805ba34df1a52e61c664",
+      "run_dir": "/home/ma-user/work/.numpilot-state/runs/day3-real-glm-case04-20260826"
+    },
+    {
+      "case": "05",
+      "decision": "BLOCKED",
+      "status": "blocked",
+      "actual_remote_call": false,
+      "source_sha256": "9d2fa5413571eee8dbc14bff05b6c6519b6335172c9f24edf19b06247b2966a0",
+      "migrated_sha256": null,
+      "report_sha256": "534c46f062cefe80f4792a97072033650817e4d9147f3e6b102a5443dba7515d",
+      "run_dir": "/home/ma-user/work/.numpilot-state/runs/day3-blocked-case05-20260826"
+    },
+    {
+      "case": "06",
+      "decision": "DIRECT",
+      "status": "migrated_strict_npu",
+      "actual_remote_call": true,
+      "source_sha256": "f62eb47645215b19310cce27b35649f6746f5266311f1c4f1291ca08f6655b14",
+      "migrated_sha256": "9a7a0d2ec28f4c170c5e31e62fca5640f0e18132e8eabfd2a4f6cc4fa4348821",
+      "report_sha256": "fa71dc78509096d822c67f33652f64fea3adf6459174f1cd32e1429082a2a705",
+      "run_dir": "/home/ma-user/work/.numpilot-state/runs/day3-real-glm-case06-20260826"
+    },
+    {
+      "case": "07",
+      "decision": "BLOCKED",
+      "status": "blocked",
+      "actual_remote_call": false,
+      "source_sha256": "84d43e2f29a50725d8f526685b5f81042fdb5850d8de10b1081edeabdde8fd3a",
+      "migrated_sha256": null,
+      "report_sha256": "ce860cad2ad20fbfb368f277a233afa5214322c259668207fe6cde13b95b62d8",
+      "run_dir": "/home/ma-user/work/.numpilot-state/runs/day3-blocked-case07-20260826"
+    },
+    {
+      "case": "08",
+      "decision": "FALLBACK_CONSENT",
+      "status": "migrated_with_fallback",
+      "actual_remote_call": true,
+      "source_sha256": "91bb600eeaacee4123f9ba4aa759b41f2f3bb555239af3dc749c6dcc805b4140",
+      "migrated_sha256": "f84ac0460f51232aecce06f03ad145d4bf3bfa46b35fd07b72f025d7ec02971c",
+      "report_sha256": "ec25b174613c00c93ef3bd4523c9cd89d6884b9e5f95e0b90f1c36b3eb038bae",
+      "run_dir": "/home/ma-user/work/.numpilot-state/runs/day3-real-glm-case08-v2-20260826"
+    },
+    {
+      "case": "09",
+      "decision": "BLOCKED",
+      "status": "blocked",
+      "actual_remote_call": false,
+      "source_sha256": "3c9dbbb1723557f6208a1d9f89dca7c5fb8d90c7cc7301de522d69872e2361e7",
+      "migrated_sha256": null,
+      "report_sha256": "41f26dc1296d5d56cb0a0eeca7d4b2549e1e3125725f251abe5a60faf84dd60e",
+      "run_dir": "/home/ma-user/work/.numpilot-state/runs/day3-blocked-case09-20260826"
+    },
+    {
+      "case": "10",
+      "decision": "DIRECT",
+      "status": "migrated_strict_npu",
+      "actual_remote_call": true,
+      "source_sha256": "fbbe6374aeb564d7b4fe0e3bf4ef8a1c8efd60d10be842834c2c275fad9afef1",
+      "migrated_sha256": "cfb4935974772fe1399d9f376ab09c0c070f89dff4f5fa69cd8d03a974d02c2d",
+      "report_sha256": "59acd2c782ccb826c10db6d954fd3df7ff2025aaae6ceedc4b56bbf823c712a9",
+      "run_dir": "/home/ma-user/work/.numpilot-state/runs/day3-real-glm-case10-v2-20260826"
+    }
+  ]
+}

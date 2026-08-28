@@ -3,9 +3,10 @@
 演示三步:
   1) bench-cpu <file>   纯 NumPy 基线，默认请求 BLAS 1 线程并记录实际线程池
   2) bench-npu <file>   审计迁移算子执行来源；仅严格 NPU 结果可与 1) 计算加速比
-  migrate <file>        默认把普通纯 NumPy 文件做静态分类 + GLM 精确迁移
+  migrate <file>        默认把普通纯 NumPy 文件做静态分类 + 已配置模型精确迁移
 """
 import argparse
+from collections.abc import Mapping
 import hashlib
 import json
 import os
@@ -13,6 +14,7 @@ from pathlib import Path
 import re
 import shlex
 import shutil
+import stat
 import sys
 import tempfile
 
@@ -56,28 +58,28 @@ from numpilot import __version__                              # noqa: E402
 from numpilot.backends.base import select_backend            # noqa: E402
 from numpilot.asnumpy_skill import (                         # noqa: E402
     ASNUMPY_INTEGRATION_SKILL_FILES,
+    ASNUMPY_OFFICIAL_ADAPTER_SKILL_FILES,
     AsnumpyIntegrationSkillError,
     load_asnumpy_integration_skill,
 )
 from numpilot.bench import run_cpu_baseline, run_npu_compare  # noqa: E402
 from numpilot.capabilities import load_analysis_profile_set    # noqa: E402
-from numpilot.cannbot_skills import (                          # noqa: E402
-    CANNBOT_GENERATION_SKILL_FILES,
-    CANNBOT_PRECISION_SKILL_FILES,
-    CANNBOT_REPAIR_SKILL_FILES,
-    CANNBOT_RUNTIME_SKILL_FILES,
-    CannbotSkillError,
-    resolve_skill_bundle,
-)
 from numpilot.coverage import is_custom                       # noqa: E402
 from numpilot.engines.llm import (LlmEngine, LlmError,        # noqa: E402
                                   LlmHttpError, LlmResponseError,
                                   LlmTransportError)
 from numpilot.env_check import Env                            # noqa: E402
 from numpilot.llm_config import (LlmConfigError,               # noqa: E402
+                                 OPENAI_CHAT_COMPLETIONS_PROTOCOL,
                                  configure_llm_interactive,
                                  init_llm_config_template,
-                                 load_llm_config)
+                                 load_llm_config,
+                                 validate_llm_timeout)
+from numpilot.model_contract import (                          # noqa: E402
+    ModelContractError,
+    require_model_status,
+    validate_configured_model_receipt,
+)
 from numpilot.orchestrator import Orchestrator, _make_engine  # noqa: E402
 from numpilot.paths import (default_benchmark_dir,                    # noqa: E402
                             default_bootstrap_receipt, default_demo_dir,
@@ -88,6 +90,32 @@ from numpilot.script_migration import ScriptMigrationError   # noqa: E402
 
 class RuntimeActivationConfigError(ValueError):
     """Raised for an incomplete or unsafe explicit qualification activation."""
+
+
+class CannbotSkillError(RuntimeError):
+    """Stable CLI boundary for optional CANNBot failures."""
+
+
+class AnalyzeCliError(ValueError):
+    """A static-analysis CLI input or publication boundary was rejected."""
+
+
+def _load_cannbot_api():
+    """Load optional gap-lane tooling without coupling ordinary migration."""
+
+    from numpilot import cannbot_skills
+
+    return cannbot_skills
+
+
+def resolve_skill_bundle(*args, **kwargs):
+    """Lazy compatibility wrapper retained for callers and test doubles."""
+
+    cannbot = _load_cannbot_api()
+    try:
+        return cannbot.resolve_skill_bundle(*args, **kwargs)
+    except cannbot.CannbotSkillError as exc:
+        raise CannbotSkillError(str(exc)) from exc
 
 
 def _qualified_runtime_inputs(args, backend_name):
@@ -241,6 +269,435 @@ def _render_terminal(res):
 
 def _resolve_backend_name(args):
     return args.backend or os.getenv("NUMPILOT_BACKEND", "shim")
+
+
+_ANALYZE_MAX_SOURCE_BYTES = 4 * 1024 * 1024
+_ANALYZE_AUDIT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+:-]{0,255}$")
+
+
+def _read_analyze_source(value):
+    """Read one bounded regular UTF-8 file without importing or executing it."""
+
+    if (
+        not isinstance(value, str)
+        or not value
+        or "\x00" in value
+        or len(value) > 4096
+    ):
+        raise AnalyzeCliError("source path is invalid")
+    source_path = os.path.abspath(os.path.expanduser(value))
+    flags = os.O_RDONLY
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    if hasattr(os, "O_NONBLOCK"):
+        flags |= os.O_NONBLOCK
+    descriptor = -1
+    try:
+        descriptor = os.open(source_path, flags)
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode):
+            raise AnalyzeCliError("source must be a regular file: %s" % source_path)
+        if before.st_size > _ANALYZE_MAX_SOURCE_BYTES:
+            raise AnalyzeCliError(
+                "source exceeds the %d-byte analysis limit"
+                % _ANALYZE_MAX_SOURCE_BYTES
+            )
+        with os.fdopen(descriptor, "rb") as handle:
+            descriptor = -1
+            raw = handle.read(_ANALYZE_MAX_SOURCE_BYTES + 1)
+            after = os.fstat(handle.fileno())
+        if len(raw) > _ANALYZE_MAX_SOURCE_BYTES:
+            raise AnalyzeCliError(
+                "source exceeds the %d-byte analysis limit"
+                % _ANALYZE_MAX_SOURCE_BYTES
+            )
+        if (
+            before.st_dev != after.st_dev
+            or before.st_ino != after.st_ino
+            or before.st_size != after.st_size
+            or before.st_mtime_ns != after.st_mtime_ns
+        ):
+            raise AnalyzeCliError("source changed while it was being read")
+    except AnalyzeCliError:
+        raise
+    except OSError as exc:
+        raise AnalyzeCliError(
+            "source cannot be read: %s (%s)"
+            % (source_path, type(exc).__name__)
+        ) from exc
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+    try:
+        return raw.decode("utf-8"), source_path
+    except UnicodeDecodeError as exc:
+        raise AnalyzeCliError("source must be valid UTF-8: %s" % source_path) from exc
+
+
+def _analyze_paths_alias(source_path, output_path):
+    source = os.path.abspath(source_path)
+    output = os.path.abspath(str(output_path))
+    if os.path.realpath(source) == os.path.realpath(output):
+        return True
+    if os.path.lexists(output):
+        try:
+            return os.path.samefile(source, output)
+        except OSError:
+            return False
+    return False
+
+
+def _analyze_parent_has_symlink(path):
+    current = Path(path)
+    while True:
+        if os.path.lexists(current) and current.is_symlink():
+            return True
+        if current == current.parent:
+            return False
+        current = current.parent
+
+
+def _write_analyze_receipt(output_value, source_path, payload):
+    """Atomically publish one private JSON receipt without replacing a path."""
+
+    if (
+        not isinstance(output_value, str)
+        or not output_value
+        or "\x00" in output_value
+        or len(output_value) > 4096
+    ):
+        raise AnalyzeCliError("output path is invalid")
+    output = Path(os.path.abspath(os.path.expanduser(output_value)))
+    if _analyze_paths_alias(source_path, output):
+        raise AnalyzeCliError("output aliases the source file: %s" % output)
+    if os.path.lexists(output):
+        raise AnalyzeCliError("analysis output already exists: %s" % output)
+
+    parent = output.parent
+    if _analyze_parent_has_symlink(parent):
+        raise AnalyzeCliError("output parent must be a real directory: %s" % parent)
+    parent_existed = os.path.lexists(parent)
+    if parent_existed and not parent.is_dir():
+        raise AnalyzeCliError("output parent must be a real directory: %s" % parent)
+    try:
+        if not parent_existed:
+            parent.mkdir(parents=True, mode=0o700)
+        directory_flags = os.O_RDONLY
+        if hasattr(os, "O_DIRECTORY"):
+            directory_flags |= os.O_DIRECTORY
+        if hasattr(os, "O_NOFOLLOW"):
+            directory_flags |= os.O_NOFOLLOW
+        directory_fd = os.open(str(parent), directory_flags)
+    except OSError as exc:
+        raise AnalyzeCliError(
+            "analysis output parent cannot be prepared: %s (%s)"
+            % (parent, type(exc).__name__)
+        ) from exc
+
+    temporary = ""
+    descriptor = -1
+    try:
+        if parent_existed:
+            mode = stat.S_IMODE(os.fstat(directory_fd).st_mode)
+            if mode != 0o700:
+                raise AnalyzeCliError(
+                    "existing analysis output parent mode must be 0700: %s"
+                    % parent
+                )
+        else:
+            os.fchmod(directory_fd, 0o700)
+        encoded = (
+            json.dumps(
+                payload,
+                ensure_ascii=False,
+                allow_nan=False,
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n"
+        ).encode("utf-8")
+        descriptor, temporary = tempfile.mkstemp(
+            prefix=".%s-" % (output.name or "analysis"),
+            suffix=".tmp",
+            dir=str(parent),
+        )
+        os.fchmod(descriptor, 0o600)
+        with os.fdopen(descriptor, "wb") as handle:
+            descriptor = -1
+            handle.write(encoded)
+            handle.flush()
+            os.fsync(handle.fileno())
+        try:
+            os.link(temporary, output, follow_symlinks=False)
+        except FileExistsError as exc:
+            raise AnalyzeCliError(
+                "analysis output already exists: %s" % output
+            ) from exc
+        os.unlink(temporary)
+        temporary = ""
+        os.fsync(directory_fd)
+    except AnalyzeCliError:
+        raise
+    except OSError as exc:
+        raise AnalyzeCliError(
+            "analysis output cannot be published: %s (%s)"
+            % (output, type(exc).__name__)
+        ) from exc
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        if temporary:
+            try:
+                os.unlink(temporary)
+            except OSError:
+                pass
+        os.close(directory_fd)
+    return str(output)
+
+
+def _runtime_audit_id(runtime_identity):
+    if isinstance(runtime_identity, Mapping):
+        value = runtime_identity.get("audit_id")
+    else:
+        value = getattr(runtime_identity, "audit_id", None)
+    if isinstance(value, str) and _ANALYZE_AUDIT_ID.fullmatch(value):
+        return value
+    return None
+
+
+def _render_qualified_analysis(payload, output_path=None):
+    apis = payload["qualified_apis"]
+    rendered = ["── NumPilot 静态迁移分析 ──"]
+    rendered.append("[源码] %s" % payload["source_path"])
+    rendered.append("[SHA-256] %s" % payload["source_sha256"])
+    rendered.append(
+        "[导入] %s" % (", ".join(payload["imports"]) or "—")
+    )
+    rendered.append(
+        "[调用点] %d · qualified APIs=%s"
+        % (len(payload["calls"]), ", ".join(apis) or "—")
+    )
+    rendered.append(
+        "[判定] %s · runtime=%s · identity=%s"
+        % (
+            payload["decision"],
+            payload["runtime_identity_status"],
+            payload["runtime_identity_sha256"] or "unavailable",
+        )
+    )
+    rendered.append("[下一步] %s" % payload["next_action"])
+    if payload["issues"]:
+        rendered.append("[阻断] %d 项；完整原因请查看 JSON" % len(payload["issues"]))
+    rendered.append(
+        "[副作用] actual_remote_call=false · execution_performed=false"
+    )
+    if output_path is not None:
+        rendered.append("[回执] %s" % output_path)
+    return "\n".join(rendered)
+
+
+def _cmd_analyze(args):
+    """Run the inert, runtime-qualified admission analysis for one script."""
+
+    from numpilot.backends.npu import NpuBackend
+    from numpilot.qualified_analysis import (
+        QualifiedAnalysisError,
+        analyze_qualified_script,
+    )
+
+    try:
+        source, source_path = _read_analyze_source(args.file)
+        try:
+            runtime_identity = NpuBackend().runtime_identity()
+        except Exception:
+            # A probe failure is an audit-required fact, not a reason to execute
+            # the source or silently switch to a less strict runtime.
+            runtime_identity = {
+                "status": "audit_required",
+                "identity_sha256": None,
+            }
+        analysis = analyze_qualified_script(
+            source,
+            source_path,
+            runtime_identity=runtime_identity,
+        )
+        payload = analysis.to_dict()
+        payload["producer"] = "numpilot-qualified-analysis-cli-v1"
+        payload["runtime_audit_id"] = _runtime_audit_id(runtime_identity)
+        payload["qualified_apis"] = sorted({
+            call["canonical_key"] for call in payload["calls"]
+        })
+        output_path = None
+        if args.out is not None:
+            output_path = _write_analyze_receipt(
+                args.out, source_path, payload
+            )
+    except (AnalyzeCliError, QualifiedAnalysisError) as exc:
+        print("[analyze] %s" % exc, file=sys.stderr)
+        return 2
+
+    if args.json:
+        print(json.dumps(
+            payload,
+            ensure_ascii=False,
+            allow_nan=False,
+            indent=2,
+            sort_keys=True,
+        ))
+    else:
+        print(_render_qualified_analysis(payload, output_path=output_path))
+    if args.require_direct and payload["decision"] != "DIRECT":
+        return 1
+    return 0
+
+
+def _cmd_verify_script(args):
+    """Explicitly execute and compare one published ordinary migration."""
+
+    from numpilot.script_verification import (
+        ScriptVerificationError,
+        verify_script,
+    )
+
+    try:
+        receipt = verify_script(
+            args.file,
+            args.migration_report,
+            args.outputs,
+            args.out,
+            migrated_path=args.migrated,
+            timeout_seconds=args.timeout,
+            max_output_bytes=args.max_output_bytes,
+            source_python_executable=args.source_python,
+            migrated_python_executable=args.migrated_python,
+        )
+    except ScriptVerificationError as exc:
+        print(
+            "[普通脚本验证] %s: %s" % (exc.code, exc),
+            file=sys.stderr,
+        )
+        receipt = getattr(exc, "receipt", None)
+        if receipt is None:
+            print(
+                "[执行边界] execution_not_admitted_or_receipt_not_published",
+                file=sys.stderr,
+            )
+            return 2
+        payload = receipt.to_dict()
+        if args.json:
+            print(json.dumps(
+                payload,
+                ensure_ascii=False,
+                allow_nan=False,
+                indent=2,
+                sort_keys=True,
+            ))
+        else:
+            print("[回执] %s" % receipt.path)
+        return 1
+
+    payload = receipt.to_dict()
+    if args.json:
+        print(json.dumps(
+            payload,
+            ensure_ascii=False,
+            allow_nan=False,
+            indent=2,
+            sort_keys=True,
+        ))
+    else:
+        print("── NumPilot ordinary script 数值验证 ──")
+        print("[结果] status=%s" % receipt.status)
+        print("[输出合同] %s" % ", ".join(args.outputs))
+        print(
+            "[执行] subprocess_isolation=true · os_sandbox=false · "
+            "explicit_execution=true"
+        )
+        print(
+            "[证据边界] numerical_only=true · strict_npu_verified=false · "
+            "performance_valid=false"
+        )
+        print("[回执] %s" % receipt.path)
+    return 0 if receipt.status == "passed" else 1
+
+
+def _cmd_benchmark_script(args):
+    """Benchmark one strict ordinary migration in isolated CPU/NPU workers."""
+
+    from numpilot.script_benchmark import (
+        ScriptBenchmarkError,
+        benchmark_script,
+    )
+
+    try:
+        receipt = benchmark_script(
+            args.file,
+            args.migration_report,
+            args.outputs,
+            args.out,
+            migrated_path=args.migrated,
+            marker=args.marker,
+            core=args.core,
+            warmup=args.warmup,
+            samples=args.samples,
+            timeout_seconds=args.timeout,
+            max_output_bytes=args.max_output_bytes,
+            source_python_executable=args.source_python,
+            migrated_python_executable=args.migrated_python,
+        )
+    except ScriptBenchmarkError as exc:
+        print(
+            "[普通脚本性能] %s: %s" % (exc.code, exc),
+            file=sys.stderr,
+        )
+        receipt = getattr(exc, "receipt", None)
+        if receipt is None:
+            print(
+                "[性能边界] benchmark_not_admitted_or_receipt_not_published",
+                file=sys.stderr,
+            )
+            return 2
+        payload = receipt.to_dict()
+        if args.json:
+            print(json.dumps(
+                payload,
+                ensure_ascii=False,
+                allow_nan=False,
+                indent=2,
+                sort_keys=True,
+            ))
+        else:
+            print("[失败回执] %s" % receipt.path)
+            print("[性能声明] performance_valid=false · speedup=null")
+        return 1
+
+    payload = receipt.to_dict()
+    if args.json:
+        print(json.dumps(
+            payload,
+            ensure_ascii=False,
+            allow_nan=False,
+            indent=2,
+            sort_keys=True,
+        ))
+    else:
+        performance = payload["performance"]
+        print("── NumPilot ordinary script strict-NPU 性能验证 ──")
+        print("[结果] status=%s · performance_valid=true" % receipt.status)
+        print(
+            "[稳态] CPU %.3f ms · NPU %.3f ms · median %.2fx · conservative %.2fx"
+            % (
+                performance["cpu_median_ms"],
+                performance["npu_median_ms"],
+                performance["median_speedup"],
+                performance["conservative_cpu_p10_over_npu_p90"],
+            )
+        )
+        print(
+            "[口径] device-resident marker suffix；不含冷启动、输入准备和最终 D2H"
+        )
+        print("[回执] %s" % receipt.path)
+    return 0
 
 
 def _cmd_doctor(args):
@@ -477,39 +934,36 @@ _LLM_PROBE_QUESTION = "Reply with NUMPILOT_LLM_READY."
 def _run_llm_readiness_gate(status, *, require_marker):
     """Make and verify one small remote call before operator generation."""
 
+    try:
+        identity = require_model_status(status)
+    except ModelContractError as exc:
+        raise LlmResponseError("readiness_gate_validation_failed", {}) from exc
     content, receipt = LlmEngine._chat_with_receipt(
         _LLM_PROBE_SYSTEM,
         _LLM_PROBE_QUESTION,
     )
-    expected_hash = (
-        hashlib.sha256(content.encode("utf-8")).hexdigest()
-        if isinstance(content, str) and content.strip()
-        else None
-    )
-    http_status = receipt.get("http_status") if isinstance(receipt, dict) else None
-    receipt_is_valid = (
-        expected_hash is not None
-        and receipt.get("schema_version") == 1
-        and isinstance(http_status, int)
-        and not isinstance(http_status, bool)
-        and 200 <= http_status <= 299
-        and receipt.get("requested_model") == status.model
-        and receipt.get("content_sha256") == expected_hash
-        and receipt.get("tls_verification") in {"enabled", "disabled"}
-    ) if isinstance(receipt, dict) else False
+    try:
+        validated_receipt = validate_configured_model_receipt(
+            receipt,
+            content,
+            expected_model=identity.model,
+            expected_provider=identity.provider,
+            expected_protocol=identity.protocol,
+            response_model_aliases=identity.response_model_aliases,
+        )
+    except ModelContractError as exc:
+        raise LlmResponseError(
+            "readiness_gate_validation_failed", receipt or {}
+        ) from exc
     marker_present = (
         isinstance(content, str) and _LLM_READY_MARKER in content
     )
-    if not receipt_is_valid or (require_marker and not marker_present):
+    if not isinstance(content, str) or not content.strip() or (
+        require_marker and not marker_present
+    ):
         raise LlmResponseError("readiness_gate_validation_failed", receipt or {})
-    safe_receipt_fields = (
-        "schema_version", "utc_start", "utc_end", "http_status",
-        "requested_model", "response_model", "response_id",
-        "response_created", "request_body_sha256", "response_body_sha256",
-        "content_sha256", "request_id", "usage", "tls_verification",
-    )
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "gate": "llm_readiness",
         "status": "pass",
         "actual_remote_call": True,
@@ -518,20 +972,21 @@ def _run_llm_readiness_gate(status, *, require_marker):
         ).hexdigest(),
         "answer_marker": _LLM_READY_MARKER,
         "answer_marker_present": marker_present,
-        "receipt": {
-            name: receipt.get(name)
-            for name in safe_receipt_fields
-            if name in receipt
-        },
+        "receipt": validated_receipt,
     }
 
 
 def _run_cannbot_skill_gate(bundle, required_files=None):
     """Prove that the external CANNBot workflow files were read."""
 
-    required = tuple(required_files or CANNBOT_GENERATION_SKILL_FILES)
+    cannbot = _load_cannbot_api()
+    required = tuple(
+        required_files or cannbot.CANNBOT_GENERATION_SKILL_FILES
+    )
     if not required or len(set(required)) != len(required):
-        raise CannbotSkillError("CANNBot gate has an invalid required file set")
+        raise CannbotSkillError(
+            "CANNBot gate has an invalid required file set"
+        )
     manifest = bundle.manifest()
     manifest_files = manifest.get("files") or {}
     verified_hashes = {}
@@ -631,6 +1086,7 @@ def _write_generation_preflight(
     skill_gate,
     timeout_seconds,
     operator_goal=None,
+    adapter_context_plan=None,
 ):
     """Atomically save both successful gates without secrets or response text."""
 
@@ -662,6 +1118,23 @@ def _write_generation_preflight(
             if operator_goal == "performance"
             else "skipped_accuracy_first"
         )
+    if adapter_context_plan is not None:
+        # Keep the persisted preflight on the same schema validator as the
+        # provider.  A second, narrower schema check here previously rejected
+        # the reviewed official schema-2 dependency plan after readiness had
+        # already made a network call.
+        from numpilot.gaps.provider import (
+            DraftGenerationError,
+            _validate_adapter_context_plan,
+        )
+
+        try:
+            normalized_context_plan = _validate_adapter_context_plan(
+                adapter_context_plan
+            )
+        except DraftGenerationError as exc:
+            raise OSError("AsNumpy adapter context plan is invalid") from exc
+        preflight["asnumpy_adapter_context_plan"] = normalized_context_plan
     payload = (
         json.dumps(preflight, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
     ).encode("utf-8")
@@ -757,13 +1230,17 @@ def _cmd_configure_llm(args):
     """Framework-owned setup; token is hidden or read from stdin, never argv."""
     if args.init:
         conflicting = (
-            any(value is not None for value in (args.base_url, args.model, args.provider))
+            any(value is not None for value in (
+                args.base_url, args.model, args.provider, args.protocol,
+                args.response_model_alias,
+            ))
             or args.token_stdin
         )
         if conflicting:
             print(
                 "[LLM] --init 只生成空白模板，不能与 --base-url、--model、"
-                "--provider 或 --token-stdin 同时使用。",
+                "--provider、--protocol、--response-model-alias 或 "
+                "--token-stdin 同时使用。",
                 file=sys.stderr,
             )
             return 2
@@ -798,7 +1275,7 @@ def _cmd_configure_llm(args):
             )
             return 1
         try:
-            gate = _run_llm_readiness_gate(status, require_marker=False)
+            gate = _run_llm_readiness_gate(status, require_marker=True)
         except LlmResponseError as exc:
             if "readiness_gate_validation_failed" in str(exc):
                 print(
@@ -865,6 +1342,12 @@ def _cmd_configure_llm(args):
             base_url=args.base_url,
             model=args.model,
             provider=args.provider,
+            protocol=args.protocol,
+            response_model_aliases=(
+                tuple(args.response_model_alias)
+                if args.response_model_alias is not None
+                else None
+            ),
             auth_token=token,
         )
     except (EOFError, KeyboardInterrupt):
@@ -881,6 +1364,7 @@ def _cmd_configure_llm(args):
 def _cmd_setup_skills(args):
     """Fetch or verify the pinned official CANNBot registry-invoke skill."""
 
+    cannbot = _load_cannbot_api()
     skill_root = args.root or "auto"
     if (
         skill_root == "auto"
@@ -908,18 +1392,247 @@ def _cmd_setup_skills(args):
     return 0
 
 
+def _cmd_recover_gaps(args):
+    """Ingest receipts, materialize a verified candidate, or inspect state."""
+
+    # Keep the ordinary direct lane independent from optional gap tooling.
+    # Importing ``numpilot.gaps`` transitively loads provider/CANNBot modules,
+    # so the recovery stack must remain behind this explicit command boundary.
+    from numpilot.gaps.recovery import RecoveryError
+    from numpilot.gaps.recovery_ingest import (
+        RecoveryIngestError,
+        ingest_official_recovery,
+        recovery_status,
+    )
+
+    try:
+        if args.recovery_command == "ingest-official":
+            result = ingest_official_recovery(
+                args.source,
+                args.migration_report,
+                args.gap_request,
+                args.official_resolution_report,
+                args.state_dir,
+                run_id=args.run_id,
+                profile=args.authorization_profile,
+            )
+            if args.json:
+                print(json.dumps(
+                    result.to_dict(),
+                    ensure_ascii=False,
+                    allow_nan=False,
+                    sort_keys=True,
+                ))
+            else:
+                status = result.recovery
+                action = "新建" if result.created else "续接"
+                print(
+                    "[缺口恢复] %s状态成功 · 阶段=%s · 本次追加=%d · "
+                    "总修订=%d · 下一步=%s"
+                    % (
+                        action,
+                        status.state.phase.value,
+                        result.appended_revisions,
+                        status.history_length,
+                        status.next_action,
+                    )
+                )
+            return 0
+
+        if args.recovery_command == "materialize-candidates":
+            from numpilot.gaps.candidate_materializer import (
+                CandidateMaterializationError,
+                materialize_official_binary_candidates,
+            )
+
+            try:
+                result = materialize_official_binary_candidates(
+                    args.state_dir,
+                    args.out,
+                )
+            except CandidateMaterializationError as exc:
+                print(
+                    "[候选物化] %s: %s" % (exc.code, exc),
+                    file=sys.stderr,
+                )
+                return 2
+            if args.json:
+                print(json.dumps(
+                    result.to_dict(),
+                    ensure_ascii=False,
+                    allow_nan=False,
+                    sort_keys=True,
+                ))
+            else:
+                print(
+                    "[候选物化] 官方二进制候选=%d · 阶段=%s · "
+                    "本次追加=%d · 模型调用=no · 激活=no"
+                    % (
+                        len(result.candidates),
+                        result.recovery.state.phase.value,
+                        result.appended_revisions,
+                    )
+                )
+                print("[候选物化] 输出=%s" % result.output_dir)
+            return 0
+
+        if args.recovery_command == "ingest-adapter":
+            from numpilot.gaps.adapter_recovery import (
+                AdapterRecoveryError,
+                ingest_official_adapter_candidate,
+            )
+
+            try:
+                result = ingest_official_adapter_candidate(
+                    args.state_dir,
+                    args.candidate,
+                    args.adapter_output,
+                )
+            except AdapterRecoveryError as exc:
+                print(
+                    "[接入候选导入] %s: %s" % (exc.code, exc),
+                    file=sys.stderr,
+                )
+                return 2
+            if args.json:
+                print(json.dumps(
+                    result.to_dict(),
+                    ensure_ascii=False,
+                    allow_nan=False,
+                    sort_keys=True,
+                ))
+            else:
+                print(
+                    "[接入候选导入] gap=%s · 阶段=%s · 本次追加=%d · "
+                    "producer_model=yes · build/execution/activation=no"
+                    % (
+                        result.gap_id,
+                        result.recovery.state.phase.value,
+                        result.appended_revisions,
+                    )
+                )
+                print("[接入候选导入] 输出=%s" % result.adapter_output_root)
+            return 0
+
+        status = recovery_status(args.state_dir)
+        if args.json:
+            print(json.dumps(
+                status.to_dict(),
+                ensure_ascii=False,
+                allow_nan=False,
+                sort_keys=True,
+            ))
+        else:
+            print(
+                "[缺口恢复] 阶段=%s · 结果=%s · 总修订=%d · 下一步=%s"
+                % (
+                    status.state.phase.value,
+                    status.state.outcome.value,
+                    status.history_length,
+                    status.next_action,
+                )
+            )
+        return 0
+    except RecoveryIngestError as exc:
+        print(
+            "[缺口恢复导入] %s: %s" % (exc.code, exc),
+            file=sys.stderr,
+        )
+        return 2
+    except RecoveryError as exc:
+        print("[缺口恢复] %s" % exc, file=sys.stderr)
+        return 2
+
+
+def _cmd_resolve_gaps(args):
+    """Resolve canonical gaps locally before selecting any model workflow."""
+
+    from numpilot.gaps.official_resolution import (
+        OfficialResolutionError,
+        resolve_official_operators,
+        write_official_resolution_report,
+    )
+    from numpilot.gaps.pipeline import (
+        GapCompletionError,
+        load_script_gap_request,
+        prepare_gap_completion,
+    )
+
+    requested_specs = None
+    requested_blocked = ()
+    try:
+        if args.gap_request:
+            selection = load_script_gap_request(
+                args.gap_request,
+                args.file,
+                target_soc=args.target_soc,
+                cann_version=args.cann_version,
+            )
+            requested_specs = selection.specs
+            requested_blocked = selection.blocked
+        preparation = prepare_gap_completion(
+            args.file,
+            target_soc=args.target_soc,
+            cann_version=args.cann_version,
+            requested_specs=requested_specs,
+            requested_blocked=requested_blocked,
+        )
+        report = resolve_official_operators(
+            preparation,
+            cann_root=args.cann_root,
+            ops_nn_root=args.ops_nn_root,
+            accept_cann_osl=args.accept_cann_osl,
+        )
+        report.validate_preparation(preparation)
+        write_official_resolution_report(report, args.out)
+    except (GapCompletionError, OfficialResolutionError) as exc:
+        print("[官方算子解析] 失败: %s" % exc, file=sys.stderr)
+        print(
+            "[模型调用] actual_remote_call=no · 未读取 Skill、未构建、未安装、未激活",
+            file=sys.stderr,
+        )
+        return 2
+
+    print(
+        "[官方算子解析] status=%s decisions=%d model_kernel_allowed=%s"
+        % (
+            report.status,
+            len(report.decisions),
+            "yes" if report.model_kernel_generation_allowed else "no",
+        )
+    )
+    print("[官方算子解析] receipt=%s id=%s" % (args.out, report.resolution_id))
+    for decision in report.decisions:
+        print(
+            "[官方路由] %s -> %s · installed=%s · ops-nn=%s"
+            % (
+                decision.qualified_api,
+                decision.route,
+                decision.installed_cann.get("status", "?"),
+                (
+                    decision.ops_nn_source.get("status", "?")
+                    if decision.ops_nn_source is not None else "not_read"
+                ),
+            )
+        )
+    print(
+        "[解析边界] discovery_only=yes semantic_qualified=no build=no "
+        "system_opp_write=no activation=no network=no model_call=no"
+    )
+    return 1 if report.status == "blocked" else 0
+
+
 def _cmd_complete_gaps(args):
     """Prepare gap specs or ask the configured LLM for an unverified draft."""
     from numpilot.gaps.pipeline import (
         GapCompletionError,
         GapCompletionPipeline,
         load_script_gap_request,
+        prepare_gap_completion,
     )
     from numpilot.gaps.provider import (
         DraftGenerationError,
         LlmDraftProvider,
-        require_glm_configuration,
-        validate_glm_remote_receipt,
     )
 
     requested_specs = None
@@ -942,14 +1655,106 @@ def _cmd_complete_gaps(args):
             % (len(requested_specs), len(requested_blocked))
         )
 
-    configuration_status = None
-    llm_gate = None
-    timeout_seconds = None
+    try:
+        preparation = prepare_gap_completion(
+            args.file,
+            target_soc=args.target_soc,
+            cann_version=args.cann_version,
+            requested_specs=requested_specs,
+            requested_blocked=requested_blocked,
+        )
+    except GapCompletionError as exc:
+        print("[算子补全] 本地预分析失败: %s" % exc, file=sys.stderr)
+        print(
+            "[算子生成] actual_remote_generation_call=no · 未读取 Skill",
+            file=sys.stderr,
+        )
+        return 2
+
+    llm_enabled = args.provider == "llm" and bool(preparation.specs)
     operator_goal = None
-    if args.provider == "llm":
+    if llm_enabled:
+        # Reject an unimplemented local mode before asking the user to produce
+        # any official-resolution receipt.  This remains before model, Skill,
+        # network, and output access.
         operator_goal = _resolve_operator_goal(args)
         if operator_goal == "performance":
             return 2
+
+    official_report = None
+    if args.official_resolution_report:
+        from numpilot.gaps.official_resolution import (
+            OfficialResolutionError,
+            load_official_resolution_report,
+            resolve_official_operators,
+        )
+
+        try:
+            official_report = load_official_resolution_report(
+                args.official_resolution_report
+            )
+            official_report.validate_preparation(preparation)
+            current_report = resolve_official_operators(
+                preparation,
+                cann_root=official_report.cann_root,
+                ops_nn_root=official_report.ops_nn_root,
+                accept_cann_osl=official_report.cann_osl_accepted,
+            )
+            current_report.validate_preparation(preparation)
+            if current_report.resolution_id != official_report.resolution_id:
+                raise OfficialResolutionError(
+                    "official-resolution evidence changed after the receipt was written"
+                )
+            official_report = current_report
+        except OfficialResolutionError as exc:
+            print("[官方算子门禁] 本地收据校验失败: %s" % exc, file=sys.stderr)
+            print(
+                "[算子生成] actual_remote_generation_call=no · 未读取 Skill",
+                file=sys.stderr,
+            )
+            return 2
+        print(
+            "[官方算子门禁] receipt=%s status=%s id=%s fresh_recheck=yes"
+            % (
+                args.official_resolution_report,
+                official_report.status,
+                official_report.resolution_id,
+            )
+        )
+        if preparation.specs and not official_report.model_kernel_generation_allowed:
+            for decision in official_report.decisions:
+                print(
+                    "[官方路由] %s -> %s"
+                    % (decision.qualified_api, decision.route),
+                    file=sys.stderr,
+                )
+            print(
+                "[官方算子门禁] 未取得全部 Gap 的双重 clean no_match；"
+                "不得调用模型手写 kernel",
+                file=sys.stderr,
+            )
+            print(
+                "[算子生成] actual_remote_generation_call=no · 未读取 Skill",
+                file=sys.stderr,
+            )
+            return 3
+    elif args.provider == "llm" and preparation.specs:
+        print(
+            "[官方算子门禁] fail · llm 新 kernel 必须提供 "
+            "--official-resolution-report；请先运行 resolve-gaps，证明 "
+            "installed CANN/ops-nn 均为 clean no_match。",
+            file=sys.stderr,
+        )
+        print(
+            "[算子生成] actual_remote_generation_call=no · 未读取 Skill",
+            file=sys.stderr,
+        )
+        return 3
+
+    configuration_status = None
+    llm_gate = None
+    timeout_seconds = None
+    if llm_enabled:
         if str(args.cann_version).strip().lower() in {"", "unknown", "auto"}:
             print(
                 "[生成门禁 0/2] CANN 版本必须明确，已在联网前拦截",
@@ -962,12 +1767,9 @@ def _cmd_complete_gaps(args):
             else os.getenv("NUMPILOT_LLM_TIMEOUT", "120")
         )
         try:
-            timeout_seconds = float(raw_timeout)
-        except ValueError:
-            print("[生成门禁 1/2] NUMPILOT_LLM_TIMEOUT 必须是秒数", file=sys.stderr)
-            return 2
-        if not 10 <= timeout_seconds <= 3600:
-            print("[生成门禁 1/2] LLM timeout 必须在 10～3600 秒之间", file=sys.stderr)
+            timeout_seconds = validate_llm_timeout(raw_timeout)
+        except LlmConfigError as exc:
+            print("[生成门禁 1/2] %s" % exc, file=sys.stderr)
             return 2
         os.environ["NUMPILOT_LLM_TIMEOUT"] = str(timeout_seconds)
         configuration_status = _load_llm_or_report()
@@ -975,23 +1777,15 @@ def _cmd_complete_gaps(args):
             print("[生成门禁 1/2] fail · LLM 本地配置不可用", file=sys.stderr)
             return 4
         try:
-            configured_model = require_glm_configuration(
-                configuration_status.provider,
-                configuration_status.model,
-            )
-        except DraftGenerationError as exc:
+            require_model_status(configuration_status)
+        except ModelContractError as exc:
             print("[生成门禁 1/2] fail · %s" % exc, file=sys.stderr)
             return 4
         try:
             llm_gate = _run_llm_readiness_gate(
                 configuration_status, require_marker=True
             )
-            validate_glm_remote_receipt(
-                llm_gate.get("receipt"),
-                expected_model=configured_model,
-            )
         except (
-            DraftGenerationError,
             LlmHttpError,
             LlmTransportError,
             LlmResponseError,
@@ -1031,10 +1825,12 @@ def _cmd_complete_gaps(args):
     # network side effect or implicit CANNBot licence acceptance.
     bundle = None
     skill_gate = None
-    if args.provider == "llm":
+    if llm_enabled:
+        cannbot = _load_cannbot_api()
         bundle = resolve_skill_bundle(args.skill_root, allow_fetch=False)
         skill_gate = _run_cannbot_skill_gate(
-            bundle, required_files=CANNBOT_GENERATION_SKILL_FILES
+            bundle,
+            required_files=cannbot.CANNBOT_GENERATION_SKILL_FILES,
         )
         print(
             "[生成门禁 2/2] pass · 已读取 CANNBot Skill · commit=%s · "
@@ -1056,7 +1852,7 @@ def _cmd_complete_gaps(args):
             )
             return 2
     provider = None
-    if args.provider == "llm":
+    if llm_enabled:
         print(
             "[CANNBot] 使用已缓存官方 skill=%s commit=%s bundle_sha256=%s"
             % (bundle.skill_name, bundle.commit, bundle.bundle_sha256)
@@ -1083,6 +1879,7 @@ def _cmd_complete_gaps(args):
             cann_version=args.cann_version,
             requested_specs=requested_specs,
             requested_blocked=requested_blocked,
+            preparation=preparation,
         )
         if provider is not None and result.drafts:
             report_path = os.path.join(result.out_dir, "gap-report.json")
@@ -1255,12 +2052,9 @@ def _cmd_repair_draft(args):
         else os.getenv("NUMPILOT_LLM_TIMEOUT", "120")
     )
     try:
-        timeout_seconds = float(raw_timeout)
-    except ValueError:
-        print("[修复门禁 1/2] NUMPILOT_LLM_TIMEOUT 必须是秒数", file=sys.stderr)
-        return 2
-    if not 10 <= timeout_seconds <= 3600:
-        print("[修复门禁 1/2] LLM timeout 必须在 10～3600 秒之间", file=sys.stderr)
+        timeout_seconds = validate_llm_timeout(raw_timeout)
+    except LlmConfigError as exc:
+        print("[修复门禁 1/2] %s" % exc, file=sys.stderr)
         return 2
     os.environ["NUMPILOT_LLM_TIMEOUT"] = str(timeout_seconds)
     configuration_status = _load_llm_or_report()
@@ -1296,14 +2090,15 @@ def _cmd_repair_draft(args):
     # Repair is code generation too: it may not read the external Skill until
     # the model-readiness call above has passed, and it may not contact the
     # model for repair until both gates have passed.
+    cannbot = _load_cannbot_api()
     bundle = resolve_skill_bundle(
         args.skill_root,
         allow_fetch=not args.offline_skills,
     )
     repair_skill_files = {
-        "compile": CANNBOT_REPAIR_SKILL_FILES,
-        "precision": CANNBOT_PRECISION_SKILL_FILES,
-        "runtime": CANNBOT_RUNTIME_SKILL_FILES,
+        "compile": cannbot.CANNBOT_REPAIR_SKILL_FILES,
+        "precision": cannbot.CANNBOT_PRECISION_SKILL_FILES,
+        "runtime": cannbot.CANNBOT_RUNTIME_SKILL_FILES,
     }[args.repair_profile]
     skill_gate = _run_cannbot_skill_gate(
         bundle, required_files=repair_skill_files
@@ -1411,6 +2206,7 @@ def _cmd_seal_repair(args):
         # Sealing is deliberately offline.  The original repair report is
         # bound to a verified CANNBot bundle, so reloading that same pinned
         # bundle is part of verification but can never trigger a fetch here.
+        cannbot = _load_cannbot_api()
         bundle = resolve_skill_bundle(args.skill_root, allow_fetch=False)
         draft = LlmDraftProvider(skill_bundle=bundle).seal_repair_candidate(
             GapSpec.from_dict(data),
@@ -1439,14 +2235,42 @@ def _cmd_seal_repair(args):
 
 
 def _cmd_generate_asnumpy_adapter(args):
-    """Generate an isolated AsNumpy manifest/test overlay with the remote model."""
+    """Generate an architecture-aware AsNumpy overlay with the remote model."""
 
+    from numpilot.asnumpy_adapter_context import (
+        plan_asnumpy_adapter_context,
+        plan_official_aclnn_adapter_context,
+    )
     from numpilot.gaps.models import GapSpec
+    from numpilot.gaps.official_adapter import (
+        OfficialAdapterInputError,
+        bind_official_adapter_context,
+        load_operator_candidate_artifact,
+        prepare_official_candidate_adapter_input,
+    )
+    from numpilot.gaps.official_resolution import (
+        OfficialResolutionError,
+        load_official_resolution_report,
+    )
+    from numpilot.gaps.adapter_recovery import (
+        AdapterRecoveryError,
+        ingest_official_adapter_candidate,
+    )
+    from numpilot.gaps.pipeline import (
+        GapCompletionError,
+        load_script_gap_request,
+    )
     from numpilot.gaps.provider import (
         DraftGenerationError,
         DraftRepairError,
         LlmDraftProvider,
         _load_existing_draft,
+        _validate_adapter_context_plan,
+    )
+    from numpilot.gaps.recovery import (
+        RecoveryError,
+        RecoveryPhase,
+        load_recovery_status,
     )
 
     def read_bounded(path, label, limit):
@@ -1462,18 +2286,244 @@ def _cmd_generate_asnumpy_adapter(args):
     if os.path.lexists(out_root):
         print("[AsNumpy 接入] 输出目录必须不存在", file=sys.stderr)
         return 2
+
+    # Finish every inert, local validation before the readiness probe.  A bad
+    # GapSpec, signed artifact, adapter contract, or AsNumpy layout must never
+    # cause even a connectivity call to the configured model.
+    try:
+        if args.candidate:
+            if args.spec or args.artifact or not args.recovery_state_dir:
+                raise DraftGenerationError(
+                    "official candidate mode requires --candidate and "
+                    "--recovery-state-dir only"
+                )
+            recovery = load_recovery_status(args.recovery_state_dir)
+            if recovery.state.phase is not RecoveryPhase.CANDIDATE_READY:
+                raise DraftGenerationError(
+                    "official adapter requires a CANDIDATE_READY recovery state"
+                )
+            if not (
+                recovery.state.policy.model_allowed
+                and recovery.state.policy.network_allowed
+            ):
+                raise DraftGenerationError(
+                    "recovery authorization does not allow configured-model access"
+                )
+            candidate_path = Path(args.candidate).absolute()
+            candidate = load_operator_candidate_artifact(candidate_path)
+            gap_matches = tuple(
+                gap for gap in recovery.state.gaps
+                if gap.gap_id == candidate.gap_id
+            )
+            if len(gap_matches) != 1:
+                raise DraftGenerationError(
+                    "operator candidate gap is absent from recovery state"
+                )
+            candidate_refs = tuple(
+                ref for ref in gap_matches[0].refs
+                if ref.name == "operator_candidate"
+            )
+            candidate_payload = read_bounded(
+                candidate_path, "operator candidate", 2 * 1024 * 1024
+            ).encode("utf-8")
+            if (
+                len(candidate_refs) != 1
+                or Path(candidate_refs[0].locator).absolute() != candidate_path
+                or hashlib.sha256(candidate_payload).hexdigest()
+                != candidate_refs[0].sha256
+            ):
+                raise DraftGenerationError(
+                    "operator candidate differs from its recovery receipt"
+                )
+
+            gap_request_refs = tuple(
+                ref for ref in recovery.state.refs if ref.name == "gap_request"
+            )
+            official_refs = tuple(
+                ref for ref in recovery.state.refs
+                if ref.name == "official_resolution"
+            )
+            if len(gap_request_refs) != 1 or len(official_refs) != 1:
+                raise DraftGenerationError(
+                    "recovery state lacks bound gap/official receipts"
+                )
+            gap_request_path = Path(gap_request_refs[0].locator)
+            official_path = Path(official_refs[0].locator)
+            gap_request_payload = read_bounded(
+                gap_request_path, "gap request", 2 * 1024 * 1024
+            ).encode("utf-8")
+            official_payload = read_bounded(
+                official_path, "official resolution", 8 * 1024 * 1024
+            ).encode("utf-8")
+            if (
+                hashlib.sha256(gap_request_payload).hexdigest()
+                != gap_request_refs[0].sha256
+                or hashlib.sha256(official_payload).hexdigest()
+                != official_refs[0].sha256
+            ):
+                raise DraftGenerationError(
+                    "recovery gap/official receipt content drift"
+                )
+            selection = load_script_gap_request(
+                str(gap_request_path),
+                recovery.state.source.path,
+                target_soc=recovery.state.target.target_soc,
+                cann_version=recovery.state.target.cann_version,
+            )
+            specs = tuple(
+                item for item in selection.specs
+                if item.gap_id == candidate.gap_id
+            )
+            if len(specs) != 1:
+                raise DraftGenerationError(
+                    "gap request does not contain one candidate GapSpec"
+                )
+            spec = specs[0]
+            official_report = load_official_resolution_report(
+                str(official_path)
+            )
+            decisions = tuple(
+                item for item in official_report.decisions
+                if item.gap_id == candidate.gap_id
+            )
+            if len(decisions) != 1:
+                raise DraftGenerationError(
+                    "official report does not contain one candidate decision"
+                )
+            prepared = prepare_official_candidate_adapter_input(
+                candidate, spec, decisions[0]
+            )
+            api_name = spec.api_name
+            selected_library = prepared.selected_library
+            context_plan = plan_official_aclnn_adapter_context(
+                args.asnumpy_reference,
+                api_name,
+                selected_library_relative_path=selected_library[
+                    "relative_path"
+                ],
+                selected_library_sha256=selected_library["sha256"],
+            )
+            prepared = bind_official_adapter_context(
+                prepared, context_plan, api_name=api_name
+            )
+            prepared.require_model_ready()
+            artifact_manifest = prepared.operator_manifest
+            adapter_contract = prepared.adapter_contract
+            context = dict(context_plan.context)
+            header_refs = tuple(
+                ref for ref in candidate.candidate_refs
+                if ref.name == "official_selected_header"
+            )
+            if len(header_refs) != 1:
+                raise DraftGenerationError(
+                    "official candidate lacks one selected header"
+                )
+            header_content = read_bounded(
+                header_refs[0].locator,
+                "official candidate header",
+                96 * 1024,
+            )
+            if hashlib.sha256(header_content.encode("utf-8")).hexdigest() != (
+                header_refs[0].sha256
+            ):
+                raise DraftGenerationError(
+                    "official candidate header hash mismatch"
+                )
+            context[
+                "SIGNED_OFFICIAL_HEADER/%s"
+                % Path(header_refs[0].locator).name
+            ] = header_content
+            adapter_skill_files = ASNUMPY_OFFICIAL_ADAPTER_SKILL_FILES
+        else:
+            if not args.spec or not args.artifact or args.recovery_state_dir:
+                raise DraftGenerationError(
+                    "custom operator mode requires --spec and --artifact"
+                )
+            spec_data = json.loads(read_bounded(
+                args.spec, "gap spec", 2 * 1024 * 1024
+            ))
+            if not isinstance(spec_data, dict):
+                raise DraftGenerationError("gap spec must be a JSON object")
+            spec = GapSpec.from_dict(spec_data)
+            signed = _load_existing_draft(Path(args.artifact), spec)
+            artifact_manifest = json.loads(read_bounded(
+                Path(args.artifact) / "operator-artifact.json",
+                "operator artifact manifest",
+                2 * 1024 * 1024,
+            ))
+            adapter_paths = sorted(
+                path for path in signed.files
+                if path.startswith("asnumpy_adapter/") and path.endswith(".json")
+            )
+            if len(adapter_paths) != 1:
+                raise DraftGenerationError(
+                    "signed artifact must contain exactly one AsNumpy adapter JSON"
+                )
+            adapter_path = Path(args.artifact) / adapter_paths[0]
+            adapter_contract = read_bounded(
+                adapter_path, "AsNumpy adapter contract", 256 * 1024
+            )
+            if hashlib.sha256(adapter_contract.encode("utf-8")).hexdigest() != (
+                signed.files[adapter_paths[0]]
+            ):
+                raise DraftGenerationError("AsNumpy adapter contract hash mismatch")
+            adapter_data = json.loads(adapter_contract)
+            api_name = adapter_data.get("api_name") if isinstance(adapter_data, dict) else None
+            if (
+                not isinstance(api_name, str)
+                or not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", api_name)
+                or api_name != spec.api_name
+            ):
+                raise DraftGenerationError("AsNumpy adapter API identity mismatch")
+            context_plan = plan_asnumpy_adapter_context(
+                args.asnumpy_reference, api_name
+            )
+            context = dict(context_plan.context)
+            operator_reference_paths = (
+                "CMakeLists.txt",
+                "op_api/aclnn_%s.h" % api_name,
+                "op_api/%s.cpp" % api_name,
+            )
+            for relative in operator_reference_paths:
+                if relative not in signed.files:
+                    continue
+                content = read_bounded(
+                    Path(args.artifact) / relative,
+                    "signed operator reference %s" % relative,
+                    96 * 1024,
+                )
+                if hashlib.sha256(content.encode("utf-8")).hexdigest() != (
+                    signed.files[relative]
+                ):
+                    raise DraftGenerationError(
+                        "signed operator reference hash mismatch: %s" % relative
+                    )
+                context["SIGNED_OPERATOR/%s" % relative] = content
+            adapter_skill_files = ASNUMPY_INTEGRATION_SKILL_FILES
+        # Validate the provider-facing manifest before the readiness probe so
+        # an internal schema mismatch cannot cause a remote call.
+        validated_context_manifest = _validate_adapter_context_plan(
+            context_plan.manifest()
+        )
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError,
+            DraftGenerationError, GapCompletionError, OfficialAdapterInputError,
+            OfficialResolutionError, RecoveryError) as exc:
+        print("[AsNumpy 接入] 本地输入校验失败: %s" % exc, file=sys.stderr)
+        print(
+            "[LLM调用] actual_remote_call=no · 未读取 Skill，未生成 overlay",
+            file=sys.stderr,
+        )
+        return 2
+
     raw_timeout = (
         str(args.llm_timeout)
         if args.llm_timeout is not None
         else os.getenv("NUMPILOT_LLM_TIMEOUT", "120")
     )
     try:
-        timeout_seconds = float(raw_timeout)
-    except ValueError:
-        print("[接入门禁 1/2] NUMPILOT_LLM_TIMEOUT 必须是秒数", file=sys.stderr)
-        return 2
-    if not 10 <= timeout_seconds <= 3600:
-        print("[接入门禁 1/2] LLM timeout 必须在 10～3600 秒之间", file=sys.stderr)
+        timeout_seconds = validate_llm_timeout(raw_timeout)
+    except LlmConfigError as exc:
+        print("[接入门禁 1/2] %s" % exc, file=sys.stderr)
         return 2
     os.environ["NUMPILOT_LLM_TIMEOUT"] = str(timeout_seconds)
     configuration_status = _load_llm_or_report()
@@ -1508,97 +2558,39 @@ def _cmd_generate_asnumpy_adapter(args):
         Path(args.asnumpy_skill_root) if args.asnumpy_skill_root else None
     )
     skill_gate = _run_asnumpy_skill_gate(
-        bundle, required_files=ASNUMPY_INTEGRATION_SKILL_FILES
+        bundle, required_files=adapter_skill_files
     )
     print(
         "[接入门禁 2/2] pass · 已读取 NumPilot AsNumpy 案例 Skill · "
-        "files=%s · bundle_sha256=%s"
-        % (len(bundle.files), bundle.bundle_sha256)
+        "selected_files=%s · verified_bundle_files=%s · bundle_sha256=%s"
+        % (
+            len(adapter_skill_files),
+            len(bundle.files),
+            bundle.bundle_sha256,
+        )
     )
     staging_root = None
+    adapter_recovery_result = None
     try:
         staging_root = _create_output_stage(out_root, "asnumpy-generate")
         _write_generation_preflight(
-            staging_root, llm_gate, skill_gate, timeout_seconds
+            staging_root,
+            llm_gate,
+            skill_gate,
+            timeout_seconds,
+            adapter_context_plan=validated_context_manifest,
         )
-        spec_data = json.loads(read_bounded(
-            args.spec, "gap spec", 2 * 1024 * 1024
-        ))
-        if not isinstance(spec_data, dict):
-            raise DraftGenerationError("gap spec must be a JSON object")
-        spec = GapSpec.from_dict(spec_data)
-        signed = _load_existing_draft(Path(args.artifact), spec)
-        artifact_manifest = json.loads(read_bounded(
-            Path(args.artifact) / "operator-artifact.json",
-            "operator artifact manifest",
-            2 * 1024 * 1024,
-        ))
-        adapter_paths = sorted(
-            path for path in signed.files
-            if path.startswith("asnumpy_adapter/") and path.endswith(".json")
-        )
-        if len(adapter_paths) != 1:
-            raise DraftGenerationError(
-                "signed artifact must contain exactly one AsNumpy adapter JSON"
+        print(
+            "[AsNumpy 架构] architecture=%s mode=%s context_files=%d "
+            "overlay_files=%d plan_sha256=%s"
+            % (
+                context_plan.architecture,
+                context_plan.mode,
+                len(context_plan.context),
+                len(context_plan.expected_overlay_paths),
+                context_plan.plan_sha256,
             )
-        adapter_path = Path(args.artifact) / adapter_paths[0]
-        adapter_contract = read_bounded(
-            adapter_path, "AsNumpy adapter contract", 256 * 1024
         )
-        if hashlib.sha256(adapter_contract.encode("utf-8")).hexdigest() != (
-            signed.files[adapter_paths[0]]
-        ):
-            raise DraftGenerationError("AsNumpy adapter contract hash mismatch")
-        adapter_data = json.loads(adapter_contract)
-        api_name = adapter_data.get("api_name") if isinstance(adapter_data, dict) else None
-        if (
-            not isinstance(api_name, str)
-            or not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", api_name)
-            or api_name != spec.api_name
-        ):
-            raise DraftGenerationError("AsNumpy adapter API identity mismatch")
-
-        reference_root = Path(args.asnumpy_reference).absolute()
-        if reference_root.is_symlink() or not reference_root.is_dir():
-            raise DraftGenerationError("AsNumpy reference must be a real directory")
-        reference_paths = (
-            "scripts/gen_custom_ops.py",
-            "csrc/custom_ops/registry/angle_v2/op.yaml",
-            "tests/asnumpy_tests/custom_ops_tests/test_angle_v2.py",
-            "CMakeLists.txt",
-            "cmake/CustomOps.cmake",
-            "csrc/custom_ops/CMakeLists.txt",
-            "include/asnumpy/custom_ops/loader.hpp",
-            "csrc/custom_ops/loader.cpp",
-        )
-        context = {
-            relative: read_bounded(
-                reference_root / relative,
-                "AsNumpy reference %s" % relative,
-                96 * 1024,
-            )
-            for relative in reference_paths
-        }
-        operator_reference_paths = (
-            "CMakeLists.txt",
-            "op_api/aclnn_%s.h" % api_name,
-            "op_api/%s.cpp" % api_name,
-        )
-        for relative in operator_reference_paths:
-            if relative not in signed.files:
-                continue
-            content = read_bounded(
-                Path(args.artifact) / relative,
-                "signed operator reference %s" % relative,
-                96 * 1024,
-            )
-            if hashlib.sha256(content.encode("utf-8")).hexdigest() != (
-                signed.files[relative]
-            ):
-                raise DraftGenerationError(
-                    "signed operator reference hash mismatch: %s" % relative
-                )
-            context["SIGNED_OPERATOR/%s" % relative] = content
         provider = LlmDraftProvider(
             max_attempts=args.max_attempts,
             configuration_status=configuration_status,
@@ -1610,14 +2602,30 @@ def _cmd_generate_asnumpy_adapter(args):
             operator_artifact=artifact_manifest,
             adapter_contract=adapter_contract,
             asnumpy_context=context,
-            expected_paths=(
-                "csrc/custom_ops/registry/%s/op.yaml" % api_name,
-                "tests/asnumpy_tests/custom_ops_tests/test_%s.py" % api_name,
-            ),
-            skill_files=ASNUMPY_INTEGRATION_SKILL_FILES,
+            expected_paths=context_plan.expected_overlay_paths,
+            adapter_context_plan=validated_context_manifest,
+            skill_files=adapter_skill_files,
         )
         _publish_output_stage(staging_root, out_root, "AsNumpy adapter")
         staging_root = None
+        if args.candidate:
+            try:
+                adapter_recovery_result = ingest_official_adapter_candidate(
+                    args.recovery_state_dir,
+                    candidate_path,
+                    out_root,
+                )
+            except AdapterRecoveryError as exc:
+                print(
+                    "[AsNumpy 接入回执] overlay 已安全发布，但恢复状态未推进: "
+                    "%s: %s" % (exc.code, exc),
+                    file=sys.stderr,
+                )
+                print(
+                    "[下一步] 使用 recover-gaps ingest-adapter 对已发布产物重放回执",
+                    file=sys.stderr,
+                )
+                return 2
     except DraftRepairError as exc:
         print("[AsNumpy 接入生成] 失败: %s" % exc, file=sys.stderr)
         print(
@@ -1643,16 +2651,29 @@ def _cmd_generate_asnumpy_adapter(args):
         "attempts=%d receipts=%d content_hash_bound=yes"
         % (report["attempt_count"], len(report["remote_receipts"]))
     )
+    if adapter_recovery_result is not None:
+        print(
+            "[恢复状态] phase=%s appended=%d · integrated/qualified/activated=no"
+            % (
+                adapter_recovery_result.recovery.state.phase.value,
+                adapter_recovery_result.appended_revisions,
+            )
+        )
     return 0
 
 
 def _cmd_repair_asnumpy_adapter(args):
     """Return a raw AsNumpy diagnostic to the model for one-file repair."""
 
+    from numpilot.asnumpy_adapter_context import (
+        infer_asnumpy_adapter_api,
+        plan_asnumpy_adapter_context,
+    )
     from numpilot.gaps.provider import (
         DraftGenerationError,
         DraftRepairError,
         LlmDraftProvider,
+        _load_asnumpy_adapter_report,
     )
 
     def read_bounded(path, label, limit):
@@ -1668,21 +2689,52 @@ def _cmd_repair_asnumpy_adapter(args):
     if os.path.lexists(out_root):
         print("[AsNumpy 接入修复] 输出目录必须不存在", file=sys.stderr)
         return 2
+    try:
+        diagnostic = read_bounded(
+            args.diagnostic_file, "AsNumpy repair diagnostic", 64 * 1024
+        )
+        _base_report, _base_payload, base_hashes = (
+            _load_asnumpy_adapter_report(Path(args.base_adapter).absolute())
+        )
+        if args.path not in base_hashes:
+            raise DraftGenerationError(
+                "repair path is not part of the signed AsNumpy adapter"
+            )
+        api_name = infer_asnumpy_adapter_api(tuple(base_hashes))
+        context_plan = plan_asnumpy_adapter_context(
+            args.asnumpy_reference, api_name
+        )
+        context = dict(context_plan.context)
+        context_manifest = context_plan.manifest()
+        if _base_report.get("schema_version") != 4:
+            raise DraftGenerationError(
+                "base adapter predates AsNumpy context-plan binding; regenerate it"
+            )
+        if _base_report.get("asnumpy_adapter_context_plan") != context_manifest:
+            raise DraftGenerationError(
+                "AsNumpy reference layout or content changed; regenerate the adapter"
+            )
+        if set(base_hashes) != set(context_plan.expected_overlay_paths):
+            raise DraftGenerationError(
+                "base adapter overlay paths differ from the current AsNumpy layout"
+            )
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError,
+            DraftGenerationError) as exc:
+        print("[AsNumpy 接入修复] 本地输入校验失败: %s" % exc, file=sys.stderr)
+        print(
+            "[LLM调用] actual_remote_call=no · 未读取 Skill，未开始修复",
+            file=sys.stderr,
+        )
+        return 2
     raw_timeout = (
         str(args.llm_timeout)
         if args.llm_timeout is not None
         else os.getenv("NUMPILOT_LLM_TIMEOUT", "120")
     )
     try:
-        timeout_seconds = float(raw_timeout)
-    except ValueError:
-        print("[接入修复门禁 1/2] NUMPILOT_LLM_TIMEOUT 必须是秒数", file=sys.stderr)
-        return 2
-    if not 10 <= timeout_seconds <= 3600:
-        print(
-            "[接入修复门禁 1/2] LLM timeout 必须在 10～3600 秒之间",
-            file=sys.stderr,
-        )
+        timeout_seconds = validate_llm_timeout(raw_timeout)
+    except LlmConfigError as exc:
+        print("[接入修复门禁 1/2] %s" % exc, file=sys.stderr)
         return 2
     os.environ["NUMPILOT_LLM_TIMEOUT"] = str(timeout_seconds)
     configuration_status = _load_llm_or_report()
@@ -1730,27 +2782,22 @@ def _cmd_repair_asnumpy_adapter(args):
     try:
         staging_root = _create_output_stage(out_root, "asnumpy-repair")
         _write_generation_preflight(
-            staging_root, llm_gate, skill_gate, timeout_seconds
+            staging_root,
+            llm_gate,
+            skill_gate,
+            timeout_seconds,
+            adapter_context_plan=context_plan.manifest(),
         )
-        diagnostic = read_bounded(
-            args.diagnostic_file, "AsNumpy repair diagnostic", 64 * 1024
-        )
-        reference_root = Path(args.asnumpy_reference).absolute()
-        if reference_root.is_symlink() or not reference_root.is_dir():
-            raise DraftGenerationError("AsNumpy reference must be a real directory")
-        reference_paths = (
-            "CMakeLists.txt",
-            "cmake/CustomOps.cmake",
-            "scripts/gen_custom_ops.py",
-        )
-        context = {
-            relative: read_bounded(
-                reference_root / relative,
-                "AsNumpy reference %s" % relative,
-                96 * 1024,
+        print(
+            "[AsNumpy 架构] architecture=%s mode=%s context_files=%d "
+            "plan_sha256=%s"
+            % (
+                context_plan.architecture,
+                context_plan.mode,
+                len(context_plan.context),
+                context_plan.plan_sha256,
             )
-            for relative in reference_paths
-        }
+        )
         provider = LlmDraftProvider(
             max_attempts=args.max_attempts,
             configuration_status=configuration_status,
@@ -1763,6 +2810,7 @@ def _cmd_repair_asnumpy_adapter(args):
             diagnostic=diagnostic,
             path=args.path,
             asnumpy_context=context,
+            adapter_context_plan=context_manifest,
             skill_files=profile_files,
             repair_profile=args.repair_profile,
         )
@@ -1829,7 +2877,8 @@ def _cmd_migrate(args):
         build_gap_request,
         classify_script,
         detect_source_mode,
-        generate_script_with_glm,
+        generate_script_with_configured_model,
+        generate_qualified_script_with_configured_model,
         read_script_source,
         scan_numpy_script,
         write_script_artifacts,
@@ -1863,7 +2912,7 @@ def _cmd_migrate(args):
             return 2
         if args.engine == "ast":
             print(
-                "[普通脚本] 迁移代码必须由 GLM 生成，不能使用 --engine ast",
+                "[普通脚本] 迁移代码必须由已配置模型生成，不能使用 --engine ast",
                 file=sys.stderr,
             )
             return 2
@@ -1876,8 +2925,51 @@ def _cmd_migrate(args):
                 prefix=_net_name(args.file) + "-",
                 dir=str(default_root),
             )
-        scan = scan_numpy_script(source, str(Path(args.file).absolute()))
-        analysis = classify_script(scan, backend)
+        qualified_analysis = None
+        runtime_identity_provider = getattr(backend, "runtime_identity", None)
+        if callable(runtime_identity_provider):
+            from numpilot.qualified_analysis import (
+                QualifiedAnalysisError,
+                analyze_qualified_script,
+            )
+
+            try:
+                initial_runtime_identity = runtime_identity_provider()
+                qualified_analysis = analyze_qualified_script(
+                    source,
+                    str(Path(args.file).absolute()),
+                    runtime_identity=initial_runtime_identity,
+                )
+            except QualifiedAnalysisError as exc:
+                raise ScriptMigrationError(
+                    "qualified source analysis failed: %s" % exc
+                ) from exc
+            except Exception as exc:
+                raise ScriptMigrationError(
+                    "runtime identity collection failed: %s"
+                    % type(exc).__name__
+                ) from exc
+        scan = scan_numpy_script(
+            source,
+            str(Path(args.file).absolute()),
+            qualified_analysis=qualified_analysis,
+        )
+        analysis = classify_script(
+            scan,
+            backend,
+            qualified_analysis=qualified_analysis,
+        )
+
+        def write_current_script_result(*, status, fallback_accepted, **values):
+            return write_script_artifacts(
+                out_dir,
+                analysis,
+                status=status,
+                fallback_accepted=fallback_accepted,
+                qualified_analysis=qualified_analysis,
+                **values,
+            )
+
         print(
             "── NumPilot 普通脚本迁移 · %s ──" % _net_name(args.file)
         )
@@ -1901,6 +2993,15 @@ def _cmd_migrate(args):
                 analysis.audit_id,
             )
         )
+        if qualified_analysis is not None:
+            print(
+                "[资格] decision=%s runtime=%s identity=%s"
+                % (
+                    qualified_analysis.decision.value,
+                    qualified_analysis.runtime_identity_status,
+                    qualified_analysis.runtime_identity_sha256 or "unavailable",
+                )
+            )
         for decision in analysis.decisions:
             print(
                 "[%s] %s · provenance=%s"
@@ -1910,14 +3011,82 @@ def _cmd_migrate(args):
         if not scan.ok:
             for issue in scan.issues:
                 print("[普通脚本阻断] " + issue, file=sys.stderr)
-            paths = write_script_artifacts(
-                out_dir,
-                analysis,
+            paths = write_current_script_result(
                 status="blocked",
                 fallback_accepted=False,
             )
             print("[报告] %s" % paths["report"])
             return 2
+
+        if qualified_analysis is not None and qualified_analysis.decision.value not in {
+            "DIRECT",
+            "FALLBACK_CONSENT",
+        }:
+            qualified_decision = qualified_analysis.decision.value
+            status = {
+                "BLOCKED": "blocked",
+                "CAPABILITY_AUDIT_REQUIRED": "capability_audit_required",
+                "GAP_REQUIRED": "gap_generation_required",
+            }[qualified_decision]
+            for issue in qualified_analysis.issues:
+                print("[资格阻断] " + issue, file=sys.stderr)
+            for call in qualified_analysis.calls:
+                if call.decision.value != "DIRECT":
+                    print(
+                        "[资格阻断] %s · %s · %s"
+                        % (
+                            call.source_api,
+                            call.decision.value,
+                            call.reason_code,
+                        ),
+                        file=sys.stderr,
+                    )
+            if qualified_decision == "GAP_REQUIRED":
+                gap_request = build_gap_request(
+                    analysis,
+                    analysis.unsupported,
+                    target_soc=args.target_soc,
+                    cann_version=args.cann_version,
+                )
+                paths = write_current_script_result(
+                    status="gap_generation_required",
+                    fallback_accepted=False,
+                    gap_request=gap_request,
+                )
+                print(
+                    "[缺口] 当前不会调用迁移模型；先处理 unsupported，再重新扫描。"
+                )
+                print("[缺口] request=%s" % paths["gap_request"])
+                if gap_request["gap_specs"]:
+                    print("[下一步] " + shlex.join([
+                        sys.executable,
+                        "-m",
+                        "numpilot",
+                        "complete-gaps",
+                        str(Path(args.file).absolute()),
+                        "--gap-request",
+                        paths["gap_request"],
+                        "--out",
+                        str(Path(out_dir).absolute() / "operator-gaps"),
+                        "--target-soc",
+                        args.target_soc,
+                        "--cann-version",
+                        args.cann_version,
+                        "--provider",
+                        "prepare",
+                    ]))
+                print("[报告] %s" % paths["report"])
+                return 1
+            paths = write_current_script_result(
+                status=status,
+                fallback_accepted=False,
+            )
+            print(
+                "[资格] 当前判定禁止调用迁移模型；先完成所列改写或审计。",
+                file=sys.stderr,
+            )
+            print("[报告] %s" % paths["report"])
+            return 2 if status == "blocked" else 1
 
         if analysis.audit_required:
             for decision in analysis.audit_required:
@@ -1926,15 +3095,13 @@ def _cmd_migrate(args):
                     % (decision.qualified_api, decision.evidence),
                     file=sys.stderr,
                 )
-            paths = write_script_artifacts(
-                out_dir,
-                analysis,
+            paths = write_current_script_result(
                 status="capability_audit_required",
                 fallback_accepted=False,
             )
             print(
                 "[能力审计] API 已存在但来源/适用范围尚未完成版本绑定审计；"
-                "不会把它误当成缺失算子，也不会调用迁移 GLM。",
+                "不会把它误当成缺失算子，也不会调用迁移模型。",
                 file=sys.stderr,
             )
             print("[报告] %s" % paths["report"])
@@ -1948,9 +3115,7 @@ def _cmd_migrate(args):
                 cann_version=args.cann_version,
             )
             status = gap_request["status"]
-            paths = write_script_artifacts(
-                out_dir,
-                analysis,
+            paths = write_current_script_result(
                 status=status,
                 fallback_accepted=False,
                 gap_request=gap_request,
@@ -1995,9 +3160,7 @@ def _cmd_migrate(args):
                         )
                     )
                 if not sys.stdin.isatty():
-                    paths = write_script_artifacts(
-                        out_dir,
-                        analysis,
+                    paths = write_current_script_result(
                         status="confirmation_required",
                         fallback_accepted=False,
                     )
@@ -2017,7 +3180,7 @@ def _cmd_migrate(args):
                 elif answer in {"g", "gap", "reject", "n", "no"}:
                     policy = "reject"
                 else:
-                    print("[fallback] 用户终止，未调用 GLM，未生成迁移文件。")
+                    print("[fallback] 用户终止，未调用迁移模型，未生成迁移文件。")
                     return 130
             if policy == "reject":
                 gap_request = build_gap_request(
@@ -2026,9 +3189,7 @@ def _cmd_migrate(args):
                     target_soc=args.target_soc,
                     cann_version=args.cann_version,
                 )
-                paths = write_script_artifacts(
-                    out_dir,
-                    analysis,
+                paths = write_current_script_result(
                     status=(
                         "gap_generation_required"
                         if gap_request["gap_specs"]
@@ -2038,7 +3199,7 @@ def _cmd_migrate(args):
                     gap_request=gap_request,
                 )
                 print(
-                    "[fallback] 用户拒绝；未调用迁移 GLM，%s。"
+                    "[fallback] 用户拒绝；未调用迁移模型，%s。"
                     % (
                         "已准备 replacement gap hand-off"
                         if gap_request["gap_specs"]
@@ -2070,20 +3231,38 @@ def _cmd_migrate(args):
 
         configuration_status = _load_llm_or_report()
         if configuration_status is None:
-            paths = write_script_artifacts(
-                out_dir,
-                analysis,
+            paths = write_current_script_result(
                 status="llm_configuration_required",
                 fallback_accepted=fallback_accepted,
             )
             print("[报告] %s" % paths["report"])
             return 4
         try:
-            artifact = generate_script_with_glm(
-                analysis,
-                expected_model=configuration_status.model,
-                expected_provider=configuration_status.provider,
-            )
+            generation_values = {
+                "expected_model": configuration_status.model,
+                "expected_provider": configuration_status.provider,
+                "expected_protocol": getattr(
+                    configuration_status,
+                    "protocol",
+                    "openai-chat-completions",
+                ),
+                "response_model_aliases": getattr(
+                    configuration_status, "response_model_aliases", ()
+                ),
+            }
+            if qualified_analysis is None:
+                artifact = generate_script_with_configured_model(
+                    analysis,
+                    **generation_values,
+                )
+            else:
+                artifact = generate_qualified_script_with_configured_model(
+                    analysis,
+                    qualified_analysis=qualified_analysis,
+                    runtime_identity_provider=runtime_identity_provider,
+                    fallback_accepted=fallback_accepted,
+                    **generation_values,
+                )
         except ScriptMigrationError:
             raise
         if fallback_accepted:
@@ -2092,15 +3271,14 @@ def _cmd_migrate(args):
             status = "migrated_scoped_npu"
         else:
             status = "migrated_strict_npu"
-        paths = write_script_artifacts(
-            out_dir,
-            analysis,
+        paths = write_current_script_result(
             status=status,
             fallback_accepted=fallback_accepted,
             artifact=artifact,
         )
         print(
-            "[迁移] status=%s model=%s generated_by=glm ast_audit=pass"
+            "[迁移] status=%s model=%s generated_by=configured_model "
+            "ast_audit=pass"
             % (status, artifact.model or configuration_status.model)
         )
         if fallback_accepted:
@@ -2221,6 +3399,27 @@ def main(argv=None):
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
+    analyze = sub.add_parser(
+        "analyze",
+        help="只读分析普通 NumPy 文件的调用画像与迁移资格；不执行源码或模型",
+    )
+    analyze.add_argument("file", help="要静态分析的普通 Python/NumPy 文件")
+    analyze.add_argument(
+        "--json",
+        action="store_true",
+        help="向标准输出写完整、机器可读的资格分析 JSON",
+    )
+    analyze.add_argument(
+        "--out",
+        metavar="PATH",
+        help="write-once JSON 回执文件；文件 0600、直接父目录 0700",
+    )
+    analyze.add_argument(
+        "--require-direct",
+        action="store_true",
+        help="CI 门禁：分析仍会完成，但最终判定不是 DIRECT 时退出 1",
+    )
+
     bootstrap = sub.add_parser(
         "bootstrap",
         help="只读检查依赖，或显式准备固定 AsNumpy/CANNBot 版本",
@@ -2292,7 +3491,7 @@ def main(argv=None):
         choices=["ast", "llm"],
         default=None,
         help=(
-            "普通脚本始终要求 GLM；contract 默认 llm，ast 只保留给框架离线回归"
+            "普通脚本始终要求已配置模型；contract 默认 llm，ast 只保留给框架离线回归"
         ),
     )
     mig.add_argument(
@@ -2300,7 +3499,7 @@ def main(argv=None):
         choices=["auto", "script", "contract"],
         default="script",
         help=(
-            "默认 script：整个普通纯 NumPy 文件走扫描/询问/GLM 迁移；"
+            "默认 script：整个普通纯 NumPy 文件走扫描/询问/已配置模型迁移；"
             "旧 build_inputs+forward 严格通道必须显式选择 contract；"
             "auto 仅为旧自动化兼容"
         ),
@@ -2347,6 +3546,147 @@ def main(argv=None):
         "--analysis-profiles",
         default=None,
         help="与源 SHA/callsite 精确绑定的 runtime profile JSON",
+    )
+
+    verify = sub.add_parser(
+        "verify-script",
+        help="显式执行 ordinary 原脚本与已发布迁移产物并做哈希绑定数值对拍",
+    )
+    verify.add_argument("file", help="migrate 使用的原始 NumPy 脚本")
+    verify.add_argument(
+        "--migration-report",
+        required=True,
+        help="ordinary migrate 发布的 script-migration-report.json",
+    )
+    verify.add_argument(
+        "--migrated",
+        default=None,
+        help="迁移脚本；默认只接受 migration report 同目录的 migrated.py",
+    )
+    verify.add_argument(
+        "--output",
+        dest="outputs",
+        action="append",
+        required=True,
+        help="两侧脚本都必须赋值的输出变量；可重复提供",
+    )
+    verify.add_argument(
+        "--out",
+        required=True,
+        help="write-once script verification JSON 回执路径",
+    )
+    verify.add_argument(
+        "--timeout",
+        type=float,
+        default=30.0,
+        help="每个隔离 worker 的超时秒数（默认 %(default)s）",
+    )
+    verify.add_argument(
+        "--max-output-bytes",
+        type=int,
+        default=64 * 1024 * 1024,
+        help="每个 worker 的输出总字节上限（默认 64 MiB）",
+    )
+    verify.add_argument(
+        "--source-python",
+        default=None,
+        help="原始 NumPy 脚本 worker 的 Python；默认当前解释器",
+    )
+    verify.add_argument(
+        "--migrated-python",
+        default=None,
+        help="迁移脚本 worker 的 Python；默认当前解释器",
+    )
+    verify.add_argument(
+        "--json",
+        action="store_true",
+        help="将完整 verification receipt 输出到 stdout",
+    )
+
+    benchmark_script_parser = sub.add_parser(
+        "benchmark-script",
+        aliases=["bench-script"],
+        help=(
+            "对 hash-bound ordinary GLM 产物做单核 CPU/strict-NPU "
+            "设备驻留性能验证"
+        ),
+    )
+    benchmark_script_parser.add_argument(
+        "file", help="migrate 使用的原始 NumPy 脚本"
+    )
+    benchmark_script_parser.add_argument(
+        "--migration-report",
+        required=True,
+        help="ordinary migrate 发布的 script-migration-report.json",
+    )
+    benchmark_script_parser.add_argument(
+        "--migrated",
+        default=None,
+        help="迁移脚本；默认且只接受 migration report 同目录的 migrated.py",
+    )
+    benchmark_script_parser.add_argument(
+        "--output",
+        dest="outputs",
+        action="append",
+        required=True,
+        help="两侧脚本都必须赋值的最终输出变量；可重复提供",
+    )
+    benchmark_script_parser.add_argument(
+        "--out",
+        required=True,
+        help="write-once ordinary benchmark JSON 回执路径",
+    )
+    benchmark_script_parser.add_argument(
+        "--marker",
+        default="# NUMPILOT_DEVICE_INPUTS_END",
+        help="输入准备与设备驻留计时区之间唯一出现的注释 marker",
+    )
+    benchmark_script_parser.add_argument(
+        "--core",
+        type=int,
+        default=None,
+        help="CPU/NPU worker 共用的逻辑核；默认当前 affinity 中第一个核",
+    )
+    benchmark_script_parser.add_argument(
+        "--warmup",
+        type=int,
+        default=3,
+        help="每侧预热次数（默认 %(default)s）",
+    )
+    benchmark_script_parser.add_argument(
+        "--samples",
+        "--repeats",
+        dest="samples",
+        type=int,
+        default=20,
+        help="每侧有序样本数，至少 7（默认 %(default)s）",
+    )
+    benchmark_script_parser.add_argument(
+        "--timeout",
+        type=float,
+        default=600.0,
+        help="每个隔离 worker 的超时秒数（默认 %(default)s）",
+    )
+    benchmark_script_parser.add_argument(
+        "--max-output-bytes",
+        type=int,
+        default=64 * 1024 * 1024,
+        help="每个 worker 最终输出总字节上限（默认 64 MiB）",
+    )
+    benchmark_script_parser.add_argument(
+        "--source-python",
+        default=None,
+        help="NumPy CPU worker 的 Python；默认当前解释器",
+    )
+    benchmark_script_parser.add_argument(
+        "--migrated-python",
+        default=None,
+        help="AsNumpy NPU worker 的 Python；默认当前解释器",
+    )
+    benchmark_script_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="将完整 benchmark receipt 输出到 stdout",
     )
 
     bc = sub.add_parser("bench-cpu", help="① 纯 numpy 基线, 进程内钉 1 核, 存基线供对比")
@@ -2416,8 +3756,10 @@ def main(argv=None):
     paths.add_argument("--json", action="store_true", help="输出 JSON")
     paths.add_argument(
         "--get",
-        choices=("state", "runs", "reports", "benchmark", "wizard", "gaps",
-                 "demo", "bootstrap_receipt", "llm_config", "cannbot_cache"),
+        choices=("persistent_home", "state", "config", "cache", "runs",
+                 "reports", "benchmark", "wizard", "gaps", "demo",
+                 "bootstrap_receipt", "llm_config", "asnumpy_cache_base",
+                 "asnumpy_cache", "cannbot_cache_base", "cannbot_cache"),
         help="只输出一个路径值",
     )
 
@@ -2464,7 +3806,22 @@ def main(argv=None):
     )
     cfg.add_argument("--base-url", default=None, help="OpenAI 兼容 API 根地址")
     cfg.add_argument("--model", default=None, help="模型名")
-    cfg.add_argument("--provider", default=None, help="报告标签(默认 glm)")
+    cfg.add_argument(
+        "--provider", default=None,
+        help="仅用于审计的 provider 标签，不参与厂商授权",
+    )
+    cfg.add_argument(
+        "--protocol",
+        choices=(OPENAI_CHAT_COMPLETIONS_PROTOCOL,),
+        default=None,
+        help="协议合同（当前仅支持 %(choices)s）",
+    )
+    cfg.add_argument(
+        "--response-model-alias",
+        action="append",
+        default=None,
+        help="显式允许的响应 model 别名；可重复，默认不允许别名",
+    )
     cfg.add_argument(
         "--token-stdin",
         action="store_true",
@@ -2510,6 +3867,152 @@ def main(argv=None):
         ),
     )
 
+    resolve_gaps = sub.add_parser(
+        "resolve-gaps",
+        help=(
+            "只读解析缺口：优先已安装 CANN ACLNN，其次固定版本 ops-nn，"
+            "两者均明确无匹配后才允许新 kernel"
+        ),
+    )
+    resolve_gaps.add_argument("file", help="待静态分析的 NumPy Python 源文件")
+    resolve_gaps.add_argument(
+        "--gap-request",
+        help="可选：migrate 生成且会被重新绑定校验的 gap-request.json",
+    )
+    resolve_gaps.add_argument(
+        "--out",
+        required=True,
+        help="write-once、0600 的 official-resolution.json 收据路径",
+    )
+    resolve_gaps.add_argument(
+        "--target-soc",
+        default=os.getenv("ASCEND_SOC_VERSION", "unknown"),
+        help=(
+            "精确目标 SoC（例如 Ascend910B4）；family 名称 Ascend910B "
+            "不会被推断为某个具体芯片"
+        ),
+    )
+    resolve_gaps.add_argument(
+        "--cann-version",
+        default=os.getenv("CANN_VERSION", "unknown"),
+        help="明确的目标 CANN 版本；必须与本地工具链和源码 pin 一致",
+    )
+    resolve_gaps.add_argument(
+        "--cann-root",
+        default=os.getenv("ASCEND_HOME_PATH", ""),
+        help="明确、规范且只读盘点的 CANN toolkit 根目录",
+    )
+    resolve_gaps.add_argument(
+        "--ops-nn-root",
+        default=os.getenv("NUMPILOT_OPS_NN_ROOT", ""),
+        help=(
+            "本地 Huawei ops-nn Git checkout；只读固定 tag 的 Git object，"
+            "不 fetch/checkout/build"
+        ),
+    )
+    resolve_gaps.add_argument(
+        "--accept-cann-osl",
+        action="store_true",
+        help=(
+            "确认已审阅并接受 CANN Open Software License Agreement v2.0；"
+            "仅 installed no_match 后读取 ops-nn 时需要"
+        ),
+    )
+
+    recover_gaps = sub.add_parser(
+        "recover-gaps",
+        help="导入可信官方回执并查询可续接的缺口恢复状态",
+    )
+    recovery_sub = recover_gaps.add_subparsers(
+        dest="recovery_command", required=True
+    )
+    recovery_ingest = recovery_sub.add_parser(
+        "ingest-official",
+        help="校验并导入迁移、缺口和官方解析回执",
+    )
+    recovery_ingest.add_argument(
+        "source", metavar="SOURCE", help="回执绑定的原始 NumPy 源文件"
+    )
+    recovery_ingest.add_argument(
+        "--migration-report", required=True, help="脚本迁移报告 JSON"
+    )
+    recovery_ingest.add_argument(
+        "--gap-request", required=True, help="缺口请求 JSON"
+    )
+    recovery_ingest.add_argument(
+        "--official-resolution-report",
+        required=True,
+        help="官方能力解析报告 JSON",
+    )
+    recovery_ingest.add_argument(
+        "--state-dir", required=True, help="write-once 恢复状态目录"
+    )
+    recovery_ingest.add_argument(
+        "--run-id", default=None, help="可选的稳定恢复运行标识"
+    )
+    recovery_ingest.add_argument(
+        "--authorization-profile",
+        choices=(
+            "receipt-only",
+            "candidate-generation",
+            "full-local-recovery",
+        ),
+        default="receipt-only",
+        help=(
+            "在 run 创建时冻结后续授权；默认 receipt-only。"
+            "旧状态不能升级或改写该选择"
+        ),
+    )
+    recovery_ingest.add_argument(
+        "--json", action="store_true", help="仅向 stdout 输出机器可读 JSON"
+    )
+    recovery_status_parser = recovery_sub.add_parser(
+        "status", help="校验完整状态链并显示当前恢复状态"
+    )
+    recovery_status_parser.add_argument(
+        "--state-dir", required=True, help="恢复状态目录"
+    )
+    recovery_status_parser.add_argument(
+        "--json", action="store_true", help="仅向 stdout 输出机器可读 JSON"
+    )
+    recovery_materialize = recovery_sub.add_parser(
+        "materialize-candidates",
+        help=(
+            "重新盘点当前环境并把 RESOLVED 的已安装 CANN 官方候选"
+            "物化为 CANDIDATE_READY 收据"
+        ),
+    )
+    recovery_materialize.add_argument(
+        "--state-dir", required=True, help="已通过完整 hash-chain 校验的恢复状态目录"
+    )
+    recovery_materialize.add_argument(
+        "--out", required=True, help="必须为绝对路径的私有、write-once 候选目录"
+    )
+    recovery_materialize.add_argument(
+        "--json", action="store_true", help="仅向 stdout 输出机器可读 JSON"
+    )
+    recovery_adapter = recovery_sub.add_parser(
+        "ingest-adapter",
+        help=(
+            "复验已发布的 official ACLNN AsNumpy overlay，并把 "
+            "CANDIDATE_READY 推进到 ADAPTER_CANDIDATE"
+        ),
+    )
+    recovery_adapter.add_argument(
+        "--state-dir", required=True, help="已通过完整 hash-chain 校验的恢复状态目录"
+    )
+    recovery_adapter.add_argument(
+        "--candidate", required=True, help="恢复状态精确绑定的 operator-candidate.json"
+    )
+    recovery_adapter.add_argument(
+        "--adapter-output",
+        required=True,
+        help="包含 asnumpy-adapter-report.json 与 candidate/ 的已发布目录",
+    )
+    recovery_adapter.add_argument(
+        "--json", action="store_true", help="仅向 stdout 输出机器可读 JSON"
+    )
+
     gaps = sub.add_parser(
         "complete-gaps",
         help="检测真正缺失的 NumPy API，并准备或生成未验证的 Ascend C 算子草稿",
@@ -2523,14 +4026,23 @@ def main(argv=None):
         ),
     )
     gaps.add_argument(
+        "--official-resolution-report",
+        help=(
+            "由 resolve-gaps 生成的 hash-bound 收据；只有所有 Gap 都记录"
+            "installed CANN 与固定 ops-nn 的 clean no_match 时才允许 llm 写新 kernel"
+        ),
+    )
+    gaps.add_argument(
         "--out",
         default=str(default_gap_dir()),
         help="规格、草稿和审计报告目录（默认 %(default)s）",
     )
     gaps.add_argument(
         "--target-soc",
-        default=os.getenv("ASCEND_SOC_VERSION", "ascend910b"),
-        help="目标 SoC；会进入规格和产物身份",
+        default=os.getenv("ASCEND_SOC_VERSION", "unknown"),
+        help=(
+            "精确目标 SoC（例如 Ascend910B4）；会进入规格、官方解析收据和产物身份"
+        ),
     )
     gaps.add_argument(
         "--cann-version",
@@ -2664,14 +4176,28 @@ def main(argv=None):
 
     adapter = sub.add_parser(
         "generate-asnumpy-adapter",
-        help="由已配置模型生成隔离的 AsNumpy custom-op 清单与真机测试 overlay",
+        help="由已配置模型按候选路由生成隔离的 AsNumpy 接入 overlay",
     )
-    adapter.add_argument("--spec", required=True, help="签名 Artifact 对应的 gap-spec.json")
-    adapter.add_argument("--artifact", required=True, help="已封存的模型算子 Artifact")
+    adapter.add_argument(
+        "--spec", help="custom-OPP 模式：签名 Artifact 对应的 gap-spec.json"
+    )
+    adapter_source = adapter.add_mutually_exclusive_group(required=True)
+    adapter_source.add_argument(
+        "--artifact", help="已封存的 remote_llm custom-operator Artifact"
+    )
+    adapter_source.add_argument(
+        "--candidate", help="已物化且绑定 recovery 的 official_binary candidate JSON"
+    )
+    adapter.add_argument(
+        "--recovery-state-dir",
+        help="official candidate 模式：处于 CANDIDATE_READY 的恢复状态目录",
+    )
     adapter.add_argument(
         "--asnumpy-reference",
         required=True,
-        help="现有 AsNumpy 清单生成器源码目录，仅作为只读接入契约",
+        help=(
+            "精确目标 AsNumpy 源码树；仅作为只读、hash-bound 的工程接入契约"
+        ),
     )
     adapter.add_argument("--out", required=True, help="隔离 overlay 与审计报告目录")
     adapter.add_argument(
@@ -2755,12 +4281,22 @@ def main(argv=None):
 
     args = parser.parse_args(argv)
     try:
+        if args.cmd == "analyze":
+            return _cmd_analyze(args)
+        if args.cmd == "verify-script":
+            return _cmd_verify_script(args)
+        if args.cmd in {"benchmark-script", "bench-script"}:
+            return _cmd_benchmark_script(args)
         if args.cmd == "bootstrap":
             return _cmd_bootstrap(args)
         if args.cmd == "configure-llm":
             return _cmd_configure_llm(args)
         if args.cmd == "setup-skills":
             return _cmd_setup_skills(args)
+        if args.cmd == "resolve-gaps":
+            return _cmd_resolve_gaps(args)
+        if args.cmd == "recover-gaps":
+            return _cmd_recover_gaps(args)
         if args.cmd == "paths":
             return _cmd_paths(args)
         if args.cmd == "check-suite":

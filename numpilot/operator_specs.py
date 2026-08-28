@@ -10,6 +10,8 @@ from dataclasses import dataclass
 import re
 from typing import Any, Dict, Mapping, Tuple
 
+from numpilot.licenses import CANN_OSL_V2_NAME
+
 
 OPERATOR_SPEC_SCHEMA_VERSION = 1
 _NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,127}$")
@@ -18,6 +20,11 @@ _TARGET_API = re.compile(r"^asnumpy\.([A-Za-z][A-Za-z0-9_]{0,127})$")
 _ORACLE = re.compile(
     r"^(?:self|[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)*)$"
 )
+_OPS_NN_SOURCE = re.compile(
+    r"^https://gitcode\.com/cann/ops-nn\.git@([0-9a-f]{40}):"
+    r"([A-Za-z0-9_][A-Za-z0-9_./+-]{0,511})$"
+)
+CANN_OSL_V2 = CANN_OSL_V2_NAME
 _ALLOWED_PROVENANCE = frozenset({
     "ops_nn_reuse_candidate",
     "cann_reuse_candidate",
@@ -145,6 +152,28 @@ class OperatorSpec:
         object.__setattr__(self, "shape_rules", _rules(self.shape_rules, "shape_rules"))
         for field_name in ("source", "license", "target_soc", "cann_version"):
             _text(getattr(self, field_name), field_name)
+        if self.provenance == "ops_nn_reuse_candidate":
+            if self.route != "cann_existing_reuse_candidate":
+                raise ValueError(
+                    "ops-nn reuse must use cann_existing_reuse_candidate"
+                )
+            match = _OPS_NN_SOURCE.fullmatch(self.source)
+            if match is None:
+                raise ValueError(
+                    "ops-nn reuse source must bind the official origin, a full "
+                    "commit, and an operator path"
+                )
+            source_path = match.group(2)
+            if (
+                source_path.startswith("/")
+                or source_path.endswith("/")
+                or any(part in {"", ".", ".."} for part in source_path.split("/"))
+            ):
+                raise ValueError("ops-nn reuse source path is unsafe")
+            if self.license != CANN_OSL_V2:
+                raise ValueError(
+                    "ops-nn reuse must declare the CANN OSL v2 license"
+                )
 
     @property
     def qualified_api(self) -> str:

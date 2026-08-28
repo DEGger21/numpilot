@@ -6,7 +6,9 @@ from numpilot.paths import (default_benchmark_dir, default_bootstrap_receipt,
 
 
 def test_paths_follow_xdg_state_home(monkeypatch, tmp_path):
+    monkeypatch.delenv("NUMPILOT_HOME", raising=False)
     monkeypatch.delenv("NUMPILOT_STATE_HOME", raising=False)
+    monkeypatch.delenv("NUMPILOT_BOOTSTRAP_RECEIPT", raising=False)
     monkeypatch.delenv("NUMPILOT_RUNS_DIR", raising=False)
     monkeypatch.delenv("NUMPILOT_REPORTS_DIR", raising=False)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))

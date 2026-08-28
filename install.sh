@@ -13,6 +13,8 @@ Required:
 
 Options:
   --venv PATH                    Virtual environment path (default: <repo>/.venv).
+  --persistent-root PATH         Freeze state/config/cache under PATH and write
+                                 PATH/activate-numpilot.sh for later shells.
   --pip-index-url URL            Explicit package index for the initial Python dependencies.
   --cann-env PATH                CANN set_env.sh to source in this process.
   --asnumpy-source PATH          Use an existing exact pinned AsNumpy checkout.
@@ -41,6 +43,8 @@ PIP_INDEX_URL_OVERRIDE=""
 CANN_ENV_FILE=""
 ASNUMPY_SOURCE=""
 CANNBOT_SOURCE=""
+PERSISTENT_ROOT=""
+ACTIVATION_PATH=""
 ALLOW_NETWORK=false
 WITH_CANNBOT=false
 ACCEPT_CANNBOT_LICENSE=false
@@ -54,6 +58,11 @@ while [ "$#" -gt 0 ]; do
         --venv)
             [ "$#" -ge 2 ] || fail "--venv requires a path"
             VENV_DIR=$2
+            shift 2
+            ;;
+        --persistent-root)
+            [ "$#" -ge 2 ] || fail "--persistent-root requires a path"
+            PERSISTENT_ROOT=$2
             shift 2
             ;;
         --pip-index-url)
@@ -122,47 +131,104 @@ if not (include / "Python.h").is_file():
     raise SystemExit(1)
 PY
 
-if [ -n "$CANN_ENV_FILE" ]; then
-    [ -f "$CANN_ENV_FILE" ] || fail "CANN environment file does not exist: $CANN_ENV_FILE"
-    # shellcheck disable=SC1090
-    . "$CANN_ENV_FILE"
-elif [ -z "${ASCEND_TOOLKIT_HOME:-${ASCEND_HOME_PATH:-}}" ]; then
+if [ -n "$PERSISTENT_ROOT" ]; then
+    if ! PERSISTENT_ROOT=$(python3 - "$PERSISTENT_ROOT" <<'PY'
+import os
+from pathlib import Path
+import sys
+
+raw = sys.argv[1]
+if not raw or "\x00" in raw or "\n" in raw or "\r" in raw:
+    raise SystemExit(1)
+path = Path(os.path.abspath(os.path.expanduser(raw)))
+if path == Path(path.anchor) or path.is_symlink() or (path.exists() and not path.is_dir()):
+    raise SystemExit(1)
+print(path)
+PY
+    ); then
+        fail "persistent root is invalid or unsafe"
+    fi
+    mkdir -p "$PERSISTENT_ROOT"
+    export NUMPILOT_HOME=$PERSISTENT_ROOT
+    export NUMPILOT_STATE_HOME="$PERSISTENT_ROOT/.numpilot-state"
+    export NUMPILOT_CONFIG_HOME="$PERSISTENT_ROOT/.numpilot-config"
+    export XDG_CACHE_HOME="$PERSISTENT_ROOT/.numpilot-cache"
+    export NUMPILOT_CACHE_HOME="$XDG_CACHE_HOME/numpilot"
+    export NUMPILOT_ASNUMPY_CACHE="$NUMPILOT_CACHE_HOME/asnumpy"
+    export NUMPILOT_CANNBOT_CACHE="$NUMPILOT_CACHE_HOME/cannbot-skills"
+    ACTIVATION_PATH="$PERSISTENT_ROOT/activate-numpilot.sh"
+fi
+
+if [ -z "$CANN_ENV_FILE" ]; then
+    EXISTING_CANN_ROOT=${ASCEND_TOOLKIT_HOME:-${ASCEND_HOME_PATH:-}}
+    if [ -n "$EXISTING_CANN_ROOT" ] && [ -f "$EXISTING_CANN_ROOT/set_env.sh" ]; then
+        CANN_ENV_FILE="$EXISTING_CANN_ROOT/set_env.sh"
+    fi
+fi
+if [ -z "$CANN_ENV_FILE" ]; then
     for CANDIDATE in \
         /usr/local/Ascend/ascend-toolkit/latest/set_env.sh \
         /usr/local/Ascend/cann-9.0.0/set_env.sh; do
         if [ -f "$CANDIDATE" ]; then
-            # shellcheck disable=SC1090
-            . "$CANDIDATE"
+            CANN_ENV_FILE=$CANDIDATE
             break
         fi
     done
 fi
+[ -f "$CANN_ENV_FILE" ] || fail "CANN environment file does not exist: $CANN_ENV_FILE"
+
+_numpilot_installer_is_toolkit_path() {
+    local lowered=${1,,}
+    case "$lowered" in
+        */ascend/cann|*/ascend/cann/*|*/ascend/cann-*|*/ascend/cann-*/*|*/ascend/cann_*|*/ascend/cann_*/*|*/ascend/ascend-toolkit/*) return 0 ;;
+    esac
+    return 1
+}
+
+_numpilot_installer_filter_path() {
+    local name=$1 mode=$2 value entry key result= seen= lowered=
+    local -a parts
+    value=${!name-}
+    IFS=: read -r -a parts <<< "$value"
+    for entry in "${parts[@]}"; do
+        [ -n "$entry" ] || continue
+        if _numpilot_installer_is_toolkit_path "$entry"; then
+            if [ "$mode" = toolkit ]; then
+                continue
+            fi
+            lowered=${entry,,}
+            case "$lowered" in */devlib|*/devlib/*) continue ;; esac
+        fi
+        key=$entry
+        while [ "$key" != / ] && [ "${key%/}" != "$key" ]; do
+            key=${key%/}
+        done
+        case :$seen: in
+            *:"$key":*) ;;
+            *)
+                seen=${seen:+$seen:}$key
+                result=${result:+$result:}$entry
+                ;;
+        esac
+    done
+    export "$name=$result"
+}
+
+for CANN_PATH_VARIABLE in PATH LD_LIBRARY_PATH PYTHONPATH CMAKE_PREFIX_PATH; do
+    _numpilot_installer_filter_path "$CANN_PATH_VARIABLE" toolkit
+done
+# shellcheck disable=SC1090
+. "$CANN_ENV_FILE"
+_numpilot_installer_filter_path LD_LIBRARY_PATH devlib
+unset CANN_PATH_VARIABLE EXISTING_CANN_ROOT
+unset -f _numpilot_installer_is_toolkit_path _numpilot_installer_filter_path
 
 CANN_ROOT=${ASCEND_TOOLKIT_HOME:-${ASCEND_HOME_PATH:-}}
 [ -n "$CANN_ROOT" ] && [ -d "$CANN_ROOT" ] || fail "source a valid CANN set_env.sh first"
 [ -d "${ASCEND_OPP_PATH:-}" ] || fail "ASCEND_OPP_PATH is missing or invalid"
 [ -f "$CANN_ROOT/include/acl/acl.h" ] || fail "CANN ACL headers are missing under $CANN_ROOT/include"
 [ -f "$CANN_ROOT/lib64/libascendcl.so" ] || fail "CANN runtime library libascendcl.so is missing"
-
-# Development-only CANN libraries can shadow the installed runtime and cause unresolved symbols.
-# Keep every unrelated entry but remove all devlib paths for this installer process.
-SANITIZED_LD_LIBRARY_PATH=""
-OLD_IFS=$IFS
-IFS=:
-for ENTRY in ${LD_LIBRARY_PATH:-}; do
-    case "$ENTRY" in
-        */devlib|*/devlib/*) continue ;;
-    esac
-    if [ -n "$ENTRY" ]; then
-        if [ -n "$SANITIZED_LD_LIBRARY_PATH" ]; then
-            SANITIZED_LD_LIBRARY_PATH="$SANITIZED_LD_LIBRARY_PATH:$ENTRY"
-        else
-            SANITIZED_LD_LIBRARY_PATH=$ENTRY
-        fi
-    fi
-done
-IFS=$OLD_IFS
-export LD_LIBRARY_PATH=$SANITIZED_LD_LIBRARY_PATH
+[ -f "$CANN_ENV_FILE" ] || fail "fixed CANN set_env.sh is missing: $CANN_ENV_FILE"
 
 find_cmake_package() {
     PACKAGE_PATTERN=$1
@@ -275,6 +341,29 @@ PY
 fi
 
 export NUMPILOT_BOOTSTRAP_RECEIPT=$RECEIPT_PATH
+if [ -z "$ACTIVATION_PATH" ]; then
+    ACTIVATION_PATH=$(
+        "$VENV_PYTHON" -m numpilot paths --get state
+    )/activate-numpilot.sh
+fi
+ACTIVATION_ARGS=(
+    --destination "$ACTIVATION_PATH"
+    --venv "$VENV_DIR"
+    --cann-env "$CANN_ENV_FILE"
+    --receipt "$RECEIPT_PATH"
+)
+if [ -n "$PERSISTENT_ROOT" ]; then
+    ACTIVATION_ARGS+=(--persistent-root "$PERSISTENT_ROOT")
+fi
+if [ -n "$CANNBOT_SOURCE" ]; then
+    ACTIVATION_ARGS+=(--cannbot-checkout "$CANNBOT_SOURCE")
+fi
+"$VENV_PYTHON" -m numpilot.activation "${ACTIVATION_ARGS[@]}"
+# Use the exact same credential-free environment that later shells receive.
+# shellcheck disable=SC1090
+. "$ACTIVATION_PATH"
+hash -r
+
 "$VENV_PYTHON" -m numpilot bootstrap --plan "${BOOTSTRAP_ARGS[@]}"
 APPLY_ARGS=(--apply "${BOOTSTRAP_ARGS[@]}" --receipt "$RECEIPT_PATH")
 "$VENV_PYTHON" -m numpilot bootstrap "${APPLY_ARGS[@]}"
@@ -290,7 +379,5 @@ fi
 "$VENV_PYTHON" -m numpilot doctor --backend npu
 
 echo "[NumPilot install] ready"
-echo "[NumPilot install] activate: source $VENV_DIR/bin/activate"
-echo "[NumPilot install] receipt: $RECEIPT_PATH"
-printf '[NumPilot install] later shells: export NUMPILOT_BOOTSTRAP_RECEIPT=%q\n' \
-    "$RECEIPT_PATH"
+printf '[NumPilot install] activate: source %q\n' "$ACTIVATION_PATH"
+printf '[NumPilot install] receipt: %q\n' "$RECEIPT_PATH"

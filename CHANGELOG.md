@@ -1,8 +1,73 @@
 # 变更记录
 
-## Unreleased
+## 0.3.0a1.dev0 - Unreleased
 
-- 暂无。
+- 增加 ordinary `benchmark-script`（`bench-script` 短别名）：只接受真实 configured-model
+  `migrated_strict_npu` 产物，以显式 marker 划分一次输入准备和 steady resident 计算区；CPU/NPU
+  独立 worker 在导入 NumPy 前固定到同一逻辑核，实测 CPU BLAS 单线程，并以 runtime identity、
+  profile target、精确调用次数、逐样本前后同步、最终一次 D2H 和 named-output 数值门失败关闭。
+  combined receipt 保留全部样本、中位/p10/p90、保守比与 bootstrap 95% 区间，并把输入准备、
+  resident、最终 D2H 组件和明确标为非直接端到端采样；
+- 将根 `run_demo.sh` 从已经失配的 legacy/AST 路径改成比赛 ordinary 唯一主链：
+  `doctor → analyze → configured GLM migrate → verify-script → benchmark-script`，新增默认 9M
+  `float32` Poisson-Ritz 源项/鲁棒残差阶段、唯一 run 目录、未知参数失败和 shell 编排回归；
+  五步结束后只读四份 JSON 回执生成一屏评委摘要，明确分开 resident headline 与非直接
+  E2E 的一次组件和；
+- 增加两份可随源码复核的 ordinary 真机证据：应用形态 Poisson 阶段在同核、CPU BLAS
+  单线程、20 样本下 resident 中位加速 `2.567×`（保守 `2.471×`），但一次组件和仅
+  `0.789×`；合成逐元素链 resident 中位 `8.079×`（保守 `7.503×`），组件和 `1.220×`。
+  两者均由实际 `glm-5.3` 生成并通过 exact AST、数值、runtime 与 16/16 性能门；组件和均
+  明确不是直接 E2E，Poisson 阶段也不冒充完整求解器或公开数据负载；
+- 增加标准库只读证据审计器，以及 wheel/sdist 发布物 manifest 工具；后者校验安全归档路径、
+  禁带文件、完整逐文件哈希、包元数据一致性和 Git provenance，脏树只标记
+  `development_only`，`--require-clean` 才能通过 RC 门；sdist 显式排除内部 todo 与历史 PDF；
+- 修复 OpenAI-compatible SSE 在网关发送完整 `data: [DONE]` 后保持 HTTP/1.1
+  keep-alive 时仍等待 EOF、最终误报传输超时的问题；流式读取现在逐行、有界、常量状态识别
+  完整终止事件，并把 `NUMPILOT_LLM_TIMEOUT` 落实为包含连接与整个流读取的单请求 wall-clock
+  deadline。非流式响应合同不变，回执继续绑定实际消费到完整终止事件的响应体 SHA-256；
+- 真实 configured-model 回归已通过轻量 probe、模型身份/回执校验以及
+  `elementwise_forward` 的 strict-NPU 迁移与数值对拍；linkage-v2 MatMul Adapter 长请求不再
+  因 keep-alive 假超时，但上游仍可能无视关闭 thinking 的参数、耗尽输出预算并返回空
+  content，因此恢复链继续停在 `CANDIDATE_READY`，没有发布未完整的新 Adapter；
+- 将模型配置与回执合同泛化为精确身份绑定的 OpenAI-compatible Chat Completions 最小协议；
+  provider 仅作为审计标签，迁移、缺口生成、repair 和 adapter 路径共用同一验证器；
+- 增加 `NUMPILOT_HOME`、持久路径解析和无凭据 `activate-numpilot.sh`，支持临时 HOME、重启后
+  复用、CANN 路径去冲突和 direct lane 不依赖 CANNBot；
+- 增加 canonical capability catalog、精确 runtime identity、调用 profile、独立 `analyze`
+  命令与 qualified ordinary migration，未知/漂移/未资格化合同默认失败关闭；
+- 增加 installed CANN ACLNN 与固定 ops-nn v9.0.0 的 official-first 只读 resolver、write-once
+  收据和 configured-model 新 kernel 前置门禁；
+- 增加 `numpy.matmul` 缺口案例：复用 ops-nn `matmul/mat_mul_v3` 对应的已安装 ACLNN 实现，
+  经限定范围 AsNumPy 接入、真实模型迁移和 Ascend 910B4 数值资格化后，证明原生调用一次且
+  宿主 fallback 为零；该案例不发布性能结论；
+- 增加 ordinary `verify-script`：重新绑定 source/migration report/migrated hash，在两个独立
+  `python -I` worker 中通过无 pickle、有界 named-output 合同做数值对拍，记录解释器及
+  NumPy/AsNumPy 模块身份并发布 write-once 回执；固定不宣称 OS sandbox、strict-NPU 或性能；
+- 将 gap 恢复控制面升级为 schema-2 typed stage receipt：以私有 write-once SHA-256 状态链冻结
+  source/target/runtime/policy，每次 phase `+1` 必须有 parent/binding/kind/coverage 精确匹配的
+  新生产者收据；新增 `recover-gaps ingest-official/status`，严格消费 migration、GapSpec 和
+  official-resolution，幂等推进到 `RESOLVED`；新增三种冻结授权 profile、installed
+  `official_binary` fresh candidate materializer 和 reviewed MatMul adapter receipt，当前控制面
+  可到 `CANDIDATE_READY → ADAPTER_CANDIDATE`；`candidate-generation` 的已实现路径以此为终点，
+  且不能途中升级 profile。仅初始冻结的 `full-local-recovery` 可授权未来本地
+  integration/build/execution/activation producer，这些 producer 尚未自动接线；
+- 增加 `official_aclnn_existing_module` AsNumPy planner：精确绑定 installed candidate、五类
+  official refs、目标源码 context/overlay allow-list 和 route-specific Skill；schema-2
+  `prompt_dependencies` 将每个目标绑定到最小 reference/signed/generated 投影，并以
+  `projection_sha256` 和 remote `request_body_sha256` 绑定请求。configured model 返回
+  `NUMPILOT_EXACT_EDIT_V1` 语义编辑，本地校验 base hash/唯一 OLD/非重叠区间后精确
+  重建完整文件；新增 official target edit windows，`product.cpp` 只允许 Matmul 函数、
+  `test_product.py` 只允许 imports/helpers 与 matmul 段，OLD 不得跨窗口。以现有
+  schema-4 report/receipt 绑定；GLM exact route 使用严格 SSE 聚合、thinking disabled/
+  reasoning minimal，仅聚合后空 content 才从 8192 升到 16384。真实端点已产生
+  5 份成功 remote receipts，状态仅到 `ADAPTER_CANDIDATE`，未 build/execute/activate；
+  普通 operator draft 与 adapter 写入白名单完全分离；
+- 修复 ordinary 直接发现 missing API 时只写报告、不发布 `gap-request.json` 的断点；现在
+  missing 与用户拒绝 audited fallback 两条路径都会生成 canonical GapSpec hand-off，且均不在
+  缺口未解决时调用迁移模型；
+- 增加 10 个 ordinary demo 的黄金分类、7 个真实迁移结果，以及 strict/scoped/fallback 分层的
+  数值、cold-process、steady-script 和固定规模诊断证据；
+- 当前完整回归为 `1459 passed`，公开 evidence manifest 绑定 179 个精选文件。
 
 ## 0.2.0a2 - 2026-08-25
 

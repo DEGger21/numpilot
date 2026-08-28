@@ -1,0 +1,140 @@
+{
+  "actions": [
+    "environment_gates_passed",
+    "pinned_asnumpy_source_verified",
+    "asnumpy_wheel_built",
+    "built_wheel_installed",
+    "asnumpy_official_readme_smoke_passed"
+  ],
+  "completed_at_utc": "2026-08-28T09:20:50.865983Z",
+  "environment": {
+    "asnumpy_installation": {
+      "expected_version": "0.3.1.dev4+g1929a3ba4",
+      "identity_scope": "distribution-metadata-only",
+      "installed": true,
+      "version": "0.3.1.dev4+g1929a3ba4",
+      "version_matches_request": true
+    },
+    "cann": {
+      "opp_directory": true,
+      "opp_path": "/usr/local/Ascend/cann-9.0.0/opp",
+      "toolkit_directory": true,
+      "toolkit_path": "/usr/local/Ascend/cann-9.0.0"
+    },
+    "machine": {
+      "machine": "aarch64",
+      "system": "Linux"
+    },
+    "npu_smi": {
+      "available": true,
+      "path": "/usr/local/sbin/npu-smi"
+    },
+    "python": {
+      "executable": "/home/ma-user/work/numpilot/.venv/bin/python",
+      "implementation": "CPython",
+      "major_minor": "3.10",
+      "minimum": "3.10",
+      "ok": true,
+      "version": "3.10.20"
+    },
+    "venv": {
+      "active": true,
+      "base_prefix": "/home/ma-user/miniconda3",
+      "prefix": "/home/ma-user/work/numpilot/.venv"
+    }
+  },
+  "numpilot_version": "0.3.0a1.dev0",
+  "plan_sha256": "e3919dbd040613e8a9807a8c2cdd08f372617c13f2c6c01f460b0fc93a49be8b",
+  "producer": "numpilot-bootstrap-v1",
+  "ready": true,
+  "repositories": {
+    "asnumpy": {
+      "commit": "1929a3ba44eb532a9f544f774a249cdf1c4119be",
+      "files_sha256": {
+        "CMakeLists.txt": "d76544dae90390e791fc89caa4018f9bfd1bcd4617b52ae7c23ae05abe87e7a4",
+        "LICENSE": "1eb85fc97224598dad1852b5d6483bbcf0aa8608790dcc657a5a2a761ae9c8c6",
+        "README.md": "9634533554d62b8bfd0286da7d0b6a1d6974e7154299b88cb809ea10af3f1aee",
+        "bindings/python/CMakeLists.txt": "4d1e928a8a4e3f695a2bc009a4dbfb8441339bd3a035c532eee57d8639361e35",
+        "csrc/CMakeLists.txt": "3f5ca526867de88dbefc8912d9563053ad78b6e3bc0b58630baacbc37ae281b6",
+        "pyproject.toml": "517be204bad4626bce5c0050a894c73a602d88e5d9e282015507667de4e67e1e"
+      },
+      "license": "Apache-2.0",
+      "mode": "pinned-source-build",
+      "repository": "https://gitcode.com/cann/asnumpy.git",
+      "tree": "bf2f353825f60bd96f910c3a90fd5b75d4c3c8d0"
+    },
+    "cannbot": {
+      "commit": "1ef6372a538f39b0b7ed34666a3e1f465fb4936a",
+      "repository": "https://gitcode.com/cann/cannbot-skills.git",
+      "requested": false
+    }
+  },
+  "schema_version": 1,
+  "started_at_utc": "2026-08-28T09:19:42.868322Z",
+  "status": "ready",
+  "verification": {
+    "asnumpy": {
+      "asnumpy_version": "0.3.1.dev4+g1929a3ba4",
+      "dtype": "float32",
+      "interpreter": "/home/ma-user/work/numpilot/.venv/bin/python",
+      "loguru_version": "0.7.3",
+      "module_path": "/home/ma-user/work/numpilot/.venv/lib/python3.10/site-packages/asnumpy/__init__.py",
+      "module_sha256": "8761f7f9fe557606df6c6683245f4dfc3b8ac69385689a0673f3c90e33afd28e",
+      "native_modules": [
+        {
+          "path": "_core.cpython-310-aarch64-linux-gnu.so",
+          "sha256": "bd18375f58a4ad732464fadd568986f8a25a9e99cfb0deb0bf7b996cb393c861"
+        }
+      ],
+      "numpy_version": "2.2.6",
+      "shape": [
+        1000,
+        1000
+      ],
+      "source": "official AsNumpy README.md installation verification",
+      "status": "passed",
+      "wheel_file_identity_verified": true
+    }
+  },
+  "wheel": {
+    "distribution": "asnumpy",
+    "filename": "asnumpy-0.3.1.dev4+g1929a3ba4-cp310-cp310-linux_aarch64.whl",
+    "installed_files": {
+      "module": {
+        "path": "asnumpy/__init__.py",
+        "sha256": "8761f7f9fe557606df6c6683245f4dfc3b8ac69385689a0673f3c90e33afd28e"
+      },
+      "native_modules": [
+        {
+          "path": "asnumpy/_core.cpython-310-aarch64-linux-gnu.so",
+          "sha256": "bd18375f58a4ad732464fadd568986f8a25a9e99cfb0deb0bf7b996cb393c861"
+        }
+      ]
+    },
+    "kind": "built-from-pinned-source",
+    "metadata_sha256": "bb1206b150596ee9d5be3930c0477cc902bb09c1f2b2232547116ac7eedaddf9",
+    "record_sha256": "96e71b0f682b4bad6a4fc9d09e5779c2de6ac64308645c4c179f60b301852630",
+    "requires_dist": [
+      "numpy>=2.0",
+      "loguru>=0.7.0",
+      "ruff>=0.15.0; extra == \"dev\"",
+      "mypy>=1.19.0; extra == \"dev\"",
+      "pre-commit>=4.0.0; extra == \"dev\"",
+      "pytest>=9.0.0; extra == \"test\"",
+      "pytest-cov>=7.1.0; extra == \"test\"",
+      "pytest-xdist>=3.8.0; extra == \"test\""
+    ],
+    "requires_python": ">=3.10",
+    "sha256": "d8a107c1ff75f506c6218aead803937aae4a2afd59931f05135bf9e6a39a8d49",
+    "tags": [
+      "cp310-cp310-linux_aarch64"
+    ],
+    "trust": {
+      "commit": "1929a3ba44eb532a9f544f774a249cdf1c4119be",
+      "kind": "built-from-pinned-source",
+      "repository": "https://gitcode.com/cann/asnumpy.git",
+      "tree": "bf2f353825f60bd96f910c3a90fd5b75d4c3c8d0"
+    },
+    "version": "0.3.1.dev4+g1929a3ba4"
+  }
+}

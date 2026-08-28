@@ -1,5 +1,31 @@
 # AsNumpy 集成补丁
 
+本目录保存 NumPilot 已发布证据所依赖、但属于独立 AsNumpy 仓库的最小可重建补丁。
+
+## `0002-ops-nn-matmul-native-fp32.patch`
+
+该补丁基于 AsNumpy commit `48de2d2082a0ea46c3ed23dd208b01f4e2a21c35`，完成：
+
+- 对二维 `float32` public ndarray 将 `asnumpy.matmul` 路由到 `_core.matmul`；
+- 用 `cubeMathType=0`（KEEP_DTYPE）避免 FP32 计算降为 FP16；
+- 保持未资格化输入继续走原 NumPy compatibility fallback；
+- 允许在没有私有 custom OPP 的环境中用 `ASNUMPY_BUILD_CUSTOM_OPS=OFF` 构建核心 wheel；
+- 增加 public API 无宿主回退和兼容错误行为测试。
+
+补丁文件 SHA-256 为
+`5c5d1e841689d7a04752ce6c9c307bfcc1c3e035e6dd5c855873926d5ba07350`，与
+MatMul qualification receipt 中的 `source_patch_sha256` 一致。在对应 AsNumpy checkout 根目录：
+
+```bash
+git apply --check /path/to/numpilot/integrations/asnumpy/0002-ops-nn-matmul-native-fp32.patch
+git apply /path/to/numpilot/integrations/asnumpy/0002-ops-nn-matmul-native-fp32.patch
+```
+
+构建和资格化边界见
+[`../../evidence/ops-nn-matmul-20260827/README.md`](../../evidence/ops-nn-matmul-20260827/README.md)。
+
+## `0001-move-private-native-results.patch`
+
 此目录保存 NumPilot Poisson P0 在 AsNumpy 包装层消除逐返回值设备深拷贝所需的最小补丁。
 补丁基于 AsNumpy commit `21368abf9` 制作，只包含 consuming constructor、Python 分流和
 对应回归测试，不包含本机 `/home/ma-user/work/asnumpyoplogin` 中其他已有修改。

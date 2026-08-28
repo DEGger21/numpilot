@@ -1,0 +1,371 @@
+{
+  "actual_remote_call": false,
+  "analysis_mode": "STATIC_AST_ONLY",
+  "calls": [
+    {
+      "canonical_key": "linspace",
+      "column": 7,
+      "contract": {
+        "axis": "NOT_APPLICABLE",
+        "dtype": "QUALIFIED",
+        "equation": "NOT_APPLICABLE",
+        "output": "QUALIFIED",
+        "randomness": "NOT_APPLICABLE",
+        "rank": "QUALIFIED",
+        "signature": "QUALIFIED"
+      },
+      "decision": "DIRECT",
+      "effective_route": "NATIVE_NPU",
+      "facts": {
+        "axis": "not_applicable",
+        "dtype": "float32",
+        "equation": "not_applicable",
+        "keyword_args": [
+          "dtype"
+        ],
+        "output_use": "device",
+        "positional_args": 3,
+        "rank": 1,
+        "shape": [
+          9000000
+        ],
+        "source_contract_ok": true
+      },
+      "line": 8,
+      "next_action": "eligible for hash-bound migration under a matching runtime identity",
+      "performance_eligible": true,
+      "reason_code": "QUALIFIED_DIRECT",
+      "reasons": [
+        "fixed AsNumpy public wrapper delegates to an NPU binding"
+      ],
+      "route": "NATIVE_NPU",
+      "source_api": "numpy.linspace"
+    },
+    {
+      "canonical_key": "linspace",
+      "column": 11,
+      "contract": {
+        "axis": "NOT_APPLICABLE",
+        "dtype": "QUALIFIED",
+        "equation": "NOT_APPLICABLE",
+        "output": "QUALIFIED",
+        "randomness": "NOT_APPLICABLE",
+        "rank": "QUALIFIED",
+        "signature": "QUALIFIED"
+      },
+      "decision": "DIRECT",
+      "effective_route": "NATIVE_NPU",
+      "facts": {
+        "axis": "not_applicable",
+        "dtype": "float32",
+        "equation": "not_applicable",
+        "keyword_args": [
+          "dtype"
+        ],
+        "output_use": "device",
+        "positional_args": 3,
+        "rank": 1,
+        "shape": [
+          9000000
+        ],
+        "source_contract_ok": true
+      },
+      "line": 9,
+      "next_action": "eligible for hash-bound migration under a matching runtime identity",
+      "performance_eligible": true,
+      "reason_code": "QUALIFIED_DIRECT",
+      "reasons": [
+        "fixed AsNumpy public wrapper delegates to an NPU binding"
+      ],
+      "route": "NATIVE_NPU",
+      "source_api": "numpy.linspace"
+    },
+    {
+      "canonical_key": "linspace",
+      "column": 8,
+      "contract": {
+        "axis": "NOT_APPLICABLE",
+        "dtype": "QUALIFIED",
+        "equation": "NOT_APPLICABLE",
+        "output": "QUALIFIED",
+        "randomness": "NOT_APPLICABLE",
+        "rank": "QUALIFIED",
+        "signature": "QUALIFIED"
+      },
+      "decision": "DIRECT",
+      "effective_route": "NATIVE_NPU",
+      "facts": {
+        "axis": "not_applicable",
+        "dtype": "float32",
+        "equation": "not_applicable",
+        "keyword_args": [
+          "dtype"
+        ],
+        "output_use": "device",
+        "positional_args": 3,
+        "rank": 1,
+        "shape": [
+          9000000
+        ],
+        "source_contract_ok": true
+      },
+      "line": 10,
+      "next_action": "eligible for hash-bound migration under a matching runtime identity",
+      "performance_eligible": true,
+      "reason_code": "QUALIFIED_DIRECT",
+      "reasons": [
+        "fixed AsNumpy public wrapper delegates to an NPU binding"
+      ],
+      "route": "NATIVE_NPU",
+      "source_api": "numpy.linspace"
+    },
+    {
+      "canonical_key": "power",
+      "column": 10,
+      "contract": {
+        "axis": "NOT_APPLICABLE",
+        "dtype": "QUALIFIED",
+        "equation": "NOT_APPLICABLE",
+        "output": "QUALIFIED",
+        "randomness": "NOT_APPLICABLE",
+        "rank": "QUALIFIED",
+        "signature": "QUALIFIED"
+      },
+      "decision": "DIRECT",
+      "effective_route": "NATIVE_NPU",
+      "facts": {
+        "axis": "not_applicable",
+        "dtype": "float32",
+        "equation": "not_applicable",
+        "keyword_args": [],
+        "output_use": "device",
+        "positional_args": 2,
+        "rank": 1,
+        "shape": [
+          9000000
+        ],
+        "source_contract_ok": true
+      },
+      "line": 12,
+      "next_action": "eligible for hash-bound migration under a matching runtime identity",
+      "performance_eligible": true,
+      "reason_code": "QUALIFIED_DIRECT",
+      "reasons": [
+        "fixed AsNumpy public wrapper delegates to an NPU binding"
+      ],
+      "route": "NATIVE_NPU",
+      "source_api": "numpy.power"
+    },
+    {
+      "canonical_key": "log",
+      "column": 9,
+      "contract": {
+        "axis": "NOT_APPLICABLE",
+        "dtype": "QUALIFIED",
+        "equation": "NOT_APPLICABLE",
+        "output": "QUALIFIED",
+        "randomness": "NOT_APPLICABLE",
+        "rank": "QUALIFIED",
+        "signature": "QUALIFIED"
+      },
+      "decision": "DIRECT",
+      "effective_route": "NATIVE_NPU",
+      "facts": {
+        "axis": "not_applicable",
+        "dtype": "float32",
+        "equation": "not_applicable",
+        "keyword_args": [],
+        "output_use": "device",
+        "positional_args": 1,
+        "rank": 1,
+        "shape": [
+          9000000
+        ],
+        "source_contract_ok": true
+      },
+      "line": 13,
+      "next_action": "eligible for hash-bound migration under a matching runtime identity",
+      "performance_eligible": true,
+      "reason_code": "QUALIFIED_DIRECT",
+      "reasons": [
+        "fixed AsNumpy public wrapper delegates to an NPU binding"
+      ],
+      "route": "NATIVE_NPU",
+      "source_api": "numpy.log"
+    },
+    {
+      "canonical_key": "multiply",
+      "column": 12,
+      "contract": {
+        "axis": "NOT_APPLICABLE",
+        "dtype": "QUALIFIED",
+        "equation": "NOT_APPLICABLE",
+        "output": "QUALIFIED",
+        "randomness": "NOT_APPLICABLE",
+        "rank": "QUALIFIED",
+        "signature": "QUALIFIED"
+      },
+      "decision": "DIRECT",
+      "effective_route": "NATIVE_NPU",
+      "facts": {
+        "axis": "not_applicable",
+        "dtype": "float32",
+        "equation": "not_applicable",
+        "keyword_args": [],
+        "output_use": "device",
+        "positional_args": 2,
+        "rank": 1,
+        "shape": [
+          9000000
+        ],
+        "source_contract_ok": true
+      },
+      "line": 14,
+      "next_action": "eligible for hash-bound migration under a matching runtime identity",
+      "performance_eligible": true,
+      "reason_code": "QUALIFIED_DIRECT",
+      "reasons": [
+        "fixed AsNumpy public wrapper delegates to an NPU binding"
+      ],
+      "route": "NATIVE_NPU",
+      "source_api": "numpy.multiply"
+    },
+    {
+      "canonical_key": "exp",
+      "column": 12,
+      "contract": {
+        "axis": "NOT_APPLICABLE",
+        "dtype": "QUALIFIED",
+        "equation": "NOT_APPLICABLE",
+        "output": "QUALIFIED",
+        "randomness": "NOT_APPLICABLE",
+        "rank": "QUALIFIED",
+        "signature": "QUALIFIED"
+      },
+      "decision": "DIRECT",
+      "effective_route": "NATIVE_NPU",
+      "facts": {
+        "axis": "not_applicable",
+        "dtype": "float32",
+        "equation": "not_applicable",
+        "keyword_args": [],
+        "output_use": "device",
+        "positional_args": 1,
+        "rank": 1,
+        "shape": [
+          9000000
+        ],
+        "source_contract_ok": true
+      },
+      "line": 15,
+      "next_action": "eligible for hash-bound migration under a matching runtime identity",
+      "performance_eligible": true,
+      "reason_code": "QUALIFIED_DIRECT",
+      "reasons": [
+        "fixed AsNumpy public wrapper delegates to an NPU binding"
+      ],
+      "route": "NATIVE_NPU",
+      "source_api": "numpy.exp"
+    },
+    {
+      "canonical_key": "divide",
+      "column": 8,
+      "contract": {
+        "axis": "NOT_APPLICABLE",
+        "dtype": "QUALIFIED",
+        "equation": "NOT_APPLICABLE",
+        "output": "QUALIFIED",
+        "randomness": "NOT_APPLICABLE",
+        "rank": "QUALIFIED",
+        "signature": "QUALIFIED"
+      },
+      "decision": "DIRECT",
+      "effective_route": "NATIVE_NPU",
+      "facts": {
+        "axis": "not_applicable",
+        "dtype": "float32",
+        "equation": "not_applicable",
+        "keyword_args": [],
+        "output_use": "device",
+        "positional_args": 2,
+        "rank": 1,
+        "shape": [
+          9000000
+        ],
+        "source_contract_ok": true
+      },
+      "line": 16,
+      "next_action": "eligible for hash-bound migration under a matching runtime identity",
+      "performance_eligible": true,
+      "reason_code": "QUALIFIED_DIRECT",
+      "reasons": [
+        "fixed AsNumpy public wrapper delegates to an NPU binding"
+      ],
+      "route": "NATIVE_NPU",
+      "source_api": "numpy.divide"
+    },
+    {
+      "canonical_key": "tanh",
+      "column": 9,
+      "contract": {
+        "axis": "NOT_APPLICABLE",
+        "dtype": "QUALIFIED",
+        "equation": "NOT_APPLICABLE",
+        "output": "QUALIFIED",
+        "randomness": "NOT_APPLICABLE",
+        "rank": "QUALIFIED",
+        "signature": "QUALIFIED"
+      },
+      "decision": "DIRECT",
+      "effective_route": "NATIVE_NPU",
+      "facts": {
+        "axis": "not_applicable",
+        "dtype": "float32",
+        "equation": "not_applicable",
+        "keyword_args": [],
+        "output_use": "terminal",
+        "positional_args": 1,
+        "rank": 1,
+        "shape": [
+          9000000
+        ],
+        "source_contract_ok": true
+      },
+      "line": 17,
+      "next_action": "eligible for hash-bound migration under a matching runtime identity",
+      "performance_eligible": true,
+      "reason_code": "QUALIFIED_DIRECT",
+      "reasons": [
+        "fixed AsNumpy public wrapper delegates to an NPU binding"
+      ],
+      "route": "NATIVE_NPU",
+      "source_api": "numpy.tanh"
+    }
+  ],
+  "decision": "DIRECT",
+  "execution_performed": false,
+  "imports": [
+    "import numpy as np"
+  ],
+  "issues": [],
+  "next_action": "eligible for hash-bound migration under the matching runtime identity",
+  "performance_valid": false,
+  "producer": "numpilot-qualified-analysis-cli-v1",
+  "qualified_apis": [
+    "divide",
+    "exp",
+    "linspace",
+    "log",
+    "multiply",
+    "power",
+    "tanh"
+  ],
+  "required_rewrites": [],
+  "runtime_audit_id": "asnumpy-0.3.1.dev4-g1929a3ba4-init8761f7f9-cannac907b3a-linalgd2965c2e-random6c9c7891-pinned-source-receipt-v2",
+  "runtime_identity_sha256": "7d443cb390fdd8bb398e10ed00b82d1a5aed624c1ed777ca8d6652fc9cf1b124",
+  "runtime_identity_status": "matched",
+  "schema_version": 1,
+  "source_path": "/home/ma-user/work/numpilot/examples/competition_power_log_exp.py",
+  "source_sha256": "4ffcfd6f12f771cb40daadfe9de2ea3a2b3ae3e3db4b95e09c39c0c469d3de20",
+  "speedup": null
+}

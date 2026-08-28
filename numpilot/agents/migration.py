@@ -19,4 +19,6 @@ class MigrationAgent:
             migrated_source=migrated,
             rewrites=count_ap_calls(migrated),
             expected_rewrites=expected_forward_ap_calls(source, plan),
+            model_receipt=dict(getattr(self.engine, "last_receipt", {}) or {}),
+            model_identity=dict(getattr(self.engine, "last_identity", {}) or {}),
         )

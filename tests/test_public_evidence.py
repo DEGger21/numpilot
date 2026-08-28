@@ -11,6 +11,10 @@ def _json(relative):
     return json.loads((EVIDENCE / relative).read_text(encoding="utf-8"))
 
 
+def _sha256(path):
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
 def test_public_evidence_manifest_is_complete_and_valid():
     manifest = EVIDENCE / "MANIFEST.sha256"
     entries = []
@@ -28,6 +32,38 @@ def test_public_evidence_manifest_is_complete_and_valid():
         if path.is_file() and path != manifest
     )
     assert entries == expected
+
+
+def test_ops_nn_matmul_evidence_binds_the_rebuild_patch_and_execution():
+    case = EVIDENCE / "ops-nn-matmul-20260827"
+    receipt = _json("ops-nn-matmul-20260827/qualification-receipt.json")
+    execution = _json("ops-nn-matmul-20260827/execution-evidence.json")
+    migration = case / "final-migration" / "migrated.py"
+    migration_report = case / "final-migration" / "script-migration-report.json"
+    source = ROOT / "examples" / "ops_nn_matmul_inference.py"
+    harness = ROOT / "tools" / "ops_nn_matmul_case_evidence.py"
+    patch = (
+        ROOT
+        / "integrations"
+        / "asnumpy"
+        / "0002-ops-nn-matmul-native-fp32.patch"
+    )
+
+    assert receipt["status"] == "qualified"
+    assert receipt["qualification"]["all_gates_passed"] is True
+    assert _sha256(patch) == receipt["asnumpy"]["source_patch_sha256"]
+    assert _sha256(source) == execution["source"]["sha256"]
+    assert _sha256(migration) == execution["migration"]["sha256"]
+    assert _sha256(migration_report) == execution["migration"]["report_sha256"]
+    assert _sha256(harness) == execution["harness"]["sha256"]
+    assert execution["status"] == "passed"
+    assert execution["performance_valid"] is False
+    assert execution["route"] == {
+        "host_fallback_attempted": False,
+        "native_binding": "asnumpy._core.matmul",
+        "native_call_count": 1,
+        "public_api": "asnumpy.matmul",
+    }
 
 
 def test_curated_evidence_preserves_fail_closed_verdicts():

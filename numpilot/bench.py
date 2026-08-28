@@ -569,6 +569,8 @@ def run_npu_compare(
         "rewrites": migration.rewrites,
         "expected_rewrites": migration.expected_rewrites,
         "rewrite_integrity": migration.rewrite_integrity,
+        "model_receipt": migration.model_receipt,
+        "model_identity": migration.model_identity,
         "allow_cpu_fallback": bool(allow_cpu_fallback),
         "fallback_override_used": override_used,
         "provenance": provenance,

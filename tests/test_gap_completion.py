@@ -1,8 +1,10 @@
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import shutil
+from types import SimpleNamespace
 
 import pytest
 
@@ -14,7 +16,11 @@ from numpilot.cannbot_skills import (
 )
 from numpilot.engines.llm import LlmEngine, LlmHttpError, LlmResponseError
 from numpilot.gaps.models import GapSpec
-from numpilot.gaps.pipeline import GapCompletionError, GapCompletionPipeline
+from numpilot.gaps.pipeline import (
+    GapCompletionError,
+    GapCompletionPipeline,
+    prepare_gap_completion,
+)
 from numpilot.gaps.provider import (
     DraftGenerationError,
     DraftRepairError,
@@ -32,9 +38,15 @@ from numpilot.gaps.provider import (
     _load_existing_draft,
     _load_repair_candidate,
     _should_use_staged_direct,
+    _validate_adapter_context_plan,
+    _validate_stage_bundle,
 )
 from numpilot.gaps.spec import build_gap_specs
-from numpilot.llm_config import LlmConfigStatus
+from numpilot.llm_config import (
+    LlmConfigStatus,
+    OPENAI_CHAT_COMPLETIONS_PROTOCOL,
+    model_identity_sha256,
+)
 
 
 GAP_SOURCE = """\
@@ -52,6 +64,96 @@ def _write_gap_source(tmp_path):
     path = tmp_path / "cbrt_case.py"
     path.write_text(GAP_SOURCE, encoding="utf-8")
     return path
+
+
+def _clean_official_receipt(
+    tmp_path,
+    source,
+    monkeypatch,
+    *,
+    target_soc="Ascend910B4",
+    cann_version="9.0.0",
+):
+    """Create a real, strictly validated two-provider miss for CLI tests."""
+
+    from numpilot.gaps import official_resolution as resolution_module
+    from numpilot.gaps.installed_cann import (
+        FileEvidence,
+        InstalledCannInventory,
+        VersionEvidence,
+    )
+    from numpilot.gaps.official_source import (
+        REVIEWED_SOURCE_SEARCH_ALIASES,
+        SOURCE_SEARCH_CONTRACT_REVISION,
+    )
+
+    preparation = prepare_gap_completion(
+        str(source),
+        target_soc=target_soc,
+        cann_version=cann_version,
+    )
+    root = str((tmp_path / "cann-9.0.0").absolute())
+    inventory = InstalledCannInventory(
+        root=root,
+        platform="aarch64-linux",
+        architecture="aarch64",
+        operating_system="linux",
+        version=cann_version,
+        version_evidence=(VersionEvidence(
+            file=FileEvidence(
+                relative_path="aarch64-linux/ascend_toolkit_install.info",
+                sha256="0" * 64,
+                size=1,
+            ),
+            version=cann_version,
+            source_field="version",
+        ),),
+        headers=(),
+        libraries=(),
+    )
+
+    class CleanSourceMiss:
+        def resolve(self, **lookup):
+            aliases = REVIEWED_SOURCE_SEARCH_ALIASES[
+                (lookup["cann_version"], lookup["qualified_api"])
+            ]
+            payload = {
+                "schema_version": 1,
+                "provider": "ops_nn_source",
+                "status": "no_match",
+                "reason": "test reviewed direct-operator aliases are absent",
+                "requested": dict(lookup),
+                "source_ref": "refs/tags/v9.0.0",
+                "source_commit": "1" * 40,
+                "source_tree": "2" * 40,
+                "candidates": [],
+                "selected_candidate_id": "",
+                "requires_audit": False,
+                "resolution_kind": "none",
+                "search_contract_revision": SOURCE_SEARCH_CONTRACT_REVISION,
+                "searched_aliases": list(aliases),
+                "negative_search_complete": True,
+                "activation_allowed": False,
+            }
+            return SimpleNamespace(to_dict=lambda: payload)
+
+    report = resolution_module.resolve_official_operators(
+        preparation,
+        cann_root=root,
+        ops_nn_root=str((tmp_path / "ops-nn").absolute()),
+        accept_cann_osl=True,
+        inventory_loader=lambda _root: inventory,
+        source_resolver_factory=lambda _root: CleanSourceMiss(),
+    )
+    assert report.model_kernel_generation_allowed is True
+    receipt = tmp_path / "official-resolution.json"
+    resolution_module.write_official_resolution_report(report, str(receipt))
+    monkeypatch.setattr(
+        resolution_module,
+        "resolve_official_operators",
+        lambda _preparation, **_kwargs: report,
+    )
+    return receipt
 
 
 def _valid_bundle():
@@ -263,6 +365,51 @@ def test_prepare_rejects_symlink_output_directory(tmp_path):
         )
 
 
+def test_gap_preparation_rejects_symlink_fifo_and_oversize_sources(tmp_path):
+    real = _write_gap_source(tmp_path)
+    linked = tmp_path / "linked-source.py"
+    linked.symlink_to(real)
+    fifo = tmp_path / "source.fifo"
+    os.mkfifo(fifo)
+    oversize = tmp_path / "oversize.py"
+    with open(oversize, "wb") as handle:
+        handle.truncate(4 * 1024 * 1024 + 1)
+
+    for unsafe in (linked, fifo, oversize):
+        with pytest.raises(GapCompletionError):
+            prepare_gap_completion(
+                str(unsafe),
+                target_soc="ascend910b",
+                cann_version="9.0.0",
+            )
+
+
+def test_gap_preparation_rejects_source_changed_during_read(tmp_path, monkeypatch):
+    from numpilot.gaps import pipeline as pipeline_module
+
+    source = _write_gap_source(tmp_path)
+    real_read = os.read
+    changed = []
+
+    def mutate_after_first_read(descriptor, size):
+        payload = real_read(descriptor, size)
+        if payload and not changed:
+            changed.append(True)
+            source.write_text(
+                GAP_SOURCE.replace("np.cbrt", "np.sqrt"), encoding="utf-8"
+            )
+        return payload
+
+    monkeypatch.setattr(pipeline_module.os, "read", mutate_after_first_read)
+
+    with pytest.raises(GapCompletionError, match="changed while"):
+        prepare_gap_completion(
+            str(source),
+            target_soc="ascend910b",
+            cann_version="9.0.0",
+        )
+
+
 def test_llm_provider_writes_hashed_unverified_draft_idempotently(tmp_path):
     source = _write_gap_source(tmp_path)
     out = tmp_path / "out"
@@ -349,9 +496,9 @@ def _configured_status(tmp_path, source="user-config"):
 
 @pytest.mark.parametrize(
     ("provider_name", "model"),
-    (("openai", "glm-audited"), ("glm", "gpt-audited")),
+    (("openai", "gpt-audited"), ("gateway", "org/model")),
 )
-def test_remote_provider_requires_explicit_glm_identity_before_model_access(
+def test_remote_provider_accepts_generic_identity_and_binds_model_receipt(
     tmp_path, monkeypatch, provider_name, model
 ):
     source = _write_gap_source(tmp_path)
@@ -364,25 +511,36 @@ def test_remote_provider_requires_explicit_glm_identity_before_model_access(
         model=model,
         provider=provider_name,
         token_present=True,
+        protocol=OPENAI_CHAT_COMPLETIONS_PROTOCOL,
+        response_model_aliases=(),
     )
+    response = _valid_line_bundle()
     monkeypatch.setattr(
         LlmEngine,
         "_chat_with_receipt",
-        staticmethod(lambda *_args, **_kwargs: calls.append(1)),
+        staticmethod(lambda *_args, **_kwargs: (
+            calls.append(1) and None
+        ) or (response, _generic_remote_receipt(
+            response, model=model, provider=provider_name
+        ))),
     )
 
-    with pytest.raises(GapCompletionError, match="provider=glm|glm-\\* model"):
-        GapCompletionPipeline(provider=LlmDraftProvider(
-            max_attempts=1,
-            configuration_status=status,
-        )).run(
-            str(source),
-            str(tmp_path / (provider_name + "-" + model)),
-            target_soc="ascend910b",
-            cann_version="9.0.0",
-        )
+    result = GapCompletionPipeline(provider=LlmDraftProvider(
+        max_attempts=1,
+        configuration_status=status,
+    )).run(
+        str(source),
+        str(tmp_path / (provider_name + "-generic")),
+        target_soc="ascend910b",
+        cann_version="9.0.0",
+    )
 
-    assert calls == []
+    assert result.status == "generated_unverified"
+    assert calls == [1]
+    generation = result.drafts[0].generation
+    assert generation["provider"] == provider_name
+    assert generation["protocol"] == OPENAI_CHAT_COMPLETIONS_PROTOCOL
+    assert generation["model"] == model
 
 
 def test_provider_rejects_unimplemented_performance_goal_before_model_access():
@@ -425,6 +583,46 @@ def test_complete_gaps_performance_goal_fails_before_network_skill_or_output(
     assert not out.exists()
     terminal = capsys.readouterr()
     assert "performance 尚未开放" in terminal.err
+
+
+def test_generation_preflight_accepts_official_existing_module_plan(tmp_path):
+    from numpilot import __main__ as cli
+
+    plan = _official_adapter_context_plan(tmp_path)
+
+    cli._write_generation_preflight(
+        tmp_path,
+        {"gate": "llm_readiness", "status": "pass"},
+        {"gate": "asnumpy_integration_skill_readiness", "status": "pass"},
+        120.0,
+        adapter_context_plan=plan,
+    )
+
+    receipt = json.loads(
+        (tmp_path / "generation-preflight.json").read_text(encoding="utf-8")
+    )
+    assert receipt["asnumpy_adapter_context_plan"] == plan
+
+
+def test_generation_preflight_rejects_mismatched_adapter_architecture_mode(
+    tmp_path,
+):
+    from numpilot import __main__ as cli
+
+    plan = _official_adapter_context_plan(tmp_path)
+    plan["mode"] = "manual"
+
+    with pytest.raises(OSError, match="context plan is invalid"):
+        cli._write_generation_preflight(
+            tmp_path,
+            {"gate": "llm_readiness", "status": "pass"},
+            {
+                "gate": "asnumpy_integration_skill_readiness",
+                "status": "pass",
+            },
+            120.0,
+            adapter_context_plan=plan,
+        )
 
 
 class _FakeSkillBundle:
@@ -492,7 +690,194 @@ def _remote_receipt(content):
     }
 
 
-def _write_adapter_base(tmp_path):
+def _generic_remote_receipt(content, *, model, provider, response_model=None):
+    response_model = model if response_model is None else response_model
+    return {
+        "schema_version": 2,
+        "protocol": OPENAI_CHAT_COMPLETIONS_PROTOCOL,
+        "provider": provider,
+        "configured_model": model,
+        "utc_start": "2026-08-26T00:00:00Z",
+        "utc_end": "2026-08-26T00:00:01Z",
+        "http_status": 200,
+        "requested_model": model,
+        "response_model": response_model,
+        "response_model_aliases": [],
+        "response_model_identity": (
+            "exact" if response_model == model else "mismatch"
+        ),
+        "model_identity_sha256": model_identity_sha256(
+            protocol=OPENAI_CHAT_COMPLETIONS_PROTOCOL,
+            provider=provider,
+            configured_model=model,
+            requested_model=model,
+            response_model=response_model,
+            response_model_aliases=(),
+            response_model_identity=(
+                "exact" if response_model == model else "mismatch"
+            ),
+        ),
+        "response_id": "response-generic",
+        "response_created": 1787702400,
+        "request_body_sha256": "1" * 64,
+        "response_body_sha256": "2" * 64,
+        "content_sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+        "request_id": "request-generic",
+        "usage": {"total_tokens": 101},
+        "tls_verification": "enabled",
+    }
+
+
+_ADAPTER_REFERENCE_CONTEXT = {
+    "CMakeLists.txt": "include(cmake/CustomOps.cmake)\n",
+    "cmake/CustomOps.cmake": "message(FATAL_ERROR missing vendor)\n",
+}
+_ADAPTER_OVERLAY_PATHS = (
+    "csrc/custom_ops/registry/cbrt/op.yaml",
+    "tests/asnumpy_tests/custom_ops_tests/test_cbrt.py",
+)
+
+
+def _adapter_context_plan(tmp_path, context, paths=_ADAPTER_OVERLAY_PATHS):
+    hashes = {
+        label: hashlib.sha256(content.encode("utf-8")).hexdigest()
+        for label, content in sorted(context.items())
+    }
+    identity = {
+        "schema_version": 1,
+        "architecture": "manifest_generator",
+        "mode": "manifest",
+        "context_sha256": hashes,
+        "expected_overlay_paths": list(paths),
+    }
+    plan_sha256 = hashlib.sha256(json.dumps(
+        identity, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")).hexdigest()
+    return {
+        **identity,
+        "reference_root": str((tmp_path / "asnumpy-reference-fixture").absolute()),
+        "total_bytes": sum(len(item.encode("utf-8")) for item in context.values()),
+        "plan_sha256": plan_sha256,
+    }
+
+
+def _official_adapter_context_plan(tmp_path):
+    paths = (
+        "csrc/linalg/product.cpp",
+        "src/asnumpy/linalg/direct.py",
+        "tests/asnumpy_tests/linalg_tests/test_product.py",
+    )
+    context = {
+        "include/asnumpy/linalg/product.hpp": "void Matmul();\n",
+        "bindings/python/bind_linalg.cpp": "bind matmul\n",
+        "src/asnumpy/utils.py": "class ndarray: pass\n",
+        "bindings/python/bind_utils.cpp": "bind strides\n",
+    }
+    hashes = {
+        label: hashlib.sha256(content.encode("utf-8")).hexdigest()
+        for label, content in context.items()
+    }
+    dependencies = {
+        paths[0]: [
+            {
+                "source": "reference",
+                "path": "include/asnumpy/linalg/product.hpp",
+            },
+            {
+                "source": "signed_official_header",
+                "path": "SIGNED_OFFICIAL_HEADER/aclnn_matmul.h",
+            },
+        ],
+        paths[1]: [
+            {
+                "source": "reference",
+                "path": "bindings/python/bind_linalg.cpp",
+            },
+            {"source": "reference", "path": "src/asnumpy/utils.py"},
+            {
+                "source": "reference",
+                "path": "bindings/python/bind_utils.cpp",
+            },
+        ],
+        paths[2]: [
+            {
+                "source": "generated_overlay",
+                "path": "src/asnumpy/linalg/direct.py",
+            },
+        ],
+    }
+    identity = {
+        "schema_version": 2,
+        "architecture": "official_aclnn_existing_module",
+        "mode": "existing_module",
+        "context_sha256": hashes,
+        "expected_overlay_paths": list(paths),
+        "prompt_dependencies": dependencies,
+    }
+    return {
+        **identity,
+        "reference_root": str(
+            (tmp_path / "official-asnumpy-reference-fixture").absolute()
+        ),
+        "total_bytes": sum(
+            len(content.encode("utf-8")) for content in context.values()
+        ),
+        "plan_sha256": hashlib.sha256(json.dumps(
+            identity, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")).hexdigest(),
+    }
+
+
+@pytest.mark.parametrize("schema_version", [True, 1.0])
+def test_adapter_context_plan_schema_requires_exact_int(tmp_path, schema_version):
+    plan = _adapter_context_plan(tmp_path, _ADAPTER_REFERENCE_CONTEXT)
+    plan["schema_version"] = schema_version
+
+    with pytest.raises(DraftGenerationError, match="context plan schema"):
+        _validate_adapter_context_plan(plan)
+
+
+def test_adapter_context_read_paths_do_not_expand_writable_overlay(tmp_path):
+    context = {
+        "scripts/gen_custom_ops.py": "print('fixture')\n",
+        "cmake/CustomOps.cmake": "# fixture\n",
+        "CMakeLists.txt": "project(asnumpy)\n",
+    }
+    plan = _adapter_context_plan(
+        tmp_path,
+        context,
+        paths=("src/asnumpy/custom_ops.py",),
+    )
+
+    assert _validate_adapter_context_plan(plan)["context_sha256"] == (
+        plan["context_sha256"]
+    )
+
+    unsafe = json.loads(json.dumps(plan))
+    unsafe["expected_overlay_paths"] = ["scripts/generated.py"]
+    identity = {
+        name: unsafe[name]
+        for name in (
+            "schema_version",
+            "architecture",
+            "mode",
+            "context_sha256",
+            "expected_overlay_paths",
+        )
+    }
+    unsafe["plan_sha256"] = hashlib.sha256(json.dumps(
+        identity, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")).hexdigest()
+
+    with pytest.raises(
+        DraftGenerationError,
+        match="unexpected AsNumpy adapter directory",
+    ):
+        _validate_adapter_context_plan(unsafe)
+
+
+def _write_adapter_base(tmp_path, *, schema_version=2, context=None):
+    context = dict(context or _ADAPTER_REFERENCE_CONTEXT)
     root = tmp_path / "adapter-base"
     candidate = root / "candidate"
     manifest = candidate / "csrc/custom_ops/registry/cbrt/op.yaml"
@@ -509,7 +894,7 @@ def _write_adapter_base(tmp_path):
     }
     response = "audited adapter fixture response"
     report = {
-        "schema_version": 2,
+        "schema_version": schema_version,
         "status": "generated_unverified",
         "source_artifact_id": "draft-fixture",
         "model": "glm-audited",
@@ -518,7 +903,10 @@ def _write_adapter_base(tmp_path):
         "attempt_count": 1,
         "files_sha256": hashes,
         "adapter_contract_sha256": "c" * 64,
-        "asnumpy_context_sha256": {"CMakeLists.txt": "d" * 64},
+        "asnumpy_context_sha256": {
+            label: hashlib.sha256(content.encode("utf-8")).hexdigest()
+            for label, content in sorted(context.items())
+        },
         "skill_bundle_sha256": _FakeSkillBundle.bundle_sha256,
         "integration_skill_files": list(ASNUMPY_INTEGRATION_SKILL_FILES),
         "response_sha256": [
@@ -535,6 +923,13 @@ def _write_adapter_base(tmp_path):
             "activation": "pending",
         },
     }
+    if schema_version >= 3:
+        report["protocol"] = OPENAI_CHAT_COMPLETIONS_PROTOCOL
+        report["response_model_aliases"] = []
+    if schema_version == 4:
+        report["asnumpy_adapter_context_plan"] = _adapter_context_plan(
+            tmp_path, context
+        )
     report["adapter_artifact_id"] = _adapter_artifact_id(report)
     (root / "asnumpy-adapter-report.json").write_text(
         json.dumps(report), encoding="utf-8"
@@ -590,7 +985,7 @@ def test_asnumpy_adapter_base_enforces_bounded_candidate_tree(
     if mutation == "file_count":
         extra_count = _MAX_ADAPTER_FILES - len(report["files_sha256"]) + 1
         for index in range(extra_count):
-            path = candidate / ("docs/extra-%02d.md" % index)
+            path = candidate / ("csrc/extra-%02d.cpp" % index)
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("extra\n", encoding="utf-8")
     elif mutation == "entry_count":
@@ -606,7 +1001,7 @@ def test_asnumpy_adapter_base_enforces_bounded_candidate_tree(
         payload = b"x" * _MAX_ADAPTER_FILE_BYTES
         extra_count = _MAX_ADAPTER_TOTAL_BYTES // _MAX_ADAPTER_FILE_BYTES
         for index in range(extra_count):
-            path = candidate / ("docs/large-%02d.md" % index)
+            path = candidate / ("csrc/large-%02d.cpp" % index)
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(payload)
             relative = path.relative_to(candidate).as_posix()
@@ -621,7 +1016,7 @@ def test_asnumpy_adapter_base_enforces_bounded_candidate_tree(
         _load_asnumpy_adapter_report(base)
 
 
-def test_generated_asnumpy_adapter_is_schema_two_and_reloadable(
+def test_generated_asnumpy_adapter_is_context_bound_schema_four_and_reloadable(
     tmp_path, monkeypatch
 ):
     def remote_chat(_system, user, **_kwargs):
@@ -648,18 +1043,23 @@ def test_generated_asnumpy_adapter_is_schema_two_and_reloadable(
         skill_bundle=_FakeSkillBundle(),
         staged_direct=True,
     )
+    context = {"CMakeLists.txt": "project(asnumpy)\n"}
+    paths = (
+        "csrc/custom_ops/registry/cbrt/op.yaml",
+        "tests/asnumpy_tests/custom_ops_tests/test_cbrt.py",
+    )
     report = provider.generate_asnumpy_adapter_candidate(
         out,
         operator_artifact={"artifact_id": "draft-fixture"},
         adapter_contract='{"api_name":"cbrt"}',
-        asnumpy_context={"CMakeLists.txt": "project(asnumpy)\n"},
-        expected_paths=(
-            "csrc/custom_ops/registry/cbrt/op.yaml",
-            "tests/asnumpy_tests/custom_ops_tests/test_cbrt.py",
-        ),
+        asnumpy_context=context,
+        expected_paths=paths,
+        adapter_context_plan=_adapter_context_plan(tmp_path, context, paths),
     )
 
-    assert report["schema_version"] == 2
+    assert report["schema_version"] == 4
+    assert report["protocol"] == OPENAI_CHAT_COMPLETIONS_PROTOCOL
+    assert report["response_model_aliases"] == []
     assert report["integration_skill_files"] == list(
         ASNUMPY_INTEGRATION_SKILL_FILES
     )
@@ -669,11 +1069,135 @@ def test_generated_asnumpy_adapter_is_schema_two_and_reloadable(
     assert hashes == report["files_sha256"]
 
 
+@pytest.mark.parametrize(
+    "path",
+    (
+        "src/asnumpy/linalg/direct.py",
+        "include/asnumpy/linalg/product.hpp",
+        "bindings/python/bind_linalg.cpp",
+    ),
+)
+def test_operator_stage_bundle_does_not_inherit_adapter_overlay_paths(path):
+    response = "\n".join((
+        "NUMPILOT_BUNDLE_V1",
+        "SUMMARY: boundary fixture",
+        "FILE: " + path,
+        "CONTENT:",
+        "fixture",
+        "END_FILE",
+        "END_BUNDLE",
+    ))
+
+    with pytest.raises(DraftGenerationError, match="unexpected draft directory"):
+        _validate_stage_bundle(response, (path,))
+
+
+def test_asnumpy_adapter_legacy_paths_generate_reload_and_repair(
+    tmp_path, monkeypatch
+):
+    paths = (
+        "src/asnumpy/linalg/direct.py",
+        "include/asnumpy/linalg/product.hpp",
+        "bindings/python/bind_linalg.cpp",
+    )
+    context = {
+        "src/asnumpy/nn.py": "def softmax():\n    pass\n",
+        "include/asnumpy/nn/activation.hpp": "#pragma once\n",
+        "bindings/python/module.cpp": "// bindings fixture\n",
+    }
+    context_hashes = {
+        name: hashlib.sha256(content.encode("utf-8")).hexdigest()
+        for name, content in sorted(context.items())
+    }
+    identity = {
+        "schema_version": 1,
+        "architecture": "legacy_manual",
+        "mode": "manual",
+        "context_sha256": context_hashes,
+        "expected_overlay_paths": list(paths),
+    }
+    plan = {
+        **identity,
+        "reference_root": str((tmp_path / "asnumpy-reference").absolute()),
+        "total_bytes": sum(
+            len(content.encode("utf-8")) for content in context.values()
+        ),
+        "plan_sha256": hashlib.sha256(json.dumps(
+            identity, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")).hexdigest(),
+    }
+
+    def remote_chat(_system, user, **_kwargs):
+        match = re.search(r"(?:Return|Repair) exactly `([^`]+)`", user)
+        assert match is not None
+        path = match.group(1)
+        content = (
+            "def matmul():\n    return 'repaired'"
+            if user.startswith("Repair exactly")
+            else "fixture for " + path
+        )
+        response = "\n".join((
+            "NUMPILOT_BUNDLE_V1",
+            "SUMMARY: adapter boundary fixture",
+            "FILE: " + path,
+            "CONTENT:",
+            content,
+            "END_FILE",
+            "END_BUNDLE",
+        ))
+        return response, _remote_receipt(response)
+
+    monkeypatch.setattr(
+        LlmEngine, "_chat_with_receipt", staticmethod(remote_chat)
+    )
+    provider = LlmDraftProvider(
+        max_attempts=1,
+        configuration_status=_configured_status(tmp_path),
+        skill_bundle=_FakeSkillBundle(),
+        staged_direct=True,
+    )
+    generated = tmp_path / "generated-legacy-adapter"
+    generated.mkdir()
+    report = provider.generate_asnumpy_adapter_candidate(
+        generated,
+        operator_artifact={"artifact_id": "draft-fixture"},
+        adapter_contract='{"api_name":"matmul"}',
+        asnumpy_context=context,
+        expected_paths=paths,
+        adapter_context_plan=plan,
+    )
+
+    assert set(report["files_sha256"]) == set(paths)
+    reloaded, _payload, hashes = _load_asnumpy_adapter_report(generated)
+    assert reloaded == report
+    assert hashes == report["files_sha256"]
+
+    repaired = tmp_path / "repaired-legacy-adapter"
+    repaired.mkdir()
+    repair_report = provider.repair_asnumpy_adapter_candidate(
+        repaired,
+        base_adapter_root=generated,
+        diagnostic="local compiler fixture",
+        path=paths[0],
+        asnumpy_context=context,
+        adapter_context_plan=plan,
+    )
+
+    assert repair_report["paths"] == [paths[0]]
+    assert (repaired / "candidate" / paths[0]).read_text(
+        encoding="utf-8"
+    ) == "def matmul():\n    return 'repaired'"
+    _reloaded, _payload, repaired_hashes = _load_asnumpy_adapter_report(
+        repaired
+    )
+    assert repaired_hashes == repair_report["files_sha256"]
+
+
 @pytest.mark.parametrize("repair_profile", ("compile", "precision", "runtime"))
 def test_remote_model_repairs_hash_bound_asnumpy_adapter_from_raw_log(
     tmp_path, monkeypatch, repair_profile
 ):
-    base = _write_adapter_base(tmp_path)
+    base = _write_adapter_base(tmp_path, schema_version=4)
     prompts = []
 
     def remote_chat(system, user, **_kwargs):
@@ -707,10 +1231,10 @@ END_BUNDLE"""
         base_adapter_root=base,
         diagnostic=diagnostic,
         path="csrc/custom_ops/registry/cbrt/op.yaml",
-        asnumpy_context={
-            "CMakeLists.txt": "include(cmake/CustomOps.cmake)\n",
-            "cmake/CustomOps.cmake": "message(FATAL_ERROR missing vendor)\n",
-        },
+        asnumpy_context=dict(_ADAPTER_REFERENCE_CONTEXT),
+        adapter_context_plan=_adapter_context_plan(
+            tmp_path, _ADAPTER_REFERENCE_CONTEXT
+        ),
         repair_profile=repair_profile,
     )
 
@@ -759,7 +1283,7 @@ END_BUNDLE"""
 def test_asnumpy_adapter_base_revalidates_all_audit_bindings(
     tmp_path, monkeypatch, mutation
 ):
-    base = _write_adapter_base(tmp_path)
+    base = _write_adapter_base(tmp_path, schema_version=4)
     report_path = base / "asnumpy-adapter-report.json"
     report = json.loads(report_path.read_text(encoding="utf-8"))
     if mutation == "schema":
@@ -802,7 +1326,10 @@ def test_asnumpy_adapter_base_revalidates_all_audit_bindings(
             base_adapter_root=base,
             diagnostic="raw compiler diagnostic",
             path="csrc/custom_ops/registry/cbrt/op.yaml",
-            asnumpy_context={"CMakeLists.txt": "project(asnumpy)\n"},
+            asnumpy_context=dict(_ADAPTER_REFERENCE_CONTEXT),
+            adapter_context_plan=_adapter_context_plan(
+                tmp_path, _ADAPTER_REFERENCE_CONTEXT
+            ),
             skill_files=CANNBOT_REPAIR_SKILL_FILES,
         )
     assert not isinstance(caught.value, AssertionError)
@@ -812,7 +1339,7 @@ def test_asnumpy_adapter_base_revalidates_all_audit_bindings(
 def test_asnumpy_adapter_repair_revalidates_exact_parent_report_bytes(
     tmp_path, monkeypatch
 ):
-    base = _write_adapter_base(tmp_path)
+    base = _write_adapter_base(tmp_path, schema_version=4)
 
     def remote_chat(_system, _user, **_kwargs):
         response = """NUMPILOT_BUNDLE_V1
@@ -840,7 +1367,10 @@ END_BUNDLE"""
         base_adapter_root=base,
         diagnostic="raw compiler diagnostic",
         path="csrc/custom_ops/registry/cbrt/op.yaml",
-        asnumpy_context={"CMakeLists.txt": "project(asnumpy)\n"},
+        asnumpy_context=dict(_ADAPTER_REFERENCE_CONTEXT),
+        adapter_context_plan=_adapter_context_plan(
+            tmp_path, _ADAPTER_REFERENCE_CONTEXT
+        ),
         skill_files=CANNBOT_REPAIR_SKILL_FILES,
     )
     parent_report_path = base / "asnumpy-adapter-report.json"
@@ -1135,6 +1665,80 @@ def test_seal_repair_cli_verifies_fixed_skill_offline_without_model(
     sealed = _load_existing_draft(out, spec)
     assert sealed.generation["attempt_count"] == 2
     assert "docs/numpilot-repair-provenance.json" in sealed.files
+
+
+def test_schema_two_repair_retry_seals_and_reloads_offline(
+    tmp_path, monkeypatch
+):
+    spec, draft_path, signed = _write_simple_signed_draft(tmp_path, monkeypatch)
+    repair_response = "\n".join((
+        "NUMPILOT_BUNDLE_V1",
+        "SUMMARY: repaired after one rejected identity",
+        "FILE: op_host/cbrt_def.cpp",
+        "CONTENT:",
+        "// repaired after retry",
+        "END_FILE",
+        "END_BUNDLE",
+    ))
+    calls = []
+
+    def remote_chat(_system, _user, **_kwargs):
+        calls.append(1)
+        return repair_response, _generic_remote_receipt(
+            repair_response,
+            model=signed.generation["model"],
+            provider=signed.generation["provider"],
+            response_model=(
+                "gateway/mismatched-model"
+                if len(calls) == 1
+                else signed.generation["model"]
+            ),
+        )
+
+    monkeypatch.setattr(
+        LlmEngine, "_chat_with_receipt", staticmethod(remote_chat)
+    )
+    provider = LlmDraftProvider(
+        max_attempts=2,
+        configuration_status=_configured_status(tmp_path),
+        skill_bundle=_FakeSkillBundle(),
+    )
+    candidate = tmp_path / "schema-two-repair-retry"
+    report = provider.repair_to_candidate(
+        spec,
+        draft_path,
+        candidate,
+        paths=("op_host/cbrt_def.cpp",),
+        diagnostic="compiler requested one bounded correction",
+        generation_request="bounded request",
+    )
+
+    assert report["schema_version"] == 2
+    assert report["attempt_count"] == 2
+    assert [
+        item["response_model_identity"] for item in report["remote_receipts"]
+    ] == ["mismatch", "exact"]
+
+    monkeypatch.setattr(
+        LlmEngine,
+        "_chat_with_receipt",
+        staticmethod(
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                AssertionError("seal/reload must not call a model")
+            )
+        ),
+    )
+    sealed_dir = tmp_path / "schema-two-repair-sealed"
+    sealed = provider.seal_repair_candidate(
+        spec, draft_path, candidate, sealed_dir
+    )
+    reloaded = _load_existing_draft(sealed_dir, spec)
+
+    assert calls == [1, 1]
+    assert reloaded.artifact_id == sealed.artifact_id
+    assert reloaded.generation["attempt_count"] == (
+        signed.generation["attempt_count"] + 2
+    )
 
 
 def test_remote_domain_operator_generation_uses_bounded_per_file_stages(
@@ -1887,6 +2491,36 @@ def test_injected_callable_cannot_supply_remote_receipts_or_claim_fresh_remote(
     assert evidence["remote_receipts"] == []
 
 
+def test_complete_gaps_llm_requires_official_receipt_before_model_skill_or_output(
+    tmp_path, monkeypatch, capsys
+):
+    from numpilot import __main__ as cli
+
+    source = _write_gap_source(tmp_path)
+    output = tmp_path / "must-not-exist"
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("missing official receipt must block locally")
+
+    monkeypatch.setattr(cli, "_load_llm_or_report", forbidden)
+    monkeypatch.setattr(cli, "resolve_skill_bundle", forbidden)
+
+    result = cli.main([
+        "complete-gaps",
+        str(source),
+        "--out", str(output),
+        "--target-soc", "Ascend910B4",
+        "--cann-version", "9.0.0",
+        "--provider", "llm",
+    ])
+
+    captured = capsys.readouterr()
+    assert result == 3
+    assert "--official-resolution-report" in captured.err
+    assert "actual_remote_generation_call=no" in captured.err
+    assert not output.exists()
+
+
 def test_complete_gaps_cli_reports_fresh_and_reused_actions_without_reloading_config(
     tmp_path, monkeypatch, capsys
 ):
@@ -1894,6 +2528,7 @@ def test_complete_gaps_cli_reports_fresh_and_reused_actions_without_reloading_co
 
     source = _write_gap_source(tmp_path)
     out = tmp_path / "cli-out"
+    receipt = _clean_official_receipt(tmp_path, source, monkeypatch)
     status = _configured_status(tmp_path, source="environment+user-config")
     monkeypatch.setattr(
         cli, "resolve_skill_bundle", lambda *_args, **_kwargs: _FakeSkillBundle()
@@ -1931,11 +2566,13 @@ def test_complete_gaps_cli_reports_fresh_and_reused_actions_without_reloading_co
         "--out",
         str(out),
         "--target-soc",
-        "ascend910b",
+        "Ascend910B4",
         "--cann-version",
         "9.0.0",
         "--provider",
         "llm",
+        "--official-resolution-report",
+        str(receipt),
         "--max-attempts",
         "1",
     ]
@@ -1991,6 +2628,7 @@ def test_complete_gaps_cli_explicitly_reports_no_verified_remote_artifact_on_fai
     from numpilot import __main__ as cli
 
     source = _write_gap_source(tmp_path)
+    receipt = _clean_official_receipt(tmp_path, source, monkeypatch)
     status = _configured_status(tmp_path)
     monkeypatch.setattr(
         cli, "resolve_skill_bundle", lambda *_args, **_kwargs: _FakeSkillBundle()
@@ -2015,11 +2653,13 @@ def test_complete_gaps_cli_explicitly_reports_no_verified_remote_artifact_on_fai
         "--out",
         str(tmp_path / "failed-cli"),
         "--target-soc",
-        "ascend910b",
+        "Ascend910B4",
         "--cann-version",
         "9.0.0",
         "--provider",
         "llm",
+        "--official-resolution-report",
+        str(receipt),
         "--max-attempts",
         "1",
     ])
@@ -2039,6 +2679,7 @@ def test_complete_gaps_llm_gate_failure_prevents_skill_read_and_generation(
     from numpilot import __main__ as cli
 
     source = _write_gap_source(tmp_path)
+    receipt = _clean_official_receipt(tmp_path, source, monkeypatch)
     monkeypatch.setattr(cli, "_load_llm_or_report", lambda: _configured_status(tmp_path))
     monkeypatch.setattr(
         cli,
@@ -2059,8 +2700,9 @@ def test_complete_gaps_llm_gate_failure_prevents_skill_read_and_generation(
 
     result = cli.main([
         "complete-gaps", str(source), "--out", str(tmp_path / "gate-one-fail"),
-        "--target-soc", "ascend910b", "--cann-version", "9.0.0",
+        "--target-soc", "Ascend910B4", "--cann-version", "9.0.0",
         "--provider", "llm",
+        "--official-resolution-report", str(receipt),
     ])
 
     captured = capsys.readouterr()
@@ -2072,14 +2714,15 @@ def test_complete_gaps_llm_gate_failure_prevents_skill_read_and_generation(
 
 @pytest.mark.parametrize(
     ("provider_name", "model"),
-    (("openai", "glm-audited"), ("glm", "gpt-audited")),
+    (("openai", "gpt-audited"), ("gateway", "org/model")),
 )
-def test_complete_gaps_rejects_non_glm_configuration_before_network_or_skill(
+def test_complete_gaps_generic_configuration_reaches_readiness_before_skill(
     tmp_path, monkeypatch, capsys, provider_name, model
 ):
     from numpilot import __main__ as cli
 
     source = _write_gap_source(tmp_path)
+    receipt = _clean_official_receipt(tmp_path, source, monkeypatch)
     status = LlmConfigStatus(
         path=tmp_path / "llm.json",
         configured=True,
@@ -2088,26 +2731,35 @@ def test_complete_gaps_rejects_non_glm_configuration_before_network_or_skill(
         model=model,
         provider=provider_name,
         token_present=True,
+        protocol=OPENAI_CHAT_COMPLETIONS_PROTOCOL,
+        response_model_aliases=(),
     )
+    calls = []
 
-    def forbidden(*_args, **_kwargs):
-        raise AssertionError("non-GLM configuration crossed a side-effect boundary")
+    def fail_readiness(*_args, **_kwargs):
+        calls.append("readiness")
+        raise LlmHttpError(503)
+
+    def forbidden_skill(*_args, **_kwargs):
+        raise AssertionError("Skill must not be read before readiness passes")
 
     monkeypatch.setattr(cli, "_load_llm_or_report", lambda: status)
-    monkeypatch.setattr(cli, "_run_llm_readiness_gate", forbidden)
-    monkeypatch.setattr(cli, "resolve_skill_bundle", forbidden)
+    monkeypatch.setattr(cli, "_run_llm_readiness_gate", fail_readiness)
+    monkeypatch.setattr(cli, "resolve_skill_bundle", forbidden_skill)
 
     result = cli.main([
         "complete-gaps", str(source),
         "--out", str(tmp_path / "non-glm-cli"),
-        "--target-soc", "ascend910b",
+        "--target-soc", "Ascend910B4",
         "--cann-version", "9.0.0",
         "--provider", "llm",
+        "--official-resolution-report", str(receipt),
     ])
 
     captured = capsys.readouterr()
     assert result == 4
-    assert "provider=glm" in captured.err or "glm-* model" in captured.err
+    assert calls == ["readiness"]
+    assert "HTTP status 503" in captured.err
     assert not (tmp_path / "non-glm-cli").exists()
 
 
@@ -2117,6 +2769,7 @@ def test_complete_gaps_skill_gate_failure_prevents_operator_generation(
     from numpilot import __main__ as cli
 
     source = _write_gap_source(tmp_path)
+    receipt = _clean_official_receipt(tmp_path, source, monkeypatch)
     calls = []
 
     def ready(_system, _user, **_kwargs):
@@ -2136,8 +2789,9 @@ def test_complete_gaps_skill_gate_failure_prevents_operator_generation(
 
     result = cli.main([
         "complete-gaps", str(source), "--out", str(tmp_path / "gate-two-fail"),
-        "--target-soc", "ascend910b", "--cann-version", "9.0.0",
+        "--target-soc", "Ascend910B4", "--cann-version", "9.0.0",
         "--provider", "llm",
+        "--official-resolution-report", str(receipt),
     ])
 
     captured = capsys.readouterr()
@@ -2148,7 +2802,7 @@ def test_complete_gaps_skill_gate_failure_prevents_operator_generation(
     assert not (tmp_path / "gate-two-fail").exists()
 
 
-def test_complete_gaps_cli_runs_gates_but_no_generation_when_there_is_no_gap(
+def test_complete_gaps_cli_skips_remote_gates_when_there_is_no_gap(
     tmp_path, monkeypatch, capsys
 ):
     from numpilot import __main__ as cli
@@ -2188,9 +2842,9 @@ def test_complete_gaps_cli_runs_gates_but_no_generation_when_there_is_no_gap(
 
     captured = capsys.readouterr()
     assert result == 0
-    assert calls == [1]
-    assert "actual_remote_generation_call=no" in captured.out
-    assert "没有可生成的合格缺口" in captured.out
+    assert calls == []
+    assert "生成门禁 1/2] pass" not in captured.out
+    assert "status=no_gaps" in captured.out
 
 
 def test_complete_gaps_cli_refuses_injected_existing_draft_in_production(
@@ -2200,6 +2854,7 @@ def test_complete_gaps_cli_refuses_injected_existing_draft_in_production(
 
     source = _write_gap_source(tmp_path)
     out = tmp_path / "offline-reuse"
+    receipt = _clean_official_receipt(tmp_path, source, monkeypatch)
     monkeypatch.setattr(
         cli, "resolve_skill_bundle", lambda *_args, **_kwargs: _FakeSkillBundle()
     )
@@ -2210,7 +2865,7 @@ def test_complete_gaps_cli_refuses_injected_existing_draft_in_production(
     ).run(
         str(source),
         str(out),
-        target_soc="ascend910b",
+        target_soc="Ascend910B4",
         cann_version="9.0.0",
     )
     monkeypatch.setattr(cli, "_load_llm_or_report", lambda: _configured_status(tmp_path))
@@ -2229,11 +2884,13 @@ def test_complete_gaps_cli_refuses_injected_existing_draft_in_production(
         "--out",
         str(out),
         "--target-soc",
-        "ascend910b",
+        "Ascend910B4",
         "--cann-version",
         "9.0.0",
         "--provider",
         "llm",
+        "--official-resolution-report",
+        str(receipt),
     ])
 
     assert result == 2
@@ -2243,7 +2900,7 @@ def test_complete_gaps_cli_refuses_injected_existing_draft_in_production(
     assert "生成门禁 1/2] pass" in output
     assert "生成门禁 2/2] pass" in output
     assert "action=reused_existing" not in output
-    assert "receipt-bound GLM draft" in terminal.err
+    assert "receipt-bound configured-model draft" in terminal.err
     assert "verified_new_remote_artifact=no" in terminal.err
 
 
@@ -2414,10 +3071,248 @@ def test_asnumpy_cli_failure_after_preflight_is_cleanly_retryable(
     assert not out.exists()
     assert cli.main(args) == 2
     assert not out.exists()
-    assert calls == [1, 1]
+    assert calls == []
     assert not list(tmp_path.glob(".%s-*-stage-*" % out.name))
     captured = capsys.readouterr()
-    assert "门禁 2/2] pass" in captured.out
+    assert "本地输入校验失败" in captured.err
+    assert "门禁 2/2] pass" not in captured.out
+
+
+def test_generate_asnumpy_adapter_cli_uses_legacy_context_plan_without_real_model(
+    tmp_path, monkeypatch, capsys
+):
+    from numpilot import __main__ as cli
+    from numpilot.gaps import provider as provider_module
+
+    source_path = _write_gap_source(tmp_path)
+    source = source_path.read_text(encoding="utf-8")
+    spec = build_gap_specs(
+        source,
+        AnalysisAgent().analyze(source, str(source_path)),
+        target_soc="ascend910b",
+        cann_version="9.0.0",
+    )[0]
+    spec_path = tmp_path / "gap-spec.json"
+    spec_path.write_text(json.dumps(spec.to_dict()), encoding="utf-8")
+
+    artifact = tmp_path / "operator-artifact"
+    adapter = artifact / "asnumpy_adapter/operator.json"
+    adapter.parent.mkdir(parents=True)
+    adapter_contract = '{"api_name":"cbrt"}\n'
+    adapter.write_text(adapter_contract, encoding="utf-8")
+    (artifact / "operator-artifact.json").write_text(
+        json.dumps({"artifact_id": "draft-" + "a" * 20}),
+        encoding="utf-8",
+    )
+    signed = SimpleNamespace(files={
+        "asnumpy_adapter/operator.json": hashlib.sha256(
+            adapter_contract.encode("utf-8")
+        ).hexdigest(),
+    })
+    monkeypatch.setattr(
+        provider_module, "_load_existing_draft", lambda *_args: signed
+    )
+
+    reference = tmp_path / "legacy-asnumpy"
+    for relative in (
+        "include/asnumpy/nn/activation.hpp",
+        "csrc/nn/activation.cpp",
+        "bindings/python/bind_nn.cpp",
+        "bindings/python/module.cpp",
+        "src/asnumpy/nn.py",
+        "src/asnumpy/__init__.py",
+        "bindings/python/CMakeLists.txt",
+        "tests/asnumpy_tests/nn_tests/test_activation.py",
+    ):
+        target = reference / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("legacy fixture for %s\n" % relative, encoding="utf-8")
+
+    observed = {}
+
+    class StubProvider:
+        def __init__(self, **_kwargs):
+            pass
+
+        def generate_asnumpy_adapter_candidate(self, output_root, **kwargs):
+            observed.update(kwargs)
+            candidate = Path(output_root) / "candidate"
+            candidate.mkdir()
+            (candidate / "stub.txt").write_text("stub\n", encoding="utf-8")
+            return {
+                "status": "generated_unverified",
+                "adapter_artifact_id": "adapter-" + "b" * 20,
+                "attempt_count": 8,
+                "remote_receipts": [{}],
+            }
+
+    monkeypatch.setattr(provider_module, "LlmDraftProvider", StubProvider)
+    monkeypatch.setattr(
+        cli, "_load_llm_or_report", lambda: _configured_status(tmp_path)
+    )
+    monkeypatch.setattr(
+        cli,
+        "_run_llm_readiness_gate",
+        lambda *_args, **_kwargs: {
+            "schema_version": 1,
+            "gate": "llm_readiness",
+            "status": "pass",
+            "receipt": _remote_receipt("NUMPILOT_LLM_READY."),
+        },
+    )
+    monkeypatch.setattr(
+        cli, "load_asnumpy_integration_skill", lambda *_args: _FakeSkillBundle()
+    )
+    monkeypatch.setattr(
+        cli,
+        "_run_asnumpy_skill_gate",
+        lambda *_args, **_kwargs: {
+            "schema_version": 1,
+            "gate": "asnumpy_integration_skill_readiness",
+            "status": "pass",
+        },
+    )
+    output = tmp_path / "legacy-adapter"
+
+    result = cli.main([
+        "generate-asnumpy-adapter",
+        "--spec", str(spec_path),
+        "--artifact", str(artifact),
+        "--asnumpy-reference", str(reference),
+        "--out", str(output),
+    ])
+
+    captured = capsys.readouterr()
+    assert result == 0
+    assert "architecture=legacy_manual mode=manual" in captured.out
+    assert len(observed["asnumpy_context"]) == 8
+    assert observed["expected_paths"] == (
+        "include/asnumpy/custom_ops/cbrt.hpp",
+        "csrc/custom_ops/cbrt.cpp",
+        "bindings/python/bind_custom_ops.cpp",
+        "bindings/python/module.cpp",
+        "src/asnumpy/custom_ops.py",
+        "src/asnumpy/__init__.py",
+        "bindings/python/CMakeLists.txt",
+        "tests/asnumpy_tests/custom_ops_tests/test_cbrt.py",
+    )
+    preflight = json.loads(
+        (output / "generation-preflight.json").read_text(encoding="utf-8")
+    )
+    assert preflight["asnumpy_adapter_context_plan"]["architecture"] == (
+        "legacy_manual"
+    )
+    assert len(preflight["asnumpy_adapter_context_plan"]["plan_sha256"]) == 64
+
+
+def test_generate_asnumpy_adapter_cli_reports_http_request_without_receipt(
+    tmp_path, monkeypatch, capsys
+):
+    from numpilot import __main__ as cli
+    from numpilot.gaps import provider as provider_module
+
+    source_path = _write_gap_source(tmp_path)
+    source = source_path.read_text(encoding="utf-8")
+    spec = build_gap_specs(
+        source,
+        AnalysisAgent().analyze(source, str(source_path)),
+        target_soc="ascend910b",
+        cann_version="9.0.0",
+    )[0]
+    spec_path = tmp_path / "gap-spec.json"
+    spec_path.write_text(json.dumps(spec.to_dict()), encoding="utf-8")
+
+    artifact = tmp_path / "operator-artifact-http"
+    adapter = artifact / "asnumpy_adapter/operator.json"
+    adapter.parent.mkdir(parents=True)
+    adapter_contract = '{"api_name":"cbrt"}\n'
+    adapter.write_text(adapter_contract, encoding="utf-8")
+    (artifact / "operator-artifact.json").write_text(
+        json.dumps({"artifact_id": "draft-" + "a" * 20}),
+        encoding="utf-8",
+    )
+    signed = SimpleNamespace(files={
+        "asnumpy_adapter/operator.json": hashlib.sha256(
+            adapter_contract.encode("utf-8")
+        ).hexdigest(),
+    })
+    monkeypatch.setattr(
+        provider_module, "_load_existing_draft", lambda *_args: signed
+    )
+
+    reference = tmp_path / "legacy-asnumpy-http"
+    for relative in (
+        "include/asnumpy/nn/activation.hpp",
+        "csrc/nn/activation.cpp",
+        "bindings/python/bind_nn.cpp",
+        "bindings/python/module.cpp",
+        "src/asnumpy/nn.py",
+        "src/asnumpy/__init__.py",
+        "bindings/python/CMakeLists.txt",
+        "tests/asnumpy_tests/nn_tests/test_activation.py",
+    ):
+        target = reference / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("legacy fixture for %s\n" % relative, encoding="utf-8")
+
+    class HttpFailureProvider:
+        def __init__(self, **_kwargs):
+            pass
+
+        def generate_asnumpy_adapter_candidate(self, *_args, **_kwargs):
+            raise DraftRepairError(
+                "remote adapter call failed: HTTP status 504",
+                receipt_count=0,
+                request_count=1,
+            )
+
+    monkeypatch.setattr(
+        provider_module, "LlmDraftProvider", HttpFailureProvider
+    )
+    monkeypatch.setattr(
+        cli, "_load_llm_or_report", lambda: _configured_status(tmp_path)
+    )
+    monkeypatch.setattr(
+        cli,
+        "_run_llm_readiness_gate",
+        lambda *_args, **_kwargs: {
+            "schema_version": 1,
+            "gate": "llm_readiness",
+            "status": "pass",
+            "receipt": _remote_receipt("NUMPILOT_LLM_READY."),
+        },
+    )
+    monkeypatch.setattr(
+        cli, "load_asnumpy_integration_skill", lambda *_args: _FakeSkillBundle()
+    )
+    monkeypatch.setattr(
+        cli,
+        "_run_asnumpy_skill_gate",
+        lambda *_args, **_kwargs: {
+            "schema_version": 1,
+            "gate": "asnumpy_integration_skill_readiness",
+            "status": "pass",
+        },
+    )
+    output = tmp_path / "legacy-adapter-http-failure"
+
+    result = cli.main([
+        "generate-asnumpy-adapter",
+        "--spec", str(spec_path),
+        "--artifact", str(artifact),
+        "--asnumpy-reference", str(reference),
+        "--out", str(output),
+        "--max-attempts", "1",
+    ])
+
+    captured = capsys.readouterr()
+    assert result == 2
+    assert "HTTP status 504" in captured.err
+    assert (
+        "actual_remote_call=yes verified_new_adapter=no receipts=0"
+        in captured.err
+    )
+    assert not output.exists()
 
 
 @pytest.mark.parametrize("repair_profile", ("compile", "precision", "runtime"))
@@ -2429,9 +3324,14 @@ def test_repair_asnumpy_cli_passes_audit_profile_without_real_model(
 
     reference = tmp_path / "asnumpy-reference"
     for relative in (
+        "scripts/gen_custom_ops.py",
+        "csrc/custom_ops/registry/angle_v2/op.yaml",
+        "tests/asnumpy_tests/custom_ops_tests/test_angle_v2.py",
         "CMakeLists.txt",
         "cmake/CustomOps.cmake",
-        "scripts/gen_custom_ops.py",
+        "csrc/custom_ops/CMakeLists.txt",
+        "include/asnumpy/custom_ops/loader.hpp",
+        "csrc/custom_ops/loader.cpp",
     ):
         path = reference / relative
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -2439,6 +3339,13 @@ def test_repair_asnumpy_cli_passes_audit_profile_without_real_model(
     diagnostic = tmp_path / "diagnostic.txt"
     diagnostic.write_text("local failure\n", encoding="utf-8")
     observed = {}
+    from numpilot.asnumpy_adapter_context import plan_asnumpy_adapter_context
+
+    current_plan = plan_asnumpy_adapter_context(reference, "cbrt").manifest()
+    current_hashes = {
+        relative: ("0" if index == 0 else "1") * 64
+        for index, relative in enumerate(current_plan["expected_overlay_paths"])
+    }
 
     class StubProvider:
         def __init__(self, **_kwargs):
@@ -2481,6 +3388,19 @@ def test_repair_asnumpy_cli_passes_audit_profile_without_real_model(
             "status": "pass",
         },
     )
+    monkeypatch.setattr(
+        provider_module,
+        "_load_asnumpy_adapter_report",
+        lambda _root: (
+            {
+                "schema_version": 4,
+                "asnumpy_adapter_context_plan": current_plan,
+                "asnumpy_context_sha256": current_plan["context_sha256"],
+            },
+            b"{}",
+            current_hashes,
+        ),
+    )
     monkeypatch.setattr(provider_module, "LlmDraftProvider", StubProvider)
     out = tmp_path / ("profile-" + repair_profile)
 
@@ -2497,7 +3417,78 @@ def test_repair_asnumpy_cli_passes_audit_profile_without_real_model(
     assert result == 0
     assert observed["repair_profile"] == repair_profile
     assert observed["skill_files"] == ASNUMPY_INTEGRATION_SKILL_FILES
+    assert observed["adapter_context_plan"] == current_plan
     assert out.is_dir()
+
+
+def test_repair_asnumpy_cli_rejects_context_drift_before_model_or_skill(
+    tmp_path, monkeypatch, capsys
+):
+    from numpilot import __main__ as cli
+    from numpilot.asnumpy_adapter_context import plan_asnumpy_adapter_context
+    from numpilot.gaps import provider as provider_module
+
+    reference = tmp_path / "asnumpy-reference"
+    for relative in (
+        "scripts/gen_custom_ops.py",
+        "csrc/custom_ops/registry/angle_v2/op.yaml",
+        "tests/asnumpy_tests/custom_ops_tests/test_angle_v2.py",
+        "CMakeLists.txt",
+        "cmake/CustomOps.cmake",
+        "csrc/custom_ops/CMakeLists.txt",
+        "include/asnumpy/custom_ops/loader.hpp",
+        "csrc/custom_ops/loader.cpp",
+    ):
+        target = reference / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("fixture\n", encoding="utf-8")
+    current_plan = plan_asnumpy_adapter_context(reference, "cbrt").manifest()
+    stale_plan = json.loads(json.dumps(current_plan))
+    first_context = next(iter(stale_plan["context_sha256"]))
+    stale_plan["context_sha256"][first_context] = "f" * 64
+    diagnostic = tmp_path / "diagnostic.txt"
+    diagnostic.write_text("local failure\n", encoding="utf-8")
+    hashes = {
+        relative: str(index) * 64
+        for index, relative in enumerate(
+            current_plan["expected_overlay_paths"], start=1
+        )
+    }
+    monkeypatch.setattr(
+        provider_module,
+        "_load_asnumpy_adapter_report",
+        lambda _root: (
+            {
+                "schema_version": 4,
+                "asnumpy_adapter_context_plan": stale_plan,
+                "asnumpy_context_sha256": stale_plan["context_sha256"],
+            },
+            b"{}",
+            hashes,
+        ),
+    )
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("context drift must block before model or Skill")
+
+    monkeypatch.setattr(cli, "_load_llm_or_report", forbidden)
+    monkeypatch.setattr(cli, "load_asnumpy_integration_skill", forbidden)
+    output = tmp_path / "must-not-exist"
+
+    result = cli.main([
+        "repair-asnumpy-adapter",
+        "--base-adapter", str(tmp_path / "base-adapter"),
+        "--asnumpy-reference", str(reference),
+        "--diagnostic-file", str(diagnostic),
+        "--path", "csrc/custom_ops/registry/cbrt/op.yaml",
+        "--out", str(output),
+    ])
+
+    captured = capsys.readouterr()
+    assert result == 2
+    assert "changed" in captured.err
+    assert "actual_remote_call=no" in captured.err
+    assert not output.exists()
 
 
 def test_model_path_traversal_is_rejected_without_escape(tmp_path):

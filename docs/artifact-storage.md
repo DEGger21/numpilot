@@ -15,21 +15,36 @@ python -m numpilot paths --json
 | 内容 | 默认路径 |
 |---|---|
 | 状态根 | `$XDG_STATE_HOME/numpilot`，通常为 `~/.local/state/numpilot` |
+| 配置根 | `$XDG_CONFIG_HOME/numpilot`，通常为 `~/.config/numpilot` |
+| 应用缓存根 | `$XDG_CACHE_HOME/numpilot`，通常为 `~/.cache/numpilot` |
 | 运行产物 | `<状态根>/runs` |
 | 迁移报告 | `<状态根>/reports` |
-| LLM 私有配置 | `$XDG_CONFIG_HOME/numpilot/llm.json` |
+| LLM 私有配置 | `<配置根>/llm.json` |
+| AsNumpy 源码缓存 | `<应用缓存根>/asnumpy/<commit>` |
 | CANNBot Skill 缓存 | `$XDG_CACHE_HOME/numpilot/cannbot-skills/<commit>` |
 
-覆盖优先级为命令行 `--out` / `--reports-dir`、NumPilot 专用环境变量、XDG 默认值：
+临时 HOME/Notebook 可在安装时传 `--persistent-root /absolute/root`。统一优先级是：显式细分
+变量 > `NUMPILOT_HOME` > XDG > 标准 HOME。单一根映射为
+`<root>/.numpilot-state`、`<root>/.numpilot-config` 和
+`<root>/.numpilot-cache/numpilot`。命令行 `--out` / `--reports-dir` 仍优先于这些默认值：
 
 ```bash
 export NUMPILOT_STATE_HOME=/data/numpilot-state
 export NUMPILOT_RUNS_DIR=/data/numpilot-runs
 export NUMPILOT_REPORTS_DIR=/data/numpilot-reports
+export NUMPILOT_HOME=/data/persistent-root
 ```
 
-`NUMPILOT_CONFIG_HOME`、`NUMPILOT_LLM_CONFIG_FILE` 和 `NUMPILOT_CANNBOT_CACHE` 分别控制
-凭据配置与 Skill 缓存。不要把这些目录指回 Git 工作树。
+`NUMPILOT_CONFIG_HOME`、`NUMPILOT_CACHE_HOME`、`NUMPILOT_LLM_CONFIG_FILE`、
+`NUMPILOT_ASNUMPY_CACHE` 和 `NUMPILOT_CANNBOT_CACHE` 分别控制更具体的目录；后两个变量都是
+cache base，NumPilot 再追加固定 commit。`NUMPILOT_CANNBOT_SKILLS` 是经过校验的 exact checkout
+覆盖，优先于 CANNBot cache base；`NUMPILOT_BOOTSTRAP_RECEIPT` 是精确文件覆盖。不要把
+私有配置或运行状态指回 Git 工作树。
+
+成功的 source-first 安装会生成 mode `0600` 的 `activate-numpilot.sh`。它只冻结本地路径、venv
+和已校验 CANN set_env，不包含模型 Token、endpoint、代理或 pip 索引，也不修改 `.bashrc`。
+每个新 shell source 一次即可；重复 source 会去重 PATH/LD_LIBRARY_PATH，并清理不同 CANN
+toolkit 根及其 `devlib`，同时保留 driver、NNAL/ATB、无关 `devlib` 和其他自定义库路径。
 
 ## 三层保留策略
 

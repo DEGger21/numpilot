@@ -59,6 +59,8 @@ class MigrationResult:
     migrated_source: str
     rewrites: dict = field(default_factory=dict)  # 迁移后 ap.<op> 调用计数 {op: n}
     expected_rewrites: dict = field(default_factory=dict)  # 原始 forward + plan 推导的期望清单
+    model_receipt: dict = field(default_factory=dict)
+    model_identity: dict = field(default_factory=dict)
 
     @property
     def total_rewrites(self) -> int:

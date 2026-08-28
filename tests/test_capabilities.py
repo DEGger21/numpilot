@@ -16,6 +16,7 @@ from numpilot.backends.npu import (
     CBRT_ASNUMPY_AUDIT_ID,
     CBRT_ASNUMPY_VERSION,
     NpuBackend,
+    OPS_NN_MATMUL_ASNUMPY_VERSION,
     OverlayRuntimeConfig,
     P0_ASNUMPY_AUDIT_ID,
     P0_ASNUMPY_VERSION,
@@ -24,6 +25,7 @@ from numpilot.backends.npu import (
     P0_MOVE_LEGACY_OVERLAY_AUDIT_ID,
     P0_MOVE_ASNUMPY_VERSION,
 )
+from numpilot.capability_profile import OPS_NN_MATMUL_ASNUMPY_AUDIT_ID
 from numpilot.capabilities import (
     AnalysisCallsiteProfile,
     AnalysisProfileSet,
@@ -33,6 +35,7 @@ from numpilot.capabilities import (
     OperatorCallProfile,
     OperatorSignature,
     OperatorCapability,
+    RuntimeIdentity,
     RuntimeProfileError,
     RuntimeProfileGuard,
     TensorProfile,
@@ -71,13 +74,150 @@ def _callable(*args, **kwargs):
     return None
 
 
+def _valid_runtime_identity(**overrides):
+    values = {
+        "asnumpy_repository": "https://gitcode.com/cann/asnumpy.git",
+        "asnumpy_commit": "1" * 40,
+        "asnumpy_tree": "2" * 40,
+        "asnumpy_version": AUDITED_ASNUMPY_VERSION,
+        "wrapper_sha256": {
+            "math.py": "3" * 64,
+            "random/_random.py": "4" * 64,
+        },
+        "module_path": "/opt/asnumpy/asnumpy/__init__.py",
+        "module_sha256": "5" * 64,
+        "native_module_path": "/opt/asnumpy/asnumpy/_core.so",
+        "native_module_sha256": "6" * 64,
+        "cann_home": "/usr/local/Ascend/cann-9.0.0",
+        "cann_version": "9.0.0",
+        "soc_model": "Ascend910B4",
+        "python_executable": "/opt/numpilot/.venv/bin/python",
+        "python_version": "3.10.20",
+        "bootstrap_receipt_path": "/opt/numpilot/state/bootstrap/receipt.json",
+        "bootstrap_receipt_sha256": "7" * 64,
+        "audit_id": "asnumpy-audit-v1",
+        "status": "matched",
+        "issues": (),
+    }
+    values.update(overrides)
+    return RuntimeIdentity(**values)
+
+
+def test_runtime_identity_strict_json_round_trip_and_canonical_hash():
+    identity = _valid_runtime_identity()
+    restored = RuntimeIdentity.from_json(identity.to_json())
+    reordered = _valid_runtime_identity(wrapper_sha256={
+        "random/_random.py": "4" * 64,
+        "math.py": "3" * 64,
+    })
+
+    assert restored == identity
+    assert restored.to_dict() == identity.to_dict()
+    assert identity.identity_sha256 == reordered.identity_sha256
+    assert json.loads(identity.to_json())["identity_sha256"] == (
+        identity.identity_sha256
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("asnumpy_repository", "unknown"),
+        ("asnumpy_commit", "unknown"),
+        ("asnumpy_tree", "unknown"),
+        ("asnumpy_version", "unknown"),
+        ("wrapper_sha256", {"math.py": "unknown"}),
+        ("module_path", "unknown"),
+        ("module_sha256", "unknown"),
+        ("native_module_path", "unknown"),
+        ("native_module_sha256", "unknown"),
+        ("cann_home", "unknown"),
+        ("cann_version", "unknown"),
+        ("soc_model", "unknown"),
+        ("python_executable", "unknown"),
+        ("python_version", "unknown"),
+        ("bootstrap_receipt_path", "unknown"),
+        ("bootstrap_receipt_sha256", "unknown"),
+        ("audit_id", "unknown"),
+    ),
+)
+def test_runtime_identity_never_matches_with_unknown_critical_field(field, value):
+    with pytest.raises(ValueError, match="matched runtime identity"):
+        _valid_runtime_identity(**{field: value})
+
+
+def test_runtime_identity_allows_unknown_only_as_explicit_audit_required():
+    identity = _valid_runtime_identity(
+        soc_model="unknown",
+        status="audit_required",
+        issues=("SoC model is unavailable",),
+    )
+
+    assert RuntimeIdentity.from_json(identity.to_json()) == identity
+    assert identity.status == "audit_required"
+
+
+def test_runtime_identity_hash_binds_audit_status_and_issues():
+    identity = _valid_runtime_identity(
+        status="audit_required",
+        issues=("SoC model requires a renewed audit",),
+    )
+    payload = identity.to_dict()
+    payload["issues"] = ["CANN version requires a renewed audit"]
+
+    with pytest.raises(ValueError, match="identity_sha256 mismatch"):
+        RuntimeIdentity.from_dict(payload)
+
+
+@pytest.mark.parametrize(
+    "field",
+    (
+        "asnumpy_repository",
+        "asnumpy_commit",
+        "asnumpy_tree",
+        "asnumpy_version",
+        "wrapper_sha256",
+        "module_path",
+        "module_sha256",
+        "native_module_path",
+        "native_module_sha256",
+        "cann_home",
+        "cann_version",
+        "soc_model",
+        "python_executable",
+        "python_version",
+        "bootstrap_receipt_path",
+        "bootstrap_receipt_sha256",
+        "audit_id",
+    ),
+)
+def test_runtime_identity_rejects_single_field_drift_against_canonical_hash(field):
+    identity = _valid_runtime_identity()
+    payload = identity.to_dict()
+    if field == "wrapper_sha256":
+        payload[field]["math.py"] = "8" * 64
+    elif field in {"asnumpy_commit", "asnumpy_tree"}:
+        payload[field] = "8" * 40
+    elif field.endswith("sha256"):
+        payload[field] = "8" * 64
+    else:
+        payload[field] = payload[field] + "-drift"
+
+    with pytest.raises(ValueError, match="identity_sha256 mismatch"):
+        RuntimeIdentity.from_dict(payload)
+
+
 def test_p0_audit_ids_bind_wrapper_dependencies():
     assert "init8761f7f9" in npu_module.ASNUMPY_AUDIT_ID
     assert "cannac907b3a" in npu_module.ASNUMPY_AUDIT_ID
+    assert "linalgd2965c2e" in npu_module.ASNUMPY_AUDIT_ID
+    assert "random6c9c7891" in npu_module.ASNUMPY_AUDIT_ID
     assert "coreab71b004" in npu_module.ASNUMPY_AUDIT_ID
-    assert npu_module.ASNUMPY_AUDIT_ID.endswith("-v3")
+    assert npu_module.ASNUMPY_AUDIT_ID.endswith("-v4")
     assert "cannac907b3a" in ASNUMPY_SOURCE_BUILD_AUDIT_ID
-    assert ASNUMPY_SOURCE_BUILD_AUDIT_ID.endswith("-receipt-v1")
+    assert "linalgd2965c2e" in ASNUMPY_SOURCE_BUILD_AUDIT_ID
+    assert "random6c9c7891" in ASNUMPY_SOURCE_BUILD_AUDIT_ID
+    assert ASNUMPY_SOURCE_BUILD_AUDIT_ID.endswith("-receipt-v2")
     assert "utilsfd94c025" in P0_ASNUMPY_AUDIT_ID
     assert P0_ASNUMPY_AUDIT_ID.endswith("-v2")
     assert "array16c901f5" in P0_LINALG_ASNUMPY_AUDIT_ID
@@ -159,12 +299,15 @@ def test_generic_audited_identity_rejects_wrapper_drift(tmp_path, monkeypatch):
             "array.py": b"array",
             "cann.py": b"cann",
             "linalg/__init__.py": b"linalg-init",
+            "linalg/_linalg.py": b"linalg-nested",
             "linalg/direct.py": b"direct",
             "logic.py": b"logic",
             "math.py": b"math",
             "nn.py": b"nn",
             "sorting.py": b"sorting",
             "statistics.py": b"statistics",
+            "random/__init__.py": b"random-init",
+            "random/_random.py": b"random-nested",
             "utils.py": b"utils",
             "_core.so": b"core",
         },
@@ -174,6 +317,33 @@ def test_generic_audited_identity_rejects_wrapper_drift(tmp_path, monkeypatch):
 
     assert _REAL_AUDITED_RUNTIME_IDENTITY_MATCHES(module)
     (root / "logic.py").write_bytes(b"drift")
+    assert not _REAL_AUDITED_RUNTIME_IDENTITY_MATCHES(module)
+
+
+@pytest.mark.parametrize(
+    "relative",
+    ("linalg/_linalg.py", "random/__init__.py", "random/_random.py"),
+)
+def test_generic_audited_identity_rejects_nested_wrapper_drift(
+    tmp_path, monkeypatch, relative
+):
+    module, root = _write_runtime_fixture(
+        tmp_path,
+        {
+            "__init__.py": b"init",
+            "linalg/__init__.py": b"linalg-init",
+            "linalg/_linalg.py": b"linalg-nested",
+            "linalg/direct.py": b"direct",
+            "random/__init__.py": b"random-init",
+            "random/_random.py": b"random-nested",
+            "_core.so": b"core",
+        },
+        monkeypatch,
+        "_AUDITED_RUNTIME_FILE_SHA256",
+    )
+
+    assert _REAL_AUDITED_RUNTIME_IDENTITY_MATCHES(module)
+    (root / relative).write_bytes(b"drift")
     assert not _REAL_AUDITED_RUNTIME_IDENTITY_MATCHES(module)
 
 
@@ -208,12 +378,15 @@ def _source_receipt_runtime(tmp_path, monkeypatch):
             "array.py": b"array",
             "cann.py": b"cann",
             "linalg/__init__.py": b"linalg-init",
+            "linalg/_linalg.py": b"linalg-nested",
             "linalg/direct.py": b"direct",
             "logic.py": b"logic",
             "math.py": b"math",
             "nn.py": b"nn",
             "sorting.py": b"sorting",
             "statistics.py": b"statistics",
+            "random/__init__.py": b"random-init",
+            "random/_random.py": b"random-nested",
             "utils.py": b"utils",
             "_core.so": b"locally-built-core",
         },
@@ -421,6 +594,126 @@ def test_pinned_source_receipt_uses_absolute_default_state_path(
 
     monkeypatch.setenv("NUMPILOT_STATE_HOME", "relative-state")
     assert not _REAL_AUDITED_RUNTIME_IDENTITY_MATCHES(module)
+
+
+def _configure_runtime_identity_environment(tmp_path, monkeypatch):
+    import numpilot.env_check as env_check
+    from numpilot.backends import npu
+
+    cann_home = tmp_path / "Ascend" / "cann-9.0.0"
+    opp = cann_home / "opp"
+    opp.mkdir(parents=True)
+    (opp / "version.info").write_text("Version=9.0.0\n", encoding="utf-8")
+    monkeypatch.setenv("ASCEND_HOME_PATH", str(cann_home))
+    monkeypatch.setenv("ASCEND_TOOLKIT_HOME", str(cann_home))
+    monkeypatch.setenv("ASCEND_OPP_PATH", str(opp))
+    monkeypatch.setattr(npu, "AUDITED_CANN_HOME", str(cann_home.resolve()))
+    monkeypatch.setattr(env_check, "_probe_npu_smi_soc_model", lambda: "Ascend910B4")
+    return cann_home
+
+
+def test_pinned_source_runtime_identity_is_complete_hash_bound_and_matched(
+    tmp_path, monkeypatch
+):
+    module, root, receipt_path, _ = _source_receipt_runtime(
+        tmp_path, monkeypatch
+    )
+    _configure_runtime_identity_environment(tmp_path, monkeypatch)
+
+    identity = NpuBackend(module).runtime_identity()
+    restored = RuntimeIdentity.from_json(identity.to_json())
+
+    assert identity.status == "matched"
+    assert identity.issues == ()
+    assert identity.audit_id == ASNUMPY_SOURCE_BUILD_AUDIT_ID
+    assert identity.asnumpy_commit == "1929a3ba44eb532a9f544f774a249cdf1c4119be"
+    assert identity.asnumpy_tree == "bf2f353825f60bd96f910c3a90fd5b75d4c3c8d0"
+    assert identity.soc_model == "Ascend910B4"
+    assert identity.cann_version == "9.0.0"
+    assert identity.bootstrap_receipt_path == str(receipt_path.resolve())
+    assert identity.module_sha256 == hashlib.sha256(
+        (root / "__init__.py").read_bytes()
+    ).hexdigest()
+    assert identity.native_module_sha256 == hashlib.sha256(
+        (root / "_core.so").read_bytes()
+    ).hexdigest()
+    assert {
+        "linalg/_linalg.py",
+        "random/__init__.py",
+        "random/_random.py",
+    }.issubset(identity.wrapper_sha256)
+    assert restored.identity_sha256 == identity.identity_sha256
+    assert "plan_sha256" not in identity.to_json()
+
+
+def test_runtime_identity_locates_metadata_without_importing_asnumpy(
+    tmp_path, monkeypatch
+):
+    from numpilot.backends import npu
+
+    module, _, _, _ = _source_receipt_runtime(tmp_path, monkeypatch)
+    _configure_runtime_identity_environment(tmp_path, monkeypatch)
+    specification = types.SimpleNamespace(origin=module.__file__)
+    monkeypatch.setattr(
+        npu.importlib_util, "find_spec", lambda name: specification
+    )
+    backend = NpuBackend()
+
+    def forbidden_import():
+        raise AssertionError("runtime identity must not import AsNumpy")
+
+    monkeypatch.setattr(backend, "get_module", forbidden_import)
+
+    assert backend.runtime_identity().status == "matched"
+
+
+@pytest.mark.parametrize(
+    "drift",
+    (
+        "module_hash",
+        "native_hash",
+        "nested_wrapper",
+        "receipt",
+        "cann",
+        "soc",
+        "python",
+    ),
+)
+def test_runtime_identity_turns_single_observed_drift_into_audit_required(
+    tmp_path, monkeypatch, drift
+):
+    import numpilot.env_check as env_check
+    from numpilot.backends import npu
+
+    module, root, receipt_path, receipt = _source_receipt_runtime(
+        tmp_path, monkeypatch
+    )
+    cann_home = _configure_runtime_identity_environment(tmp_path, monkeypatch)
+
+    if drift == "module_hash":
+        (root / "__init__.py").write_bytes(b"module-drift")
+    elif drift == "native_hash":
+        (root / "_core.so").write_bytes(b"native-drift")
+    elif drift == "nested_wrapper":
+        (root / "random" / "_random.py").write_bytes(b"nested-drift")
+    elif drift == "receipt":
+        changed = copy.deepcopy(receipt)
+        changed["repositories"]["asnumpy"]["commit"] = "0" * 40
+        _write_source_receipt(receipt_path, changed)
+    elif drift == "cann":
+        (cann_home / "opp" / "version.info").write_text(
+            "Version=8.5.0\n", encoding="utf-8"
+        )
+    elif drift == "soc":
+        monkeypatch.setattr(env_check, "_probe_npu_smi_soc_model", lambda: None)
+    elif drift == "python":
+        monkeypatch.setattr(npu.platform, "python_version", lambda: "3.10.19")
+
+    identity = NpuBackend(module).runtime_identity()
+
+    assert identity.status == "audit_required"
+    assert identity.issues
+    assert RuntimeIdentity.from_json(identity.to_json()) == identity
 
 
 def test_p0_linalg_identity_rejects_utils_drift(tmp_path, monkeypatch):
@@ -759,6 +1052,48 @@ def test_p0_move_version_without_exact_runtime_hashes_remains_unaudited(monkeypa
 
     assert manifest.audit_id == "unaudited-asnumpy-version"
     assert manifest.operators["add"].provenance is ExecutionProvenance.UNKNOWN
+
+
+def test_ops_nn_matmul_runtime_is_hash_bound_and_two_operator_scoped(monkeypatch):
+    monkeypatch.setattr(
+        npu_module, "_ops_nn_matmul_runtime_identity_matches", lambda _module: True
+    )
+    backend = NpuBackend(_fake_asnumpy(
+        version=OPS_NN_MATMUL_ASNUMPY_VERSION,
+        full=_callable,
+        matmul=_callable,
+        add=_callable,
+    ))
+
+    manifest = backend.capability_manifest(["full", "matmul", "add"])
+
+    assert manifest.audit_id == OPS_NN_MATMUL_ASNUMPY_AUDIT_ID
+    assert manifest.operators["full"].strict_npu
+    matmul = manifest.operators["matmul"]
+    assert matmul.provenance is ExecutionProvenance.NATIVE_NPU
+    assert not matmul.strict_npu
+    assert matmul.signature_variants == (OperatorSignature(positional_args=2),)
+    assert set(matmul.constraints) == {
+        "dtype=float32",
+        "rank>=2",
+        "rank<=2",
+        "contiguous=true",
+        "numel>=1",
+    }
+    assert manifest.operators["add"].provenance is ExecutionProvenance.UNKNOWN
+
+
+def test_ops_nn_matmul_version_without_exact_hashes_remains_unaudited(monkeypatch):
+    monkeypatch.setattr(
+        npu_module, "_ops_nn_matmul_runtime_identity_matches", lambda _module: False
+    )
+    manifest = NpuBackend(_fake_asnumpy(
+        version=OPS_NN_MATMUL_ASNUMPY_VERSION,
+        matmul=_callable,
+    )).capability_manifest(["matmul"])
+
+    assert manifest.audit_id == "unaudited-asnumpy-version"
+    assert manifest.operators["matmul"].provenance is ExecutionProvenance.UNKNOWN
 
 
 def test_matmul_fallback_profile_survives_runtime_lookup_failure():

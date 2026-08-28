@@ -1,0 +1,3 @@
+# Patch payloads are content-addressed evidence.  Lines such as "+ " encode
+# an added blank source line and must not be rewritten by whitespace cleanup.
+integrations/asnumpy/*.patch -whitespace

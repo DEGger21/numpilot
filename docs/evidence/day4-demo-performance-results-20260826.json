@@ -1,0 +1,345 @@
+{
+  "schema_version": 1,
+  "date": "2026-08-26",
+  "status": "completed_with_identified_performance_issues",
+  "ratio_definition": "cpu_median_time / npu_median_time; greater than 1 means NPU is faster",
+  "runtime": {
+    "asnumpy_version": "0.3.1.dev4+g1929a3ba4",
+    "asnumpy_commit": "1929a3ba44eb532a9f544f774a249cdf1c4119be",
+    "cann_version": "9.0.0",
+    "soc_model": "Ascend910B4",
+    "runtime_identity_sha256": "7d443cb390fdd8bb398e10ed00b82d1a5aed624c1ed777ca8d6652fc9cf1b124"
+  },
+  "authoritative_evidence": {
+    "steady_exact_scripts": {
+      "path": "/home/ma-user/work/.numpilot-state/runs/day4-demo-steady-v2-20260826/evidence.json",
+      "sha256": "cccd400d7c13ab40c23892b50af3834a183a2f3d0fbfb068bc226a580eadd4ea",
+      "runner_sha256": "db6f5708685e94e0247cf402a1fc74f29b46ca84c0f92d1f25410c1de2d425ab",
+      "day3_index_sha256": "9be0fb0bcb6293a54d98ae1d52211711aa6893d65391197f94023313cad6b651",
+      "supersedes": "/home/ma-user/work/.numpilot-state/runs/day4-demo-steady-20260826/evidence.json"
+    },
+    "case06_fixed_scale_adapter": {
+      "path": "/home/ma-user/work/.numpilot-state/runs/day4-case06-scale-20260826/evidence.json",
+      "sha256": "0e2d9653292c7caae6d7a48777a64b81dec6b3a9484e5224a49dbe7e0e6aaec1",
+      "harness_sha256": "7785baa1839835d163df3bcc85bfd81de75966182c5ce75597c95caebc27f36c",
+      "plan_sha256": "35c47fdfb8e391e872ff1d8d5d1bcd71f133771f85d8c4cbdf7f31d86e95a5db"
+    },
+    "cold_exact_scripts": {
+      "path": "/home/ma-user/work/.numpilot-state/runs/day4-demo-cold-v4-20260826/evidence.json",
+      "sha256": "d65eaac9470eb805d77fce72867d38be3ccfba863d83a02eba6416e0c850bcd9",
+      "harness_sha256": "b31f58aaf5f3c9dce13a96324c088d641364347378a90bc714d982a1807c75a5",
+      "plan_sha256": "21d57f14ed61637f3e864b7edfb6ba83d4c67d405c6e62a88682890dcab3a803",
+      "superseded_runs": [
+        {
+          "path": "/home/ma-user/work/.numpilot-state/runs/day4-demo-cold-20260826/evidence.json",
+          "reason": "Popen.wait(timeout=...) added POSIX polling quantization to process-exit observation"
+        },
+        {
+          "path": "/home/ma-user/work/.numpilot-state/runs/day4-demo-cold-v2-20260826/evidence.json",
+          "reason": "wrong non-venv harness interpreter; all NPU subprocesses failed and fail-closed gates rejected publication"
+        },
+        {
+          "path": "/home/ma-user/work/.numpilot-state/runs/day4-demo-cold-v3-20260826/evidence.json",
+          "reason": "valid timing but superseded after the misleading summary field name was corrected"
+        }
+      ]
+    }
+  },
+  "measurement_gates": {
+    "same_host_logical_cpu": 0,
+    "cpu_and_npu_affinity": [
+      0
+    ],
+    "requested_blas_threads": 1,
+    "observed_openblas_threads": 1,
+    "observed_openblas_scope": "steady and scale workers; cold children inherit the one-thread environment and bind the accepted steady receipt but do not query BLAS internally",
+    "npu_scale_worker_observed_os_threads": 9,
+    "npu_device_synchronization": "explicit before and after every scale timing sample",
+    "steady_warmups": 2,
+    "steady_measurements": 7,
+    "scale_warmups": 2,
+    "scale_measurements": 7,
+    "cold_measurements": 7,
+    "cold_process_exit_observation": "blocking wait with independent timeout watchdog",
+    "publication_policy": "fail closed on numerical, strict-profile, runtime, hash, affinity, thread, synchronization, sample-count, or fallback gate failure"
+  },
+  "numerical_verification": {
+    "checked_migrated_artifacts": 7,
+    "passed": 6,
+    "failed": 1,
+    "passed_cases": [
+      "01",
+      "03",
+      "04",
+      "06",
+      "08",
+      "10"
+    ],
+    "failed_cases": {
+      "02": {
+        "path": "$['max_val']",
+        "reason": "dtype mismatch",
+        "numpy_dtype": "float32",
+        "asnumpy_dtype": "float64",
+        "max_abs_diff_across_compared_outputs": 7.152557373046875e-07,
+        "performance_valid": false,
+        "speedup": null
+      }
+    }
+  },
+  "steady_exact_script_results_ms": {
+    "03": {
+      "publication": "strict",
+      "cpu_p10_median_p90": [
+        0.6942574,
+        0.698794,
+        0.7106074
+      ],
+      "npu_p10_median_p90": [
+        1.8546396,
+        1.87545,
+        1.890081
+      ],
+      "cpu_time_over_npu_time": 0.3726007091631342,
+      "npu_slower_by": 2.6838381554506765,
+      "winner": "cpu"
+    },
+    "06": {
+      "publication": "strict",
+      "cpu_p10_median_p90": [
+        0.492739,
+        0.496962,
+        0.5281644
+      ],
+      "npu_p10_median_p90": [
+        1.8443054,
+        1.868509,
+        1.940674
+      ],
+      "cpu_time_over_npu_time": 0.26596714278603956,
+      "npu_slower_by": 3.759862927145335,
+      "winner": "cpu"
+    },
+    "10": {
+      "publication": "strict",
+      "cpu_p10_median_p90": [
+        0.36849,
+        0.371182,
+        0.3803536
+      ],
+      "npu_p10_median_p90": [
+        1.93876,
+        1.96101,
+        1.999076
+      ],
+      "cpu_time_over_npu_time": 0.18928103375301505,
+      "npu_slower_by": 5.283149506172173,
+      "winner": "cpu"
+    },
+    "diagnostic_only": {
+      "02": {
+        "reason": "numerical dtype mismatch and scoped migration",
+        "cpu_median": 0.455252,
+        "npu_median": 1.651938,
+        "speedup": null
+      },
+      "04": {
+        "reason": "scoped migration",
+        "cpu_median": 0.457623,
+        "npu_median": 2.200291,
+        "speedup": null
+      },
+      "01": {
+        "reason": "fallback artifact; NPU timing forbidden",
+        "npu_timing_performed": false,
+        "speedup": null
+      },
+      "08": {
+        "reason": "fallback artifact; NPU timing forbidden",
+        "npu_timing_performed": false,
+        "speedup": null
+      }
+    }
+  },
+  "case06_fixed_scale_results_ms": {
+    "scope": "trusted fixed adapter, resident inputs, four public operations power-log-exp-equal; excludes input allocation, H2D, D2H and output release",
+    "executes_glm_artifact": false,
+    "1000000": {
+      "cpu_p10_median_p90": [
+        48.8793346,
+        50.423574,
+        51.0417974
+      ],
+      "npu_p10_median_p90": [
+        4.9782966,
+        5.100876,
+        8.214542
+      ],
+      "cpu_time_over_npu_time": 9.885277352360653,
+      "conservative_cpu_p10_over_npu_p90": 5.950342039763141,
+      "npu_public_over_private_core_diagnostic": 21.513424602069996,
+      "npu_allocation_cpu_time_over_npu_time": 0.5362076579466493
+    },
+    "4000000": {
+      "cpu_p10_median_p90": [
+        199.8881842,
+        200.039653,
+        201.1477408
+      ],
+      "npu_p10_median_p90": [
+        20.9126526,
+        21.130368,
+        21.8303394
+      ],
+      "cpu_time_over_npu_time": 9.466927078600808,
+      "conservative_cpu_p10_over_npu_p90": 9.156439601667394,
+      "npu_public_over_private_core_diagnostic": 59.15026649348323,
+      "npu_allocation_cpu_time_over_npu_time": 0.45189757856896046
+    },
+    "9000000": {
+      "cpu_p10_median_p90": [
+        454.3237342,
+        456.016368,
+        457.5960994
+      ],
+      "npu_p10_median_p90": [
+        39.763571,
+        39.84773,
+        60.1287256
+      ],
+      "cpu_time_over_npu_time": 11.443973546297368,
+      "conservative_cpu_p10_over_npu_p90": 7.555851710916687,
+      "npu_public_over_private_core_diagnostic": 57.88245633148128,
+      "npu_allocation_cpu_time_over_npu_time": 0.5075672874047431
+    }
+  },
+  "cold_exact_script_results_ms": {
+    "scope": "fresh Python/runtime process through exact script exit; device, driver and filesystem caches are not reset",
+    "03": {
+      "publication": "strict",
+      "cpu_p10_median_p90": [
+        181.8345498,
+        182.404134,
+        185.3110242
+      ],
+      "npu_p10_median_p90": [
+        3561.7144322,
+        3576.364962,
+        4347.0155242
+      ],
+      "cpu_time_over_npu_time": 0.05100266218299898,
+      "npu_slower_by": 19.606819667804242,
+      "winner": "cpu"
+    },
+    "06": {
+      "publication": "strict",
+      "cpu_p10_median_p90": [
+        179.5716786,
+        180.832323,
+        275.9977912
+      ],
+      "npu_p10_median_p90": [
+        3569.5420744,
+        3951.127579,
+        4945.515026
+      ],
+      "cpu_time_over_npu_time": 0.045767270072754086,
+      "npu_slower_by": 21.849675508509616,
+      "winner": "cpu"
+    },
+    "10": {
+      "publication": "strict",
+      "cpu_p10_median_p90": [
+        180.7352286,
+        182.225323,
+        243.5893782
+      ],
+      "npu_p10_median_p90": [
+        3553.3736426,
+        3567.635812,
+        3851.33137
+      ],
+      "cpu_time_over_npu_time": 0.051077333170351076,
+      "npu_slower_by": 19.57815606121878,
+      "winner": "cpu"
+    },
+    "04": {
+      "publication": "diagnostic_only_scoped",
+      "cpu_median": 182.685066,
+      "npu_median": 3759.171419,
+      "cpu_time_over_npu_time": 0.04859716294837046,
+      "speedup": null
+    },
+    "02": {
+      "publication": "rejected_before_launch",
+      "reason": "steady numerical dtype mismatch",
+      "cpu_timing_performed": false,
+      "npu_timing_performed": false,
+      "speedup": null
+    }
+  },
+  "identified_issues": [
+    {
+      "id": "ASNUMPY_PUBLIC_WRAPPER_DEEP_COPY_AND_SYNC",
+      "severity": "high",
+      "finding": "public Python operators wrap a native result with ndarray(...); the bound base-class copy constructor allocates device memory, performs a full device-to-device copy, and synchronizes after the native executor has already synchronized",
+      "observed_effect": "the public four-op Case06 chain is 21.51x to 59.15x slower than the private native diagnostic chain",
+      "scope": "upstream AsNumpy runtime"
+    },
+    {
+      "id": "ASNUMPY_FINE_GRAINED_SYNCHRONIZATION",
+      "severity": "high",
+      "finding": "the generic unary and binary executors call aclrtSynchronizeDevice after every operation, preventing asynchronous chaining",
+      "scope": "upstream AsNumpy runtime"
+    },
+    {
+      "id": "ASNUMPY_ALLOCATION_OVERHEAD",
+      "severity": "medium",
+      "finding": "two public NPU full allocations are 1.86x to 2.21x slower than the NumPy allocation reference at the frozen scales",
+      "scope": "upstream AsNumpy runtime"
+    },
+    {
+      "id": "ASNUMPY_CLIP_SCALAR_HANDLE_LEAK",
+      "severity": "medium",
+      "finding": "the scalar clip path creates amin and amax ACL scalar handles without destroying them",
+      "scope": "upstream AsNumpy runtime"
+    },
+    {
+      "id": "CASE02_DTYPE_CONTRACT_DRIFT",
+      "severity": "high",
+      "finding": "the migrated max_val output is float64 while NumPy returns float32; numerical verification fails and no speedup is publishable",
+      "scope": "AsNumpy semantic compatibility and NumPilot gate"
+    },
+    {
+      "id": "SMALL_SCRIPT_AND_COLD_FIXED_COST",
+      "severity": "expected_but_material",
+      "finding": "sub-millisecond exact script bodies are 2.68x to 5.28x slower on NPU, and fresh-process exact scripts are 19.58x to 21.85x slower, because dispatch, synchronization and CANN/Python initialization dominate useful work",
+      "scope": "current execution model"
+    }
+  ],
+  "static_audit_bindings": {
+    "python_math_sha256": "62e0ba09576ead5d3b44f6b0b33311e849efd47ab0bb11f7875c0a43f499085c",
+    "python_utils_sha256": "d4105619f540f7f98dd29b9967fe925c6355c96769f54862dc245c0851666cb1",
+    "binding_source_sha256": "194b9d683121ee52eae07124628a4cf39e74f0a5d06203d0379af5dacad9d2be",
+    "npu_array_source_sha256": "b603406820b368097480aff468e7043561ffe44c43a81226881a8c360a38a25e",
+    "executor_source_sha256": "5431aec096e6811021c832c14a5d34ba50ba7235387496427c7a45d48d2e521a",
+    "miscellaneous_source_sha256": "b525a1225d213bfb8650142a8142489b3fb5ace8f7eb2062e3f15d0dc991e9b9"
+  },
+  "conclusion": {
+    "large_resident_compute": "AsNumpy is faster for the frozen 1M, 4M and 9M resident four-operation adapter scope",
+    "small_exact_scripts": "AsNumpy is slower for all three strict migrated script bodies measured",
+    "cold_exact_scripts": "AsNumpy is slower for all three strict fresh-process exact scripts measured",
+    "universal_asnumpy_faster_claim_supported": false,
+    "large_migrated_script_end_to_end_speedup_supported": false
+  },
+  "limitations": [
+    "The scale adapter is trusted and source-bound to the frozen Case06 operation chain, but it does not execute the GLM-produced migrated.py artifact.",
+    "Scale scopes are separate distributions; their medians must not be summed and described as end-to-end latency.",
+    "The private native core is unsupported and diagnostic-only.",
+    "Each timing distribution has seven samples, fixed CPU-then-NPU order, no confidence interval and no randomized interleaving.",
+    "The scale adapter uses constant finite inputs and does not cover random, NaN, Inf or boundary-value distributions.",
+    "The 1M and 9M NPU samples include visible high-tail variation, especially allocation, public compute and H2D.",
+    "Cold means a fresh process only; device, driver, filesystem and other machine-global caches are not reset.",
+    "The NPU scale process has nine OS threads while all threads share one host-core affinity and observed OpenBLAS uses one thread; describe this as one host-core affinity, not a one-thread process."
+  ]
+}

@@ -6,6 +6,7 @@ import pytest
 import numpilot.asnumpy_skill as asnumpy_skill
 from numpilot.asnumpy_skill import (
     ASNUMPY_INTEGRATION_SKILL_FILES,
+    ASNUMPY_OFFICIAL_ADAPTER_SKILL_FILES,
     AsnumpyIntegrationSkillError,
     load_asnumpy_integration_skill,
 )
@@ -25,6 +26,26 @@ def test_builtin_asnumpy_skill_is_complete_hash_bound_and_prompt_embedded():
         assert bundle.files_sha256[relative] == hashlib.sha256(
             bundle.files[relative].encode("utf-8")
         ).hexdigest()
+
+
+def test_official_adapter_prompt_uses_only_route_relevant_skill_files():
+    bundle = load_asnumpy_integration_skill()
+
+    rendered = bundle.prompt_context(ASNUMPY_OFFICIAL_ADAPTER_SKILL_FILES)
+
+    assert "official-aclnn-existing-module" in rendered
+    assert "qualification-and-debug" in rendered
+    assert (
+        "BEGIN ASNUMPY SKILL FILE `references/manifest-workflow.md`"
+        not in rendered
+    )
+    assert (
+        "BEGIN ASNUMPY SKILL FILE `references/legacy-case-lessons.md`"
+        not in rendered
+    )
+    assert set(ASNUMPY_OFFICIAL_ADAPTER_SKILL_FILES) < set(
+        ASNUMPY_INTEGRATION_SKILL_FILES
+    )
 
 
 def test_asnumpy_skill_loader_fails_closed_when_a_required_file_is_missing(

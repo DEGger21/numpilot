@@ -11,9 +11,19 @@ from typing import Dict, Optional, Tuple
 
 ASNUMPY_INTEGRATION_SKILL_FILES: Tuple[str, ...] = (
     "SKILL.md",
+    "references/official-aclnn-existing-module.md",
     "references/manifest-workflow.md",
     "references/legacy-case-lessons.md",
     "references/qualification-and-debug.md",
+)
+
+# Route-specific prompt selection.  The complete bundle remains mandatory and
+# hash-bound at load time, but an installed official ACLNN candidate must not
+# receive the mutually exclusive custom-OPP manifest/manual playbooks.  This
+# keeps the configured model's task narrow without weakening bundle integrity.
+ASNUMPY_OFFICIAL_ADAPTER_SKILL_FILES: Tuple[str, ...] = (
+    "SKILL.md",
+    "references/official-aclnn-existing-module.md",
 )
 _MAX_FILE_BYTES = 128 * 1024
 _MAX_TOTAL_BYTES = 512 * 1024

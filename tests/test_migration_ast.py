@@ -145,12 +145,12 @@ def forward(x):
 def test_engine_name():
     assert AstRewriteEngine().name == "ast"
 
-def test_llm_falls_back_to_ast_when_unconfigured(monkeypatch):
+def test_llm_never_falls_back_to_ast_when_unconfigured(monkeypatch):
     for k in ["NUMPILOT_LLM_BASE_URL", "NUMPILOT_LLM_AUTH_TOKEN", "NUMPILOT_LLM_MODEL"]:
         monkeypatch.delenv(k, raising=False)
     plan = OffloadPlan(placement={"matmul": "NPU"}, threshold_elements=1_000_000)
-    out = LlmEngine().rewrite(SRC, plan)                 # 默认非 strict
-    assert "ap.matmul(" in out          # 未配置 → 回退 AST 引擎, 结果等价
+    with pytest.raises(LlmError):
+        LlmEngine().rewrite(SRC, plan)
 
 
 def test_llm_strict_raises_when_unconfigured(monkeypatch):

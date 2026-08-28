@@ -34,6 +34,7 @@ from numpilot.cannbot_skills import (
     CANNBOT_COMMIT,
     CANNBOT_LICENSE,
     CANNBOT_REPOSITORY,
+    default_skill_checkout,
     fetch_pinned_skill,
     load_skill_bundle,
 )
@@ -255,22 +256,13 @@ def _git(root: Path, *args: str, runner: Optional[Runner] = None) -> str:
 
 
 def default_asnumpy_checkout(env: Optional[Mapping[str, str]] = None) -> Path:
-    values = os.environ if env is None else env
-    base = values.get("NUMPILOT_ASNUMPY_CACHE")
-    if base:
-        return Path(base).expanduser() / ASNUMPY_COMMIT
-    xdg = values.get("XDG_CACHE_HOME")
-    root = Path(xdg).expanduser() if xdg else Path.home() / ".cache"
-    return root / "numpilot" / "asnumpy" / ASNUMPY_COMMIT
+    from numpilot.paths import asnumpy_cache_base
+
+    return asnumpy_cache_base(env) / ASNUMPY_COMMIT
 
 
 def _default_cannbot_checkout(env: Mapping[str, str]) -> Path:
-    base = env.get("NUMPILOT_CANNBOT_CACHE")
-    if base:
-        return Path(base).expanduser() / CANNBOT_COMMIT
-    xdg = env.get("XDG_CACHE_HOME")
-    root = Path(xdg).expanduser() if xdg else Path.home() / ".cache"
-    return root / "numpilot" / "cannbot-skills" / CANNBOT_COMMIT
+    return default_skill_checkout(env)
 
 
 def load_asnumpy_checkout(

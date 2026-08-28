@@ -43,9 +43,10 @@ BLOCKED：动态或未建模表面，结构化记录原因并停止
 `migrate` 默认且推荐 ordinary script。`build_inputs + forward` 只有显式 `--mode contract` 才
 进入 legacy 严格通道；`--mode auto` 只保留兼容性，新的 Demo 与比赛脚本不得依赖自动探测。
 
-普通迁移不执行用户代码，也不发布数值或性能结论。产品内 ordinary 通用 benchmark 尚未实现；
-本轮真实 NPU 数值/性能由外部受信、与原文件/GLM artifact/runtime/harness 哈希绑定的定向流程
-验证。`check-suite`、`wizard`、`bench-cpu`、`bench-npu` 仍是 legacy contract 工具。
+普通迁移不执行用户代码，也不直接发布数值或性能结论；执行分别由显式 `verify-script` 和
+受限的 `benchmark-script` 发起。后者已实现 strict configured-model artifact 的 marker resident
+性能门，但不承诺任意 Python 或冷启动端到端。`check-suite`、`wizard`、`bench-cpu`、
+`bench-npu` 仍是 legacy contract 工具。
 
 ## 2. 十天交付目标
 

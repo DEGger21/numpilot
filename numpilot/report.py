@@ -47,6 +47,33 @@ def build_report_md(info: dict) -> str:
     lines.append(f"- 执行后端:{info.get('backend', '?')}")
     lines.append(f"- 状态:**{info.get('status', '?')}**")
 
+    model_identity = info.get("model_identity") or {}
+    model_receipt = info.get("model_receipt") or {}
+    if model_identity:
+        lines += ["", "## Configured model 身份"]
+        lines.append(
+            "- provider / protocol:"
+            f"`{model_identity.get('provider', '?')}` / "
+            f"`{model_identity.get('protocol', '?')}`"
+        )
+        lines.append(
+            "- configured / response model:"
+            f"`{model_identity.get('configured_model', '?')}` / "
+            f"`{model_identity.get('response_model', '?')}`"
+        )
+        lines.append(
+            "- response identity:"
+            f"`{model_identity.get('response_model_identity', '?')}`"
+        )
+        lines.append(
+            "- response content SHA-256:"
+            f"`{model_receipt.get('content_sha256', '?')}`"
+        )
+        lines.append(
+            "- migration artifact SHA-256:"
+            f"`{model_identity.get('artifact_sha256', '?')}`"
+        )
+
     # 多智能体阵容(每个智能体用什么模型/引擎)
     agents = info.get("agents")
     if agents:

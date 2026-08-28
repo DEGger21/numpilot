@@ -1,0 +1,893 @@
+{
+  "schema": "numpilot.day2_demo_golden_profile",
+  "schema_version": 1,
+  "profile_date": "2026-08-26",
+  "analysis_mode": "STATIC_AST_ONLY",
+  "demo_root_hint": "/home/ma-user/work/demo",
+  "source_policy": {
+    "migration_source_pattern": "NN_numpy.py",
+    "migration_source_count": 10,
+    "reference_role": "REFERENCE_ONLY_NOT_MIGRATION_SOURCE",
+    "reference_files_are_migration_inputs": false
+  },
+  "decision_vocabulary": [
+    "DIRECT",
+    "FALLBACK_CONSENT",
+    "GAP_REQUIRED",
+    "CAPABILITY_AUDIT_REQUIRED",
+    "BLOCKED"
+  ],
+  "route_vocabulary": [
+    "NATIVE_NPU",
+    "COMPOSITE_NPU",
+    "CPU_FALLBACK",
+    "CONDITIONAL_CPU_FALLBACK",
+    "UNAVAILABLE"
+  ],
+  "qualification_vocabulary": [
+    "EXACT_PROFILE",
+    "AUDITED_FALLBACK",
+    "UNSUPPORTED_CALL_PROFILE",
+    "UNAVAILABLE"
+  ],
+  "actual_remote_call": false,
+  "execution_performed": false,
+  "performance_valid": false,
+  "speedup": null,
+  "cases": [
+    {
+      "case_id": "01",
+      "source": {
+        "relative_path": "01_numpy.py",
+        "role": "MIGRATION_SOURCE",
+        "sha256": "0acec80476546d4036607cd205b522a9ad7147b9ea623bf2f3e1546946d3da27",
+        "imports": [
+          {"kind": "import", "module": "numpy", "name": null, "alias": "np", "line": 21, "col": 0}
+        ],
+        "einsum_equations": []
+      },
+      "reference": {
+        "relative_path": "01_asnumpy_pure.py",
+        "role": "REFERENCE_ONLY_NOT_MIGRATION_SOURCE",
+        "sha256": "d4498d0443d595956f11577beb85f7d1a3aac23e08e9b8703d7f1e7b6aaf4f62"
+      },
+      "numpy_calls": [
+        {
+          "line": 25,
+          "col": 4,
+          "qualified_name": "numpy.full",
+          "static_facts": {"shape": [2, 3], "rank": 2, "fill_value": 1.0, "dtype": "numpy.float32"},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "Constant rank-2 float32 creation profile is fully static."
+        },
+        {
+          "line": 26,
+          "col": 4,
+          "qualified_name": "numpy.full",
+          "static_facts": {"shape": [3, 4], "rank": 2, "fill_value": 2.0, "dtype": "numpy.float32"},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "Constant rank-2 float32 creation profile is fully static."
+        },
+        {
+          "line": 27,
+          "col": 9,
+          "qualified_name": "numpy.matmul",
+          "static_facts": {"lhs_shape": [2, 3], "rhs_shape": [3, 4], "lhs_rank": 2, "rhs_rank": 2, "output_shape": [2, 4], "dtype": "numpy.float32"},
+          "route": "CPU_FALLBACK",
+          "qualification": "AUDITED_FALLBACK",
+          "reason": "Pinned AsNumpy public matmul unconditionally copies to NumPy on the host."
+        },
+        {
+          "line": 30,
+          "col": 13,
+          "qualified_name": "numpy.exp",
+          "static_facts": {"input_rank": 2, "output_rank": 2, "dtype": "numpy.float32"},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "Elementwise float32 rank-2 profile is qualified."
+        },
+        {
+          "line": 31,
+          "col": 21,
+          "qualified_name": "numpy.sum",
+          "static_facts": {"input_rank": 2, "axis": 1, "keepdims": true, "dtype": "numpy.float32", "output_rank": 2},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "Integer axis and keepdims are explicit for a rank-2 float32 input."
+        },
+        {
+          "line": 34,
+          "col": 11,
+          "qualified_name": "numpy.sum",
+          "static_facts": {"input_rank": 2, "axis": 1, "keepdims": false, "dtype": "numpy.float32", "output_rank": 1},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "Integer axis is explicit and keepdims has its static false default."
+        }
+      ],
+      "qualified_attributes": [],
+      "unmodeled_surfaces": ["Binary division exp_logits / sum_result is not a numpy-qualified Call."],
+      "exact_qualification": [],
+      "decision": "FALLBACK_CONSENT",
+      "decision_reason": "The audited matmul call is an unconditional CPU fallback; the reference softmax rewrite does not remove that boundary.",
+      "next_action": "Exclude from strict NPU migration and performance publication; proceed only after explicit audited fallback consent.",
+      "actual_remote_call": false,
+      "execution_performed": false,
+      "performance_valid": false,
+      "speedup": null
+    },
+    {
+      "case_id": "02",
+      "source": {
+        "relative_path": "02_numpy.py",
+        "role": "MIGRATION_SOURCE",
+        "sha256": "76d0c01f2b0f233b4f205b922731f26049af1d32a505cf00cdf6529103de5d03",
+        "imports": [
+          {"kind": "import", "module": "numpy", "name": null, "alias": "np", "line": 21, "col": 0}
+        ],
+        "einsum_equations": []
+      },
+      "reference": {
+        "relative_path": "02_asnumpy_one_numpy.py",
+        "role": "REFERENCE_ONLY_NOT_MIGRATION_SOURCE",
+        "sha256": "6ca0eb8695127827f2ba036a96b2cf7974c7fd76ef723a9842ae829595a2218b"
+      },
+      "numpy_calls": [
+        {
+          "line": 25,
+          "col": 4,
+          "qualified_name": "numpy.linspace",
+          "static_facts": {"start": 0, "stop_expression": "2 * numpy.pi", "num": 8, "endpoint": true, "retstep": false, "dtype": "numpy.float32", "axis": 0, "output_shape": [8], "output_rank": 1},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "The exact float32 linspace signature and rank-1 result are statically bounded."
+        },
+        {
+          "line": 28,
+          "col": 9,
+          "qualified_name": "numpy.add",
+          "static_facts": {"input_rank": 1, "output_rank": 1, "dtype": "numpy.float32"},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "Elementwise same-shape float32 addition is qualified."
+        },
+        {
+          "line": 28,
+          "col": 16,
+          "qualified_name": "numpy.sin",
+          "static_facts": {"input_rank": 1, "output_rank": 1, "dtype": "numpy.float32"},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "Elementwise rank-1 float32 sine is qualified."
+        },
+        {
+          "line": 28,
+          "col": 27,
+          "qualified_name": "numpy.cos",
+          "static_facts": {"input_rank": 1, "output_rank": 1, "dtype": "numpy.float32"},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "Elementwise rank-1 float32 cosine is qualified."
+        },
+        {
+          "line": 31,
+          "col": 13,
+          "qualified_name": "numpy.absolute",
+          "static_facts": {"input_rank": 1, "output_rank": 1, "dtype": "numpy.float32"},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "Elementwise rank-1 float32 absolute value is qualified."
+        },
+        {
+          "line": 32,
+          "col": 10,
+          "qualified_name": "numpy.amax",
+          "static_facts": {"input_rank": 1, "axis": null, "keepdims": false, "dtype": "numpy.float32", "output_rank": 0},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "The golden profile explicitly qualifies global amax on one rank-1 float32 vector."
+        }
+      ],
+      "qualified_attributes": [
+        {"line": 25, "col": 23, "qualified_name": "numpy.pi", "use": "READ_ONLY_CONSTANT", "reason": "Static stop expression; migration must preserve pi as a constant, not an operator gap."}
+      ],
+      "unmodeled_surfaces": [],
+      "exact_qualification": [
+        "numpy.linspace(start=0, stop=2*numpy.pi, num=8, endpoint=True, retstep=False, dtype=numpy.float32, axis=0) -> rank-1 shape [8]",
+        "numpy.amax(input_rank=1, input_dtype=numpy.float32, axis=None, keepdims=False) -> scalar",
+        "numpy.pi is a read-only constant and must be translated exactly; it is not a missing callable"
+      ],
+      "decision": "DIRECT",
+      "decision_reason": "Every callable is native for this exact golden signature; numpy.pi and global amax are explicitly qualified rather than inferred from name-only capability.",
+      "next_action": "Bind these exact predicates to the pinned runtime/receipt profile before migration.",
+      "actual_remote_call": false,
+      "execution_performed": false,
+      "performance_valid": false,
+      "speedup": null
+    },
+    {
+      "case_id": "03",
+      "source": {
+        "relative_path": "03_numpy.py",
+        "role": "MIGRATION_SOURCE",
+        "sha256": "ccc4d429104a72d2179763966cc57f9f06700b95ad84daa5d42a1f4760a6da80",
+        "imports": [
+          {"kind": "import", "module": "numpy", "name": null, "alias": "np", "line": 21, "col": 0}
+        ],
+        "einsum_equations": []
+      },
+      "reference": {
+        "relative_path": "03_subtract_clip.py",
+        "role": "REFERENCE_ONLY_NOT_MIGRATION_SOURCE",
+        "sha256": "a214e55a79eae540c2a7f5a8ce12156e2325d91bdf867bd746c128ea3c74d378"
+      },
+      "numpy_calls": [
+        {
+          "line": 25,
+          "col": 4,
+          "qualified_name": "numpy.full",
+          "static_facts": {"shape": [3, 4], "rank": 2, "fill_value": 5.0, "dtype": "numpy.float32"},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "Constant rank-2 float32 creation profile is fully static."
+        },
+        {
+          "line": 26,
+          "col": 4,
+          "qualified_name": "numpy.full",
+          "static_facts": {"shape": [3, 4], "rank": 2, "fill_value": 3.0, "dtype": "numpy.float32"},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "Constant rank-2 float32 creation profile is fully static."
+        },
+        {
+          "line": 29,
+          "col": 7,
+          "qualified_name": "numpy.subtract",
+          "static_facts": {"input_shape": [3, 4], "input_rank": 2, "output_rank": 2, "dtype": "numpy.float32"},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "Same-shape rank-2 float32 subtraction is qualified."
+        },
+        {
+          "line": 32,
+          "col": 10,
+          "qualified_name": "numpy.clip",
+          "static_facts": {"input_rank": 2, "min": 0.0, "max": 2.0, "output_rank": 2, "dtype": "numpy.float32"},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "Scalar bounds and rank-2 float32 input are fully static."
+        },
+        {
+          "line": 35,
+          "col": 9,
+          "qualified_name": "numpy.sqrt",
+          "static_facts": {"input_rank": 2, "output_rank": 2, "dtype": "numpy.float32"},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "Elementwise rank-2 float32 square root is qualified."
+        }
+      ],
+      "qualified_attributes": [],
+      "unmodeled_surfaces": [],
+      "exact_qualification": [
+        "All inputs are statically shaped rank-2 float32 tensors with scalar clip bounds [0.0, 2.0]."
+      ],
+      "decision": "DIRECT",
+      "decision_reason": "All calls match exact native NPU profiles with no fallback, nested, method, or dynamic surface.",
+      "next_action": "Bind the source hash and exact call predicates to the pinned runtime/receipt profile.",
+      "actual_remote_call": false,
+      "execution_performed": false,
+      "performance_valid": false,
+      "speedup": null
+    },
+    {
+      "case_id": "04",
+      "source": {
+        "relative_path": "04_numpy.py",
+        "role": "MIGRATION_SOURCE",
+        "sha256": "cfd0c925d206dedc41492b48151b0344715f7205d5e79df670134384d7b9d6ed",
+        "imports": [
+          {"kind": "import", "module": "numpy", "name": null, "alias": "np", "line": 21, "col": 0}
+        ],
+        "einsum_equations": []
+      },
+      "reference": {
+        "relative_path": "04_eye_tanh_det.py",
+        "role": "REFERENCE_ONLY_NOT_MIGRATION_SOURCE",
+        "sha256": "78293162da3b5b339e60f6dcd13f387aecc42b8528f3fceb57b8563da48b24ba"
+      },
+      "numpy_calls": [
+        {
+          "line": 25,
+          "col": 4,
+          "qualified_name": "numpy.eye",
+          "static_facts": {"N": 3, "M": null, "k": 0, "dtype": "numpy.float32", "order": "C", "shape": [3, 3], "rank": 2},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "The exact square float32 eye creation signature is qualified."
+        },
+        {
+          "line": 28,
+          "col": 4,
+          "qualified_name": "numpy.multiply",
+          "static_facts": {"input_shape": [3, 3], "input_rank": 2, "output_rank": 2, "dtype": "numpy.float32"},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "Same-shape rank-2 float32 multiplication is qualified."
+        },
+        {
+          "line": 28,
+          "col": 19,
+          "qualified_name": "numpy.full",
+          "static_facts": {"shape": [3, 3], "rank": 2, "fill_value": 2.0, "dtype": "numpy.float32"},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "Constant rank-2 float32 creation profile is fully static."
+        },
+        {
+          "line": 31,
+          "col": 9,
+          "qualified_name": "numpy.tanh",
+          "static_facts": {"input_shape": [3, 3], "input_rank": 2, "output_rank": 2, "dtype": "numpy.float32"},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "Elementwise rank-2 float32 tanh is qualified."
+        },
+        {
+          "line": 34,
+          "col": 10,
+          "qualified_name": "numpy.linalg.det",
+          "static_facts": {"input_shape": [3, 3], "input_rank": 2, "square_matrix": true, "dtype": "numpy.float32", "output_rank": 0},
+          "route": "COMPOSITE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "Pinned AsNumpy linalg.det composes audited NPU bindings for this exact rank-2 square float32 profile."
+        }
+      ],
+      "qualified_attributes": [],
+      "unmodeled_surfaces": [],
+      "exact_qualification": [
+        "Canonical nested name is linalg.det; source spelling is numpy.linalg.det.",
+        "numpy.linalg.det input must be rank=2, shape=[3,3], square_matrix=true, dtype=numpy.float32.",
+        "Nested-name resolver support is required to consume this qualification; its absence is a framework resolver defect, not GAP_REQUIRED."
+      ],
+      "decision": "DIRECT",
+      "decision_reason": "The exact nested linalg.det profile is qualified by pinned composite-NPU evidence; missing generic nested resolution must not be reported as an operator gap.",
+      "next_action": "Resolve canonical linalg.det and require an exact pinned runtime/receipt/profile match before migration.",
+      "actual_remote_call": false,
+      "execution_performed": false,
+      "performance_valid": false,
+      "speedup": null
+    },
+    {
+      "case_id": "05",
+      "source": {
+        "relative_path": "05_numpy.py",
+        "role": "MIGRATION_SOURCE",
+        "sha256": "9d2fa5413571eee8dbc14bff05b6c6519b6335172c9f24edf19b06247b2966a0",
+        "imports": [
+          {"kind": "import", "module": "numpy", "name": null, "alias": "np", "line": 21, "col": 0}
+        ],
+        "einsum_equations": []
+      },
+      "reference": {
+        "relative_path": "05_cumsum_prod.py",
+        "role": "REFERENCE_ONLY_NOT_MIGRATION_SOURCE",
+        "sha256": "9b4b0a695d2aa720e3518225028a3616106c52b5ffdab6b93330da7196ae6a6d"
+      },
+      "numpy_calls": [
+        {
+          "line": 25,
+          "col": 4,
+          "qualified_name": "numpy.full",
+          "static_facts": {"shape": [5], "rank": 1, "fill_value": 2.0, "dtype": "numpy.float32"},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "Constant rank-1 float32 creation profile is fully static."
+        },
+        {
+          "line": 28,
+          "col": 5,
+          "qualified_name": "numpy.cumsum",
+          "static_facts": {"input_shape": [5], "input_rank": 1, "axis": null, "axis_source": "default", "dtype": null, "output_rank": 1},
+          "route": "NATIVE_NPU",
+          "qualification": "UNSUPPORTED_CALL_PROFILE",
+          "reason": "Pinned AsNumpy exposes the name but its binding requires an integer axis; NumPy axis=None cannot be passed unchanged."
+        },
+        {
+          "line": 31,
+          "col": 9,
+          "qualified_name": "numpy.cumprod",
+          "static_facts": {"input_shape": [5], "input_rank": 1, "axis": null, "axis_source": "default", "dtype": null, "output_rank": 1},
+          "route": "NATIVE_NPU",
+          "qualification": "UNSUPPORTED_CALL_PROFILE",
+          "reason": "Pinned AsNumpy exposes the name but its binding requires an integer axis; NumPy axis=None cannot be passed unchanged."
+        },
+        {
+          "line": 34,
+          "col": 8,
+          "qualified_name": "numpy.maximum",
+          "static_facts": {"input_shape": [5], "input_rank": 1, "output_rank": 1, "dtype": "numpy.float32"},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "Same-shape rank-1 float32 maximum is qualified."
+        }
+      ],
+      "qualified_attributes": [],
+      "unmodeled_surfaces": [],
+      "exact_qualification": [],
+      "decision": "BLOCKED",
+      "decision_reason": "Both cumulative calls use NumPy axis=None, while the pinned binding requires an integer axis; the reference changes both calls to axis=0.",
+      "next_action": "Add an explicitly reviewed rank-1 axis=None-to-axis=0 equivalence rewrite contract before reclassification.",
+      "actual_remote_call": false,
+      "execution_performed": false,
+      "performance_valid": false,
+      "speedup": null
+    },
+    {
+      "case_id": "06",
+      "source": {
+        "relative_path": "06_numpy.py",
+        "role": "MIGRATION_SOURCE",
+        "sha256": "f62eb47645215b19310cce27b35649f6746f5266311f1c4f1291ca08f6655b14",
+        "imports": [
+          {"kind": "import", "module": "numpy", "name": null, "alias": "np", "line": 21, "col": 0}
+        ],
+        "einsum_equations": []
+      },
+      "reference": {
+        "relative_path": "06_log_exp_power.py",
+        "role": "REFERENCE_ONLY_NOT_MIGRATION_SOURCE",
+        "sha256": "155486925e46fa08ecdcd1fc8d1f31af4b93f8b85c2b2337cd32ac0c5fbe4bae"
+      },
+      "numpy_calls": [
+        {
+          "line": 25,
+          "col": 7,
+          "qualified_name": "numpy.full",
+          "static_facts": {"shape": [4], "rank": 1, "fill_value": 2.0, "dtype": "numpy.float32"},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "Constant rank-1 float32 creation profile is fully static."
+        },
+        {
+          "line": 26,
+          "col": 10,
+          "qualified_name": "numpy.full",
+          "static_facts": {"shape": [4], "rank": 1, "fill_value": 3.0, "dtype": "numpy.float32"},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "Constant rank-1 float32 creation profile is fully static."
+        },
+        {
+          "line": 29,
+          "col": 8,
+          "qualified_name": "numpy.power",
+          "static_facts": {"input_shape": [4], "input_rank": 1, "output_rank": 1, "dtype": "numpy.float32"},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "Same-shape rank-1 float32 power is qualified."
+        },
+        {
+          "line": 32,
+          "col": 9,
+          "qualified_name": "numpy.log",
+          "static_facts": {"input_rank": 1, "output_rank": 1, "dtype": "numpy.float32"},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "Elementwise rank-1 float32 natural logarithm is qualified."
+        },
+        {
+          "line": 35,
+          "col": 9,
+          "qualified_name": "numpy.exp",
+          "static_facts": {"input_rank": 1, "output_rank": 1, "dtype": "numpy.float32"},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "Elementwise rank-1 float32 exponential is qualified."
+        },
+        {
+          "line": 38,
+          "col": 12,
+          "qualified_name": "numpy.equal",
+          "static_facts": {"input_rank": 1, "output_rank": 1, "input_dtype": "numpy.float32", "output_dtype": "bool"},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "Same-shape elementwise equality profile is qualified."
+        }
+      ],
+      "qualified_attributes": [],
+      "unmodeled_surfaces": [],
+      "exact_qualification": [
+        "All tensors are statically shape [4], rank=1, dtype=numpy.float32; equal returns rank-1 bool."
+      ],
+      "decision": "DIRECT",
+      "decision_reason": "All qualified calls match exact native NPU profiles without fallback or unsupported Python surfaces.",
+      "next_action": "Bind the source hash and exact call predicates to the pinned runtime/receipt profile.",
+      "actual_remote_call": false,
+      "execution_performed": false,
+      "performance_valid": false,
+      "speedup": null
+    },
+    {
+      "case_id": "07",
+      "source": {
+        "relative_path": "07_numpy.py",
+        "role": "MIGRATION_SOURCE",
+        "sha256": "84d43e2f29a50725d8f526685b5f81042fdb5850d8de10b1081edeabdde8fd3a",
+        "imports": [
+          {"kind": "import", "module": "numpy", "name": null, "alias": "np", "line": 21, "col": 0}
+        ],
+        "einsum_equations": []
+      },
+      "reference": {
+        "relative_path": "07_one_numpy_normal.py",
+        "role": "REFERENCE_ONLY_NOT_MIGRATION_SOURCE",
+        "sha256": "4e6a8336527fcecc7cea405953785e20d8890a20e0aa9228a2cab99efe4b2721"
+      },
+      "numpy_calls": [
+        {
+          "line": 25,
+          "col": 7,
+          "qualified_name": "numpy.random.normal",
+          "static_facts": {"loc": 0, "scale": 0.01, "size": [4], "output_rank": 1, "default_output_dtype": "numpy.float64", "seeded": false},
+          "route": "NATIVE_NPU",
+          "qualification": "UNSUPPORTED_CALL_PROFILE",
+          "reason": "The nested NPU route exists, but its default float64 result cannot feed expm1 and the source relies on ndarray.astype(float32)."
+        },
+        {
+          "line": 28,
+          "col": 5,
+          "qualified_name": "numpy.expm1",
+          "static_facts": {"input_rank": 1, "output_rank": 1, "dtype_after_source_cast": "numpy.float32"},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "The call itself is qualified only after the source float32 cast."
+        },
+        {
+          "line": 31,
+          "col": 11,
+          "qualified_name": "numpy.log1p",
+          "static_facts": {"input_rank": 1, "output_rank": 1, "dtype": "numpy.float32"},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "Elementwise rank-1 float32 log1p is qualified."
+        },
+        {
+          "line": 34,
+          "col": 8,
+          "qualified_name": "numpy.sign",
+          "static_facts": {"input_rank": 1, "output_rank": 1, "dtype": "numpy.float32"},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "Elementwise rank-1 float32 sign is qualified."
+        },
+        {
+          "line": 37,
+          "col": 6,
+          "qualified_name": "numpy.subtract",
+          "static_facts": {"input_rank": 1, "output_rank": 1, "dtype": "numpy.float32"},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "Same-shape rank-1 float32 subtraction is qualified."
+        },
+        {
+          "line": 38,
+          "col": 9,
+          "qualified_name": "numpy.square",
+          "static_facts": {"input_rank": 1, "output_rank": 1, "dtype": "numpy.float32"},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "Elementwise rank-1 float32 square is qualified."
+        },
+        {
+          "line": 39,
+          "col": 15,
+          "qualified_name": "numpy.sum",
+          "static_facts": {"input_rank": 1, "axis": null, "axis_source": "default", "keepdims": false, "dtype": "numpy.float32", "output_rank": 0},
+          "route": "NATIVE_NPU",
+          "qualification": "UNSUPPORTED_CALL_PROFILE",
+          "reason": "The source uses a global reduction while the strict integer-axis contract has not been established for this chain."
+        }
+      ],
+      "qualified_attributes": [
+        {"line": 25, "col": 46, "qualified_name": "numpy.float32", "use": "NDARRAY_METHOD_ARGUMENT", "reason": "Argument to the chained ndarray.astype call."}
+      ],
+      "unmodeled_surfaces": [
+        "line 25 col 7: ndarray.astype(numpy.float32) is required after numpy.random.normal and is not an AsNumpy ndarray method.",
+        "numpy.random.normal is unseeded, so later numerical comparison requires a deterministic harness input."
+      ],
+      "exact_qualification": [],
+      "decision": "BLOCKED",
+      "decision_reason": "The direct chain requires a nested random profile, a float64-to-float32 cast surface unavailable as ndarray.astype, and an unqualified global reduction.",
+      "next_action": "Define an audited native Cast rewrite plus deterministic random and reduction contracts before reclassification.",
+      "actual_remote_call": false,
+      "execution_performed": false,
+      "performance_valid": false,
+      "speedup": null
+    },
+    {
+      "case_id": "08",
+      "source": {
+        "relative_path": "08_numpy.py",
+        "role": "MIGRATION_SOURCE",
+        "sha256": "91bb600eeaacee4123f9ba4aa759b41f2f3bb555239af3dc749c6dcc805b4140",
+        "imports": [
+          {"kind": "import", "module": "numpy", "name": null, "alias": "np", "line": 21, "col": 0}
+        ],
+        "einsum_equations": []
+      },
+      "reference": {
+        "relative_path": "08_one_numpy_ones.py",
+        "role": "REFERENCE_ONLY_NOT_MIGRATION_SOURCE",
+        "sha256": "f0ccab2cf42413fdf17272af4a0112f1a9b1a6530986f0af8d1f1e8a62d1ac30"
+      },
+      "numpy_calls": [
+        {
+          "line": 25,
+          "col": 4,
+          "qualified_name": "numpy.ones",
+          "static_facts": {"shape": [5], "rank": 1, "dtype": "numpy.float32"},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "Constant rank-1 float32 creation profile is fully static."
+        },
+        {
+          "line": 28,
+          "col": 4,
+          "qualified_name": "numpy.full",
+          "static_facts": {"shape": [5], "rank": 1, "fill_value": 1.5, "dtype": "numpy.float32"},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "Constant rank-1 float32 creation profile is fully static."
+        },
+        {
+          "line": 31,
+          "col": 4,
+          "qualified_name": "numpy.dot",
+          "static_facts": {"lhs_shape": [5], "rhs_shape": [5], "lhs_rank": 1, "rhs_rank": 1, "output_rank": 0, "dtype": "numpy.float32"},
+          "route": "CONDITIONAL_CPU_FALLBACK",
+          "qualification": "AUDITED_FALLBACK",
+          "reason": "Pinned public dot copies complete device inputs to host for dtype inspection before selecting its path."
+        },
+        {
+          "line": 34,
+          "col": 8,
+          "qualified_name": "numpy.floor",
+          "static_facts": {"input_rank": 0, "dtype_argument": null, "inferred_input_dtype": "numpy.float32", "output_rank": 0},
+          "route": "CONDITIONAL_CPU_FALLBACK",
+          "qualification": "AUDITED_FALLBACK",
+          "reason": "Pinned floor with dtype=None copies the complete input to host for dtype inspection."
+        },
+        {
+          "line": 35,
+          "col": 8,
+          "qualified_name": "numpy.ceil",
+          "static_facts": {"input_rank": 0, "output_rank": 0, "dtype": "numpy.float32"},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "Scalar float32 ceil is qualified."
+        },
+        {
+          "line": 38,
+          "col": 6,
+          "qualified_name": "numpy.full",
+          "static_facts": {"shape": [1], "rank": 1, "fill_value": -2.7, "dtype": "numpy.float32"},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "Constant rank-1 float32 creation profile is fully static."
+        },
+        {
+          "line": 39,
+          "col": 8,
+          "qualified_name": "numpy.floor",
+          "static_facts": {"input_rank": 1, "dtype_argument": null, "inferred_input_dtype": "numpy.float32", "output_rank": 1},
+          "route": "CONDITIONAL_CPU_FALLBACK",
+          "qualification": "AUDITED_FALLBACK",
+          "reason": "Pinned floor with dtype=None copies the complete input to host for dtype inspection."
+        },
+        {
+          "line": 40,
+          "col": 8,
+          "qualified_name": "numpy.ceil",
+          "static_facts": {"input_rank": 1, "output_rank": 1, "dtype": "numpy.float32"},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "Rank-1 float32 ceil is qualified."
+        }
+      ],
+      "qualified_attributes": [],
+      "unmodeled_surfaces": ["ndarray/scalar item() calls are host scalar extraction boundaries after the NumPy call chain."],
+      "exact_qualification": [],
+      "decision": "FALLBACK_CONSENT",
+      "decision_reason": "dot and both floor calls perform audited full-input host inspection, so the case is not strict NPU even for float32 inputs.",
+      "next_action": "Exclude from strict performance publication; expose the audited route and require explicit fallback consent.",
+      "actual_remote_call": false,
+      "execution_performed": false,
+      "performance_valid": false,
+      "speedup": null
+    },
+    {
+      "case_id": "09",
+      "source": {
+        "relative_path": "09_numpy.py",
+        "role": "MIGRATION_SOURCE",
+        "sha256": "3c9dbbb1723557f6208a1d9f89dca7c5fb8d90c7cc7301de522d69872e2361e7",
+        "imports": [
+          {"kind": "import", "module": "numpy", "name": null, "alias": "np", "line": 21, "col": 0},
+          {"kind": "from", "module": "scipy.special", "name": "erf", "alias": null, "line": 31, "col": 0}
+        ],
+        "einsum_equations": []
+      },
+      "reference": {
+        "relative_path": "09_one_numpy_arange.py",
+        "role": "REFERENCE_ONLY_NOT_MIGRATION_SOURCE",
+        "sha256": "2b165b9b10571a910163f3eca67a2e38e960089238159afbb41309a91dd51c03"
+      },
+      "numpy_calls": [
+        {
+          "line": 25,
+          "col": 4,
+          "qualified_name": "numpy.arange",
+          "static_facts": {"start": -2, "stop": 3, "step": 1, "dtype": "numpy.float32", "output_shape": [5], "output_rank": 1},
+          "route": "UNAVAILABLE",
+          "qualification": "UNAVAILABLE",
+          "reason": "Pinned AsNumpy has no public arange implementation."
+        },
+        {
+          "line": 28,
+          "col": 11,
+          "qualified_name": "numpy.maximum",
+          "static_facts": {"lhs_rank": 1, "rhs_rank": 0, "broadcast": true, "output_rank": 1, "dtype": "numpy.float32"},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "Rank-1 float32 with scalar zero broadcast is qualified."
+        },
+        {
+          "line": 33,
+          "col": 34,
+          "qualified_name": "numpy.sqrt",
+          "static_facts": {"input": 2.0, "input_rank": 0, "output_rank": 0, "default_dtype": "numpy.float64"},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "The NumPy scalar call is static, but it is embedded in a larger unsupported SciPy expression."
+        },
+        {
+          "line": 36,
+          "col": 11,
+          "qualified_name": "numpy.maximum",
+          "static_facts": {"input_shape": [5], "input_rank": 1, "output_rank": 1, "dtype": "numpy.float32"},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "Same-shape rank-1 float32 maximum is qualified."
+        },
+        {
+          "line": 39,
+          "col": 10,
+          "qualified_name": "numpy.minimum",
+          "static_facts": {"input_shape": [5], "input_rank": 1, "output_rank": 1, "dtype": "numpy.float32"},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "Same-shape rank-1 float32 minimum is qualified."
+        }
+      ],
+      "qualified_attributes": [
+        {"line": 25, "col": 27, "qualified_name": "numpy.float32", "use": "DTYPE_ARGUMENT", "reason": "Explicit arange dtype."},
+        {"line": 33, "col": 56, "qualified_name": "numpy.float32", "use": "NDARRAY_METHOD_ARGUMENT", "reason": "Argument to the chained ndarray.astype call."}
+      ],
+      "unmodeled_surfaces": [
+        "line 31: scipy.special.erf is an external unavailable callable in the source chain.",
+        "line 33: ndarray.astype(numpy.float32) is not an AsNumpy ndarray method.",
+        "The reference replaces the source expressions with relu and gelu, which is a semantic rewrite rather than exact qualified-call migration."
+      ],
+      "exact_qualification": [],
+      "decision": "BLOCKED",
+      "decision_reason": "arange is unavailable and the source also requires scipy.special.erf plus ndarray.astype; the existing fused reference rewrite is not direct evidence.",
+      "next_action": "Keep blocked for this sprint unless explicit semantic rewrite contracts and missing source surfaces are separately qualified.",
+      "actual_remote_call": false,
+      "execution_performed": false,
+      "performance_valid": false,
+      "speedup": null
+    },
+    {
+      "case_id": "10",
+      "source": {
+        "relative_path": "10_numpy.py",
+        "role": "MIGRATION_SOURCE",
+        "sha256": "fbbe6374aeb564d7b4fe0e3bf4ef8a1c8efd60d10be842834c2c275fad9afef1",
+        "imports": [
+          {"kind": "import", "module": "numpy", "name": null, "alias": "np", "line": 21, "col": 0}
+        ],
+        "einsum_equations": []
+      },
+      "reference": {
+        "relative_path": "10_one_numpy_zeros.py",
+        "role": "REFERENCE_ONLY_NOT_MIGRATION_SOURCE",
+        "sha256": "8910132edd89ff58e088bc4212041447d4c8143def862dcaa2ef75cd33c7481e"
+      },
+      "numpy_calls": [
+        {
+          "line": 25,
+          "col": 7,
+          "qualified_name": "numpy.zeros",
+          "static_facts": {"shape": [4], "rank": 1, "dtype": "numpy.float32", "result_used_downstream": false},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "Constant rank-1 float32 zeros creation is qualified, though its result is dead in this source."
+        },
+        {
+          "line": 28,
+          "col": 4,
+          "qualified_name": "numpy.full",
+          "static_facts": {"shape": [4], "rank": 1, "fill_value": 10.0, "dtype": "numpy.float32"},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "Constant rank-1 float32 creation profile is fully static."
+        },
+        {
+          "line": 29,
+          "col": 4,
+          "qualified_name": "numpy.full",
+          "static_facts": {"shape": [4], "rank": 1, "fill_value": 3.0, "dtype": "numpy.float32"},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "Constant rank-1 float32 creation profile is fully static."
+        },
+        {
+          "line": 32,
+          "col": 13,
+          "qualified_name": "numpy.mod",
+          "static_facts": {"input_shape": [4], "input_rank": 1, "output_rank": 1, "dtype": "numpy.float32"},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "Same-shape rank-1 positive float32 mod is qualified."
+        },
+        {
+          "line": 35,
+          "col": 13,
+          "qualified_name": "numpy.remainder",
+          "static_facts": {"input_shape": [4], "input_rank": 1, "output_rank": 1, "dtype": "numpy.float32"},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "Same-shape rank-1 positive float32 remainder is qualified."
+        },
+        {
+          "line": 38,
+          "col": 11,
+          "qualified_name": "numpy.equal",
+          "static_facts": {"input_rank": 1, "output_rank": 1, "input_dtype": "numpy.float32", "output_dtype": "bool"},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "Same-shape elementwise equality profile is qualified."
+        },
+        {
+          "line": 41,
+          "col": 9,
+          "qualified_name": "numpy.any",
+          "static_facts": {"input_rank": 1, "axis": null, "keepdims": false, "input_dtype": "bool", "output_rank": 0, "output_dtype": "bool"},
+          "route": "NATIVE_NPU",
+          "qualification": "EXACT_PROFILE",
+          "reason": "The golden profile explicitly qualifies global any on one rank-1 bool vector."
+        }
+      ],
+      "qualified_attributes": [],
+      "unmodeled_surfaces": [
+        "The zeros result is unused downstream but remains a recorded callsite.",
+        "The source comment says all positions while numpy.any means at least one position."
+      ],
+      "exact_qualification": [
+        "All data vectors are statically shape [4], rank=1, dtype=numpy.float32.",
+        "numpy.any(input_rank=1, input_dtype=bool, axis=None, keepdims=False) -> scalar bool."
+      ],
+      "decision": "DIRECT",
+      "decision_reason": "All calls match exact native profiles; dead zeros and the inaccurate any comment do not change static callable qualification.",
+      "next_action": "Bind source and call-profile hashes to the pinned runtime; use code semantics rather than the inaccurate comment during validation.",
+      "actual_remote_call": false,
+      "execution_performed": false,
+      "performance_valid": false,
+      "speedup": null
+    }
+  ]
+}

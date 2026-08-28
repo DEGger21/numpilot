@@ -32,7 +32,9 @@ def test_fresh_notebook_template_is_clean_and_covers_the_release_path():
     assert "--accept-cannbot-license" in code
     assert "doctor', '--backend', 'npu'" in code
     assert "ALLOW_NETWORK = False" in code
+    assert "WITH_CANNBOT = False" in code
     assert "ACCEPT_CANNBOT_LICENSE = False" in code
+    assert "if WITH_CANNBOT:" in code
     assert "127.0.0.1:7897" not in code
     assert "auth_token" not in code
 
@@ -43,7 +45,9 @@ def test_fresh_notebook_template_is_clean_and_covers_the_release_path():
     )
     assert "不使用 wheelhouse" in markdown
     assert "1ef6372a538f39b0b7ed34666a3e1f465fb4936a" in markdown
-    assert "model=glm-5.3" in markdown
+    assert "protocol=openai-chat-completions" in markdown
+    assert "GLM-5.3/provider=glm 只是配置示例" in markdown
+    assert "v0.2.0a2` 只是基线且不包含本文合同" in markdown
     assert "strict_npu=false" in markdown
     assert "performance_valid=false" in markdown
     assert "开始迁移" in markdown

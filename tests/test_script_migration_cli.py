@@ -10,6 +10,7 @@ from numpilot.capabilities import (
     CapabilityManifest,
     ExecutionProvenance,
     OperatorCapability,
+    RuntimeIdentity,
 )
 from numpilot.engines.llm import LlmEngine
 
@@ -18,6 +19,13 @@ SOURCE = """\
 import numpy as np
 x = np.full((2,), 1.0, dtype=np.float32)
 y = np.exp(x)
+print(y)
+"""
+
+MISSING_SOURCE = """\
+import numpy as np
+x = np.full((2,), 1.0, dtype=np.float32)
+y = np.definitely_missing(x)
 print(y)
 """
 
@@ -86,6 +94,60 @@ class _Backend:
         )
 
 
+def _runtime_identity(native_hash="6" * 64):
+    return RuntimeIdentity(
+        asnumpy_repository="https://gitcode.com/cann/asnumpy.git",
+        asnumpy_commit="1" * 40,
+        asnumpy_tree="2" * 40,
+        asnumpy_version="0.3.1.dev4+g1929a3ba4",
+        wrapper_sha256={"math.py": "3" * 64},
+        module_path="/opt/asnumpy/__init__.py",
+        module_sha256="4" * 64,
+        native_module_path="/opt/asnumpy/_core.so",
+        native_module_sha256=native_hash,
+        cann_home="/usr/local/Ascend/cann-9.0.0",
+        cann_version="9.0.0",
+        soc_model="Ascend910B4",
+        python_executable="/opt/numpilot/bin/python",
+        python_version="3.10.20",
+        bootstrap_receipt_path="/opt/numpilot/receipt.json",
+        bootstrap_receipt_sha256="7" * 64,
+        audit_id="test-runtime-audit-v1",
+        status="matched",
+        issues=(),
+    )
+
+
+class _QualifiedBackend(_Backend):
+    def __init__(self, *args, identities=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.identities = list(identities or [_runtime_identity()])
+
+    def runtime_identity(self):
+        if len(self.identities) > 1:
+            return self.identities.pop(0)
+        return self.identities[0]
+
+
+class _MissingQualifiedBackend(_QualifiedBackend):
+    def capability_manifest(self, required_ops=None):
+        manifest = super().capability_manifest(required_ops)
+        operators = dict(manifest.operators)
+        operators["definitely_missing"] = OperatorCapability(
+            name="definitely_missing",
+            available=False,
+            provenance=ExecutionProvenance.UNKNOWN,
+            evidence="fake audited missing operator",
+        )
+        return CapabilityManifest(
+            backend=manifest.backend,
+            backend_version=manifest.backend_version,
+            audit_id=manifest.audit_id,
+            environment=manifest.environment,
+            operators=operators,
+        )
+
+
 class _NonInteractiveInput:
     def isatty(self):
         return False
@@ -143,11 +205,57 @@ def test_cli_auto_routes_plain_script_to_glm_lane(tmp_path, monkeypatch):
     assert (out / "migrated.py").read_text() == MIGRATED
     report = json.loads((out / "script-migration-report.json").read_text())
     assert report["status"] == "migrated_strict_npu"
-    assert report["generated_by"] == "glm"
+    assert report["generated_by"] == "configured_model"
     assert report["model"] == "glm-5.3"
     assert report["requested_model"] == "glm-5.3"
     assert report["response_model"] == "glm-5.3"
     assert report["execution_performed"] is False
+
+
+def test_cli_production_lane_embeds_and_revalidates_qualified_analysis(
+    tmp_path, monkeypatch
+):
+    source = tmp_path / "case.py"
+    source.write_text(SOURCE)
+    out = tmp_path / "out"
+    _setup(monkeypatch, _QualifiedBackend())
+
+    rc = cli.main([
+        "migrate", str(source), "--backend", "npu", "--out", str(out)
+    ])
+
+    assert rc == 0
+    report = json.loads((out / "script-migration-report.json").read_text())
+    assert report["qualified_analysis"]["decision"] == "DIRECT"
+    assert report["qualified_analysis"]["actual_remote_call"] is False
+    assert report["qualified_analysis"]["execution_performed"] is False
+
+
+def test_cli_runtime_identity_drift_stops_before_the_model(
+    tmp_path, monkeypatch
+):
+    source = tmp_path / "case.py"
+    source.write_text(SOURCE)
+    out = tmp_path / "out"
+    backend = _QualifiedBackend(identities=[
+        _runtime_identity("6" * 64),
+        _runtime_identity("8" * 64),
+    ])
+    _setup(monkeypatch, backend)
+
+    def forbidden_chat(*_args, **_kwargs):
+        raise AssertionError("model must not be called after runtime drift")
+
+    monkeypatch.setattr(
+        LlmEngine, "_chat_with_receipt", staticmethod(forbidden_chat)
+    )
+
+    rc = cli.main([
+        "migrate", str(source), "--backend", "npu", "--out", str(out)
+    ])
+
+    assert rc == 2
+    assert not out.exists() or not any(out.iterdir())
 
 
 def test_cli_default_keeps_contract_shaped_file_in_ordinary_script_lane(
@@ -172,7 +280,7 @@ def test_cli_default_keeps_contract_shaped_file_in_ordinary_script_lane(
     assert (out / "migrated.py").read_text() == CONTRACT_SHAPED_MIGRATED
     report = json.loads((out / "script-migration-report.json").read_text())
     assert report["mode"] == "script"
-    assert report["generated_by"] == "glm"
+    assert report["generated_by"] == "configured_model"
 
 
 def test_cli_noninteractive_fallback_requires_explicit_consent(
@@ -282,6 +390,43 @@ def test_cli_rejected_fallback_prepares_gap_handoff_without_calling_glm(
     assert gap["status"] == "gap_generation_required"
     assert gap["gaps"][0]["qualified_api"] == "numpy.exp"
     assert gap["gaps"][0]["current_provenance"] == "cpu_fallback"
+
+
+def test_cli_qualified_missing_api_writes_canonical_gap_request_without_model(
+    tmp_path, monkeypatch, capsys
+):
+    source = tmp_path / "missing.py"
+    source.write_text(MISSING_SOURCE)
+    out = tmp_path / "out"
+    _setup(monkeypatch, _MissingQualifiedBackend())
+
+    def forbidden_model_access(*_args, **_kwargs):
+        raise AssertionError("qualified GAP_REQUIRED must not load or call the model")
+
+    monkeypatch.setattr(cli, "_load_llm_or_report", forbidden_model_access)
+    monkeypatch.setattr(
+        LlmEngine, "_chat_with_receipt", staticmethod(forbidden_model_access)
+    )
+
+    rc = cli.main([
+        "migrate", str(source), "--backend", "npu", "--out", str(out),
+        "--target-soc", "ascend910b", "--cann-version", "9.0.0",
+    ])
+
+    assert rc == 1
+    assert not (out / "migrated.py").exists()
+    gap = json.loads((out / "gap-request.json").read_text())
+    report = json.loads((out / "script-migration-report.json").read_text())
+    assert gap["status"] == "gap_generation_required"
+    assert report["status"] == "gap_generation_required"
+    assert [item["qualified_api"] for item in gap["gap_specs"]] == [
+        "numpy.definitely_missing"
+    ]
+    spec = gap["gap_specs"][0]
+    assert spec["api_name"] == "definitely_missing"
+    assert spec["asnumpy_api"] == "asnumpy.definitely_missing"
+    assert spec["source_sha256"] == gap["source_sha256"]
+    assert "[下一步]" in capsys.readouterr().out
 
 
 def test_cli_script_mode_rejects_ast_engine_before_model_call(tmp_path, monkeypatch):
@@ -425,7 +570,7 @@ def test_invalid_gap_request_stops_before_llm_and_skill_access(
     assert not (tmp_path / "must-not-exist").exists()
 
 
-def test_unknown_cann_blocks_llm_before_readiness_or_skill(tmp_path, monkeypatch):
+def test_unknown_cann_with_no_gap_skips_readiness_and_skill(tmp_path, monkeypatch):
     source = tmp_path / "case.py"
     source.write_text(SOURCE)
 
@@ -439,5 +584,5 @@ def test_unknown_cann_blocks_llm_before_readiness_or_skill(tmp_path, monkeypatch
         "--provider", "llm", "--operator-goal", "accuracy",
     ])
 
-    assert rc == 2
-    assert not (tmp_path / "out").exists()
+    assert rc == 0
+    assert (tmp_path / "out" / "gap-report.json").is_file()

@@ -35,6 +35,8 @@ def test_source_installer_help_describes_one_click_and_manual_checkouts():
     assert "--pip-index-url" in result.stdout
     assert "--asnumpy-source" in result.stdout
     assert "--cannbot-source" in result.stdout
+    assert "--persistent-root" in result.stdout
+    assert "activate-numpilot.sh" in result.stdout
     assert "never runs sudo" in result.stdout
 
 
@@ -102,11 +104,38 @@ def test_source_installer_prepares_private_default_receipt_parent():
     assert "custom receipt parent must already exist" in source
 
 
-def test_source_installer_prints_only_a_shell_quoted_receipt_export():
+def test_source_installer_prints_shell_quoted_activation_and_receipt_paths():
     source = SCRIPT.read_text(encoding="utf-8")
 
-    assert "NUMPILOT_BOOTSTRAP_RECEIPT=%q" in source
+    assert "activate: source %q" in source
+    assert "receipt: %q" in source
+    assert "later shells: export NUMPILOT_BOOTSTRAP_RECEIPT" not in source
+
+
+def test_source_installer_applies_persistent_root_before_bootstrap_and_writes_activation():
+    source = SCRIPT.read_text(encoding="utf-8")
+
+    parse = source.index("--persistent-root)")
+    root_export = source.index("export NUMPILOT_HOME=$PERSISTENT_ROOT")
+    bootstrap = source.index('bootstrap --plan "${BOOTSTRAP_ARGS[@]}"')
+    activation = source.index('"$VENV_PYTHON" -m numpilot.activation')
+    activation_source = source.index('. "$ACTIVATION_PATH"')
+    verify = source.index('bootstrap "${VERIFY_ARGS[@]}"')
+    doctor = source.index('doctor --backend npu')
+
     assert (
-        "custom receipt runtime: export "
-        "NUMPILOT_BOOTSTRAP_RECEIPT=$RECEIPT_PATH"
-    ) not in source
+        parse
+        < root_export
+        < activation
+        < activation_source
+        < bootstrap
+        < verify
+        < doctor
+    )
+    assert 'export NUMPILOT_STATE_HOME="$PERSISTENT_ROOT/.numpilot-state"' in source
+    assert 'export NUMPILOT_CONFIG_HOME="$PERSISTENT_ROOT/.numpilot-config"' in source
+    assert 'export XDG_CACHE_HOME="$PERSISTENT_ROOT/.numpilot-cache"' in source
+    assert 'ACTIVATION_PATH="$PERSISTENT_ROOT/activate-numpilot.sh"' in source
+    assert "activate: source %q" in source
+    assert ".bashrc" not in source
+    assert ".codex-env.sh" not in source

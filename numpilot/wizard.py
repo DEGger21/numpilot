@@ -79,9 +79,7 @@ def _print_roster(engine_name):
     tb.add_column("职责")
     tb.add_column("模型 / 引擎", style="magenta")
     for name, role, model in agent_roster(engine_name):
-        hi = "[bold magenta]" if "glm" in model else ""
-        end = "[/]" if hi else ""
-        tb.add_row(name, role, f"{hi}{model}{end}")
+        tb.add_row(name, role, model)
     console.print(tb)
 
 
@@ -348,6 +346,8 @@ def _report_info(data):
     info["rewrites"] = mig.rewrites
     info["total_rewrites"] = mig.total_rewrites
     info["extension_apis"] = custom_op_breakdown(mig.rewrites)
+    info["model_receipt"] = mig.model_receipt
+    info["model_identity"] = mig.model_identity
     info["strategy"] = plan.strategy
     info["npu_ops"] = sorted(o for o, p in plan.placement.items() if p == "NPU")
     info["cpu_ops"] = sorted(o for o, p in plan.placement.items() if p == "CPU")

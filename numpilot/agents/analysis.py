@@ -257,9 +257,9 @@ def _build_asnumpy_call_contracts():
     )
     add("sort", 2, ("a", "axis"), ("a",), ("a", "axis"))
 
-    # These names are part of the historical static snapshot.  Runtime
+    # These are real AsNumpy extensions in the pinned public mapping. Runtime
     # provenance still decides whether an exact wheel may execute them.
-    add("angle gelu relu", 1)
+    add("gelu relu", 1)
     add("softmax", 2, ("axis", "dtype"))
 
     missing = SUPPORTED_OPS.difference(contracts)

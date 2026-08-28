@@ -38,6 +38,17 @@ def test_detects_unsupported():
     assert "fft" in r.unsupported
     assert not r.migratable
 
+
+def test_nonexistent_angle_is_not_part_of_the_static_asnumpy_contract():
+    result = AnalysisAgent().analyze(
+        "import numpy as np\ndef forward(x): return np.angle(x)\n"
+    )
+
+    assert result.unsupported == ["angle"]
+    assert result.op_uses[0].qualified_name == "numpy.angle"
+    assert result.op_uses[0].reason == "API 不在静态覆盖集"
+
+
 def test_est_elements_from_zeros():
     src = "import numpy as np\ndef forward():\n    return np.zeros((100, 200))\n"
     r = AnalysisAgent().analyze(src)

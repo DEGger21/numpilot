@@ -3,7 +3,6 @@
 import hashlib
 import json
 import os
-from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 import re
 import shutil
@@ -11,7 +10,10 @@ import stat
 import tempfile
 from typing import Callable, Dict, List, Optional, Tuple
 
-from numpilot.asnumpy_skill import ASNUMPY_INTEGRATION_SKILL_FILES
+from numpilot.asnumpy_skill import (
+    ASNUMPY_INTEGRATION_SKILL_FILES,
+    ASNUMPY_OFFICIAL_ADAPTER_SKILL_FILES,
+)
 from numpilot.cannbot_skills import (
     CANNBOT_GENERATION_SKILL_FILES,
     CANNBOT_REPAIR_SKILL_FILES,
@@ -21,6 +23,10 @@ from numpilot.gaps.models import (
     GapSpec,
     OperatorDraft,
 )
+from numpilot import model_contract as _model_contract
+from numpilot.llm_config import (
+    OPENAI_CHAT_COMPLETIONS_PROTOCOL,
+)
 
 
 class DraftGenerationError(RuntimeError):
@@ -28,11 +34,32 @@ class DraftGenerationError(RuntimeError):
 
 
 class DraftRepairError(DraftGenerationError):
-    """A repair failed after recording whether a remote response was received."""
+    """A bounded remote operation failed with separate request/receipt counts."""
 
-    def __init__(self, message: str, *, receipt_count: int = 0):
+    def __init__(
+        self,
+        message: str,
+        *,
+        receipt_count: int = 0,
+        request_count: Optional[int] = None,
+    ):
+        if request_count is None:
+            # Preserve the historical constructor behavior for callers that
+            # only supplied a receipt count.  Provider call sites now pass the
+            # independently observed transport-attempt count explicitly.
+            request_count = receipt_count
+        if (
+            isinstance(receipt_count, bool)
+            or not isinstance(receipt_count, int)
+            or receipt_count < 0
+            or isinstance(request_count, bool)
+            or not isinstance(request_count, int)
+            or request_count < receipt_count
+        ):
+            raise ValueError("invalid remote request/receipt counts")
         self.receipt_count = receipt_count
-        self.actual_remote_call = receipt_count > 0
+        self.request_count = request_count
+        self.actual_remote_call = request_count > 0
         super().__init__(message)
 
 
@@ -50,6 +77,25 @@ _ALLOWED_TOP_DIRS = frozenset({
     "asnumpy_adapter",
     "docs",
 })
+# An AsNumpy adapter is an overlay for a pre-existing source tree, not an
+# operator-project draft.  Keep its writable surface separate so supporting
+# the legacy/manual and existing-module layouts cannot silently broaden the
+# paths accepted from ordinary operator generation.
+_ASNUMPY_ADAPTER_ROOT_FILES = frozenset({
+    "CMakeLists.txt",
+})
+_ASNUMPY_ADAPTER_TOP_DIRS = frozenset({
+    "bindings",
+    "csrc",
+    "include",
+    "src",
+    "tests",
+})
+# Manifest discovery reads these directories as hash-bound prompt context,
+# but generated/repaired overlays must never be allowed to write them.
+_ASNUMPY_ADAPTER_CONTEXT_TOP_DIRS = (
+    _ASNUMPY_ADAPTER_TOP_DIRS | frozenset({"cmake", "scripts"})
+)
 _ALLOWED_SUFFIXES = frozenset({
     ".asc",
     ".cmake",
@@ -90,23 +136,51 @@ _MAX_ADAPTER_FILES = 8
 _MAX_ADAPTER_TREE_ENTRIES = 64
 _MAX_ADAPTER_FILE_BYTES = 512 * 1024
 _MAX_ADAPTER_TOTAL_BYTES = 2 * 1024 * 1024
-_REMOTE_RECEIPT_FIELDS = frozenset({
-    "schema_version",
-    "utc_start",
-    "utc_end",
-    "http_status",
-    "requested_model",
-    "response_model",
-    "response_id",
-    "response_created",
-    "request_body_sha256",
-    "response_body_sha256",
-    "content_sha256",
-    "request_id",
-    "usage",
-    "tls_verification",
-})
-_GENERATION_FIELDS = frozenset({
+_MAX_OFFICIAL_EXACT_EDIT_RESPONSE_BYTES = 64 * 1024
+_MAX_OFFICIAL_EXACT_EDIT_FRAGMENT_BYTES = 32 * 1024
+_MAX_OFFICIAL_EXACT_EDITS = 16
+_MAX_OFFICIAL_EXACT_EDIT_PROMPT_BYTES = 64 * 1024
+_MAX_OFFICIAL_CONTEXT_FILES = 12
+_OFFICIAL_EXACT_EDIT_INITIAL_MAX_TOKENS = 8192
+_OFFICIAL_EXACT_EDIT_RETRY_MAX_TOKENS = 16384
+_OFFICIAL_MATMUL_LINK_BLOCK = (
+    "target_link_libraries(_core\n"
+    "    PUBLIC\n"
+    "    ascendcl\n"
+    "    runtime\n"
+    "    nnopbase\n"
+    "    opapi\n"
+    "    Python::NumPy\n"
+    ")"
+)
+_OFFICIAL_EXACT_EDIT_TARGET_WINDOWS = {
+    "csrc/linalg/product.cpp": (
+        (
+            "matmul_implementation",
+            "NPUArray Matmul(const NPUArray& x1, const NPUArray& x2) {",
+            "\nNPUArray Einsum(",
+        ),
+    ),
+    # The dispatch module is already small and every helper/import may be
+    # relevant to preserving the compatibility fallback.
+    "src/asnumpy/linalg/direct.py": (("complete_dispatch_module", None, None),),
+    "tests/asnumpy_tests/linalg_tests/test_product.py": (
+        (
+            "imports_and_helpers",
+            None,
+            "\n# ==========================================================================\n"
+            "# 1. dot 点积测试",
+        ),
+        (
+            "matmul_tests",
+            "# ==========================================================================\n"
+            "# 5. matmul 矩阵乘法测试",
+            "\n# ==========================================================================\n"
+            "# 6. matrix_power 矩阵幂测试",
+        ),
+    ),
+}
+_GENERATION_FIELDS_V1 = frozenset({
     "mode",
     "provider",
     "model",
@@ -121,6 +195,10 @@ _GENERATION_FIELDS = frozenset({
     "local_validation",
     "fallback",
 })
+_GENERATION_FIELDS_V2 = _GENERATION_FIELDS_V1 | frozenset({
+    "protocol",
+    "response_model_aliases",
+})
 _ARTIFACT_FIELDS = frozenset({
     "schema_version",
     "artifact_id",
@@ -132,7 +210,7 @@ _ARTIFACT_FIELDS = frozenset({
     "generation",
     "gates",
 })
-_REPAIR_REPORT_FIELDS = frozenset({
+_REPAIR_REPORT_FIELDS_V1 = frozenset({
     "schema_version",
     "status",
     "source_artifact_id",
@@ -157,7 +235,11 @@ _REPAIR_REPORT_FIELDS = frozenset({
     "actual_remote_call",
     "gates",
 })
-_GENERATED_ADAPTER_REPORT_FIELDS = frozenset({
+_REPAIR_REPORT_FIELDS_V2 = _REPAIR_REPORT_FIELDS_V1 | frozenset({
+    "protocol",
+    "response_model_aliases",
+})
+_GENERATED_ADAPTER_REPORT_FIELDS_V2 = frozenset({
     "schema_version",
     "status",
     "adapter_artifact_id",
@@ -176,7 +258,18 @@ _GENERATED_ADAPTER_REPORT_FIELDS = frozenset({
     "actual_remote_call",
     "gates",
 })
-_REPAIRED_ADAPTER_REPORT_FIELDS = frozenset({
+_GENERATED_ADAPTER_REPORT_FIELDS_V3 = (
+    _GENERATED_ADAPTER_REPORT_FIELDS_V2 | frozenset({
+        "protocol",
+        "response_model_aliases",
+    })
+)
+_GENERATED_ADAPTER_REPORT_FIELDS_V4 = (
+    _GENERATED_ADAPTER_REPORT_FIELDS_V3 | frozenset({
+        "asnumpy_adapter_context_plan",
+    })
+)
+_REPAIRED_ADAPTER_REPORT_FIELDS_V2 = frozenset({
     "schema_version",
     "status",
     "adapter_artifact_id",
@@ -202,10 +295,16 @@ _REPAIRED_ADAPTER_REPORT_FIELDS = frozenset({
     "actual_remote_call",
     "gates",
 })
-_SAFE_RECEIPT_TEXT = re.compile(r"^[A-Za-z0-9._:?-]{1,512}$")
-_GLM_MODEL_IDENTITY = re.compile(
-    r"^glm-[A-Za-z0-9][A-Za-z0-9._:-]{0,507}$",
-    re.IGNORECASE,
+_REPAIRED_ADAPTER_REPORT_FIELDS_V3 = (
+    _REPAIRED_ADAPTER_REPORT_FIELDS_V2 | frozenset({
+        "protocol",
+        "response_model_aliases",
+    })
+)
+_REPAIRED_ADAPTER_REPORT_FIELDS_V4 = (
+    _REPAIRED_ADAPTER_REPORT_FIELDS_V3 | frozenset({
+        "asnumpy_adapter_context_plan",
+    })
 )
 _EXPECTED_UNVERIFIED_GATES = {
     "spec": "prepared",
@@ -294,9 +393,9 @@ success claims. Never put a line equal to END_FILE inside file content.
 """
 
 _ASNUMPY_ADAPTER_SYSTEM_PROMPT = """You generate exactly one file for an
-UNVERIFIED AsNumpy custom-operator integration overlay. The signed operator
-artifact and its adapter JSON are semantic and ABI truth. The supplied
-AsNumpy registry/generator files are integration truth, and the supplied
+UNVERIFIED AsNumpy operator integration overlay. The signed route-neutral
+operator artifact/candidate and its adapter contract are semantic and ABI truth. The supplied
+AsNumpy architecture files are integration truth, and the supplied
 NumPilot AsNumpy integration Skill is workflow and testing truth.
 
 Return exactly one NUMPILOT_BUNDLE_V1 line bundle containing only the requested
@@ -316,10 +415,41 @@ software, or claim build/NPU success. Never put a line equal to END_FILE inside
 file content.
 """
 
+_ASNUMPY_OFFICIAL_EXACT_EDIT_SYSTEM_PROMPT = """You propose bounded exact
+edits to exactly one EXISTING file for an UNVERIFIED official ACLNN AsNumpy
+integration overlay. The signed route-neutral official_binary candidate,
+adapter contract, selected CANN header, target file, and existing-module
+AsNumpy references are authoritative. The route-specific Skill is engineering
+and testing truth, except that its older complete-file output instruction is
+superseded by this exact-edit protocol.
+
+Never return a complete file or a NUMPILOT_BUNDLE_V1 envelope. Return exactly:
+NUMPILOT_EXACT_EDIT_V1
+PATH: the/exact/requested/path
+BASE_SHA256: lowercase SHA-256 supplied for that target
+EDIT_COUNT: N
+BEGIN_EDIT 1
+OLD:
+an exact non-empty substring copied verbatim from the supplied target
+END_OLD 1
+NEW:
+its exact replacement (which may be empty)
+END_NEW 1
+END_EDIT 1
+END_EXACT_EDIT
+
+For N edits, repeat the numbered block consecutively from 1 through N. Every
+OLD block must occur exactly once in the original target, and OLD intervals
+must not overlap or leave the supplied target edit windows. Use the smallest
+sufficient OLD/NEW blocks. Do not use
+Markdown fences, ellipses, line numbers, unified diffs, commentary, TODOs,
+CPU fallbacks, network operations, installation, or build/NPU success claims.
+"""
+
 _ASNUMPY_ADAPTER_REPAIR_SYSTEM_PROMPT = """You repair exactly one file in an
-UNVERIFIED AsNumpy custom-operator integration overlay. The raw local build or
+UNVERIFIED AsNumpy operator integration overlay. The raw local build or
 test diagnostic is authoritative. The current overlay and supplied AsNumpy
-build/generator files are integration truth, and the supplied NumPilot AsNumpy
+architecture files are integration truth, and the supplied NumPilot AsNumpy
 integration Skill files are engineering truth.
 
 Return exactly one NUMPILOT_BUNDLE_V1 line bundle containing only the requested
@@ -378,6 +508,91 @@ def _safe_relative_path(value: object) -> PurePosixPath:
     return path
 
 
+def _safe_asnumpy_adapter_relative_path(value: object) -> PurePosixPath:
+    """Validate one writable path in an isolated AsNumpy overlay.
+
+    This intentionally does not reuse or extend ``_ALLOWED_TOP_DIRS``.  The
+    adapter may replace existing AsNumpy binding/public-source files that an
+    operator-project draft must not be able to emit.
+    """
+
+    if (
+        not isinstance(value, str)
+        or not value
+        or value != value.strip()
+        or len(value) > _MAX_PATH_CHARS
+        or "\\" in value
+        or any(ord(character) < 32 for character in value)
+    ):
+        raise DraftGenerationError("AsNumpy adapter path is invalid")
+    path = PurePosixPath(value)
+    if (
+        path.is_absolute()
+        or not path.parts
+        or len(path.parts) > _MAX_PATH_DEPTH
+        or any(part in {"", ".", ".."} for part in value.split("/"))
+        or str(path) != value
+    ):
+        raise DraftGenerationError("unsafe AsNumpy adapter path: %r" % value)
+    if len(path.parts) == 1:
+        if path.name not in _ASNUMPY_ADAPTER_ROOT_FILES:
+            raise DraftGenerationError(
+                "unexpected AsNumpy adapter root file: %s" % path
+            )
+    elif path.parts[0] not in _ASNUMPY_ADAPTER_TOP_DIRS:
+        raise DraftGenerationError(
+            "unexpected AsNumpy adapter directory: %s" % path
+        )
+    if (
+        path.name not in _ASNUMPY_ADAPTER_ROOT_FILES
+        and path.suffix not in _ALLOWED_SUFFIXES
+    ):
+        raise DraftGenerationError(
+            "unsupported AsNumpy adapter file type: %s" % path
+        )
+    return path
+
+
+def _safe_asnumpy_adapter_context_path(value: object) -> PurePosixPath:
+    """Validate a content-only path in an adapter context-plan receipt."""
+
+    if (
+        not isinstance(value, str)
+        or not value
+        or value != value.strip()
+        or len(value) > _MAX_PATH_CHARS
+        or "\\" in value
+        or any(ord(character) < 32 for character in value)
+    ):
+        raise DraftGenerationError("AsNumpy adapter context path is invalid")
+    path = PurePosixPath(value)
+    if (
+        path.is_absolute()
+        or not path.parts
+        or len(path.parts) > _MAX_PATH_DEPTH
+        or any(part in {"", ".", ".."} for part in value.split("/"))
+        or str(path) != value
+    ):
+        raise DraftGenerationError("unsafe AsNumpy adapter context path: %r" % value)
+    if len(path.parts) == 1:
+        if path.name not in _ASNUMPY_ADAPTER_ROOT_FILES:
+            raise DraftGenerationError(
+                "unexpected AsNumpy adapter context root file: %s" % path
+            )
+    elif path.parts[0] not in _ASNUMPY_ADAPTER_CONTEXT_TOP_DIRS:
+        raise DraftGenerationError(
+            "unexpected AsNumpy adapter context directory: %s" % path
+        )
+    if (
+        path.name not in _ASNUMPY_ADAPTER_ROOT_FILES
+        and path.suffix not in _ALLOWED_SUFFIXES
+    ):
+        raise DraftGenerationError(
+            "unsupported AsNumpy adapter context file type: %s" % path
+        )
+    return path
+
+
 def _parse_line_bundle(payload: str) -> Tuple[str, List[Dict[str, str]]]:
     text = payload.strip().replace("\r\n", "\n").replace("\r", "\n")
     prefix = "NUMPILOT_BUNDLE_V1\nSUMMARY: "
@@ -414,6 +629,8 @@ def _parse_line_bundle(payload: str) -> Tuple[str, List[Dict[str, str]]]:
 
 def _validate_bundle_files(
     payload: str,
+    *,
+    path_validator: Callable[[object], PurePosixPath] = _safe_relative_path,
 ) -> Tuple[str, Tuple[Tuple[PurePosixPath, str], ...]]:
     if not isinstance(payload, str):
         raise DraftGenerationError("model output must be text")
@@ -449,7 +666,7 @@ def _validate_bundle_files(
     for item in raw_files:
         if not isinstance(item, dict):
             raise DraftGenerationError("each generated file must be an object")
-        path = _safe_relative_path(item.get("path"))
+        path = path_validator(item.get("path"))
         content = item.get("content")
         if not isinstance(content, str):
             raise DraftGenerationError("file content must be a string: %s" % path)
@@ -498,8 +715,13 @@ def _validate_bundle(payload: str) -> Tuple[str, Tuple[Tuple[PurePosixPath, str]
 def _validate_stage_bundle(
     payload: str,
     required_paths: Tuple[str, ...],
+    *,
+    path_validator: Callable[[object], PurePosixPath] = _safe_relative_path,
 ) -> Tuple[str, Tuple[Tuple[PurePosixPath, str], ...]]:
-    summary, files = _validate_bundle_files(payload)
+    summary, files = _validate_bundle_files(
+        payload,
+        path_validator=path_validator,
+    )
     actual = {str(path) for path, _content in files}
     required = set(required_paths)
     if len(files) != len(required_paths) or actual != required:
@@ -514,6 +736,229 @@ def _validate_stage_bundle(
 
 def _sha256_bytes(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
+
+
+def _apply_official_exact_edit_response(
+    payload: str,
+    *,
+    expected_path: str,
+    base_content: str,
+    allowed_intervals: Optional[Tuple[Tuple[int, int], ...]] = None,
+) -> str:
+    """Parse and mechanically apply one bounded existing-file edit response."""
+
+    normalized_expected = str(
+        _safe_asnumpy_adapter_relative_path(expected_path)
+    )
+    if normalized_expected != expected_path:
+        raise DraftGenerationError(
+            "official exact-edit target path is not normalized"
+        )
+    if (
+        not isinstance(base_content, str)
+        or not base_content
+        or "\x00" in base_content
+    ):
+        raise DraftGenerationError("official exact-edit base content is invalid")
+    if not isinstance(payload, str):
+        raise DraftGenerationError("official exact-edit response must be text")
+    try:
+        base_bytes = base_content.encode("utf-8")
+        response_bytes = payload.encode("utf-8")
+    except UnicodeError as exc:
+        raise DraftGenerationError(
+            "official exact-edit input is not valid UTF-8 text"
+        ) from exc
+    if len(base_bytes) > _MAX_ADAPTER_FILE_BYTES:
+        raise DraftGenerationError(
+            "official exact-edit base content exceeds its size limit"
+        )
+    if not response_bytes:
+        raise DraftGenerationError("official exact-edit response is empty")
+    if len(response_bytes) > _MAX_OFFICIAL_EXACT_EDIT_RESPONSE_BYTES:
+        raise DraftGenerationError(
+            "official exact-edit response exceeds its size limit"
+        )
+    if "\x00" in payload:
+        raise DraftGenerationError(
+            "official exact-edit response contains a NUL byte"
+        )
+    if "\r" in payload:
+        raise DraftGenerationError(
+            "official exact-edit response contains a carriage return"
+        )
+    text = payload[:-1] if payload.endswith("\n") else payload
+    prefix = "NUMPILOT_EXACT_EDIT_V1\nPATH: "
+    if not text.startswith(prefix):
+        raise DraftGenerationError(
+            "official exact-edit response has no exact-edit header"
+        )
+    path_end = text.find("\n", len(prefix))
+    if path_end < 0:
+        raise DraftGenerationError("official exact-edit response path is incomplete")
+    response_path = str(
+        _safe_asnumpy_adapter_relative_path(text[len(prefix):path_end])
+    )
+    if response_path != expected_path:
+        raise DraftGenerationError("official exact-edit response path mismatch")
+
+    hash_prefix = "BASE_SHA256: "
+    hash_start = path_end + 1
+    if not text.startswith(hash_prefix, hash_start):
+        raise DraftGenerationError("official exact-edit base hash is missing")
+    hash_end = text.find("\n", hash_start)
+    if hash_end < 0:
+        raise DraftGenerationError("official exact-edit base hash is incomplete")
+    base_sha256 = text[hash_start + len(hash_prefix):hash_end]
+    if (
+        not re.fullmatch(r"[0-9a-f]{64}", base_sha256)
+        or base_sha256 != _sha256_bytes(base_bytes)
+    ):
+        raise DraftGenerationError("official exact-edit base hash mismatch")
+
+    count_prefix = "EDIT_COUNT: "
+    count_start = hash_end + 1
+    if not text.startswith(count_prefix, count_start):
+        raise DraftGenerationError("official exact-edit count is missing")
+    count_end = text.find("\n", count_start)
+    if count_end < 0:
+        raise DraftGenerationError("official exact-edit count is incomplete")
+    raw_count = text[count_start + len(count_prefix):count_end]
+    if not re.fullmatch(r"[1-9][0-9]*", raw_count):
+        raise DraftGenerationError("official exact-edit count is invalid")
+    edit_count = int(raw_count)
+    if edit_count > _MAX_OFFICIAL_EXACT_EDITS:
+        raise DraftGenerationError("official exact-edit count exceeds its limit")
+
+    cursor = count_end + 1
+    raw_edits = []
+    for index in range(1, edit_count + 1):
+        edit_prefix = "BEGIN_EDIT %d\nOLD:\n" % index
+        if not text.startswith(edit_prefix, cursor):
+            raise DraftGenerationError(
+                "official exact-edit block %d is malformed" % index
+            )
+        old_start = cursor + len(edit_prefix)
+        old_marker = "\nEND_OLD %d\nNEW:\n" % index
+        old_end = text.find(old_marker, old_start)
+        if old_end < 0:
+            raise DraftGenerationError(
+                "official exact-edit OLD block %d is unterminated" % index
+            )
+        old = text[old_start:old_end]
+        if (
+            not old
+            or len(old.encode("utf-8"))
+            > _MAX_OFFICIAL_EXACT_EDIT_FRAGMENT_BYTES
+        ):
+            raise DraftGenerationError(
+                "official exact-edit OLD block %d is empty or too large" % index
+            )
+        new_start = old_end + len(old_marker)
+        empty_new_marker = "END_NEW %d\nEND_EDIT %d\n" % (index, index)
+        new_marker = "\n" + empty_new_marker
+        if text.startswith(empty_new_marker, new_start):
+            new = ""
+            cursor = new_start + len(empty_new_marker)
+        else:
+            new_end = text.find(new_marker, new_start)
+            if new_end < 0:
+                raise DraftGenerationError(
+                    "official exact-edit NEW block %d is unterminated" % index
+                )
+            new = text[new_start:new_end]
+            cursor = new_end + len(new_marker)
+        if (
+            len(new.encode("utf-8"))
+            > _MAX_OFFICIAL_EXACT_EDIT_FRAGMENT_BYTES
+            or new == old
+        ):
+            raise DraftGenerationError(
+                "official exact-edit NEW block %d is invalid" % index
+            )
+        raw_edits.append((old, new))
+    if text[cursor:] != "END_EXACT_EDIT":
+        raise DraftGenerationError(
+            "official exact-edit response has trailing or missing content"
+        )
+
+    located = []
+    for index, (old, new) in enumerate(raw_edits, start=1):
+        start = base_content.find(old)
+        if start < 0 or base_content.find(old, start + 1) >= 0:
+            raise DraftGenerationError(
+                "official exact-edit OLD block %d must occur exactly once"
+                % index
+            )
+        located.append((start, start + len(old), new, index))
+    located.sort(key=lambda item: (item[0], item[1], item[3]))
+    normalized_allowed = None
+    if allowed_intervals is not None:
+        if not isinstance(allowed_intervals, tuple) or not allowed_intervals:
+            raise DraftGenerationError(
+                "official exact-edit target windows are invalid"
+            )
+        normalized_allowed = []
+        allowed_previous_end = -1
+        for interval in allowed_intervals:
+            if (
+                not isinstance(interval, tuple)
+                or len(interval) != 2
+                or any(isinstance(value, bool) for value in interval)
+                or any(not isinstance(value, int) for value in interval)
+            ):
+                raise DraftGenerationError(
+                    "official exact-edit target windows are invalid"
+                )
+            allowed_start, allowed_end = interval
+            if (
+                allowed_start < 0
+                or allowed_start >= allowed_end
+                or allowed_end > len(base_content)
+                or allowed_start < allowed_previous_end
+            ):
+                raise DraftGenerationError(
+                    "official exact-edit target windows are invalid"
+                )
+            normalized_allowed.append((allowed_start, allowed_end))
+            allowed_previous_end = allowed_end
+    previous_end = -1
+    for start, end, _new, _index in located:
+        if start < previous_end:
+            raise DraftGenerationError("official exact-edit intervals overlap")
+        if normalized_allowed is not None and not any(
+            start >= allowed_start and end <= allowed_end
+            for allowed_start, allowed_end in normalized_allowed
+        ):
+            raise DraftGenerationError(
+                "official exact-edit OLD block leaves its target edit windows"
+            )
+        previous_end = end
+
+    rebuilt = []
+    cursor = 0
+    for start, end, new, _index in located:
+        rebuilt.extend((base_content[cursor:start], new))
+        cursor = end
+    rebuilt.append(base_content[cursor:])
+    result = "".join(rebuilt)
+    if not result:
+        raise DraftGenerationError("official exact-edit rebuilt file is empty")
+    if (
+        "\x00" in result
+        or len(result.encode("utf-8")) > _MAX_ADAPTER_FILE_BYTES
+    ):
+        raise DraftGenerationError(
+            "official exact-edit rebuilt file exceeds its size limit"
+        )
+    if any(
+        marker in result
+        for marker in ("TODO_VERIFY_CANN_API", "TODO_IMPLEMENT_OPERATOR")
+    ):
+        raise DraftGenerationError(
+            "official exact-edit rebuilt file contains a forbidden placeholder"
+        )
+    return result
 
 
 def _bounded_json_payload(value: object, label: str) -> bytes:
@@ -615,6 +1060,7 @@ def _bounded_tree_hashes(
     maximum_file_bytes: int,
     maximum_total_bytes: int,
     label: str,
+    path_validator: Callable[[object], PurePosixPath] = _safe_relative_path,
 ) -> Dict[str, str]:
     """Stream, bound and hash every non-metadata regular file below ``root``."""
 
@@ -646,7 +1092,7 @@ def _bounded_tree_hashes(
                 continue
             if len(hashes) >= maximum_files:
                 raise DraftGenerationError("%s exceeds the file-count limit" % label)
-            safe = str(_safe_relative_path(relative))
+            safe = str(path_validator(relative))
             if safe != relative:
                 raise DraftGenerationError("%s path is not normalized" % label)
             if metadata.st_size > maximum_file_bytes:
@@ -696,117 +1142,26 @@ def _require_exact_int(
     return value
 
 
-def _parse_utc_receipt_time(value: object, name: str) -> datetime:
-    if (
-        not isinstance(value, str)
-        or not value.endswith("Z")
-        or len(value) > 64
-    ):
-        raise DraftGenerationError(
-            "remote model receipt field is invalid: %s" % name
-        )
-    try:
-        parsed = datetime.fromisoformat(value[:-1] + "+00:00")
-    except ValueError as exc:
-        raise DraftGenerationError(
-            "remote model receipt field is invalid: %s" % name
-        ) from exc
-    if parsed.tzinfo is None or parsed.utcoffset() != timezone.utc.utcoffset(parsed):
-        raise DraftGenerationError(
-            "remote model receipt field is invalid: %s" % name
-        )
-    return parsed
-
-
 _RESPONSE_NOT_PROVIDED = object()
+
+
+def _translate_model_contract(callable_, *args, **kwargs):
+    try:
+        return callable_(*args, **kwargs)
+    except _model_contract.ModelContractError as exc:
+        raise DraftGenerationError(str(exc)) from exc
 
 
 def _validate_remote_receipt(
     receipt: object, response: object = _RESPONSE_NOT_PROVIDED
 ) -> Dict[str, object]:
-    if not isinstance(receipt, dict) or frozenset(receipt) != _REMOTE_RECEIPT_FIELDS:
-        raise DraftGenerationError("remote model call returned an incomplete receipt")
-    if receipt.get("schema_version") != 1 or isinstance(
-        receipt.get("schema_version"), bool
-    ):
-        raise DraftGenerationError("remote model receipt schema is invalid")
-    status = receipt.get("http_status")
-    if (
-        isinstance(status, bool)
-        or not isinstance(status, int)
-        or status < 200
-        or status >= 300
-    ):
-        raise DraftGenerationError("remote model receipt HTTP status is invalid")
-    for name in ("request_body_sha256", "response_body_sha256"):
-        if not _is_sha256(receipt.get(name)):
-            raise DraftGenerationError("remote model receipt hash is invalid: %s" % name)
     if response is _RESPONSE_NOT_PROVIDED:
-        if (
-            receipt.get("content_sha256") is not None
-            and not _is_sha256(receipt.get("content_sha256"))
-        ):
-            raise DraftGenerationError(
-                "remote model receipt content hash is invalid"
-            )
-    elif response is None:
-        if receipt.get("content_sha256") is not None:
-            raise DraftGenerationError(
-                "failed remote model receipt claims response content"
-            )
-    elif (
-        not isinstance(response, str)
-        or not _is_sha256(receipt.get("content_sha256"))
-        or receipt["content_sha256"] != _sha256_bytes(response.encode("utf-8"))
-    ):
-        raise DraftGenerationError("remote model receipt content hash mismatch")
-    started_at = _parse_utc_receipt_time(receipt.get("utc_start"), "utc_start")
-    ended_at = _parse_utc_receipt_time(receipt.get("utc_end"), "utc_end")
-    if ended_at < started_at:
-        raise DraftGenerationError("remote model receipt time range is invalid")
-    for name in ("requested_model", "response_model", "response_id", "request_id"):
-        if name == "requested_model" and receipt.get(name) is None:
-            raise DraftGenerationError(
-                "remote model receipt field is invalid: %s" % name
-            )
-        if receipt.get(name) is not None and (
-            not isinstance(receipt[name], str)
-            or not _SAFE_RECEIPT_TEXT.fullmatch(receipt[name])
-        ):
-            raise DraftGenerationError("remote model receipt field is invalid: %s" % name)
-    created = receipt.get("response_created")
-    if created is not None and (
-        isinstance(created, bool)
-        or not isinstance(created, int)
-        or created < 0
-        or created > 2 ** 63 - 1
-    ):
-        raise DraftGenerationError("remote model receipt created value is invalid")
-    usage = receipt.get("usage")
-    if (
-        not isinstance(usage, dict)
-        or len(usage) > 32
-        or any(
-            not isinstance(name, str)
-            or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_.-]{0,63}", name)
-            or isinstance(value, bool)
-            or not isinstance(value, int)
-            or value < 0
-            or value > 2 ** 63 - 1
-            for name, value in usage.items()
+        return _translate_model_contract(
+            _model_contract.validate_remote_receipt, receipt
         )
-    ):
-        raise DraftGenerationError("remote model receipt usage is invalid")
-    if receipt.get("tls_verification") not in {"enabled", "disabled"}:
-        raise DraftGenerationError("remote model receipt TLS state is invalid")
-    serialized = json.dumps(receipt, ensure_ascii=False, sort_keys=True)
-    if len(serialized.encode("utf-8")) > 64 * 1024:
-        raise DraftGenerationError("remote model receipt exceeds the size limit")
-    for env_name in ("NUMPILOT_LLM_AUTH_TOKEN", "NUMPILOT_LLM_BASE_URL"):
-        sensitive = os.getenv(env_name, "")
-        if sensitive and sensitive in serialized:
-            raise DraftGenerationError("remote model receipt contains sensitive data")
-    return dict(receipt)
+    return _translate_model_contract(
+        _model_contract.validate_remote_receipt, receipt, response
+    )
 
 
 def validate_remote_receipt(
@@ -817,21 +1172,88 @@ def validate_remote_receipt(
     return _validate_remote_receipt(receipt, response)
 
 
-def require_glm_configuration(provider: object, model: object) -> str:
-    """Return the configured model only for an explicit GLM identity."""
+def require_model_configuration(
+    provider: object,
+    model: object,
+    *,
+    protocol: object = OPENAI_CHAT_COMPLETIONS_PROTOCOL,
+    response_model_aliases: object = (),
+):
+    """Return a provider-neutral, validated configured-model identity."""
 
-    if not isinstance(provider, str) or provider.strip().lower() != "glm":
-        raise DraftGenerationError(
-            "model-generated code requires provider=glm"
+    return _translate_model_contract(
+        _model_contract.require_model_configuration,
+        provider,
+        model,
+        protocol=protocol,
+        response_model_aliases=response_model_aliases,
+    )
+
+
+def validate_configured_model_receipt(
+    receipt: object,
+    response: object = _RESPONSE_NOT_PROVIDED,
+    *,
+    expected_model: object,
+    expected_provider: object,
+    expected_protocol: object = OPENAI_CHAT_COMPLETIONS_PROTOCOL,
+    response_model_aliases: object = (),
+) -> Dict[str, object]:
+    kwargs = {
+        "expected_model": expected_model,
+        "expected_provider": expected_provider,
+        "expected_protocol": expected_protocol,
+        "response_model_aliases": response_model_aliases,
+    }
+    if response is _RESPONSE_NOT_PROVIDED:
+        return _translate_model_contract(
+            _model_contract.validate_configured_model_receipt,
+            receipt,
+            **kwargs,
         )
-    if (
-        not isinstance(model, str)
-        or _GLM_MODEL_IDENTITY.fullmatch(model.strip()) is None
-    ):
-        raise DraftGenerationError(
-            "model-generated code requires an explicit glm-* model"
+    return _translate_model_contract(
+        _model_contract.validate_configured_model_receipt,
+        receipt,
+        response,
+        **kwargs,
+    )
+
+
+def validate_configured_model_attempt_receipt(
+    receipt: object,
+    response: object = _RESPONSE_NOT_PROVIDED,
+    *,
+    expected_model: object,
+    expected_provider: object,
+    expected_protocol: object = OPENAI_CHAT_COMPLETIONS_PROTOCOL,
+    response_model_aliases: object = (),
+) -> Dict[str, object]:
+    """Validate a failed/successful attempt without accepting its response."""
+
+    kwargs = {
+        "expected_model": expected_model,
+        "expected_provider": expected_provider,
+        "expected_protocol": expected_protocol,
+        "response_model_aliases": response_model_aliases,
+    }
+    if response is _RESPONSE_NOT_PROVIDED:
+        return _translate_model_contract(
+            _model_contract.validate_configured_model_attempt_receipt,
+            receipt,
+            **kwargs,
         )
-    return model.strip()
+    return _translate_model_contract(
+        _model_contract.validate_configured_model_attempt_receipt,
+        receipt,
+        response,
+        **kwargs,
+    )
+
+
+def require_glm_configuration(provider: object, model: object) -> str:
+    """Compatibility alias; provider is now an audit label, not a vendor gate."""
+
+    return require_model_configuration(provider, model).model
 
 
 def validate_glm_remote_receipt(
@@ -840,24 +1262,97 @@ def validate_glm_remote_receipt(
     *,
     expected_model: object,
 ) -> Dict[str, object]:
-    """Validate one response as evidence from the configured GLM model."""
+    """Read-only compatibility boundary for exact legacy schema-1 receipts."""
 
-    expected = require_glm_configuration("glm", expected_model)
-    validated = _validate_remote_receipt(receipt, response)
-    requested = validated.get("requested_model")
-    actual = validated.get("response_model")
-    if (
-        not isinstance(requested, str)
-        or _GLM_MODEL_IDENTITY.fullmatch(requested) is None
-        or not isinstance(actual, str)
-        or _GLM_MODEL_IDENTITY.fullmatch(actual) is None
-        or requested != expected
-        or actual != expected
-    ):
+    if not isinstance(receipt, dict) or receipt.get("schema_version") != 1:
         raise DraftGenerationError(
-            "remote model receipt does not prove one consistent glm-* identity"
+            "validate_glm_remote_receipt only accepts legacy schema 1"
         )
-    return validated
+    return validate_configured_model_receipt(
+        receipt,
+        response,
+        expected_model=expected_model,
+        expected_provider="glm",
+        expected_protocol=OPENAI_CHAT_COMPLETIONS_PROTOCOL,
+    )
+
+
+def _validate_generation_base_receipt(
+    receipt: object,
+    response: object,
+    generation: Dict[str, object],
+) -> Dict[str, object]:
+    """Validate one call against the exact signed/configured generation identity."""
+
+    return validate_configured_model_receipt(
+        receipt,
+        response,
+        expected_model=generation.get("model"),
+        expected_provider=generation.get("provider"),
+        expected_protocol=generation.get(
+            "protocol", OPENAI_CHAT_COMPLETIONS_PROTOCOL
+        ),
+        response_model_aliases=generation.get("response_model_aliases", ()),
+    )
+
+
+def _validate_generation_attempt_receipt(
+    receipt: object,
+    response: object,
+    generation: Dict[str, object],
+) -> Dict[str, object]:
+    """Validate configured/requested identity for one historical attempt."""
+
+    return validate_configured_model_attempt_receipt(
+        receipt,
+        response,
+        expected_model=generation.get("model"),
+        expected_provider=generation.get("provider"),
+        expected_protocol=generation.get(
+            "protocol", OPENAI_CHAT_COMPLETIONS_PROTOCOL
+        ),
+        response_model_aliases=generation.get("response_model_aliases", ()),
+    )
+
+
+def _record_generation_attempt(
+    receipts: List[Dict[str, object]],
+    response_hashes: List[str],
+    receipt: object,
+    response: object,
+    generation: Dict[str, object],
+) -> Dict[str, object]:
+    """Retain a trustworthy attempt, then enforce final response identity."""
+
+    attempted = _validate_generation_attempt_receipt(
+        receipt, response, generation
+    )
+    receipts.append(attempted)
+    if isinstance(response, str):
+        response_hashes.append(_sha256_bytes(response.encode("utf-8")))
+    accepted = _validate_generation_base_receipt(
+        attempted, response, generation
+    )
+    receipts[-1] = accepted
+    return accepted
+
+
+def _generation_identity_snapshot(value: Dict[str, object]):
+    identity = require_model_configuration(
+        value.get("provider"),
+        value.get("model"),
+        protocol=value.get(
+            "protocol", OPENAI_CHAT_COMPLETIONS_PROTOCOL
+        ),
+        response_model_aliases=value.get("response_model_aliases", ()),
+    )
+    return (
+        identity.model,
+        identity.provider,
+        identity.protocol,
+        identity.response_model_aliases,
+        value.get("configuration_source"),
+    )
 
 
 def _adapter_artifact_id(report: Dict[str, object]) -> str:
@@ -902,7 +1397,7 @@ def _validate_adapter_hash_map(
     normalized: Dict[str, str] = {}
     for raw_name, digest in value.items():
         if paths:
-            name = str(_safe_relative_path(raw_name))
+            name = str(_safe_asnumpy_adapter_relative_path(raw_name))
         else:
             if (
                 not isinstance(raw_name, str)
@@ -922,6 +1417,728 @@ def _validate_adapter_hash_map(
     return normalized
 
 
+def _validate_adapter_context_plan(value: object) -> Dict[str, object]:
+    """Validate the content-free AsNumpy layout receipt bound to an adapter."""
+
+    base_fields = {
+        "schema_version", "architecture", "mode", "reference_root",
+        "context_sha256", "expected_overlay_paths", "total_bytes",
+        "plan_sha256",
+    }
+    if not isinstance(value, dict):
+        raise DraftGenerationError("AsNumpy adapter context plan is invalid")
+    schema_version = value.get("schema_version")
+    if (
+        isinstance(schema_version, bool)
+        or not isinstance(schema_version, int)
+        or schema_version not in (1, 2, 3)
+    ):
+        raise DraftGenerationError("AsNumpy adapter context plan schema is invalid")
+    if schema_version == 3:
+        fields = base_fields | {
+            "prompt_dependencies", "official_library_binding",
+        }
+    elif schema_version == 2:
+        fields = base_fields | {"prompt_dependencies"}
+    else:
+        fields = base_fields
+    if set(value) != fields:
+        raise DraftGenerationError("AsNumpy adapter context plan is invalid")
+    architecture = value.get("architecture")
+    mode = value.get("mode")
+    if (architecture, mode) not in {
+        ("manifest_generator", "manifest"),
+        ("legacy_manual", "manual"),
+        ("official_aclnn_existing_module", "existing_module"),
+    }:
+        raise DraftGenerationError("AsNumpy adapter architecture/mode is invalid")
+    root = value.get("reference_root")
+    if (
+        not isinstance(root, str)
+        or not root
+        or len(root) > 4096
+        or any(ord(character) < 32 for character in root)
+        or not Path(root).is_absolute()
+    ):
+        raise DraftGenerationError("AsNumpy adapter reference root is invalid")
+    raw_contexts = value.get("context_sha256")
+    maximum_context_files = (
+        _MAX_OFFICIAL_CONTEXT_FILES if schema_version in (2, 3) else 8
+    )
+    if (
+        not isinstance(raw_contexts, dict)
+        or not raw_contexts
+        or len(raw_contexts) > maximum_context_files
+    ):
+        raise DraftGenerationError(
+            "AsNumpy adapter context-plan hash map is invalid"
+        )
+    contexts: Dict[str, str] = {}
+    for raw_name, digest in raw_contexts.items():
+        name = str(_safe_asnumpy_adapter_context_path(raw_name))
+        if name in contexts or name != raw_name or not _is_sha256(digest):
+            raise DraftGenerationError(
+                "AsNumpy adapter context-plan path/hash is invalid"
+            )
+        contexts[name] = digest
+    raw_paths = value.get("expected_overlay_paths")
+    if (
+        not isinstance(raw_paths, list)
+        or not raw_paths
+        or len(raw_paths) > _MAX_ADAPTER_FILES
+    ):
+        raise DraftGenerationError("AsNumpy adapter context-plan paths are invalid")
+    paths = tuple(
+        str(_safe_asnumpy_adapter_relative_path(item)) for item in raw_paths
+    )
+    if len(set(paths)) != len(paths) or list(paths) != raw_paths:
+        raise DraftGenerationError("AsNumpy adapter context-plan paths are invalid")
+    prompt_dependencies = None
+    if schema_version in (2, 3):
+        if (architecture, mode) != (
+            "official_aclnn_existing_module", "existing_module"
+        ):
+            raise DraftGenerationError(
+                "AsNumpy adapter projected plan is not an official existing module"
+            )
+        raw_dependencies = value.get("prompt_dependencies")
+        if (
+            not isinstance(raw_dependencies, dict)
+            or tuple(raw_dependencies) != paths
+        ):
+            raise DraftGenerationError(
+                "AsNumpy adapter prompt dependencies are invalid"
+            )
+        prompt_dependencies = {}
+        generated_before = set()
+        for target in paths:
+            raw_items = raw_dependencies.get(target)
+            if (
+                not isinstance(raw_items, list)
+                or not raw_items
+                or len(raw_items) > _MAX_ADAPTER_FILES
+            ):
+                raise DraftGenerationError(
+                    "AsNumpy adapter prompt dependencies are invalid"
+                )
+            items = []
+            seen = set()
+            for raw_item in raw_items:
+                if not isinstance(raw_item, dict) or set(raw_item) != {
+                    "source", "path",
+                }:
+                    raise DraftGenerationError(
+                        "AsNumpy adapter prompt dependency is invalid"
+                    )
+                source = raw_item.get("source")
+                raw_path = raw_item.get("path")
+                if source == "reference":
+                    dependency_path = str(
+                        _safe_asnumpy_adapter_context_path(raw_path)
+                    )
+                    valid = (
+                        dependency_path == raw_path
+                        and dependency_path in contexts
+                        and dependency_path != target
+                    )
+                elif source == "signed_official_header":
+                    valid = (
+                        isinstance(raw_path, str)
+                        and re.fullmatch(
+                            r"SIGNED_OFFICIAL_HEADER/[A-Za-z0-9_.-]{1,128}",
+                            raw_path,
+                        )
+                        is not None
+                    )
+                    dependency_path = raw_path if valid else ""
+                elif source == "generated_overlay":
+                    dependency_path = str(
+                        _safe_asnumpy_adapter_relative_path(raw_path)
+                    )
+                    valid = (
+                        dependency_path == raw_path
+                        and dependency_path in generated_before
+                    )
+                else:
+                    valid = False
+                    dependency_path = ""
+                identity = (source, dependency_path)
+                if not valid or identity in seen:
+                    raise DraftGenerationError(
+                        "AsNumpy adapter prompt dependency is invalid"
+                    )
+                seen.add(identity)
+                items.append({"source": source, "path": dependency_path})
+            prompt_dependencies[target] = items
+            generated_before.add(target)
+    official_library_binding = None
+    if schema_version == 3:
+        raw_binding = value.get("official_library_binding")
+        binding_fields = {
+            "schema_version",
+            "proof_kind",
+            "cmake_path",
+            "cmake_sha256",
+            "target",
+            "link_item",
+            "selected_library_relative_path",
+            "selected_library_basename",
+            "selected_library_sha256",
+        }
+        if not isinstance(raw_binding, dict) or set(raw_binding) != binding_fields:
+            raise DraftGenerationError(
+                "AsNumpy official library binding is invalid"
+            )
+        cmake_path = str(_safe_asnumpy_adapter_context_path(
+            raw_binding.get("cmake_path")
+        ))
+        selected_path_value = raw_binding.get(
+            "selected_library_relative_path"
+        )
+        if not isinstance(selected_path_value, str):
+            raise DraftGenerationError(
+                "AsNumpy official library binding is invalid"
+            )
+        selected_path = PurePosixPath(selected_path_value)
+        target = raw_binding.get("target")
+        link_item = raw_binding.get("link_item")
+        basename = raw_binding.get("selected_library_basename")
+        if (
+            raw_binding.get("schema_version") != 1
+            or raw_binding.get("proof_kind")
+            != "reviewed_exact_cmake_target_link_item"
+            or cmake_path != raw_binding.get("cmake_path")
+            or cmake_path not in contexts
+            or raw_binding.get("cmake_sha256") != contexts[cmake_path]
+            or not isinstance(target, str)
+            or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,63}", target) is None
+            or not isinstance(link_item, str)
+            or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,63}", link_item) is None
+            or not isinstance(basename, str)
+            or basename != "lib%s.so" % link_item
+            or not selected_path_value
+            or "\\" in selected_path_value
+            or selected_path.is_absolute()
+            or any(
+                part in {"", ".", ".."}
+                for part in selected_path_value.split("/")
+            )
+            or str(selected_path) != selected_path_value
+            or selected_path.name != basename
+            or not _is_sha256(raw_binding.get("selected_library_sha256"))
+            or raw_binding.get("selected_library_sha256") == "0" * 64
+        ):
+            raise DraftGenerationError(
+                "AsNumpy official library binding is invalid"
+            )
+        official_library_binding = {
+            "schema_version": 1,
+            "proof_kind": "reviewed_exact_cmake_target_link_item",
+            "cmake_path": cmake_path,
+            "cmake_sha256": contexts[cmake_path],
+            "target": target,
+            "link_item": link_item,
+            "selected_library_relative_path": selected_path_value,
+            "selected_library_basename": basename,
+            "selected_library_sha256": raw_binding[
+                "selected_library_sha256"
+            ],
+        }
+    total_bytes = _require_exact_int(
+        value.get("total_bytes"),
+        "AsNumpy adapter context-plan byte count",
+        minimum=1,
+        maximum=256 * 1024,
+    )
+    identity = {
+        "schema_version": schema_version,
+        "architecture": architecture,
+        "mode": mode,
+        "context_sha256": contexts,
+        "expected_overlay_paths": list(paths),
+    }
+    if schema_version in (2, 3):
+        identity["prompt_dependencies"] = prompt_dependencies
+    if schema_version == 3:
+        identity["official_library_binding"] = official_library_binding
+    expected_digest = _sha256_bytes(json.dumps(
+        identity, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8"))
+    if value.get("plan_sha256") != expected_digest:
+        raise DraftGenerationError("AsNumpy adapter context-plan digest is invalid")
+    return {
+        "schema_version": schema_version,
+        "architecture": architecture,
+        "mode": mode,
+        "reference_root": root,
+        "context_sha256": contexts,
+        "expected_overlay_paths": list(paths),
+        "total_bytes": total_bytes,
+        "plan_sha256": expected_digest,
+        **(
+            {
+                "prompt_dependencies": prompt_dependencies,
+                **(
+                    {"official_library_binding": official_library_binding}
+                    if schema_version == 3
+                    else {}
+                ),
+            }
+            if schema_version in (2, 3)
+            else {}
+        ),
+    }
+
+
+def _validate_official_exact_edit_inputs(
+    *,
+    operator_artifact: Dict[str, object],
+    adapter_contract: str,
+    asnumpy_context: Dict[str, str],
+    normalized_paths: Tuple[str, ...],
+    normalized_plan: Dict[str, object],
+    skill_files: Tuple[str, ...],
+) -> None:
+    """Prove that an official existing-module generation is route-bound."""
+
+    expected_prompt_dependencies = {
+        "csrc/linalg/product.cpp": [
+            {
+                "source": "reference",
+                "path": "include/asnumpy/linalg/product.hpp",
+            },
+            {
+                "source": "signed_official_header",
+                "path": "SIGNED_OFFICIAL_HEADER/aclnn_matmul.h",
+            },
+        ],
+        "src/asnumpy/linalg/direct.py": [
+            {
+                "source": "reference",
+                "path": "bindings/python/bind_linalg.cpp",
+            },
+        ],
+        "tests/asnumpy_tests/linalg_tests/test_product.py": [
+            {
+                "source": "generated_overlay",
+                "path": "src/asnumpy/linalg/direct.py",
+            },
+        ],
+    }
+    if (
+        operator_artifact.get("artifact_type")
+        != "official_binary_adapter_input"
+        or operator_artifact.get("strategy")
+        != "official_aclnn_existing_module"
+        or operator_artifact.get("origin_kind") != "official_binary"
+        or not isinstance(operator_artifact.get("artifact_id"), str)
+        or operator_artifact.get("artifact_id")
+        != operator_artifact.get("candidate_id")
+        or operator_artifact.get("model_invocation_allowed") is not True
+        or operator_artifact.get("context_plan_status") != "prepared"
+        or operator_artifact.get("new_kernel_generation_allowed") is not False
+        or operator_artifact.get("custom_opp_generation_allowed") is not False
+        or operator_artifact.get("activation_allowed") is not False
+        or operator_artifact.get("asnumpy_adapter_context_plan")
+        != normalized_plan
+        or normalized_plan.get("schema_version") != 3
+        or normalized_plan.get("prompt_dependencies")
+        != expected_prompt_dependencies
+        or tuple(_OFFICIAL_EXACT_EDIT_TARGET_WINDOWS) != normalized_paths
+        or tuple(skill_files) != ASNUMPY_OFFICIAL_ADAPTER_SKILL_FILES
+    ):
+        raise DraftGenerationError(
+            "official exact-edit generation inputs are not route-bound"
+        )
+    try:
+        contract_payload = adapter_contract.encode("utf-8")
+    except UnicodeError as exc:
+        raise DraftGenerationError(
+            "official adapter contract is not UTF-8"
+        ) from exc
+    if (
+        not contract_payload
+        or len(contract_payload) > 512 * 1024
+        or operator_artifact.get("adapter_contract_sha256")
+        != _sha256_bytes(contract_payload)
+    ):
+        raise DraftGenerationError("official adapter contract binding mismatch")
+
+    def strict_pairs(pairs):
+        result = {}
+        for name, value in pairs:
+            if name in result:
+                raise DraftGenerationError(
+                    "official adapter contract contains a duplicate key"
+                )
+            result[name] = value
+        return result
+
+    def reject_constant(value):
+        raise DraftGenerationError(
+            "official adapter contract contains a non-standard constant: %s"
+            % value
+        )
+
+    try:
+        contract = json.loads(
+            adapter_contract,
+            object_pairs_hook=strict_pairs,
+            parse_constant=reject_constant,
+        )
+    except DraftGenerationError:
+        raise
+    except (json.JSONDecodeError, RecursionError) as exc:
+        raise DraftGenerationError(
+            "official adapter contract is not strict JSON"
+        ) from exc
+    if (
+        not isinstance(contract, dict)
+        or contract.get("contract_type")
+        != "official_binary_asnumpy_adapter"
+        or contract.get("strategy") != "official_aclnn_existing_module"
+        or contract.get("activation_allowed") is not False
+    ):
+        raise DraftGenerationError("official adapter contract strategy mismatch")
+    source_candidate = contract.get("source_candidate")
+    api = contract.get("api")
+    target = contract.get("target")
+    permissions = contract.get("permissions")
+    if (
+        not isinstance(source_candidate, dict)
+        or source_candidate.get("origin_kind") != "official_binary"
+        or source_candidate.get("artifact_id")
+        != operator_artifact.get("artifact_id")
+        or source_candidate.get("candidate_id")
+        != operator_artifact.get("candidate_id")
+        or not isinstance(api, dict)
+        or api.get("gap_id") != operator_artifact.get("gap_id")
+        or api.get("qualified_api")
+        != operator_artifact.get("qualified_api")
+        or api.get("asnumpy_api") != operator_artifact.get("asnumpy_api")
+        or not isinstance(target, dict)
+        or target.get("soc") != operator_artifact.get("target_soc")
+        or target.get("cann_version")
+        != operator_artifact.get("cann_version")
+        or not isinstance(permissions, dict)
+        or permissions.get("reuse_installed_aclnn") is not True
+        or permissions.get("generate_new_kernel") is not False
+        or permissions.get("generate_custom_opp") is not False
+        or permissions.get("activation_allowed") is not False
+    ):
+        raise DraftGenerationError(
+            "official adapter manifest/contract identity mismatch"
+        )
+    official = contract.get("official_binary")
+    header = official.get("selected_header") if isinstance(official, dict) else None
+    if not isinstance(header, dict):
+        raise DraftGenerationError("official adapter selected header is missing")
+    header_path = header.get("relative_path")
+    header_sha256 = header.get("sha256")
+    if (
+        not isinstance(header_path, str)
+        or not header_path
+        or "\\" in header_path
+        or PurePosixPath(header_path).is_absolute()
+        or any(part in {"", ".", ".."} for part in header_path.split("/"))
+        or not _is_sha256(header_sha256)
+        or header_sha256 == "0" * 64
+    ):
+        raise DraftGenerationError("official adapter selected header is invalid")
+    header_name = PurePosixPath(header_path).name
+    expected_header_label = "SIGNED_OFFICIAL_HEADER/" + header_name
+    header_labels = tuple(
+        sorted(
+            label for label in asnumpy_context
+            if label.startswith("SIGNED_OFFICIAL_HEADER/")
+        )
+    )
+    if header_labels != (expected_header_label,):
+        raise DraftGenerationError(
+            "official adapter signed header context is missing or ambiguous"
+        )
+    header_content = asnumpy_context[expected_header_label]
+    if _sha256_bytes(header_content.encode("utf-8")) != header_sha256:
+        raise DraftGenerationError("official adapter signed header hash mismatch")
+
+    library = (
+        official.get("selected_library") if isinstance(official, dict) else None
+    )
+    library_binding = normalized_plan.get("official_library_binding")
+    if not isinstance(library, dict) or not isinstance(library_binding, dict):
+        raise DraftGenerationError(
+            "official adapter selected-library link binding is missing"
+        )
+    library_path = library.get("relative_path")
+    library_sha256 = library.get("sha256")
+    cmake_path = library_binding.get("cmake_path")
+    cmake_content = asnumpy_context.get(cmake_path)
+    if (
+        not isinstance(library_path, str)
+        or not library_path
+        or "\\" in library_path
+        or PurePosixPath(library_path).is_absolute()
+        or any(part in {"", ".", ".."} for part in library_path.split("/"))
+        or PurePosixPath(library_path).name != "libopapi.so"
+        or not _is_sha256(library_sha256)
+        or library_sha256 == "0" * 64
+        or library_binding.get("proof_kind")
+        != "reviewed_exact_cmake_target_link_item"
+        or cmake_path != "bindings/python/CMakeLists.txt"
+        or library_binding.get("target") != "_core"
+        or library_binding.get("link_item") != "opapi"
+        or library_binding.get("selected_library_relative_path")
+        != library_path
+        or library_binding.get("selected_library_basename") != "libopapi.so"
+        or library_binding.get("selected_library_sha256") != library_sha256
+        or not isinstance(cmake_content, str)
+        or _sha256_bytes(cmake_content.encode("utf-8"))
+        != library_binding.get("cmake_sha256")
+        or cmake_content.count(_OFFICIAL_MATMUL_LINK_BLOCK) != 1
+        or cmake_content.count("target_link_libraries(_core") != 2
+        or re.search(
+            r"\b(?:opapi_nn|opapi_math|cust_opapi)\b", cmake_content
+        )
+        is not None
+    ):
+        raise DraftGenerationError(
+            "official selected library does not match the reviewed AsNumPy "
+            "link graph"
+        )
+
+    plan_hashes = normalized_plan["context_sha256"]
+    if any(
+        path not in plan_hashes
+        or path not in asnumpy_context
+        or _sha256_bytes(asnumpy_context[path].encode("utf-8"))
+        != plan_hashes[path]
+        for path in normalized_paths
+    ):
+        raise DraftGenerationError(
+            "official exact-edit target is absent from the context plan"
+        )
+
+
+def _render_official_exact_edit_projection(
+    *,
+    target_path: str,
+    asnumpy_context: Dict[str, str],
+    normalized_plan: Dict[str, object],
+    collected: Dict[str, str],
+    collected_provenance: Dict[str, Dict[str, str]],
+) -> str:
+    """Render only the reviewed, hash-bound dependencies for one target."""
+
+    raw_dependencies = normalized_plan["prompt_dependencies"][target_path]
+    dependency_manifest = []
+    content_sections = []
+    for dependency in raw_dependencies:
+        source = dependency["source"]
+        path = dependency["path"]
+        if source == "reference":
+            content = asnumpy_context.get(path)
+            digest = normalized_plan["context_sha256"].get(path)
+            if (
+                not isinstance(content, str)
+                or not _is_sha256(digest)
+                or _sha256_bytes(content.encode("utf-8")) != digest
+            ):
+                raise DraftGenerationError(
+                    "official exact-edit reference dependency drifted"
+                )
+            metadata = {
+                "source": source,
+                "path": path,
+                "sha256": digest,
+                "binding": "asnumpy_adapter_context_plan.context_sha256",
+            }
+        elif source == "signed_official_header":
+            content = asnumpy_context.get(path)
+            if not isinstance(content, str) or not content:
+                raise DraftGenerationError(
+                    "official exact-edit signed-header dependency is missing"
+                )
+            metadata = {
+                "source": source,
+                "path": path,
+                "sha256": _sha256_bytes(content.encode("utf-8")),
+                "binding": "adapter_contract.official_binary.selected_header.sha256",
+            }
+        elif source == "generated_overlay":
+            content = collected.get(path)
+            provenance = collected_provenance.get(path)
+            if not isinstance(content, str) or not isinstance(provenance, dict):
+                raise DraftGenerationError(
+                    "official exact-edit generated dependency is unavailable"
+                )
+            digest = _sha256_bytes(content.encode("utf-8"))
+            required_hashes = (
+                "base_sha256",
+                "rebuilt_sha256",
+                "response_sha256",
+                "request_body_sha256",
+                "response_body_sha256",
+                "receipt_content_sha256",
+            )
+            if (
+                provenance.get("rebuilt_sha256") != digest
+                or any(not _is_sha256(provenance.get(name)) for name in required_hashes)
+            ):
+                raise DraftGenerationError(
+                    "official exact-edit generated dependency binding is invalid"
+                )
+            metadata = {
+                "source": source,
+                "path": path,
+                **{name: provenance[name] for name in required_hashes},
+            }
+        else:  # The schema-2 plan validator already rejects this branch.
+            raise DraftGenerationError(
+                "official exact-edit dependency source is invalid"
+            )
+        dependency_manifest.append(metadata)
+        content_sections.append(
+            "HASH-BOUND DEPENDENCY `%s` (%s):\n%s"
+            % (path, source, content)
+        )
+
+    projection_identity = {
+        "schema_version": 1,
+        "target_path": target_path,
+        "context_plan_sha256": normalized_plan["plan_sha256"],
+        "dependencies": dependency_manifest,
+    }
+    projection_sha256 = _sha256_bytes(json.dumps(
+        projection_identity,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8"))
+    projection = {
+        **projection_identity,
+        "projection_sha256": projection_sha256,
+    }
+    return "\n\n".join((
+        "HASH-BOUND TARGET DEPENDENCY PROJECTION:\n" + json.dumps(
+            projection, ensure_ascii=False, indent=2, sort_keys=True
+        ),
+        *content_sections,
+    ))
+
+
+def _render_official_exact_edit_target_windows(
+    *, target_path: str, base_content: str,
+) -> Tuple[str, Tuple[Tuple[int, int], ...]]:
+    """Render the reviewed target slices and return their strict edit bounds."""
+
+    specifications = _OFFICIAL_EXACT_EDIT_TARGET_WINDOWS.get(target_path)
+    if not specifications:
+        raise DraftGenerationError(
+            "official exact-edit target window plan is missing"
+        )
+    windows = []
+    intervals = []
+    previous_end = -1
+    sections = []
+    for label, start_marker, end_marker in specifications:
+        if start_marker is None:
+            start = 0
+        else:
+            if base_content.count(start_marker) != 1:
+                raise DraftGenerationError(
+                    "official exact-edit target start anchor is ambiguous"
+                )
+            start = base_content.find(start_marker)
+        if end_marker is None:
+            end = len(base_content)
+        else:
+            if base_content.count(end_marker) != 1:
+                raise DraftGenerationError(
+                    "official exact-edit target end anchor is ambiguous"
+                )
+            end = base_content.find(end_marker)
+        if start < 0 or end <= start or start < previous_end:
+            raise DraftGenerationError(
+                "official exact-edit target window bounds are invalid"
+            )
+        content = base_content[start:end]
+        digest = _sha256_bytes(content.encode("utf-8"))
+        windows.append({
+            "label": label,
+            "start_character": start,
+            "end_character": end,
+            "sha256": digest,
+        })
+        intervals.append((start, end))
+        sections.append(
+            "TARGET EDIT WINDOW `%s` [%d,%d) SHA-256 %s:\n%s"
+            % (label, start, end, digest, content)
+        )
+        previous_end = end
+    identity = {
+        "schema_version": 1,
+        "target_path": target_path,
+        "full_base_sha256": _sha256_bytes(base_content.encode("utf-8")),
+        "windows": windows,
+    }
+    manifest = {
+        **identity,
+        "window_plan_sha256": _sha256_bytes(json.dumps(
+            identity,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")),
+    }
+    return "\n\n".join((
+        "HASH-BOUND TARGET EDIT WINDOWS:\n" + json.dumps(
+            manifest, ensure_ascii=False, indent=2, sort_keys=True
+        ),
+        *sections,
+    )), tuple(intervals)
+
+
+def _enforce_official_exact_edit_prompt_budget(
+    *,
+    system_prompt: str,
+    user_prompt: str,
+    model: str,
+    max_tokens: int,
+    thinking_mode: Optional[str],
+    reasoning_effort: Optional[str],
+    stream: bool,
+) -> int:
+    """Reject an oversized exact-edit request before counting/calling it."""
+
+    request_data = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": 0,
+        "max_tokens": max_tokens,
+    }
+    if thinking_mode is not None:
+        request_data["thinking"] = {"type": thinking_mode}
+    if reasoning_effort is not None:
+        request_data["reasoning_effort"] = reasoning_effort
+    if stream:
+        request_data["stream"] = True
+    try:
+        size = len(json.dumps(request_data).encode("utf-8"))
+    except (TypeError, UnicodeError, ValueError) as exc:
+        raise DraftGenerationError(
+            "official exact-edit prompt is not serializable"
+        ) from exc
+    if size > _MAX_OFFICIAL_EXACT_EDIT_PROMPT_BYTES:
+        raise DraftGenerationError(
+            "official exact-edit prompt exceeds its 64 KiB request budget: %d"
+            % size
+        )
+    return size
+
+
 def _validate_adapter_report(
     report: object,
     *,
@@ -938,18 +2155,30 @@ def _validate_adapter_report(
     if (
         isinstance(schema_version, bool)
         or not isinstance(schema_version, int)
-        or schema_version not in (1, 2)
+        or schema_version not in (1, 2, 3, 4)
     ):
         raise DraftGenerationError("AsNumpy adapter report schema is unsupported")
     if status == "generated_unverified":
-        expected_fields = _GENERATED_ADAPTER_REPORT_FIELDS
+        expected_fields = (
+            _GENERATED_ADAPTER_REPORT_FIELDS_V4
+            if schema_version == 4
+            else _GENERATED_ADAPTER_REPORT_FIELDS_V3
+            if schema_version == 3
+            else _GENERATED_ADAPTER_REPORT_FIELDS_V2
+        )
     elif status == "repaired_unverified":
         if schema_version == 1:
             raise DraftGenerationError(
                 "legacy AsNumpy adapter repair cannot prove a distinct artifact "
                 "identity and parent chain; regenerate it (fail-closed)"
             )
-        expected_fields = _REPAIRED_ADAPTER_REPORT_FIELDS
+        expected_fields = (
+            _REPAIRED_ADAPTER_REPORT_FIELDS_V4
+            if schema_version == 4
+            else _REPAIRED_ADAPTER_REPORT_FIELDS_V3
+            if schema_version == 3
+            else _REPAIRED_ADAPTER_REPORT_FIELDS_V2
+        )
     else:
         raise DraftGenerationError("AsNumpy adapter report status is invalid")
     if frozenset(report) != expected_fields:
@@ -1044,9 +2273,27 @@ def _validate_adapter_report(
         or report.get("gates") != _EXPECTED_UNVERIFIED_GATES
     ):
         raise DraftGenerationError("AsNumpy adapter transport evidence is invalid")
-    model = require_glm_configuration(report.get("provider"), report.get("model"))
+    identity = require_model_configuration(
+        report.get("provider"),
+        report.get("model"),
+        protocol=report.get(
+            "protocol", OPENAI_CHAT_COMPLETIONS_PROTOCOL
+        ),
+        response_model_aliases=report.get("response_model_aliases", ()),
+    )
+    receipt_validator = (
+        validate_configured_model_attempt_receipt
+        if schema_version in {3, 4}
+        else validate_configured_model_receipt
+    )
     normalized_receipts = [
-        validate_glm_remote_receipt(item, expected_model=model)
+        receipt_validator(
+            item,
+            expected_model=identity.model,
+            expected_provider=identity.provider,
+            expected_protocol=identity.protocol,
+            response_model_aliases=identity.response_model_aliases,
+        )
         for item in receipts
     ]
     content_hashes = [
@@ -1060,10 +2307,39 @@ def _validate_adapter_report(
         raise DraftGenerationError(
             "AsNumpy adapter receipt/content hashes are inconsistent"
         )
+    if schema_version in {3, 4}:
+        validate_configured_model_receipt(
+            normalized_receipts[-1],
+            expected_model=identity.model,
+            expected_provider=identity.provider,
+            expected_protocol=identity.protocol,
+            response_model_aliases=identity.response_model_aliases,
+        )
+        if normalized_receipts[-1]["content_sha256"] != response_hashes[-1]:
+            raise DraftGenerationError(
+                "AsNumpy adapter final receipt is not the accepted response"
+            )
     if candidate_hashes is not None and files != candidate_hashes:
         raise DraftGenerationError(
             "AsNumpy adapter candidate content differs from its report"
         )
+
+    context_plan = None
+    if schema_version == 4:
+        context_plan = _validate_adapter_context_plan(
+            report.get("asnumpy_adapter_context_plan")
+        )
+        if set(context_plan["expected_overlay_paths"]) != set(files):
+            raise DraftGenerationError(
+                "AsNumpy adapter overlay differs from its context plan"
+            )
+        if any(
+            contexts.get(label) != digest
+            for label, digest in context_plan["context_sha256"].items()
+        ):
+            raise DraftGenerationError(
+                "AsNumpy adapter context differs from its context plan"
+            )
 
     normalized = dict(report)
     normalized["files_sha256"] = files
@@ -1071,6 +2347,8 @@ def _validate_adapter_report(
     normalized["integration_skill_files"] = list(skill_files)
     normalized["response_sha256"] = list(response_hashes)
     normalized["remote_receipts"] = normalized_receipts
+    if context_plan is not None:
+        normalized["asnumpy_adapter_context_plan"] = context_plan
     if status == "generated_unverified":
         if not _is_sha256(report.get("adapter_contract_sha256")):
             raise DraftGenerationError(
@@ -1112,7 +2390,10 @@ def _validate_adapter_report(
             or len(raw_paths) != 1
         ):
             raise DraftGenerationError("AsNumpy adapter repair path is invalid")
-        repaired_paths = tuple(str(_safe_relative_path(item)) for item in raw_paths)
+        repaired_paths = tuple(
+            str(_safe_asnumpy_adapter_relative_path(item))
+            for item in raw_paths
+        )
         if len(set(repaired_paths)) != len(repaired_paths):
             raise DraftGenerationError("AsNumpy adapter repair path is duplicated")
         before = _validate_adapter_hash_map(
@@ -1152,9 +2433,12 @@ def _validate_adapter_report(
                 or report["source_artifact_id"] != parent_report["source_artifact_id"]
                 or report["skill_bundle_sha256"]
                 != parent_report["skill_bundle_sha256"]
-                or any(
-                    report[name] != parent_report[name]
-                    for name in ("model", "provider", "configuration_source")
+                or _generation_identity_snapshot(report)
+                != _generation_identity_snapshot(parent_report)
+                or (
+                    schema_version == 4
+                    and context_plan
+                    != parent_report.get("asnumpy_adapter_context_plan")
                 )
                 or any(parent_files.get(path) != before[path] for path in repaired_paths)
                 or expected_files != files
@@ -1256,6 +2540,7 @@ def _load_asnumpy_adapter_report(
         maximum_file_bytes=_MAX_ADAPTER_FILE_BYTES,
         maximum_total_bytes=_MAX_ADAPTER_TOTAL_BYTES,
         label="AsNumpy adapter base",
+        path_validator=_safe_asnumpy_adapter_relative_path,
     )
     if set(actual_hashes) != set(report["files_sha256"]):
         raise DraftGenerationError(
@@ -1293,7 +2578,8 @@ def _validate_generation(
     )
     if (
         not isinstance(generation, dict)
-        or frozenset(generation) != _GENERATION_FIELDS
+        or frozenset(generation)
+        not in {_GENERATION_FIELDS_V1, _GENERATION_FIELDS_V2}
     ):
         raise DraftGenerationError(
             "existing draft generation evidence schema is invalid"
@@ -1313,6 +2599,22 @@ def _validate_generation(
             raise DraftGenerationError(
                 "existing draft generation field is invalid: %s" % name
             )
+    generic_schema = frozenset(generation) == _GENERATION_FIELDS_V2
+    protocol = generation.get(
+        "protocol", OPENAI_CHAT_COMPLETIONS_PROTOCOL
+    )
+    aliases = generation.get("response_model_aliases", ())
+    try:
+        identity = require_model_configuration(
+            generation.get("provider"),
+            generation.get("model"),
+            protocol=protocol,
+            response_model_aliases=aliases,
+        )
+    except DraftGenerationError as exc:
+        raise DraftGenerationError(
+            "existing draft configured-model identity is invalid: %s" % exc
+        ) from exc
     if generation.get("local_validation") != "passed":
         raise DraftGenerationError(
             "existing draft must prove local validation passed"
@@ -1368,16 +2670,30 @@ def _validate_generation(
         raise DraftGenerationError("existing draft remote receipts are invalid")
     if mode == "remote_llm":
         try:
-            model = require_glm_configuration(
-                generation.get("provider"), generation.get("model")
-            )
-            receipts = [
-                validate_glm_remote_receipt(item, expected_model=model)
-                for item in raw_receipts
-            ]
+            if generic_schema:
+                receipts = [
+                    validate_configured_model_attempt_receipt(
+                        item,
+                        expected_model=identity.model,
+                        expected_provider=identity.provider,
+                        expected_protocol=identity.protocol,
+                        response_model_aliases=identity.response_model_aliases,
+                    )
+                    for item in raw_receipts
+                ]
+            else:
+                receipts = [
+                    validate_configured_model_receipt(
+                        item,
+                        expected_model=identity.model,
+                        expected_provider=identity.provider,
+                        expected_protocol=identity.protocol,
+                    )
+                    for item in raw_receipts
+                ]
         except DraftGenerationError as exc:
             raise DraftGenerationError(
-                "existing remote draft GLM identity is invalid: %s" % exc
+                "existing remote draft configured-model identity is invalid: %s" % exc
             ) from exc
     else:
         receipts = [_validate_remote_receipt(item) for item in raw_receipts]
@@ -1398,6 +2714,18 @@ def _validate_generation(
             raise DraftGenerationError(
                 "existing remote draft receipt count is inconsistent"
             )
+        if generic_schema:
+            validate_configured_model_receipt(
+                receipts[-1],
+                expected_model=identity.model,
+                expected_provider=identity.provider,
+                expected_protocol=identity.protocol,
+                response_model_aliases=identity.response_model_aliases,
+            )
+            if receipts[-1]["content_sha256"] != response_hashes[-1]:
+                raise DraftGenerationError(
+                    "existing remote draft final receipt is not the accepted response"
+                )
         receipt_content_hashes = [
             item["content_sha256"]
             for item in receipts
@@ -1642,7 +2970,13 @@ def _load_repair_candidate(
         raise DraftGenerationError("repair base changed the signed artifact manifest")
     if not isinstance(report, dict):
         raise DraftGenerationError("repair base report must be an object")
-    if frozenset(report) != _REPAIR_REPORT_FIELDS:
+    report_schema = report.get("schema_version")
+    expected_repair_fields = (
+        _REPAIR_REPORT_FIELDS_V2
+        if report_schema == 2
+        else _REPAIR_REPORT_FIELDS_V1
+    )
+    if frozenset(report) != expected_repair_fields:
         if "candidate_files_sha256" not in report:
             raise DraftGenerationError(
                 "legacy repair report cannot prove its complete audit binding; "
@@ -1652,7 +2986,7 @@ def _load_repair_candidate(
     if (
         isinstance(report.get("schema_version"), bool)
         or not isinstance(report.get("schema_version"), int)
-        or report.get("schema_version") != 1
+        or report.get("schema_version") not in (1, 2)
         or report.get("status") != "repaired_unverified"
         or report.get("source_artifact_id") != signed_source.artifact_id
         or report.get("gap_id") != spec.gap_id
@@ -1738,16 +3072,12 @@ def _load_repair_candidate(
         or any(not _is_sha256(value) for value in after.values())
     ):
         raise DraftGenerationError("repair base path hashes are invalid")
-    for name in ("model", "provider", "configuration_source"):
-        value = report.get(name)
-        if (
-            not isinstance(value, str)
-            or not value
-            or value != signed_source.generation.get(name)
-        ):
-            raise DraftGenerationError(
-                "repair base LLM identity differs from signed generation"
-            )
+    if _generation_identity_snapshot(report) != _generation_identity_snapshot(
+        signed_source.generation
+    ):
+        raise DraftGenerationError(
+            "repair base configured-model identity differs from signed generation"
+        )
     report_attempts = _require_exact_int(
         report.get("attempt_count"),
         "repair base attempt count",
@@ -1766,9 +3096,27 @@ def _load_repair_candidate(
         or len(raw_receipts) > report_attempts
     ):
         raise DraftGenerationError("repair base transport evidence is invalid")
-    model = require_glm_configuration(report.get("provider"), report.get("model"))
+    identity = require_model_configuration(
+        report.get("provider"),
+        report.get("model"),
+        protocol=report.get(
+            "protocol", OPENAI_CHAT_COMPLETIONS_PROTOCOL
+        ),
+        response_model_aliases=report.get("response_model_aliases", ()),
+    )
+    receipt_validator = (
+        validate_configured_model_attempt_receipt
+        if report.get("schema_version") == 2
+        else validate_configured_model_receipt
+    )
     receipts = [
-        validate_glm_remote_receipt(item, expected_model=model)
+        receipt_validator(
+            item,
+            expected_model=identity.model,
+            expected_provider=identity.provider,
+            expected_protocol=identity.protocol,
+            response_model_aliases=identity.response_model_aliases,
+        )
         for item in raw_receipts
     ]
     content_hashes = [
@@ -1782,6 +3130,18 @@ def _load_repair_candidate(
         raise DraftGenerationError(
             "repair base receipt/content hashes are inconsistent"
         )
+    if report.get("schema_version") == 2:
+        validate_configured_model_receipt(
+            receipts[-1],
+            expected_model=identity.model,
+            expected_provider=identity.provider,
+            expected_protocol=identity.protocol,
+            response_model_aliases=identity.response_model_aliases,
+        )
+        if receipts[-1]["content_sha256"] != response_hashes[-1]:
+            raise DraftGenerationError(
+                "repair base final receipt is not the accepted response"
+            )
     report = dict(report)
     report["cannbot_repair_skill_files"] = normalized_skill_files
     report["response_sha256"] = list(response_hashes)
@@ -2127,6 +3487,8 @@ class LlmDraftProvider:
                 "mode": "injected_test_double",
                 "provider": self.provider_label,
                 "model": self.model_name,
+                "protocol": OPENAI_CHAT_COMPLETIONS_PROTOCOL,
+                "response_model_aliases": [],
                 "configuration_source": "injected",
                 "origin_action": "injected_test_double",
                 "remote_receipts": [],
@@ -2147,11 +3509,22 @@ class LlmDraftProvider:
             raise DraftGenerationError(
                 "LLM is not configured; run configure-llm --check"
             )
-        model = require_glm_configuration(status.provider, status.model)
+        identity = require_model_configuration(
+            status.provider,
+            status.model,
+            protocol=getattr(
+                status, "protocol", OPENAI_CHAT_COMPLETIONS_PROTOCOL
+            ),
+            response_model_aliases=getattr(
+                status, "response_model_aliases", ()
+            ),
+        )
         return LlmEngine._chat_with_receipt, {
             "mode": "remote_llm",
-            "provider": "glm",
-            "model": model,
+            "provider": identity.provider,
+            "protocol": identity.protocol,
+            "model": identity.model,
+            "response_model_aliases": list(identity.response_model_aliases),
             "configuration_source": status.source,
             "origin_action": "fresh_remote",
             "remote_receipts": [],
@@ -2210,16 +3583,13 @@ class LlmDraftProvider:
                             "remote model call returned no auditable receipt"
                         )
                     response, receipt = result
-                    validated_receipt = validate_glm_remote_receipt(
+                    _record_generation_attempt(
+                        remote_receipts,
+                        response_hashes,
                         receipt,
                         response,
-                        expected_model=generation_base["model"],
+                        generation_base,
                     )
-                    remote_receipts.append(validated_receipt)
-                    if isinstance(response, str):
-                        response_hashes.append(
-                            _sha256_bytes(response.encode("utf-8"))
-                        )
                     summary, files = _validate_stage_bundle(response, paths)
                     summaries.append("%s: %s" % (stage, summary))
                     collected.extend(files)
@@ -2234,10 +3604,8 @@ class LlmDraftProvider:
                     from numpilot.engines.llm import LlmResponseError
 
                     if isinstance(exc, LlmResponseError):
-                        failed_receipt = validate_glm_remote_receipt(
-                            exc.receipt,
-                            None,
-                            expected_model=generation_base["model"],
+                        failed_receipt = _validate_generation_attempt_receipt(
+                            exc.receipt, None, generation_base
                         )
                         remote_receipts.append(failed_receipt)
                     status_code = getattr(exc, "status_code", None)
@@ -2357,10 +3725,9 @@ class LlmDraftProvider:
             )
 
         chat, generation_base = self._resolve_chat()
-        if any(
-            generation_base[name] != source.generation[name]
-            for name in ("model", "provider", "configuration_source")
-        ):
+        if _generation_identity_snapshot(
+            generation_base
+        ) != _generation_identity_snapshot(source.generation):
             raise DraftGenerationError(
                 "repair LLM identity differs from signed generation"
             )
@@ -2418,14 +3785,12 @@ class LlmDraftProvider:
                             "remote repair call returned no auditable receipt"
                         )
                     response, receipt = result
-                    validated_receipt = validate_glm_remote_receipt(
+                    _record_generation_attempt(
+                        receipts,
+                        response_hashes,
                         receipt,
                         response,
-                        expected_model=generation_base["model"],
-                    )
-                    receipts.append(validated_receipt)
-                    response_hashes.append(
-                        _sha256_bytes(response.encode("utf-8"))
+                        generation_base,
                     )
                     _summary, files = _validate_stage_bundle(response, (path,))
                     collected[path] = files[0][1]
@@ -2440,10 +3805,8 @@ class LlmDraftProvider:
                     from numpilot.engines.llm import LlmResponseError
 
                     if isinstance(exc, LlmResponseError):
-                        failed_receipt = validate_glm_remote_receipt(
-                            exc.receipt,
-                            None,
-                            expected_model=generation_base["model"],
+                        failed_receipt = _validate_generation_attempt_receipt(
+                            exc.receipt, None, generation_base
                         )
                         receipts.append(failed_receipt)
                     status_code = getattr(exc, "status_code", None)
@@ -2462,6 +3825,7 @@ class LlmDraftProvider:
                     "model repair failed after %d total request(s): %s"
                     % (total_attempts, "; ".join(failures)),
                     receipt_count=len(receipts),
+                    request_count=total_attempts,
                 )
 
         before_hashes = {path: current_files[path] for path in normalized_paths}
@@ -2472,7 +3836,7 @@ class LlmDraftProvider:
         candidate_files = dict(current_files)
         candidate_files.update(after_hashes)
         report = {
-            "schema_version": 1,
+            "schema_version": 2,
             "status": "repaired_unverified",
             "source_artifact_id": source.artifact_id,
             "source_workspace": str(repair_source_dir),
@@ -2481,6 +3845,10 @@ class LlmDraftProvider:
             "gap_id": spec.gap_id,
             "model": generation_base["model"],
             "provider": generation_base["provider"],
+            "protocol": generation_base["protocol"],
+            "response_model_aliases": list(
+                generation_base["response_model_aliases"]
+            ),
             "configuration_source": generation_base["configuration_source"],
             "attempt_count": total_attempts,
             "paths": list(normalized_paths),
@@ -2562,6 +3930,7 @@ class LlmDraftProvider:
         adapter_contract: str,
         asnumpy_context: Dict[str, str],
         expected_paths: Tuple[str, ...],
+        adapter_context_plan: Dict[str, object],
         skill_files: Tuple[str, ...] = ASNUMPY_INTEGRATION_SKILL_FILES,
     ) -> Dict[str, object]:
         """Ask the model for an isolated AsNumpy registry/test overlay."""
@@ -2584,10 +3953,16 @@ class LlmDraftProvider:
         ):
             raise DraftGenerationError("AsNumpy adapter path set is invalid")
         normalized_paths = tuple(
-            str(_safe_relative_path(path)) for path in expected_paths
+            str(_safe_asnumpy_adapter_relative_path(path))
+            for path in expected_paths
         )
         if normalized_paths != expected_paths:
             raise DraftGenerationError("AsNumpy adapter paths are not normalized")
+        normalized_plan = _validate_adapter_context_plan(adapter_context_plan)
+        if tuple(normalized_plan["expected_overlay_paths"]) != normalized_paths:
+            raise DraftGenerationError(
+                "AsNumpy adapter paths differ from the inspected context plan"
+            )
         if not isinstance(asnumpy_context, dict) or not asnumpy_context:
             raise DraftGenerationError("AsNumpy reference context is empty")
         context_bytes = 0
@@ -2605,6 +3980,66 @@ class LlmDraftProvider:
             context_bytes += len(content.encode("utf-8"))
         if context_bytes > 256 * 1024:
             raise DraftGenerationError("AsNumpy reference context exceeds size limit")
+        context_hashes = {
+            label: _sha256_bytes(content.encode("utf-8"))
+            for label, content in sorted(asnumpy_context.items())
+        }
+        if any(
+            context_hashes.get(label) != digest
+            for label, digest in normalized_plan["context_sha256"].items()
+        ):
+            raise DraftGenerationError(
+                "AsNumpy reference content differs from the inspected context plan"
+            )
+        planned_context_bytes = sum(
+            len(asnumpy_context[label].encode("utf-8"))
+            for label in normalized_plan["context_sha256"]
+        )
+        if planned_context_bytes != normalized_plan["total_bytes"]:
+            raise DraftGenerationError(
+                "AsNumpy reference byte count differs from the inspected context plan"
+            )
+        official_exact_edit = (
+            normalized_plan["architecture"]
+            == "official_aclnn_existing_module"
+        )
+        artifact_declares_official = any((
+            operator_artifact.get("artifact_type")
+            == "official_binary_adapter_input",
+            operator_artifact.get("strategy")
+            == "official_aclnn_existing_module",
+            operator_artifact.get("origin_kind") == "official_binary",
+        ))
+        try:
+            contract_hint = json.loads(adapter_contract)
+        except (json.JSONDecodeError, RecursionError):
+            contract_hint = None
+        contract_declares_official = isinstance(contract_hint, dict) and any((
+            contract_hint.get("contract_type")
+            == "official_binary_asnumpy_adapter",
+            contract_hint.get("strategy")
+            == "official_aclnn_existing_module",
+            isinstance(contract_hint.get("source_candidate"), dict)
+            and contract_hint["source_candidate"].get("origin_kind")
+            == "official_binary",
+        ))
+        if (
+            (artifact_declares_official or contract_declares_official)
+            and not official_exact_edit
+        ):
+            raise DraftGenerationError(
+                "official adapter declarations require an official "
+                "existing-module context plan"
+            )
+        if official_exact_edit:
+            _validate_official_exact_edit_inputs(
+                operator_artifact=operator_artifact,
+                adapter_contract=adapter_contract,
+                asnumpy_context=asnumpy_context,
+                normalized_paths=normalized_paths,
+                normalized_plan=normalized_plan,
+                skill_files=skill_files,
+            )
 
         root = Path(output_root)
         candidate_dir = root / "candidate"
@@ -2618,66 +4053,175 @@ class LlmDraftProvider:
             raise DraftGenerationError(
                 "AsNumpy adapter publication requires a real remote model"
             )
+        official_thinking_mode = (
+            "disabled"
+            if (
+                official_exact_edit
+                and generation_base["provider"] == "glm"
+                and generation_base["model"].lower().startswith("glm-")
+            )
+            else None
+        )
+        official_reasoning_effort = (
+            "none" if official_thinking_mode == "disabled" else None
+        )
         artifact_json = json.dumps(
             operator_artifact, ensure_ascii=False, indent=2, sort_keys=True
         )
-        reference_sections = "\n\n".join(
-            "ASNUMPY REFERENCE `%s`:\n%s" % (label, content)
-            for label, content in sorted(asnumpy_context.items())
-        )
         skill_context = self._skill_bundle.prompt_context(skill_files)
         collected: Dict[str, str] = {}
+        collected_provenance: Dict[str, Dict[str, str]] = {}
         collected_bytes = 0
         receipts = []
         response_hashes = []
         failures = []
         total_attempts = 0
+        official_max_tokens = _OFFICIAL_EXACT_EDIT_INITIAL_MAX_TOKENS
 
         for file_index, path in enumerate(normalized_paths, start=1):
+            reference_sections = (
+                ""
+                if official_exact_edit
+                else "\n\n".join(
+                    "ASNUMPY REFERENCE `%s`:\n%s" % (label, content)
+                    for label, content in sorted(asnumpy_context.items())
+                    if label != path
+                )
+            )
             failure = ""
             for file_attempt in range(1, self.max_attempts + 1):
-                total_attempts += 1
-                prior = "\n\n".join(
-                    "ALREADY GENERATED `%s`:\n%s" % item
-                    for item in collected.items()
+                prior = (
+                    ""
+                    if official_exact_edit
+                    else "\n\n".join(
+                        "ALREADY GENERATED `%s`:\n%s" % item
+                        for item in collected.items()
+                    )
                 )
-                prompt = "\n\n".join(filter(None, (
-                    "AsNumpy integration file %d/%d. Return exactly `%s` and no "
-                    "other path." % (file_index, len(normalized_paths), path),
-                    "Your response first line must be exactly "
-                    "NUMPILOT_BUNDLE_V1; do not use Markdown fences or commentary.",
-                    "Expected overlay paths:\n" + "\n".join(
-                        "- `%s`" % item for item in normalized_paths
-                    ),
-                    "SIGNED OPERATOR ARTIFACT MANIFEST:\n" + artifact_json,
-                    "MODEL-GENERATED ADAPTER CONTRACT:\n" + adapter_contract,
-                    reference_sections,
-                    prior,
-                    skill_context,
-                )))
+                if official_exact_edit:
+                    base_content = asnumpy_context[path]
+                    base_sha256 = _sha256_bytes(
+                        base_content.encode("utf-8")
+                    )
+                    target_window_context, target_window_intervals = (
+                        _render_official_exact_edit_target_windows(
+                            target_path=path,
+                            base_content=base_content,
+                        )
+                    )
+                    dependency_projection = (
+                        _render_official_exact_edit_projection(
+                            target_path=path,
+                            asnumpy_context=asnumpy_context,
+                            normalized_plan=normalized_plan,
+                            collected=collected,
+                            collected_provenance=collected_provenance,
+                        )
+                    )
+                    prompt = "\n\n".join(filter(None, (
+                        "Official existing-file edit %d/%d. Propose exact edits "
+                        "for `%s` and no other path."
+                        % (file_index, len(normalized_paths), path),
+                        "Return NUMPILOT_EXACT_EDIT_V1 only. Do not return the "
+                        "complete file, NUMPILOT_BUNDLE_V1, a diff, Markdown, "
+                        "or commentary.",
+                        "TARGET PATH: `%s`\nTARGET BASE SHA-256: %s\n"
+                        "Every OLD block must be copied from and remain inside "
+                        "one supplied target edit window."
+                        % (path, base_sha256),
+                        target_window_context,
+                        "Expected overlay paths:\n" + "\n".join(
+                            "- `%s`" % item for item in normalized_paths
+                        ),
+                        "SIGNED OPERATOR ARTIFACT MANIFEST:\n" + artifact_json,
+                        "DETERMINISTIC HASH-BOUND OFFICIAL ADAPTER CONTRACT:\n"
+                        + adapter_contract,
+                        dependency_projection,
+                        skill_context,
+                    )))
+                    system_prompt = _ASNUMPY_OFFICIAL_EXACT_EDIT_SYSTEM_PROMPT
+                else:
+                    prompt = "\n\n".join(filter(None, (
+                        "AsNumpy integration file %d/%d. Return exactly `%s` and no "
+                        "other path." % (file_index, len(normalized_paths), path),
+                        "Your response first line must be exactly "
+                        "NUMPILOT_BUNDLE_V1; do not use Markdown fences or commentary.",
+                        "Expected overlay paths:\n" + "\n".join(
+                            "- `%s`" % item for item in normalized_paths
+                        ),
+                        "SIGNED OPERATOR ARTIFACT MANIFEST:\n" + artifact_json,
+                        "MODEL-GENERATED ADAPTER CONTRACT:\n" + adapter_contract,
+                        reference_sections,
+                        prior,
+                        skill_context,
+                    )))
+                    system_prompt = _ASNUMPY_ADAPTER_SYSTEM_PROMPT
                 if failure:
                     prompt += (
                         "\n\nThe previous response was rejected by local validation: "
                         + failure[:500]
                     )
+                if official_exact_edit:
+                    _enforce_official_exact_edit_prompt_budget(
+                        system_prompt=system_prompt,
+                        user_prompt=prompt,
+                        model=generation_base["model"],
+                        max_tokens=official_max_tokens,
+                        thinking_mode=official_thinking_mode,
+                        reasoning_effort=official_reasoning_effort,
+                        stream=True,
+                    )
+                total_attempts += 1
                 try:
-                    result = chat(_ASNUMPY_ADAPTER_SYSTEM_PROMPT, prompt)
+                    if official_exact_edit:
+                        exact_call_options = {
+                            "max_tokens": official_max_tokens,
+                            "stream": True,
+                        }
+                        if official_thinking_mode is not None:
+                            exact_call_options["thinking_mode"] = (
+                                official_thinking_mode
+                            )
+                        if official_reasoning_effort is not None:
+                            exact_call_options["reasoning_effort"] = (
+                                official_reasoning_effort
+                            )
+                        result = chat(
+                            system_prompt,
+                            prompt,
+                            **exact_call_options,
+                        )
+                    else:
+                        # Preserve the historical two-argument callable
+                        # contract for injected test doubles and every
+                        # complete-file/custom adapter route.
+                        result = chat(system_prompt, prompt)
                     if not isinstance(result, tuple) or len(result) != 2:
                         raise DraftGenerationError(
                             "remote adapter call returned no auditable receipt"
                         )
                     response, receipt = result
-                    validated_receipt = validate_glm_remote_receipt(
+                    accepted_receipt = _record_generation_attempt(
+                        receipts,
+                        response_hashes,
                         receipt,
                         response,
-                        expected_model=generation_base["model"],
+                        generation_base,
                     )
-                    receipts.append(validated_receipt)
-                    response_hashes.append(
-                        _sha256_bytes(response.encode("utf-8"))
-                    )
-                    _summary, files = _validate_stage_bundle(response, (path,))
-                    content = files[0][1]
+                    if official_exact_edit:
+                        content = _apply_official_exact_edit_response(
+                            response,
+                            expected_path=path,
+                            base_content=base_content,
+                            allowed_intervals=target_window_intervals,
+                        )
+                    else:
+                        _summary, files = _validate_stage_bundle(
+                            response,
+                            (path,),
+                            path_validator=_safe_asnumpy_adapter_relative_path,
+                        )
+                        content = files[0][1]
                     content_size = len(content.encode("utf-8"))
                     if content_size > _MAX_ADAPTER_FILE_BYTES:
                         raise DraftGenerationError(
@@ -2688,10 +4232,40 @@ class LlmDraftProvider:
                             "generated AsNumpy adapter exceeds the total-size limit"
                         )
                     collected[path] = content
+                    if official_exact_edit:
+                        collected_provenance[path] = {
+                            "base_sha256": base_sha256,
+                            "rebuilt_sha256": _sha256_bytes(
+                                content.encode("utf-8")
+                            ),
+                            "response_sha256": _sha256_bytes(
+                                response.encode("utf-8")
+                            ),
+                            "request_body_sha256": accepted_receipt[
+                                "request_body_sha256"
+                            ],
+                            "response_body_sha256": accepted_receipt[
+                                "response_body_sha256"
+                            ],
+                            "receipt_content_sha256": accepted_receipt[
+                                "content_sha256"
+                            ],
+                        }
                     collected_bytes += content_size
                     break
                 except DraftGenerationError as exc:
                     failure = str(exc)
+                    if (
+                        official_exact_edit
+                        and failure == "official exact-edit response is empty"
+                    ):
+                        # A reasoning-capable gateway can exhaust a bounded
+                        # completion budget before emitting final content.
+                        # Escalate only for that observable condition; syntax
+                        # and trust failures keep the smaller request budget.
+                        official_max_tokens = (
+                            _OFFICIAL_EXACT_EDIT_RETRY_MAX_TOKENS
+                        )
                     failures.append(
                         "%s attempt %d: %s"
                         % (path, file_attempt, failure[:500])
@@ -2700,13 +4274,17 @@ class LlmDraftProvider:
                     from numpilot.engines.llm import LlmResponseError
 
                     if isinstance(exc, LlmResponseError):
-                        failed_receipt = validate_glm_remote_receipt(
-                            exc.receipt,
-                            None,
-                            expected_model=generation_base["model"],
+                        failed_receipt = _validate_generation_attempt_receipt(
+                            exc.receipt, None, generation_base
                         )
                         receipts.append(failed_receipt)
-                    failure = "remote adapter call failed: %s" % type(exc).__name__
+                    status_code = getattr(exc, "status_code", None)
+                    failure = (
+                        "remote adapter call failed: HTTP status %d" % status_code
+                        if isinstance(status_code, int)
+                        and not isinstance(status_code, bool)
+                        else "remote adapter call failed: %s" % type(exc).__name__
+                    )
                     failures.append(
                         "%s attempt %d: %s"
                         % (path, file_attempt, failure[:500])
@@ -2716,6 +4294,7 @@ class LlmDraftProvider:
                     "model AsNumpy adapter generation failed after %d request(s): %s"
                     % (total_attempts, "; ".join(failures)),
                     receipt_count=len(receipts),
+                    request_count=total_attempts,
                 )
 
         file_hashes = {
@@ -2723,21 +4302,23 @@ class LlmDraftProvider:
             for path, content in collected.items()
         }
         report = {
-            "schema_version": 2,
+            "schema_version": 4,
             "status": "generated_unverified",
             "source_artifact_id": operator_artifact["artifact_id"],
             "model": generation_base["model"],
             "provider": generation_base["provider"],
+            "protocol": generation_base["protocol"],
+            "response_model_aliases": list(
+                generation_base["response_model_aliases"]
+            ),
             "configuration_source": generation_base["configuration_source"],
             "attempt_count": total_attempts,
             "files_sha256": file_hashes,
             "adapter_contract_sha256": _sha256_bytes(
                 adapter_contract.encode("utf-8")
             ),
-            "asnumpy_context_sha256": {
-                label: _sha256_bytes(content.encode("utf-8"))
-                for label, content in sorted(asnumpy_context.items())
-            },
+            "asnumpy_context_sha256": context_hashes,
+            "asnumpy_adapter_context_plan": normalized_plan,
             "skill_bundle_sha256": self._skill_bundle.bundle_sha256,
             "integration_skill_files": list(skill_files),
             "response_sha256": response_hashes,
@@ -2759,7 +4340,7 @@ class LlmDraftProvider:
         report_temp = root / ".asnumpy-adapter-report.json.tmp"
         try:
             for relative, content in collected.items():
-                target = temp_dir / _safe_relative_path(relative)
+                target = temp_dir / _safe_asnumpy_adapter_relative_path(relative)
                 target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
                 target.write_text(content, encoding="utf-8")
                 os.chmod(target, 0o600)
@@ -2771,6 +4352,7 @@ class LlmDraftProvider:
                 maximum_file_bytes=_MAX_ADAPTER_FILE_BYTES,
                 maximum_total_bytes=_MAX_ADAPTER_TOTAL_BYTES,
                 label="generated AsNumpy adapter candidate",
+                path_validator=_safe_asnumpy_adapter_relative_path,
             )
             if validated_files != file_hashes:
                 raise DraftGenerationError(
@@ -2800,6 +4382,7 @@ class LlmDraftProvider:
         diagnostic: str,
         path: str,
         asnumpy_context: Dict[str, str],
+        adapter_context_plan: Dict[str, object],
         skill_files: Tuple[str, ...] = ASNUMPY_INTEGRATION_SKILL_FILES,
         repair_profile: str = "compile",
     ) -> Dict[str, object]:
@@ -2823,7 +4406,7 @@ class LlmDraftProvider:
             raise DraftGenerationError(
                 "AsNumpy adapter diagnostic is invalid or too large"
             )
-        normalized_path = str(_safe_relative_path(path))
+        normalized_path = str(_safe_asnumpy_adapter_relative_path(path))
         if normalized_path != path:
             raise DraftGenerationError("AsNumpy adapter repair path is not normalized")
         if not isinstance(asnumpy_context, dict) or not asnumpy_context:
@@ -2843,12 +4426,40 @@ class LlmDraftProvider:
             context_bytes += len(content.encode("utf-8"))
         if context_bytes > 256 * 1024:
             raise DraftGenerationError("AsNumpy repair context exceeds size limit")
+        normalized_plan = _validate_adapter_context_plan(adapter_context_plan)
+        context_hashes = {
+            label: _sha256_bytes(content.encode("utf-8"))
+            for label, content in sorted(asnumpy_context.items())
+        }
+        if set(context_hashes) != set(normalized_plan["context_sha256"]) or any(
+            context_hashes.get(label) != digest
+            for label, digest in normalized_plan["context_sha256"].items()
+        ):
+            raise DraftGenerationError(
+                "AsNumpy repair context differs from the inspected context plan"
+            )
+        if context_bytes != normalized_plan["total_bytes"]:
+            raise DraftGenerationError(
+                "AsNumpy repair byte count differs from the inspected context plan"
+            )
 
         base_root = Path(base_adapter_root).absolute()
         base_candidate = base_root / "candidate"
         base_report, report_payload, normalized_hashes = (
             _load_asnumpy_adapter_report(base_root)
         )
+        if base_report.get("schema_version") != 4:
+            raise DraftGenerationError(
+                "AsNumpy adapter base predates context-plan binding; regenerate it"
+            )
+        if base_report.get("asnumpy_adapter_context_plan") != normalized_plan:
+            raise DraftGenerationError(
+                "AsNumpy adapter reference layout or content changed; regenerate it"
+            )
+        if set(normalized_hashes) != set(normalized_plan["expected_overlay_paths"]):
+            raise DraftGenerationError(
+                "AsNumpy adapter base paths differ from the inspected context plan"
+            )
         _validate_adapter_skill_binding(base_report, self._skill_bundle)
         if normalized_path not in normalized_hashes:
             raise DraftGenerationError(
@@ -2858,7 +4469,7 @@ class LlmDraftProvider:
         current_total_bytes = 0
         for relative, expected_hash in normalized_hashes.items():
             content, content_bytes, actual_hash = _read_bounded_adapter_text(
-                base_candidate / _safe_relative_path(relative),
+                base_candidate / _safe_asnumpy_adapter_relative_path(relative),
                 relative,
             )
             current_total_bytes += content_bytes
@@ -2881,12 +4492,9 @@ class LlmDraftProvider:
             raise DraftGenerationError(
                 "AsNumpy adapter repair requires a real remote model"
             )
-        if (
-            base_report.get("model") != generation_base["model"]
-            or base_report.get("provider") != generation_base["provider"]
-            or base_report.get("configuration_source")
-            != generation_base["configuration_source"]
-        ):
+        if _generation_identity_snapshot(
+            base_report
+        ) != _generation_identity_snapshot(generation_base):
             raise DraftGenerationError(
                 "AsNumpy adapter repair model identity differs from its base"
             )
@@ -2933,14 +4541,18 @@ class LlmDraftProvider:
                         "remote AsNumpy repair call returned no auditable receipt"
                     )
                 response, receipt = result
-                validated_receipt = validate_glm_remote_receipt(
+                _record_generation_attempt(
+                    receipts,
+                    response_hashes,
                     receipt,
                     response,
-                    expected_model=generation_base["model"],
+                    generation_base,
                 )
-                receipts.append(validated_receipt)
-                response_hashes.append(_sha256_bytes(response.encode("utf-8")))
-                _summary, files = _validate_stage_bundle(response, (normalized_path,))
+                _summary, files = _validate_stage_bundle(
+                    response,
+                    (normalized_path,),
+                    path_validator=_safe_asnumpy_adapter_relative_path,
+                )
                 proposed = files[0][1]
                 proposed_size = len(proposed.encode("utf-8"))
                 replaced_size = len(
@@ -2969,10 +4581,8 @@ class LlmDraftProvider:
                 from numpilot.engines.llm import LlmResponseError
 
                 if isinstance(exc, LlmResponseError):
-                    failed_receipt = validate_glm_remote_receipt(
-                        exc.receipt,
-                        None,
-                        expected_model=generation_base["model"],
+                    failed_receipt = _validate_generation_attempt_receipt(
+                        exc.receipt, None, generation_base
                     )
                     receipts.append(failed_receipt)
                 status_code = getattr(exc, "status_code", None)
@@ -2990,6 +4600,7 @@ class LlmDraftProvider:
                 "model AsNumpy adapter repair failed after %d request(s): %s"
                 % (total_attempts, "; ".join(failures)),
                 receipt_count=len(receipts),
+                request_count=total_attempts,
             )
 
         before_hash = normalized_hashes[normalized_path]
@@ -2997,7 +4608,7 @@ class LlmDraftProvider:
         updated_hashes = dict(normalized_hashes)
         updated_hashes[normalized_path] = after_hash
         report = {
-            "schema_version": 2,
+            "schema_version": 4,
             "status": "repaired_unverified",
             "source_artifact_id": base_report["source_artifact_id"],
             "source_adapter_root": str(base_root),
@@ -3005,6 +4616,10 @@ class LlmDraftProvider:
             "parent_adapter_report_sha256": _sha256_bytes(report_payload),
             "model": generation_base["model"],
             "provider": generation_base["provider"],
+            "protocol": generation_base["protocol"],
+            "response_model_aliases": list(
+                generation_base["response_model_aliases"]
+            ),
             "configuration_source": generation_base["configuration_source"],
             "repair_profile": repair_profile,
             "attempt_count": total_attempts,
@@ -3013,10 +4628,8 @@ class LlmDraftProvider:
             "after_sha256": {normalized_path: after_hash},
             "files_sha256": updated_hashes,
             "diagnostic_sha256": _sha256_bytes(diagnostic_bytes),
-            "asnumpy_context_sha256": {
-                label: _sha256_bytes(content.encode("utf-8"))
-                for label, content in sorted(asnumpy_context.items())
-            },
+            "asnumpy_context_sha256": context_hashes,
+            "asnumpy_adapter_context_plan": normalized_plan,
             "skill_bundle_sha256": self._skill_bundle.bundle_sha256,
             "integration_skill_files": list(skill_files),
             "response_sha256": response_hashes,
@@ -3039,7 +4652,9 @@ class LlmDraftProvider:
         report_temp = root / ".asnumpy-adapter-report.json.tmp"
         try:
             shutil.copytree(base_candidate, temp_dir, dirs_exist_ok=True)
-            target = temp_dir / _safe_relative_path(normalized_path)
+            target = temp_dir / _safe_asnumpy_adapter_relative_path(
+                normalized_path
+            )
             temporary = target.with_name(".%s.repair" % target.name)
             with open(temporary, "xb") as handle:
                 handle.write(replacement.encode("utf-8"))
@@ -3055,6 +4670,7 @@ class LlmDraftProvider:
                 maximum_file_bytes=_MAX_ADAPTER_FILE_BYTES,
                 maximum_total_bytes=_MAX_ADAPTER_TOTAL_BYTES,
                 label="repaired AsNumpy adapter candidate",
+                path_validator=_safe_asnumpy_adapter_relative_path,
             )
             if validated_files != updated_hashes:
                 raise DraftGenerationError(
@@ -3109,12 +4725,9 @@ class LlmDraftProvider:
         receipts = list(generation["remote_receipts"])
         attempt_count = generation["attempt_count"]
         for report in reports:
-            if (
-                report.get("model") != generation["model"]
-                or report.get("provider") != generation["provider"]
-                or report.get("configuration_source")
-                != generation["configuration_source"]
-            ):
+            if _generation_identity_snapshot(
+                report
+            ) != _generation_identity_snapshot(generation):
                 raise DraftGenerationError(
                     "repair chain LLM identity differs from signed generation"
                 )
@@ -3131,13 +4744,44 @@ class LlmDraftProvider:
                 or not report_receipts
             ):
                 raise DraftGenerationError("repair chain transport evidence is invalid")
+            receipt_validator = (
+                validate_configured_model_attempt_receipt
+                if report.get("schema_version") == 2
+                else validate_configured_model_receipt
+            )
             normalized_receipts = [
-                validate_glm_remote_receipt(
+                receipt_validator(
                     receipt,
                     expected_model=generation["model"],
+                    expected_provider=generation["provider"],
+                    expected_protocol=generation.get(
+                        "protocol", OPENAI_CHAT_COMPLETIONS_PROTOCOL
+                    ),
+                    response_model_aliases=generation.get(
+                        "response_model_aliases", ()
+                    ),
                 )
                 for receipt in report_receipts
             ]
+            if report.get("schema_version") == 2:
+                validate_configured_model_receipt(
+                    normalized_receipts[-1],
+                    expected_model=generation["model"],
+                    expected_provider=generation["provider"],
+                    expected_protocol=generation.get(
+                        "protocol", OPENAI_CHAT_COMPLETIONS_PROTOCOL
+                    ),
+                    response_model_aliases=generation.get(
+                        "response_model_aliases", ()
+                    ),
+                )
+                if (
+                    normalized_receipts[-1]["content_sha256"]
+                    != report_hashes[-1]
+                ):
+                    raise DraftGenerationError(
+                        "repair chain final receipt is not the accepted response"
+                    )
             content_hashes = [
                 receipt["content_sha256"]
                 for receipt in normalized_receipts
@@ -3354,7 +4998,7 @@ class LlmDraftProvider:
                     and draft.generation.get("mode") != "remote_llm"
                 ):
                     raise DraftGenerationError(
-                        "production reuse requires a receipt-bound GLM draft"
+                        "production reuse requires a receipt-bound configured-model draft"
                     )
                 self._run_actions[draft.workspace] = "reused_existing"
                 return draft
@@ -3434,15 +5078,19 @@ class LlmDraftProvider:
                             "remote model call returned no auditable receipt"
                         )
                     response, receipt = result
-                    validated_receipt = validate_glm_remote_receipt(
+                    _record_generation_attempt(
+                        remote_receipts,
+                        response_hashes,
                         receipt,
                         response,
-                        expected_model=generation_base["model"],
+                        generation_base,
                     )
-                    remote_receipts.append(validated_receipt)
                 else:
                     response = result
-                if isinstance(response, str):
+                if (
+                    generation_base["mode"] != "remote_llm"
+                    and isinstance(response, str)
+                ):
                     response_hashes.append(
                         _sha256_bytes(response.encode("utf-8"))
                     )
@@ -3460,10 +5108,8 @@ class LlmDraftProvider:
                     generation_base["mode"] == "remote_llm"
                     and isinstance(exc, LlmResponseError)
                 ):
-                    failed_receipt = validate_glm_remote_receipt(
-                        exc.receipt,
-                        None,
-                        expected_model=generation_base["model"],
+                    failed_receipt = _validate_generation_attempt_receipt(
+                        exc.receipt, None, generation_base
                     )
                     remote_receipts.append(failed_receipt)
                 status_code = getattr(exc, "status_code", None)

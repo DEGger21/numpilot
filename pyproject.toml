@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "numpilot"
-version = "0.2.0a2"
+version = "0.3.0a1.dev0"
 description = "面向科学计算的 NumPy 到 Ascend NPU 可审计迁移工具"
 readme = "README.md"
 license = "Apache-2.0"
@@ -22,7 +22,7 @@ classifiers = [
 
 [project.urls]
 Repository = "https://gitcode.com/li-xingHIT/numpilot"
-Documentation = "https://gitcode.com/li-xingHIT/numpilot/tree/v0.2.0a2/docs"
+Documentation = "https://gitcode.com/li-xingHIT/numpilot"
 
 [project.scripts]
 numpilot = "numpilot.__main__:main"
@@ -46,6 +46,18 @@ npu = ["threadpoolctl"]
 include = ["numpilot*"]
 
 [tool.setuptools.data-files]
+"share/numpilot/codearts" = [
+  ".codeartsdoer/skills/ProjectSkillStatus.txt",
+]
+"share/numpilot/codearts/agents" = [
+  ".codeartsdoer/agents/numpilot-analyzer.md",
+  ".codeartsdoer/agents/numpilot-evidence-auditor.md",
+  ".codeartsdoer/agents/numpilot-operator-engineer.md",
+  ".codeartsdoer/agents/numpilot-orchestrator.md",
+]
+"share/numpilot/skills/numpilot-migration-gate" = [
+  ".codeartsdoer/skills/numpilot-migration-gate/SKILL.md",
+]
 "share/numpilot/skills/asnumpy-custom-op-integration" = [
   ".codeartsdoer/skills/asnumpy-custom-op-integration/SKILL.md",
 ]
@@ -55,6 +67,7 @@ include = ["numpilot*"]
 "share/numpilot/skills/asnumpy-custom-op-integration/references" = [
   ".codeartsdoer/skills/asnumpy-custom-op-integration/references/legacy-case-lessons.md",
   ".codeartsdoer/skills/asnumpy-custom-op-integration/references/manifest-workflow.md",
+  ".codeartsdoer/skills/asnumpy-custom-op-integration/references/official-aclnn-existing-module.md",
   ".codeartsdoer/skills/asnumpy-custom-op-integration/references/qualification-and-debug.md",
 ]
 

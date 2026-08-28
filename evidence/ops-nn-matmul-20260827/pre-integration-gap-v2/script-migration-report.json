@@ -1,0 +1,335 @@
+{
+  "actual_remote_call": false,
+  "analysis": {
+    "audit_id": "asnumpy-0.3.1.dev4-g1929a3ba4-init8761f7f9-cannac907b3a-linalgd2965c2e-random6c9c7891-pinned-source-receipt-v2",
+    "backend": "npu",
+    "backend_version": "0.3.1.dev4+g1929a3ba4",
+    "counts": {
+      "capability_audit_required": 0,
+      "fallback_available": 1,
+      "scoped_npu": 0,
+      "strict_npu": 2,
+      "unsupported": 0
+    },
+    "decisions": [
+      {
+        "api_path": "float32",
+        "available": true,
+        "callsites": [
+          {
+            "api_path": "float32",
+            "col_offset": 40,
+            "keyword_args": [],
+            "kind": "reference",
+            "lineno": 12,
+            "positional_args": 0,
+            "qualified_api": "numpy.float32",
+            "synthetic": false
+          },
+          {
+            "api_path": "float32",
+            "col_offset": 39,
+            "keyword_args": [],
+            "kind": "reference",
+            "lineno": 13,
+            "positional_args": 0,
+            "qualified_api": "numpy.float32",
+            "synthetic": false
+          }
+        ],
+        "constraints": [],
+        "evidence": "AsNumpy exposes the NumPy-compatible metadata alias",
+        "generatable": false,
+        "kind": "reference",
+        "provenance": "metadata",
+        "qualified_api": "numpy.float32",
+        "status": "strict_npu"
+      },
+      {
+        "api_path": "full",
+        "available": true,
+        "callsites": [
+          {
+            "api_path": "full",
+            "col_offset": 11,
+            "keyword_args": [
+              "dtype"
+            ],
+            "kind": "call",
+            "lineno": 12,
+            "positional_args": 2,
+            "qualified_api": "numpy.full",
+            "synthetic": false
+          },
+          {
+            "api_path": "full",
+            "col_offset": 10,
+            "keyword_args": [
+              "dtype"
+            ],
+            "kind": "call",
+            "lineno": 13,
+            "positional_args": 2,
+            "qualified_api": "numpy.full",
+            "synthetic": false
+          }
+        ],
+        "constraints": [],
+        "evidence": "asnumpy@1929a3ba4 pinned-source receipt and wrapper audit: public wrapper delegates to an NPU binding",
+        "generatable": false,
+        "kind": "call",
+        "provenance": "native_npu",
+        "qualified_api": "numpy.full",
+        "status": "strict_npu"
+      },
+      {
+        "api_path": "matmul",
+        "available": true,
+        "callsites": [
+          {
+            "api_path": "matmul",
+            "col_offset": 9,
+            "keyword_args": [],
+            "kind": "call",
+            "lineno": 14,
+            "positional_args": 2,
+            "qualified_api": "numpy.matmul",
+            "synthetic": false
+          }
+        ],
+        "constraints": [
+          "all inputs execute on CPU"
+        ],
+        "evidence": "asnumpy@1929a3ba4: linalg/direct.py calls numpy.matmul on host arrays",
+        "generatable": true,
+        "kind": "call",
+        "provenance": "cpu_fallback",
+        "qualified_api": "numpy.matmul",
+        "status": "fallback_available"
+      }
+    ],
+    "mode": "script",
+    "scan": {
+      "issues": [],
+      "numpy_pi_rewrite_count": 0,
+      "ok": true,
+      "output_boundary_count": 0,
+      "rewrite_count": 5,
+      "schema_version": 1,
+      "source_path": "/home/ma-user/work/numpilot/examples/ops_nn_matmul_inference.py",
+      "source_sha256": "4cf236f427ae419a7a4969499e4197ed31be4ba4f40bd26e686886f69ce96046",
+      "synthetic_divide_count": 0,
+      "terminal_item_count": 0,
+      "uses": [
+        {
+          "api_path": "full",
+          "col_offset": 11,
+          "keyword_args": [
+            "dtype"
+          ],
+          "kind": "call",
+          "lineno": 12,
+          "positional_args": 2,
+          "qualified_api": "numpy.full",
+          "synthetic": false
+        },
+        {
+          "api_path": "float32",
+          "col_offset": 40,
+          "keyword_args": [],
+          "kind": "reference",
+          "lineno": 12,
+          "positional_args": 0,
+          "qualified_api": "numpy.float32",
+          "synthetic": false
+        },
+        {
+          "api_path": "full",
+          "col_offset": 10,
+          "keyword_args": [
+            "dtype"
+          ],
+          "kind": "call",
+          "lineno": 13,
+          "positional_args": 2,
+          "qualified_api": "numpy.full",
+          "synthetic": false
+        },
+        {
+          "api_path": "float32",
+          "col_offset": 39,
+          "keyword_args": [],
+          "kind": "reference",
+          "lineno": 13,
+          "positional_args": 0,
+          "qualified_api": "numpy.float32",
+          "synthetic": false
+        },
+        {
+          "api_path": "matmul",
+          "col_offset": 9,
+          "keyword_args": [],
+          "kind": "call",
+          "lineno": 14,
+          "positional_args": 2,
+          "qualified_api": "numpy.matmul",
+          "synthetic": false
+        }
+      ]
+    },
+    "schema_version": 1
+  },
+  "ast_audit": "not_run",
+  "execution_performed": false,
+  "fallback_accepted": false,
+  "generated_by": null,
+  "mode": "script",
+  "numerical_verification": "not_run",
+  "performance_valid": false,
+  "published_files": [
+    "gap-request.json"
+  ],
+  "qualified_analysis": {
+    "actual_remote_call": false,
+    "analysis_mode": "STATIC_AST_ONLY",
+    "calls": [
+      {
+        "canonical_key": "full",
+        "column": 11,
+        "contract": {
+          "axis": "NOT_APPLICABLE",
+          "dtype": "QUALIFIED",
+          "equation": "NOT_APPLICABLE",
+          "output": "QUALIFIED",
+          "randomness": "NOT_APPLICABLE",
+          "rank": "QUALIFIED",
+          "signature": "QUALIFIED"
+        },
+        "decision": "DIRECT",
+        "effective_route": "NATIVE_NPU",
+        "facts": {
+          "axis": "not_applicable",
+          "dtype": "float32",
+          "equation": "not_applicable",
+          "keyword_args": [
+            "dtype"
+          ],
+          "output_use": "device",
+          "positional_args": 2,
+          "rank": 2,
+          "shape": [
+            8,
+            16
+          ],
+          "source_contract_ok": true
+        },
+        "line": 12,
+        "next_action": "eligible for hash-bound migration under a matching runtime identity",
+        "performance_eligible": true,
+        "reason_code": "QUALIFIED_DIRECT",
+        "reasons": [
+          "fixed AsNumpy public wrapper delegates to an NPU binding"
+        ],
+        "route": "NATIVE_NPU",
+        "source_api": "numpy.full"
+      },
+      {
+        "canonical_key": "full",
+        "column": 10,
+        "contract": {
+          "axis": "NOT_APPLICABLE",
+          "dtype": "QUALIFIED",
+          "equation": "NOT_APPLICABLE",
+          "output": "QUALIFIED",
+          "randomness": "NOT_APPLICABLE",
+          "rank": "QUALIFIED",
+          "signature": "QUALIFIED"
+        },
+        "decision": "DIRECT",
+        "effective_route": "NATIVE_NPU",
+        "facts": {
+          "axis": "not_applicable",
+          "dtype": "float32",
+          "equation": "not_applicable",
+          "keyword_args": [
+            "dtype"
+          ],
+          "output_use": "device",
+          "positional_args": 2,
+          "rank": 2,
+          "shape": [
+            16,
+            4
+          ],
+          "source_contract_ok": true
+        },
+        "line": 13,
+        "next_action": "eligible for hash-bound migration under a matching runtime identity",
+        "performance_eligible": true,
+        "reason_code": "QUALIFIED_DIRECT",
+        "reasons": [
+          "fixed AsNumpy public wrapper delegates to an NPU binding"
+        ],
+        "route": "NATIVE_NPU",
+        "source_api": "numpy.full"
+      },
+      {
+        "canonical_key": "matmul",
+        "column": 9,
+        "contract": {
+          "axis": "NOT_APPLICABLE",
+          "dtype": "QUALIFIED",
+          "equation": "NOT_APPLICABLE",
+          "output": "QUALIFIED",
+          "randomness": "NOT_APPLICABLE",
+          "rank": "QUALIFIED",
+          "signature": "QUALIFIED"
+        },
+        "decision": "FALLBACK_CONSENT",
+        "effective_route": "CPU_FALLBACK",
+        "facts": {
+          "axis": "not_applicable",
+          "dtype": "float32",
+          "equation": "not_applicable",
+          "keyword_args": [],
+          "output_use": "terminal",
+          "positional_args": 2,
+          "rank": 2,
+          "shape": [
+            8,
+            16
+          ],
+          "source_contract_ok": true
+        },
+        "line": 14,
+        "next_action": "require explicit fallback consent; never publish strict-NPU performance",
+        "performance_eligible": false,
+        "reason_code": "AUDITED_NON_STRICT_ROUTE",
+        "reasons": [
+          "fixed AsNumpy public wrapper computes through NumPy on the host"
+        ],
+        "route": "CPU_FALLBACK",
+        "source_api": "numpy.matmul"
+      }
+    ],
+    "decision": "FALLBACK_CONSENT",
+    "execution_performed": false,
+    "imports": [
+      "import numpy as np"
+    ],
+    "issues": [],
+    "next_action": "obtain explicit fallback consent and suppress strict-NPU performance",
+    "performance_valid": false,
+    "required_rewrites": [],
+    "runtime_identity_sha256": "7d443cb390fdd8bb398e10ed00b82d1a5aed624c1ed777ca8d6652fc9cf1b124",
+    "runtime_identity_status": "matched",
+    "schema_version": 1,
+    "source_path": "/home/ma-user/work/numpilot/examples/ops_nn_matmul_inference.py",
+    "source_sha256": "4cf236f427ae419a7a4969499e4197ed31be4ba4f40bd26e686886f69ce96046",
+    "speedup": null
+  },
+  "schema_version": 2,
+  "source_sha256": "4cf236f427ae419a7a4969499e4197ed31be4ba4f40bd26e686886f69ce96046",
+  "status": "gap_generation_required",
+  "strict_npu": false
+}

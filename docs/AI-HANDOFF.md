@@ -1,10 +1,95 @@
 # NumPilot AI 续接手册
 
-> **2026-08-25 `v0.2.0a2` source-first 更新优先于下方旧 P0 wheelhouse 叙述。**
+> **下方 2026-08-25 `v0.2.0a2` 和 2026-08-26 Day 1 内容是历史检查点；当前以
+> 2026-08-28 集成检查点为准。**
 > 新机器默认只克隆 NumPilot，运行顶层 `install.sh`，由 bootstrap 拉取固定官方 AsNumpy
-> 源码并现场编译、拉取并校验 CANNBot；wheelhouse 仅是 `v0.2.0a1` 的历史发布路径，
+> 源码并现场编译；只有显式选择 gap/operator lane 才拉取并校验 CANNBot。wheelhouse 仅是 `v0.2.0a1` 的历史发布路径，
 > 不是当前验收输入。当前权威新机步骤是 `docs/FRESH-NOTEBOOK-QUICKSTART.md` 和
 > `docs/FRESH-MACHINE-AI-PROMPT.md`。
+
+## 2026-08-28 框架 hardening 与 ops-nn MatMul 集成检查点（当前优先）
+
+- 当前集成分支为 `feat/framework-hardening-opsnn-rc`，基线仍是 `v0.2.0a2`；正式不可变
+  release tag 尚未产生，不能把本段能力归到旧 tag。
+- Day 1～3 主线已收口：通用 OpenAI-compatible model schema/回执、持久 activation、canonical
+  capability catalog、精确 runtime identity、qualified static analysis、独立 `analyze` 和 ordinary
+  configured-model migration 均已接线。
+- Day 4 采用定向受信 harness 止损线：迁移本身继续不执行用户代码；7 个已迁移 demo 的数值、
+  cold-process/steady 分层结果和 Case06 固定规模诊断均有 hash-bound 证据，不把诊断写成 E2E 加速。
+- official-first gap 路径已增加 installed CANN ACLNN 与 pinned ops-nn v9.0.0 resolver。历史
+  MatMul 真机 harness 证明二维、非空、C 连续、双 `float32` 输入发生 native call=1、host
+  fallback=0；但 2026-08-28 独立审查发现旧 operator candidate 绑定
+  `libopapi_nn.so`，而 `_core` 实际链接和解析 `libopapi.so`，因此旧模型 Adapter 被判定
+  **BLOCK**，历史真机结果不能证明旧 candidate 所选 DSO 的 provenance。当前替代链见
+  `docs/PROGRESS-20260828.md`；通用 integrate/qualify/activate 自动编排仍未实现。
+- ordinary `verify-script` 已增加产品内基础数值门：重新绑定 source/migration report/migrated，
+  两个独立 `python -I` worker 只回传无 pickle、有界 numeric/bool named outputs，并记录 worker、
+  解释器、NumPy/AsNumPy 模块路径与 hash。它是显式代码执行，不是 OS sandbox，且固定
+  `strict_npu_verified=false`、`performance_valid=false`；定向 NPU provenance/performance
+  harness 仍不能被它替代。合同见 `docs/script-verification.md`。
+- gap 恢复控制面使用 schema-2 typed stage receipt、私有 write-once SHA-256 状态链、目录锁和
+  冻结 policy；`receipt-only`、`candidate-generation` 与 `full-local-recovery` 的授权边界不变。
+  2026-08-28 将 reviewed MatMul context plan 升到 schema 3，新增 selected DSO 与 `_core`
+  `opapi` CMake link item 的路径/hash/target 绑定。installed catalog 升到 v2，新 resolution
+  `9b99a4…d611e` 与 candidate `candidate-2b649f7bf591e45a94f3` 精确选择
+  `libopapi.so`（SHA-256 `f337f6…ada2`）；私有 run
+  `/home/ma-user/work/.numpilot-state/runs/recovery-matmul-linkage-v2-20260828`
+  当前为 revision 5 / `CANDIDATE_READY`。
+  exact route 仍使用 per-target projection、严格 SSE、target edit windows、机械重建和请求/响应
+  hash；thinking disabled，reasoning effort 已收紧为 none。正式 Adapter 请求的 readiness
+  HTTP 200，但 `direct.py` 多次出现空 content 或 `LlmTransportError`；缩窄 projection 后的
+  第四轮按用户要求中断。没有新 adapter 目录、没有 adapter receipt，恢复链未推进。
+  `candidate-generation` 即使成功也最多到 `ADAPTER_CANDIDATE`，不允许 system
+  write/import/build/execution/activation；`full-local-recovery` 的 integration/build/
+  qualification producers 仍未接线。详细记录见 `docs/PROGRESS-20260828.md`，状态合同见
+  `docs/gap-recovery-state.md`。
+- 修复前完整回归检查点为 `1380 passed`；catalog-v2/schema-3 变更后的最新相关集合为
+  `119 passed`，prompt 缩窄后的相关集合为 `75 passed`，尚未重跑完整套件。历史 AsNumPy
+  MatMul 定向真机测试为 `9 passed`，但其旧 DSO candidate provenance 已被否决；在 linkage-v2
+  重新资格化前不得把它宣传为新的完整闭环。`performance_valid=false` 的案例不得宣传性能提升。
+- 尚未完成的是：通用 official-source/private-OPP runner、fresh clone 的最终 RC 构建复验、
+  不可变 tag，以及远端认证恢复后的分支比较与推送。不要通过 force push 或跳过 upstream
+  比较来绕过这些门。
+
+## 2026-08-26 Day 1 通用模型与持久环境检查点（历史检查点）
+
+本节替代下方历史检查点中的 GLM-only 运行时约束，但不改写历史实测。当前工作目录为
+`/home/ma-user/work/numpilot`，分支为 `feat/day1-generic-model-persistence`，基线 HEAD 仍是
+`374e4da7df827bbf69668eb896e86ab1f95fa755`；改动尚未提交。恢复时不得 reset 或覆盖用户原有的
+`docs/README.md` 修改、未跟踪 `.venv/` 和五日计划。
+
+- 用户已明确角色边界：本次 `/home/ma-user/work/demo` 的实际迁移按用户选择，必须由其配置的
+  GLM 完成生成；这是本轮操作选择，不是框架授权硬锁。框架合同接受任意满足声明合同的 configured
+  OpenAI-compatible model。Codex 作为用户侧观测者，只做准入、回执、产物和执行证据验收；
+  修复或完善 NumPilot 框架时由 Codex 直接实现。
+  Day 1 只使用本地 fake endpoint，没有发生真实模型请求；以后首次真实请求前仍必须提醒用户轮换
+  此前暴露过的 Token，代理只能进入该次模型进程。
+- 新写配置和 receipt 使用 schema 2：协议固定为本 sprint 的
+  `openai-chat-completions` 最小合同，provider 是审计标签，configured/requested model 必须精确一致；
+  response model 默认 exact，只有用户显式 alias allowlist 才能接受。`org/model` 保留原始身份并绑定
+  hash。旧 schema 1 GLM receipt 仅提供严格只读兼容，不得新写。
+- ordinary migration、gap generation、operator repair、adapter generation/repair 已共用同一 model
+  identity/receipt validator；生产执行路径不再以 `provider=glm` 或 `glm-*` 作为授权条件。
+  `require_glm_configuration`、`validate_glm_remote_receipt`、`generate_script_with_glm` 仅是兼容 alias。
+- direct lane 的 CANNBot import 已改为惰性；没有 CANNBot checkout 时仍可迁移。需要 gap lane 时才解析
+  固定 bundle。相关合同详见 `docs/model-contract.md`。
+- 持久路径优先级统一为“显式细分变量 > `NUMPILOT_HOME` > XDG/HOME”。当前生成的激活脚本是
+  `/home/ma-user/work/activate-numpilot.sh`，mode `0600`，SHA-256
+  `8b5924308daa123bfa969b35ada0f07a2b947535bb87a571f54e516aac89f1d5`。它绑定 `/home/ma-user/work`
+  下的 config/state/cache/receipt、项目 venv、CANN 9.0.0 和 CANNBot exact checkout，不包含 Token、
+  endpoint、代理或响应正文，也不修改用户 shell 文件。
+- 空临时 HOME + 干净 shell 中连续 source 激活脚本两次后，路径无重复、无 CANN 自带 `devlib`；
+  注入的跨前缀旧 CANN 路径被清理、无关 `/opt/unrelated/devlib` 被保留。固定 AsNumpy smoke、
+  CANNBot 离线 bundle 验证和 `doctor --backend npu` 全部通过，bootstrap 明确报告
+  `network_requested_by_numpilot=false`。
+- T0 为 `775 passed`；当前工作树全量为 `822 passed in 18.78s`，最终模型合同复核为
+  `247 passed`，持久化定向集合为 `86 passed in 1.67s`，Notebook 合同为 `1 passed in 0.03s`。
+  `git diff --check`、Notebook JSON、activation 与生产代码/文档 secret scan 均通过；测试中唯一
+  凭据样式命中是预期拒绝的 `gateway.example` 伪造夹具。
+- Day 1 已收口，尚未进入 Day 2。只有用户要求继续时，才从 AsNumpy registry/API drift 与 capability
+  profile 失败测试开始；不得顺手触发真实模型、迁移或 Day 3 工作。
+- 这些 Day 1 改动尚未发布；`v0.2.0a2` 只是基线且不包含本段能力。Fresh Machine/Notebook 必须等待
+  Day 5 产出的新不可变 tag，不能把当前工作树说明误套到旧 tag。
 
 ## `v0.2.0a2` source-first 检查点
 

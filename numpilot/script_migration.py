@@ -25,6 +25,12 @@ from numpilot.agents.analysis import _OpVisitor
 from numpilot.capabilities import ExecutionProvenance, parse_profile_constraints
 from numpilot.coverage import is_supported
 from numpilot.engines.llm import LlmEngine, LlmError
+from numpilot.llm_config import OPENAI_CHAT_COMPLETIONS_PROTOCOL
+from numpilot.model_contract import (
+    ModelContractError,
+    require_model_configuration,
+    validate_configured_model_receipt,
+)
 
 
 _MAX_SOURCE_BYTES = 4 * 1024 * 1024
@@ -75,6 +81,8 @@ class ScriptScanResult:
     issues: Tuple[str, ...]
     rewrite_count: int
     synthetic_divide_count: int
+    numpy_pi_rewrite_count: int
+    terminal_item_count: int
     output_boundary_count: int
 
     @property
@@ -94,6 +102,8 @@ class ScriptScanResult:
             "issues": list(self.issues),
             "rewrite_count": self.rewrite_count,
             "synthetic_divide_count": self.synthetic_divide_count,
+            "numpy_pi_rewrite_count": self.numpy_pi_rewrite_count,
+            "terminal_item_count": self.terminal_item_count,
             "output_boundary_count": self.output_boundary_count,
             "uses": [item.to_dict() for item in self.uses],
         }
@@ -203,6 +213,8 @@ class ScriptMigrationArtifact:
     response_model: str
     provider: str
     response_content: str
+    protocol: str = OPENAI_CHAT_COMPLETIONS_PROTOCOL
+    response_model_aliases: Tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, order=True)
@@ -229,9 +241,11 @@ class _RewriteLocation:
 
 @dataclass(frozen=True)
 class _ScriptRewritePlan:
-    """The two narrowly proven expression rewrites allowed in script mode."""
+    """The narrowly proven source surfaces allowed in script mode."""
 
     divisions: Tuple[_RewriteLocation, ...]
+    numpy_pi: Tuple[_RewriteLocation, ...]
+    terminal_items: Tuple[_RewriteLocation, ...]
     output_boundaries: Tuple[_RewriteLocation, ...]
 
 
@@ -249,6 +263,62 @@ def _attribute_path(node: ast.AST) -> Optional[Tuple[str, ...]]:
 
 def _unique(items: Iterable[str]) -> Tuple[str, ...]:
     return tuple(dict.fromkeys(items))
+
+
+@dataclass(frozen=True)
+class _QualifiedMigrationOverlay:
+    """The small source-bound subset the legacy scanner may consume."""
+
+    enabled: bool = False
+    required_rewrites: Tuple[str, ...] = ()
+    authorized_calls: Tuple[Tuple[int, int, str], ...] = ()
+
+
+def _validated_qualified_overlay(
+    qualified_analysis: object,
+    source: str,
+    source_path: str,
+) -> _QualifiedMigrationOverlay:
+    if qualified_analysis is None:
+        return _QualifiedMigrationOverlay()
+
+    from numpilot.capability_profile import CapabilityDecision
+    from numpilot.qualified_analysis import QualifiedScriptAnalysis
+
+    if not isinstance(qualified_analysis, QualifiedScriptAnalysis):
+        raise ScriptMigrationError("qualified analysis type is invalid")
+    source_sha256 = hashlib.sha256(source.encode("utf-8")).hexdigest()
+    if (
+        qualified_analysis.source_sha256 != source_sha256
+        or qualified_analysis.source_path != source_path
+    ):
+        raise ScriptMigrationError(
+            "qualified analysis source binding is inconsistent"
+        )
+    if (
+        qualified_analysis.runtime_identity_status != "matched"
+        or qualified_analysis.decision
+        not in {CapabilityDecision.DIRECT, CapabilityDecision.FALLBACK_CONSENT}
+        or qualified_analysis.issues
+    ):
+        return _QualifiedMigrationOverlay()
+
+    authorized_calls = tuple(sorted(
+        (
+            call.lineno,
+            call.col_offset,
+            call.canonical_key,
+        )
+        for call in qualified_analysis.calls
+        if call.contract.qualified
+        and call.decision
+        in {CapabilityDecision.DIRECT, CapabilityDecision.FALLBACK_CONSENT}
+    ))
+    return _QualifiedMigrationOverlay(
+        enabled=True,
+        required_rewrites=qualified_analysis.required_rewrites,
+        authorized_calls=authorized_calls,
+    )
 
 
 def detect_source_mode(source: str) -> str:
@@ -378,9 +448,73 @@ def _is_static_array_call(node: ast.AST, array_names: Iterable[str]) -> bool:
         return False
     known = set(array_names)
     path = _attribute_path(node.func)
-    if path == ("np", "full"):
+    if path in {
+        ("np", "eye"),
+        ("np", "full"),
+        ("np", "linspace"),
+        ("np", "ones"),
+        ("np", "zeros"),
+    }:
         return True
-    if path == ("np", "exp"):
+    if path in {
+        ("np", "absolute"),
+        ("np", "cos"),
+        ("np", "exp"),
+        ("np", "log"),
+        ("np", "sin"),
+        ("np", "sqrt"),
+        ("np", "tanh"),
+    }:
+        return (
+            len(node.args) == 1
+            and not node.keywords
+            and isinstance(node.args[0], ast.Name)
+            and node.args[0].id in known
+        )
+    if path in {("np", "all"), ("np", "any")}:
+        # Current audited wrappers preserve a zero-dimensional device ndarray
+        # when axis is omitted, so a terminal print needs ``.to_numpy()``.
+        return (
+            len(node.args) == 1
+            and not node.keywords
+            and isinstance(node.args[0], ast.Name)
+            and node.args[0].id in known
+        )
+    if path in {
+        ("np", "add"),
+        ("np", "equal"),
+        ("np", "mod"),
+        ("np", "multiply"),
+        ("np", "power"),
+        ("np", "remainder"),
+        ("np", "subtract"),
+    }:
+        return (
+            len(node.args) == 2
+            and not node.keywords
+            and all(
+                (
+                    isinstance(argument, ast.Name)
+                    and argument.id in known
+                )
+                or _is_static_array_call(argument, known)
+                for argument in node.args
+            )
+        )
+    if path == ("np", "clip"):
+        return (
+            len(node.args) == 3
+            and not node.keywords
+            and isinstance(node.args[0], ast.Name)
+            and node.args[0].id in known
+            and all(
+                isinstance(argument, ast.Constant)
+                and isinstance(argument.value, (int, float))
+                and not isinstance(argument.value, bool)
+                for argument in node.args[1:]
+            )
+        )
+    if path == ("np", "linalg", "det"):
         return (
             len(node.args) == 1
             and not node.keywords
@@ -452,6 +586,46 @@ def _is_authorized_array_division(
     )
 
 
+def _is_static_numpy_pi_expression(
+    node: ast.AST,
+    authorized_pi: Iterable[_RewriteLocation],
+) -> bool:
+    """Accept bounded scalar arithmetic only when every ``np.pi`` is bound."""
+
+    allowed = set(authorized_pi)
+    if (
+        isinstance(node, ast.Constant)
+        and isinstance(node.value, (int, float))
+        and not isinstance(node.value, bool)
+    ):
+        return True
+    if isinstance(node, ast.Attribute):
+        return (
+            _attribute_path(node) == ("np", "pi")
+            and _RewriteLocation.from_node(node) in allowed
+        )
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+        return _is_static_numpy_pi_expression(node.operand, allowed)
+    if isinstance(node, ast.BinOp) and isinstance(
+        node.op, (ast.Add, ast.Sub, ast.Mult, ast.Div)
+    ):
+        return _is_static_numpy_pi_expression(
+            node.left, allowed
+        ) and _is_static_numpy_pi_expression(node.right, allowed)
+    return False
+
+
+def _is_zero_argument_item_call(node: ast.AST) -> bool:
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "item"
+        and isinstance(node.func.value, ast.Name)
+        and not node.args
+        and not node.keywords
+    )
+
+
 def _print_output_locations(
     statement: ast.stmt,
     array_names: Iterable[str],
@@ -479,7 +653,6 @@ def _print_output_locations(
             if not (
                 isinstance(value, ast.FormattedValue)
                 and value.conversion == -1
-                and value.format_spec is None
                 and isinstance(value.value, ast.Name)
                 and value.value.id in known
             ):
@@ -488,9 +661,26 @@ def _print_output_locations(
     return tuple(locations)
 
 
-def _build_script_rewrite_plan(tree: ast.Module) -> _ScriptRewritePlan:
+def _build_script_rewrite_plan(
+    tree: ast.Module,
+    *,
+    allow_numpy_pi: bool = False,
+    allow_terminal_item: bool = False,
+) -> _ScriptRewritePlan:
     """Run one fail-closed, module-level straight-line ndarray proof."""
 
+    numpy_pi = tuple(sorted(
+        _RewriteLocation.from_node(node)
+        for node in ast.walk(tree)
+        if allow_numpy_pi
+        and isinstance(node, ast.Attribute)
+        and _attribute_path(node) == ("np", "pi")
+    ))
+    terminal_items = tuple(sorted(
+        _RewriteLocation.from_node(node)
+        for node in ast.walk(tree)
+        if allow_terminal_item and _is_zero_argument_item_call(node)
+    ))
     array_names = set()
     divisions: List[_RewriteLocation] = []
     outputs: List[_RewriteLocation] = []
@@ -540,6 +730,8 @@ def _build_script_rewrite_plan(tree: ast.Module) -> _ScriptRewritePlan:
         straight_line = False
     return _ScriptRewritePlan(
         divisions=tuple(divisions),
+        numpy_pi=numpy_pi,
+        terminal_items=terminal_items,
         output_boundaries=tuple(outputs),
     )
 
@@ -552,6 +744,7 @@ def _python_surface_issues(
 
     issues: List[str] = []
     allowed_divisions = set(rewrite_plan.divisions)
+    allowed_terminal_items = set(rewrite_plan.terminal_items)
     for node in ast.walk(tree):
         line = getattr(node, "lineno", 0)
         if isinstance(node, ast.BinOp):
@@ -559,6 +752,8 @@ def _python_surface_issues(
                 isinstance(node.op, ast.Div)
                 and _RewriteLocation.from_node(node) in allowed_divisions
             ):
+                continue
+            if _is_static_numpy_pi_expression(node, rewrite_plan.numpy_pi):
                 continue
             issues.append(
                 "Python binary operator %s is not audited for AsNumpy arrays "
@@ -577,8 +772,12 @@ def _python_surface_issues(
                 "Python comparison %s is not audited for AsNumpy arrays at "
                 "line %d; use an explicit np.* API" % (operators, line)
             )
-        elif isinstance(node, ast.UnaryOp) and not isinstance(
-            node.operand, ast.Constant
+        elif (
+            isinstance(node, ast.UnaryOp)
+            and not isinstance(node.operand, ast.Constant)
+            and not _is_static_numpy_pi_expression(
+                node, rewrite_plan.numpy_pi
+            )
         ):
             issues.append(
                 "Python unary operator %s is not audited for AsNumpy arrays "
@@ -587,6 +786,11 @@ def _python_surface_issues(
             )
         elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
             path = _attribute_path(node.func)
+            if (
+                _RewriteLocation.from_node(node) in allowed_terminal_items
+                and _is_zero_argument_item_call(node)
+            ):
+                continue
             if path is None or path[0] != "np":
                 issues.append(
                     "attribute/method call .%s() is not audited for AsNumpy "
@@ -595,7 +799,12 @@ def _python_surface_issues(
     return _unique(issues)
 
 
-def scan_numpy_script(source: str, source_path: str = "<memory>") -> ScriptScanResult:
+def scan_numpy_script(
+    source: str,
+    source_path: str = "<memory>",
+    *,
+    qualified_analysis: object = None,
+) -> ScriptScanResult:
     """Scan one inert source string without importing or executing it."""
 
     if len(source.encode("utf-8")) > _MAX_SOURCE_BYTES:
@@ -609,7 +818,17 @@ def scan_numpy_script(source: str, source_path: str = "<memory>") -> ScriptScanR
             "source has invalid Python syntax at line %s" % (exc.lineno or "?")
         ) from exc
 
-    rewrite_plan = _build_script_rewrite_plan(tree)
+    overlay = _validated_qualified_overlay(
+        qualified_analysis, source, source_path
+    )
+    rewrite_plan = _build_script_rewrite_plan(
+        tree,
+        allow_numpy_pi=(
+            overlay.enabled
+            and "numpy.pi -> math.pi" in overlay.required_rewrites
+        ),
+        allow_terminal_item=overlay.enabled,
+    )
     issues: List[str] = list(_python_surface_issues(tree, rewrite_plan))
     exact_numpy_imports = 0
     top_level_ids = {id(node) for node in tree.body}
@@ -692,6 +911,24 @@ def scan_numpy_script(source: str, source_path: str = "<memory>") -> ScriptScanR
                 "source already uses reserved AsNumpy alias `ap` at line %d"
                 % node.lineno
             )
+        if (
+            rewrite_plan.numpy_pi
+            and isinstance(node, ast.Name)
+            and node.id == "math"
+        ):
+            issues.append(
+                "source already uses reserved rewrite name `math` at line %d"
+                % node.lineno
+            )
+        if (
+            rewrite_plan.numpy_pi
+            and isinstance(node, ast.arg)
+            and node.arg == "math"
+        ):
+            issues.append(
+                "reserved rewrite name `math` is used as an argument at line %d"
+                % node.lineno
+            )
 
     parents: Dict[int, ast.AST] = {}
     for parent in ast.walk(tree):
@@ -704,6 +941,8 @@ def scan_numpy_script(source: str, source_path: str = "<memory>") -> ScriptScanR
         if isinstance(node, ast.Call)
     }
     uses: List[ScriptUse] = []
+    authorized_pi = set(rewrite_plan.numpy_pi)
+    authorized_calls = set(overlay.authorized_calls)
     outer_attribute_ids = set()
     for node in ast.walk(tree):
         if not isinstance(node, ast.Attribute):
@@ -713,6 +952,11 @@ def scan_numpy_script(source: str, source_path: str = "<memory>") -> ScriptScanR
             continue
         path = _attribute_path(node)
         if not path or path[0] != "np":
+            continue
+        if (
+            path == ("np", "pi")
+            and _RewriteLocation.from_node(node) in authorized_pi
+        ):
             continue
         outer_attribute_ids.add(id(node))
         api_path = ".".join(path[1:])
@@ -736,7 +980,12 @@ def scan_numpy_script(source: str, source_path: str = "<memory>") -> ScriptScanR
             )
         if call is not None:
             contract_issue = _asnumpy_call_contract_issue(api_path, call)
-            if contract_issue:
+            exact_call = (
+                getattr(call, "lineno", 0),
+                getattr(call, "col_offset", 0),
+                api_path,
+            )
+            if contract_issue and exact_call not in authorized_calls:
                 issues.append(
                     "AsNumpy call contract rejected numpy.%s at line %d: %s"
                     % (
@@ -802,6 +1051,8 @@ def scan_numpy_script(source: str, source_path: str = "<memory>") -> ScriptScanR
         issues=_unique(issues),
         rewrite_count=rewrite_count,
         synthetic_divide_count=len(rewrite_plan.divisions),
+        numpy_pi_rewrite_count=len(rewrite_plan.numpy_pi),
+        terminal_item_count=len(rewrite_plan.terminal_items),
         output_boundary_count=len(rewrite_plan.output_boundaries),
     )
 
@@ -847,19 +1098,56 @@ def _decision_is_generatable(
     )
 
 
-def classify_script(scan: ScriptScanResult, backend: Any) -> ScriptAnalysis:
+def classify_script(
+    scan: ScriptScanResult,
+    backend: Any,
+    *,
+    qualified_analysis: object = None,
+) -> ScriptAnalysis:
     """Classify every use without conflating missing APIs and unknown provenance."""
+
+    overlay = _validated_qualified_overlay(
+        qualified_analysis, scan.source, scan.source_path
+    )
+    qualified_by_callsite: Dict[Tuple[int, int, str], Any] = {}
+    if overlay.enabled:
+        qualified_by_callsite = {
+            (call.lineno, call.col_offset, call.canonical_key): call
+            for call in qualified_analysis.calls
+        }
 
     grouped: Dict[Tuple[str, str], List[ScriptUse]] = {}
     for use in scan.uses:
         grouped.setdefault((use.api_path, use.kind), []).append(use)
 
-    top_level_calls = sorted({
+    manifest_calls = {
         path
         for path, kind in grouped
         if kind == "call" and "." not in path and path not in _SAFE_METADATA_PATHS
-    })
-    manifest = backend.capability_manifest(top_level_calls)
+    }
+    qualified_groups: Dict[Tuple[str, str], Tuple[Any, ...]] = {}
+    for (api_path, kind), callsites in grouped.items():
+        if kind != "call" or not overlay.enabled:
+            continue
+        real_callsites = tuple(item for item in callsites if not item.synthetic)
+        matches = tuple(
+            qualified_by_callsite.get((item.lineno, item.col_offset, api_path))
+            for item in real_callsites
+        )
+        if (
+            real_callsites
+            and all(match is not None for match in matches)
+            and all(
+                match.facts.positional_args == item.positional_args
+                and match.facts.keyword_args == item.keyword_args
+                for item, match in zip(real_callsites, matches)
+            )
+        ):
+            qualified_groups[(api_path, kind)] = matches
+            if "." in api_path:
+                manifest_calls.add(api_path)
+
+    manifest = backend.capability_manifest(sorted(manifest_calls))
     module = backend.get_module()
     decisions: List[ScriptApiDecision] = []
     for (api_path, kind), callsites in sorted(grouped.items()):
@@ -876,7 +1164,10 @@ def classify_script(scan: ScriptScanResult, backend: Any) -> ScriptAnalysis:
                 status = "strict_npu"
                 provenance = "metadata"
                 evidence = "AsNumpy exposes the NumPy-compatible metadata alias"
-        elif kind == "call" and "." not in api_path:
+        elif kind == "call" and (
+            "." not in api_path
+            or (api_path, kind) in qualified_groups
+        ):
             capability = manifest.operators.get(api_path)
             if capability is not None:
                 available = capability.available
@@ -941,6 +1232,64 @@ def classify_script(scan: ScriptScanResult, backend: Any) -> ScriptAnalysis:
                         "has no version-bound strict-NPU provenance for it"
                     )
 
+        qualified_calls = qualified_groups.get((api_path, kind), ())
+        if qualified_calls and available:
+            route_provenance = {
+                "NATIVE_NPU": ExecutionProvenance.NATIVE_NPU.value,
+                "COMPOSITE_NPU": ExecutionProvenance.COMPOSITE_NPU.value,
+                "HOST_ASSISTED": ExecutionProvenance.HOST_ASSISTED.value,
+                "CONDITIONAL_CPU_FALLBACK": (
+                    ExecutionProvenance.CONDITIONAL_CPU_FALLBACK.value
+                ),
+                "CPU_FALLBACK": ExecutionProvenance.CPU_FALLBACK.value,
+            }
+            expected_provenance = {
+                route_provenance.get(call.route.value)
+                for call in qualified_calls
+            }
+            qualified_decisions = {
+                call.decision.value for call in qualified_calls
+            }
+            if (
+                len(expected_provenance) != 1
+                or None in expected_provenance
+                or provenance not in expected_provenance
+            ):
+                status = "capability_audit_required"
+                evidence = (
+                    "qualified call route disagrees with the exact runtime "
+                    "capability manifest"
+                )
+            elif qualified_decisions <= {"DIRECT"}:
+                if "." in api_path or any(
+                    call.effective_route.value == "HOST_SCALAR_BOUNDARY"
+                    for call in qualified_calls
+                ):
+                    status = "scoped_npu"
+                    qualified_constraint = (
+                        "qualified_nested_call_profile"
+                        if "." in api_path
+                        else "terminal_host_scalar_boundary"
+                    )
+                    constraints = _unique((*constraints, qualified_constraint))
+                    evidence = (
+                        evidence
+                        + "; exact source-bound receipt qualifies this call profile"
+                    )
+                elif status not in {"strict_npu", "scoped_npu"}:
+                    status = "capability_audit_required"
+                    evidence = (
+                        "qualified direct call did not match a strict runtime route"
+                    )
+            elif qualified_decisions <= {"DIRECT", "FALLBACK_CONSENT"}:
+                if "FALLBACK_CONSENT" in qualified_decisions and status != (
+                    "fallback_available"
+                ):
+                    status = "capability_audit_required"
+                    evidence = (
+                        "qualified fallback call did not match the runtime route"
+                    )
+
         if not available:
             status = "unsupported"
             provenance = ExecutionProvenance.UNKNOWN.value
@@ -986,9 +1335,15 @@ def _validated_rewrite_plan(analysis: ScriptAnalysis) -> _ScriptRewritePlan:
         tree = ast.parse(source, type_comments=True)
     except SyntaxError as exc:
         raise ScriptMigrationError("analysis source syntax is inconsistent") from exc
-    plan = _build_script_rewrite_plan(tree)
+    plan = _build_script_rewrite_plan(
+        tree,
+        allow_numpy_pi=analysis.scan.numpy_pi_rewrite_count > 0,
+        allow_terminal_item=analysis.scan.terminal_item_count > 0,
+    )
     if (
         analysis.scan.synthetic_divide_count != len(plan.divisions)
+        or analysis.scan.numpy_pi_rewrite_count != len(plan.numpy_pi)
+        or analysis.scan.terminal_item_count != len(plan.terminal_items)
         or analysis.scan.output_boundary_count != len(plan.output_boundaries)
     ):
         raise ScriptMigrationError("analysis synthetic rewrite counts are inconsistent")
@@ -1064,15 +1419,37 @@ def _validated_rewrite_plan(analysis: ScriptAnalysis) -> _ScriptRewritePlan:
 class _ExpectedScriptRewrite(ast.NodeTransformer):
     def __init__(self, rewrite_plan: _ScriptRewritePlan):
         self._divisions = set(rewrite_plan.divisions)
+        self._numpy_pi = set(rewrite_plan.numpy_pi)
+        self._terminal_items = set(rewrite_plan.terminal_items)
         self._output_boundaries = set(rewrite_plan.output_boundaries)
 
-    def visit_Import(self, node: ast.Import) -> ast.AST:
+    def visit_Import(self, node: ast.Import) -> Any:
         if (
             len(node.names) == 1
             and node.names[0].name == "numpy"
             and node.names[0].asname == "np"
         ):
             replacement = ast.Import(names=[ast.alias(name="asnumpy", asname="ap")])
+            replacement = ast.copy_location(replacement, node)
+            if self._numpy_pi:
+                math_import = ast.copy_location(
+                    ast.Import(names=[ast.alias(name="math")]), node
+                )
+                return [math_import, replacement]
+            return replacement
+        return self.generic_visit(node)
+
+    def visit_Attribute(self, node: ast.Attribute) -> ast.AST:
+        if _RewriteLocation.from_node(node) in self._numpy_pi:
+            if _attribute_path(node) != ("np", "pi"):
+                raise ScriptMigrationError(
+                    "authorized numpy.pi location changed expression"
+                )
+            replacement = ast.Attribute(
+                value=ast.Name(id="math", ctx=ast.Load()),
+                attr="pi",
+                ctx=ast.Load(),
+            )
             return ast.copy_location(replacement, node)
         return self.generic_visit(node)
 
@@ -1097,13 +1474,38 @@ class _ExpectedScriptRewrite(ast.NodeTransformer):
         )
         return ast.copy_location(replacement, node)
 
+    def visit_Call(self, node: ast.Call) -> ast.AST:
+        if _RewriteLocation.from_node(node) not in self._terminal_items:
+            return self.generic_visit(node)
+        if not _is_zero_argument_item_call(node):
+            raise ScriptMigrationError("authorized item location changed call")
+        receiver = self.visit(node.func.value)
+        to_numpy = ast.Call(
+            func=ast.Attribute(
+                value=receiver,
+                attr="to_numpy",
+                ctx=ast.Load(),
+            ),
+            args=[],
+            keywords=[],
+        )
+        replacement = ast.Call(
+            func=ast.Attribute(
+                value=to_numpy,
+                attr="item",
+                ctx=ast.Load(),
+            ),
+            args=[],
+            keywords=[],
+        )
+        return ast.copy_location(replacement, node)
+
     def visit_FormattedValue(self, node: ast.FormattedValue) -> ast.AST:
         location = _RewriteLocation.from_node(node.value)
         if location not in self._output_boundaries:
             return self.generic_visit(node)
         if (
             node.conversion != -1
-            or node.format_spec is not None
             or not isinstance(node.value, ast.Name)
         ):
             raise ScriptMigrationError("authorized output boundary changed shape")
@@ -1119,7 +1521,11 @@ class _ExpectedScriptRewrite(ast.NodeTransformer):
         replacement = ast.FormattedValue(
             value=converted,
             conversion=-1,
-            format_spec=None,
+            format_spec=(
+                None
+                if node.format_spec is None
+                else self.visit(node.format_spec)
+            ),
         )
         return ast.copy_location(replacement, node)
 
@@ -1129,8 +1535,23 @@ def expected_script_tree(
     analysis: Optional[ScriptAnalysis] = None,
 ) -> ast.Module:
     tree = ast.parse(source, type_comments=True)
-    source_plan = _build_script_rewrite_plan(tree)
-    if source_plan.divisions or source_plan.output_boundaries:
+    source_plan = _build_script_rewrite_plan(
+        tree,
+        allow_numpy_pi=(
+            analysis is not None
+            and analysis.scan.numpy_pi_rewrite_count > 0
+        ),
+        allow_terminal_item=(
+            analysis is not None
+            and analysis.scan.terminal_item_count > 0
+        ),
+    )
+    if (
+        source_plan.divisions
+        or source_plan.numpy_pi
+        or source_plan.terminal_items
+        or source_plan.output_boundaries
+    ):
         if analysis is None:
             raise ScriptMigrationError(
                 "synthetic expression rewrites require a source-bound analysis"
@@ -1158,7 +1579,7 @@ def _comment_tokens(source: str) -> Tuple[str, ...]:
         raise ScriptMigrationError("cannot tokenize migration source") from exc
 
 
-def audit_glm_script(
+def audit_configured_model_script(
     source: str,
     migrated_source: str,
     analysis: Optional[ScriptAnalysis] = None,
@@ -1169,32 +1590,40 @@ def audit_glm_script(
         actual = ast.parse(migrated_source, type_comments=True)
     except SyntaxError as exc:
         raise ScriptMigrationError(
-            "GLM returned invalid Python syntax at line %s" % (exc.lineno or "?")
+            "configured model returned invalid Python syntax at line %s"
+            % (exc.lineno or "?")
         ) from exc
     expected = expected_script_tree(source, analysis)
     if ast.dump(actual, include_attributes=False) != ast.dump(
         expected, include_attributes=False
     ):
         raise ScriptMigrationError(
-            "GLM output changed code outside the exact authorized rewrite plan"
+            "configured model output changed code outside the exact authorized rewrite plan"
         )
     if _comment_tokens(source) != _comment_tokens(migrated_source):
         raise ScriptMigrationError(
-            "GLM output changed comments outside the exact namespace rewrite"
+            "configured model output changed comments outside the exact namespace rewrite"
         )
     for node in ast.walk(actual):
         if isinstance(node, ast.Import):
             if any(alias.name == "numpy" for alias in node.names):
-                raise ScriptMigrationError("GLM output retains a NumPy import")
+                raise ScriptMigrationError(
+                    "configured model output retains a NumPy import"
+                )
         if isinstance(node, ast.Name) and node.id == "np":
-            raise ScriptMigrationError("GLM output retains the NumPy alias `np`")
+            raise ScriptMigrationError(
+                "configured model output retains the NumPy alias `np`"
+            )
+
+
+# Compatibility name for callers and historical fixtures.
+audit_glm_script = audit_configured_model_script
 
 
 _SCRIPT_SYSTEM_PROMPT = """You are NumPilot's mechanical source migration worker.
 Return one complete Python file in a ```python code block and no explanation.
 Make exactly these AST-level changes and nothing else:
-1. Replace the single `import numpy as np` with `import asnumpy as ap` in the same location.
-2. Replace every reference to the bound name `np` with `ap`.
+{namespace_rules}
 {expression_rules}
 Do not add, delete, reorder, simplify, repair, or otherwise change any other statement or expression.
 Do not change strings, constants, function/class names, arguments, or control flow.
@@ -1204,28 +1633,65 @@ NumPilot will reject the response unless its Python AST exactly equals this sour
 
 def _script_system_prompt(rewrite_plan: _ScriptRewritePlan) -> str:
     rules: List[str] = []
+    if rewrite_plan.numpy_pi:
+        namespace_rules = (
+            "1. Replace the single `import numpy as np` with exactly two imports "
+            "in this order and at the same location: `import math`, then "
+            "`import asnumpy as ap`.\n"
+            "2. Replace every reference to the bound name `np` with `ap`, except "
+            "the authorized `np.pi` references in rule 3.\n"
+            "3. At exactly these source AST locations, replace `np.pi` with "
+            "`math.pi`: %s."
+            % ", ".join(item.render() for item in rewrite_plan.numpy_pi)
+        )
+        next_rule = 4
+    else:
+        namespace_rules = (
+            "1. Replace the single `import numpy as np` with `import asnumpy as ap` "
+            "in the same location.\n"
+            "2. Replace every reference to the bound name `np` with `ap`."
+        )
+        next_rule = 3
     if rewrite_plan.divisions:
         rules.append(
-            "3. At exactly these source AST locations, replace `left / right` "
+            "%d. At exactly these source AST locations, replace `left / right` "
             "with `ap.divide(left, right)`: %s. Do not rewrite any other "
             "Python operator."
-            % ", ".join(item.render() for item in rewrite_plan.divisions)
+            % (
+                next_rule,
+                ", ".join(item.render() for item in rewrite_plan.divisions),
+            )
         )
+        next_rule += 1
+    if rewrite_plan.terminal_items:
+        rules.append(
+            "%d. At exactly these source AST locations, replace "
+            "`value.item()` with `value.to_numpy().item()`: %s. Do not "
+            "add host conversion anywhere else."
+            % (
+                next_rule,
+                ", ".join(item.render() for item in rewrite_plan.terminal_items),
+            )
+        )
+        next_rule += 1
     if rewrite_plan.output_boundaries:
         rules.append(
             "%d. Only at these print f-string value locations, replace the "
             "array expression `value` with `value.to_numpy()`: %s. Do not "
             "add output conversion anywhere else."
             % (
-                3 + bool(rewrite_plan.divisions),
+                next_rule,
                 ", ".join(
                     item.render() for item in rewrite_plan.output_boundaries
                 ),
             )
         )
     if not rules:
-        rules.append("3. Do not change any expression.")
-    return _SCRIPT_SYSTEM_PROMPT.format(expression_rules="\n".join(rules))
+        rules.append("%d. Do not change any other expression." % next_rule)
+    return _SCRIPT_SYSTEM_PROMPT.format(
+        namespace_rules=namespace_rules,
+        expression_rules="\n".join(rules),
+    )
 
 _SCRIPT_RESPONSE = re.compile(
     r"\A[ \t\r\n]*```python[ \t]*\r?\n(?P<code>.*?)\r?\n```[ \t\r\n]*\Z",
@@ -1235,19 +1701,19 @@ _SCRIPT_RESPONSE = re.compile(
 
 def _extract_strict_script_response(content: str) -> str:
     if not isinstance(content, str):
-        raise ScriptMigrationError("GLM response content must be text")
+        raise ScriptMigrationError("configured model response content must be text")
     match = _SCRIPT_RESPONSE.fullmatch(content)
     if match is None:
         raise ScriptMigrationError(
-            "GLM response must contain exactly one python code block and no prose"
+            "configured model response must contain exactly one python code block and no prose"
         )
     code = match.group("code")
     if "```" in code:
         raise ScriptMigrationError(
-            "GLM response must contain exactly one python code block and no prose"
+            "configured model response must contain exactly one python code block and no prose"
         )
     if not code.strip():
-        raise ScriptMigrationError("GLM returned empty migration code")
+        raise ScriptMigrationError("configured model returned empty migration code")
     return code.rstrip() + "\n"
 
 
@@ -1256,77 +1722,72 @@ def _validate_script_receipt(
     response_content: str,
     *,
     expected_model: str,
+    expected_provider: str,
+    expected_protocol: str,
+    response_model_aliases: Tuple[str, ...],
 ) -> Dict[str, Any]:
-    from numpilot.gaps.provider import (
-        DraftGenerationError,
-        validate_remote_receipt,
-    )
-
-    if not isinstance(expected_model, str) or not expected_model.strip():
-        raise ScriptMigrationError("configured migration model identity is unavailable")
     try:
-        validated = validate_remote_receipt(receipt, response_content)
-    except DraftGenerationError as exc:
+        return validate_configured_model_receipt(
+            receipt,
+            response_content,
+            expected_model=expected_model,
+            expected_provider=expected_provider,
+            expected_protocol=expected_protocol,
+            response_model_aliases=response_model_aliases,
+        )
+    except ModelContractError as exc:
         raise ScriptMigrationError(
-            "GLM receipt failed validation: %s" % exc
+            "configured model receipt failed validation: %s" % exc
         ) from exc
-    if validated.get("requested_model") != expected_model:
-        raise ScriptMigrationError(
-            "GLM receipt model does not match the configured model"
-        )
-    response_model = validated.get("response_model")
-    if (
-        not isinstance(response_model, str)
-        or not response_model
-        or not response_model.lower().startswith("glm-")
-    ):
-        raise ScriptMigrationError(
-            "GLM receipt has no valid GLM response_model evidence"
-        )
-    if response_model != validated["requested_model"]:
-        raise ScriptMigrationError(
-            "GLM receipt response_model does not match requested/configured model"
-        )
-    return validated
 
 
-def generate_script_with_glm(
+def generate_script_with_configured_model(
     analysis: ScriptAnalysis,
     *,
     expected_model: str,
     expected_provider: str,
+    expected_protocol: str = OPENAI_CHAT_COMPLETIONS_PROTOCOL,
+    response_model_aliases: Tuple[str, ...] = (),
     chat: Optional[Callable[[str, str], Tuple[str, Mapping[str, Any]]]] = None,
 ) -> ScriptMigrationArtifact:
-    """Ask the configured GLM for code, then prove it is the exact allowed AST."""
+    """Ask the configured model for code, then prove the exact allowed AST."""
 
     if not analysis.scan.ok:
         raise ScriptMigrationError("script scan did not pass")
     if analysis.unsupported:
-        raise ScriptMigrationError("unsupported capability cannot enter GLM migration")
+        raise ScriptMigrationError(
+            "unsupported capability cannot enter configured-model migration"
+        )
     if analysis.audit_required:
         raise ScriptMigrationError(
-            "unaudited capability cannot enter GLM migration"
+            "unaudited capability cannot enter configured-model migration"
         )
-    if (
-        not isinstance(expected_provider, str)
-        or expected_provider.strip().lower() != "glm"
-        or not isinstance(expected_model, str)
-        or not expected_model.strip().lower().startswith("glm-")
-    ):
+    try:
+        identity = require_model_configuration(
+            expected_provider,
+            expected_model,
+            protocol=expected_protocol,
+            response_model_aliases=response_model_aliases,
+        )
+    except ModelContractError as exc:
         raise ScriptMigrationError(
-            "ordinary-script migration requires an explicit GLM provider/model"
-        )
+            "ordinary-script configured model is not ready: %s" % exc
+        ) from exc
     chat = chat or LlmEngine._chat_with_receipt
     rewrite_plan = _validated_rewrite_plan(analysis)
     allowed = sorted({item.api_path for item in analysis.decisions})
     user = (
         "Allowed NumPy paths already classified by NumPilot: %s\n\n"
         "Authorized synthetic numpy.divide callsites: %s\n"
+        "Authorized numpy.pi-to-math.pi locations: %s\n"
+        "Authorized terminal item()-to-host rewrite locations: %s\n"
         "Authorized print output-boundary values: %s\n\n"
         "Source SHA-256: %s\n\n```python\n%s\n```"
         % (
             allowed,
             [item.render() for item in rewrite_plan.divisions],
+            [item.render() for item in rewrite_plan.numpy_pi],
+            [item.render() for item in rewrite_plan.terminal_items],
             [item.render() for item in rewrite_plan.output_boundaries],
             analysis.scan.source_sha256,
             analysis.scan.source,
@@ -1336,26 +1797,174 @@ def generate_script_with_glm(
         content, receipt = chat(_script_system_prompt(rewrite_plan), user)
     except Exception as exc:
         raise LlmError(
-            "ordinary-script GLM request failed: %s: %s"
+            "ordinary-script configured-model request failed: %s: %s"
             % (type(exc).__name__, str(exc)[:200])
         ) from exc
     migrated = _extract_strict_script_response(content)
     safe_receipt = _validate_script_receipt(
         receipt,
         content,
-        expected_model=expected_model,
+        expected_model=identity.model,
+        expected_provider=identity.provider,
+        expected_protocol=identity.protocol,
+        response_model_aliases=identity.response_model_aliases,
     )
-    audit_glm_script(analysis.scan.source, migrated, analysis)
+    audit_configured_model_script(analysis.scan.source, migrated, analysis)
     return ScriptMigrationArtifact(
         migrated_source=migrated,
         migrated_sha256=hashlib.sha256(
             migrated.encode("utf-8")
         ).hexdigest(),
         receipt=safe_receipt,
-        model=safe_receipt["response_model"],
+        model=identity.model,
         response_model=safe_receipt["response_model"],
-        provider="glm",
+        provider=identity.provider,
         response_content=content,
+        protocol=identity.protocol,
+        response_model_aliases=identity.response_model_aliases,
+    )
+
+
+def generate_qualified_script_with_configured_model(
+    analysis: ScriptAnalysis,
+    *,
+    qualified_analysis: object,
+    runtime_identity_provider: Callable[[], object],
+    fallback_accepted: bool,
+    expected_model: str,
+    expected_provider: str,
+    expected_protocol: str = OPENAI_CHAT_COMPLETIONS_PROTOCOL,
+    response_model_aliases: Tuple[str, ...] = (),
+    chat: Optional[Callable[[str, str], Tuple[str, Mapping[str, Any]]]] = None,
+) -> ScriptMigrationArtifact:
+    """Revalidate the qualified admission receipt immediately before a call.
+
+    The historical generator remains available for compatibility fixtures.
+    Production ordinary migration uses this gate so a name-only capability
+    result can never reach the configured model and runtime drift between
+    analysis and generation is detected before any remote side effect.
+    """
+
+    from numpilot.capabilities import RuntimeIdentity
+    from numpilot.capability_profile import CapabilityDecision
+    from numpilot.qualified_analysis import (
+        QualifiedScriptAnalysis,
+        analyze_qualified_script,
+    )
+
+    if not isinstance(analysis, ScriptAnalysis):
+        raise TypeError("analysis must be ScriptAnalysis")
+    if not isinstance(qualified_analysis, QualifiedScriptAnalysis):
+        raise TypeError("qualified_analysis must be QualifiedScriptAnalysis")
+    if not callable(runtime_identity_provider):
+        raise TypeError("runtime_identity_provider must be callable")
+    if type(fallback_accepted) is not bool:
+        raise TypeError("fallback_accepted must be a boolean")
+    if analysis.scan.source_sha256 != qualified_analysis.source_sha256:
+        raise ScriptMigrationError(
+            "qualified analysis is bound to another source hash"
+        )
+    if analysis.scan.source_path != qualified_analysis.source_path:
+        raise ScriptMigrationError(
+            "qualified analysis is bound to another source path"
+        )
+
+    try:
+        current_runtime = runtime_identity_provider()
+    except Exception as exc:
+        raise ScriptMigrationError(
+            "runtime identity refresh failed: %s" % type(exc).__name__
+        ) from exc
+    if not isinstance(current_runtime, RuntimeIdentity):
+        raise ScriptMigrationError(
+            "runtime identity provider did not return a verified RuntimeIdentity"
+        )
+    current_sha = getattr(current_runtime, "identity_sha256", None)
+    current_status = getattr(current_runtime, "status", None)
+    if (
+        current_status != "matched"
+        or not isinstance(current_sha, str)
+        or current_sha != qualified_analysis.runtime_identity_sha256
+    ):
+        raise ScriptMigrationError(
+            "runtime identity changed after qualified analysis"
+        )
+
+    fresh = analyze_qualified_script(
+        analysis.scan.source,
+        analysis.scan.source_path,
+        runtime_identity=current_runtime,
+    )
+    if fresh.to_dict() != qualified_analysis.to_dict():
+        raise ScriptMigrationError(
+            "qualified analysis changed during pre-model revalidation"
+        )
+
+    decision = fresh.decision
+    if decision is CapabilityDecision.FALLBACK_CONSENT:
+        if not fallback_accepted:
+            raise ScriptMigrationError(
+                "qualified fallback requires explicit fallback consent"
+            )
+    elif decision is not CapabilityDecision.DIRECT:
+        raise ScriptMigrationError(
+            "qualified decision is %s; configured model must not be called"
+            % decision.value
+        )
+    elif fallback_accepted:
+        raise ScriptMigrationError(
+            "direct qualified migration cannot carry fallback consent"
+        )
+
+    supported_rewrites = {
+        "array division -> numpy.divide",
+        "numpy.pi -> math.pi",
+    }
+    unsupported_rewrites = sorted(
+        set(fresh.required_rewrites) - supported_rewrites
+    )
+    if unsupported_rewrites:
+        raise ScriptMigrationError(
+            "qualified required rewrite is not implemented: %s"
+            % ", ".join(unsupported_rewrites)
+        )
+    if not analysis.scan.ok or analysis.unsupported or analysis.audit_required:
+        raise ScriptMigrationError(
+            "legacy source audit disagrees with qualified migration admission"
+        )
+    if decision is CapabilityDecision.DIRECT and analysis.fallbacks:
+        raise ScriptMigrationError(
+            "legacy route audit disagrees with direct qualified decision"
+        )
+    if decision is CapabilityDecision.FALLBACK_CONSENT and not analysis.fallbacks:
+        raise ScriptMigrationError(
+            "legacy route audit does not preserve the qualified fallback boundary"
+        )
+
+    return generate_script_with_configured_model(
+        analysis,
+        expected_model=expected_model,
+        expected_provider=expected_provider,
+        expected_protocol=expected_protocol,
+        response_model_aliases=response_model_aliases,
+        chat=chat,
+    )
+
+
+def generate_script_with_glm(
+    analysis: ScriptAnalysis,
+    *,
+    expected_model: str,
+    expected_provider: str,
+    chat: Optional[Callable[[str, str], Tuple[str, Mapping[str, Any]]]] = None,
+) -> ScriptMigrationArtifact:
+    """Compatibility alias for the provider-neutral generation contract."""
+
+    return generate_script_with_configured_model(
+        analysis,
+        expected_model=expected_model,
+        expected_provider=expected_provider,
+        chat=chat,
     )
 
 
@@ -1477,6 +2086,7 @@ def write_script_artifacts(
     fallback_accepted: bool,
     artifact: Optional[ScriptMigrationArtifact] = None,
     gap_request: Optional[Mapping[str, Any]] = None,
+    qualified_analysis: Optional[object] = None,
 ) -> Dict[str, str]:
     """Publish only an audited final file; failures never publish migrated.py."""
 
@@ -1515,6 +2125,20 @@ def write_script_artifacts(
         analysis.scan.source_sha256
     ):
         raise ScriptMigrationError("analysis source hash is inconsistent")
+    qualified_payload = None
+    if qualified_analysis is not None:
+        from numpilot.qualified_analysis import QualifiedScriptAnalysis
+
+        if not isinstance(qualified_analysis, QualifiedScriptAnalysis):
+            raise ScriptMigrationError("qualified analysis type is invalid")
+        if (
+            qualified_analysis.source_sha256 != analysis.scan.source_sha256
+            or qualified_analysis.source_path != analysis.scan.source_path
+        ):
+            raise ScriptMigrationError(
+                "qualified analysis source binding is inconsistent"
+            )
+        qualified_payload = qualified_analysis.to_dict()
     if artifact is not None and gap_request is not None:
         raise ScriptMigrationError(
             "one run cannot publish both migrated code and a gap request"
@@ -1537,22 +2161,45 @@ def write_script_artifacts(
                 raise ScriptMigrationError("fallback migration lacks explicit consent")
         elif fallback_accepted or analysis.fallbacks:
             raise ScriptMigrationError("non-fallback migration has fallback state")
+        if qualified_analysis is not None:
+            from numpilot.capability_profile import CapabilityDecision
+
+            expected_decision = (
+                CapabilityDecision.FALLBACK_CONSENT
+                if status == "migrated_with_fallback"
+                else CapabilityDecision.DIRECT
+            )
+            if qualified_analysis.decision is not expected_decision:
+                raise ScriptMigrationError(
+                    "migration status disagrees with qualified analysis"
+                )
         if status == "migrated_scoped_npu" and not analysis.scoped:
             raise ScriptMigrationError("scoped migration lacks scoped capability")
         if status == "migrated_strict_npu" and analysis.scoped:
             raise ScriptMigrationError("scoped capability cannot claim universal strict NPU")
         if not isinstance(artifact.model, str) or not artifact.model:
             raise ScriptMigrationError("migration artifact model identity is unavailable")
-        if artifact.provider != "glm" or not artifact.model.lower().startswith("glm-"):
-            raise ScriptMigrationError("migration artifact is not bound to GLM")
+        try:
+            identity = require_model_configuration(
+                artifact.provider,
+                artifact.model,
+                protocol=artifact.protocol,
+                response_model_aliases=artifact.response_model_aliases,
+            )
+        except ModelContractError as exc:
+            raise ScriptMigrationError(
+                "migration artifact configured-model identity is invalid: %s" % exc
+            ) from exc
         safe_receipt = _validate_script_receipt(
             artifact.receipt,
             artifact.response_content,
-            expected_model=artifact.model,
+            expected_model=identity.model,
+            expected_provider=identity.provider,
+            expected_protocol=identity.protocol,
+            response_model_aliases=identity.response_model_aliases,
         )
         if (
             artifact.response_model != safe_receipt["response_model"]
-            or artifact.model != safe_receipt["response_model"]
         ):
             raise ScriptMigrationError(
                 "migration artifact response_model evidence is inconsistent"
@@ -1560,7 +2207,7 @@ def write_script_artifacts(
         extracted = _extract_strict_script_response(artifact.response_content)
         if extracted != artifact.migrated_source:
             raise ScriptMigrationError("migration artifact is not bound to model content")
-        audit_glm_script(
+        audit_configured_model_script(
             analysis.scan.source,
             artifact.migrated_source,
             analysis,
@@ -1569,7 +2216,7 @@ def write_script_artifacts(
         if hashlib.sha256(migrated_payload).hexdigest() != artifact.migrated_sha256:
             raise ScriptMigrationError("migration artifact hash is inconsistent")
     report: Dict[str, Any] = {
-        "schema_version": 1,
+        "schema_version": 2,
         "status": status,
         "mode": "script",
         "analysis": analysis.to_dict(),
@@ -1578,7 +2225,8 @@ def write_script_artifacts(
         "performance_valid": False,
         "execution_performed": False,
         "numerical_verification": "not_run",
-        "generated_by": "glm" if artifact is not None else None,
+        "generated_by": "configured_model" if artifact is not None else None,
+        "actual_remote_call": artifact is not None,
         "source_sha256": analysis.scan.source_sha256,
         "ast_audit": "passed" if artifact is not None else "not_run",
         "published_files": (
@@ -1586,13 +2234,18 @@ def write_script_artifacts(
             else (["gap-request.json"] if gap_request is not None else [])
         ),
     }
+    if qualified_payload is not None:
+        report["qualified_analysis"] = qualified_payload
     if artifact is not None:
         report.update({
             "migrated_sha256": artifact.migrated_sha256,
-            "model": safe_receipt["response_model"],
+            "model": artifact.model,
+            "configured_model": artifact.model,
             "requested_model": safe_receipt["requested_model"],
             "response_model": safe_receipt["response_model"],
             "provider": artifact.provider,
+            "protocol": artifact.protocol,
+            "response_model_aliases": list(artifact.response_model_aliases),
             "llm_receipt": safe_receipt,
         })
     gap_payload = None

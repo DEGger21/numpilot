@@ -31,8 +31,8 @@ from numpilot import operator_spec
     signature_variants=({"positional_args": 3, "keyword_args": ()},),
     dtype_rules=("float32",),
     shape_rules=("rank>=1", "contiguous"),
-    source="https://gitcode.com/cann/ops-nn.git@0123456789abcdef:experimental/optim/apply_gradient_descent",
-    license="Apache-2.0",
+    source="https://gitcode.com/cann/ops-nn.git@0123456789abcdef0123456789abcdef01234567:experimental/optim/apply_gradient_descent",
+    license="CANN Open Software License Agreement Version 2.0",
     target_soc="ascend910b",
     cann_version="9.0.0",
 )
@@ -64,8 +64,8 @@ def _spec_kwargs():
         ),
         "dtype_rules": ("float32",),
         "shape_rules": ("rank>=1", "contiguous"),
-        "source": "https://gitcode.com/cann/ops-nn.git@0123456789abcdef:path",
-        "license": "Apache-2.0",
+        "source": "https://gitcode.com/cann/ops-nn.git@0123456789abcdef0123456789abcdef01234567:path",
+        "license": "CANN Open Software License Agreement Version 2.0",
         "target_soc": "ascend910b",
         "cann_version": "9.0.0",
     }
@@ -85,6 +85,43 @@ def test_runtime_decorator_attaches_round_trippable_contract():
         oracle(np.array([1.0]), np.array([0.1]), np.array([2.0])),
         np.array([0.8]),
     )
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    (
+        ("license", "Apache-2.0", "CANN OSL"),
+        (
+            "source",
+            "https://example.com/cann/ops-nn.git@"
+            + "0" * 40
+            + ":optim/apply_gradient_descent",
+            "official origin",
+        ),
+        (
+            "source",
+            "https://gitcode.com/cann/ops-nn.git@"
+            + "0" * 16
+            + ":optim/apply_gradient_descent",
+            "full commit",
+        ),
+        (
+            "source",
+            "https://gitcode.com/cann/ops-nn.git@"
+            + "0" * 40
+            + ":optim/../apply_gradient_descent",
+            "unsafe",
+        ),
+    ),
+)
+def test_ops_nn_reuse_requires_official_hash_bound_source_and_license(
+    field, value, message
+):
+    kwargs = _spec_kwargs()
+    kwargs[field] = value
+
+    with pytest.raises(ValueError, match=message):
+        OperatorSpec(**kwargs)
 
 
 def test_analysis_and_ast_rewrite_domain_helper_without_numpy_spoofing():
@@ -144,7 +181,7 @@ def test_operator_spec_target_drift_fails_closed(tmp_path):
 
 def test_non_literal_or_wrong_signature_operator_spec_is_blocked():
     dynamic = DOMAIN_SOURCE.replace(
-        'source="https://gitcode.com/cann/ops-nn.git@0123456789abcdef:experimental/optim/apply_gradient_descent",',
+        'source="https://gitcode.com/cann/ops-nn.git@0123456789abcdef0123456789abcdef01234567:experimental/optim/apply_gradient_descent",',
         'source="prefix" + "suffix",',
     )
     wrong_signature = DOMAIN_SOURCE.replace(

@@ -1,20 +1,31 @@
 ---
 name: asnumpy-custom-op-integration
-description: Integrate a built and precision-targeted Ascend custom operator into AsNumpy using its manifest generator, private OPP loader, wheel build, and NPU tests. Use after operator generation; do not use this skill to write or optimize the Ascend C operator itself.
+description: Integrate either a verified installed official ACLNN candidate or a built custom operator into AsNumpy using the detected engineering architecture, isolated overlays, wheel build, and NPU tests. Do not use this skill to write or optimize an Ascend C kernel.
 ---
 
-# AsNumpy Custom-Operator Integration
+# AsNumpy Operator Integration
 
-Use this skill only for the boundary between a separately built custom OPP and
-AsNumpy. Ascend C semantics, kernel implementation, compilation, and kernel
-debugging belong to the external CANNBot workflow. Do not copy CANNBot content
-into this skill.
+Use this skill only for the boundary between a verified operator candidate and
+AsNumpy. The candidate route is authoritative:
+
+- `official_binary` reuses an installed ACLNN kernel and must follow
+  [references/official-aclnn-existing-module.md](references/official-aclnn-existing-module.md);
+- `official_source` uses a separately materialized, built, and qualified
+  pinned ops-nn snapshot;
+- `remote_llm` uses a separately built custom OPP produced by the external
+  CANNBot workflow.
+
+Never regenerate an official kernel. Ascend C kernel generation, compilation,
+and kernel debugging for `remote_llm` belong to CANNBot. Do not copy CANNBot
+content into this skill.
 
 ## Required inputs
 
-- the immutable operator artifact and its model-generated adapter contract;
-- the installed private OPP root, including its exact vendor directory, ACLNN
-  headers, exported symbols, and `libcust_opapi.so`;
+- the immutable route-neutral operator candidate and adapter contract;
+- for `official_binary`, the exact installed CANN header, shared library,
+  symbols, catalog mapping, and semantic-review receipts;
+- for a custom OPP, its exact private vendor directory, ACLNN headers,
+  exported symbols, and `libcust_opapi.so`;
 - a read-only AsNumpy source tree;
 - the NumPy oracle and admitted dtype/shape rules;
 - raw build, runtime, or precision diagnostics for a repair iteration.
@@ -23,6 +34,11 @@ Fail closed if an input is absent or its identity/hash does not match its
 report. Never guess a vendor, header, symbol, dtype, shape, or output contract.
 
 ## Route by target AsNumpy architecture
+
+If the contract strategy is `official_aclnn_existing_module`, read
+[references/official-aclnn-existing-module.md](references/official-aclnn-existing-module.md)
+and obey the supplied reviewed existing-module context plan. Do not select a
+custom-op manifest/manual route, add `cust_opapi`, or invent a private vendor.
 
 If `scripts/gen_custom_ops.py` and `csrc/custom_ops/registry/` exist, read
 [references/manifest-workflow.md](references/manifest-workflow.md) and use the
@@ -40,17 +56,19 @@ For build, runtime, precision, activation, or repair decisions, read
 
 ## Workflow invariants
 
-1. Inspect the target generator/schema and one enabled reference operator.
-2. Inventory the private OPP without modifying it. Bind `opp_vendor` to the
-   actual vendor directory and bind ACLNN names to installed headers and
-   exported symbols.
+1. Inspect the exact route, target context plan, and one enabled implementation
+   in the same AsNumpy module.
+2. Inventory the selected official binary or private OPP without modifying it.
+   Bind every header, library, symbol, and semantic restriction to receipts.
 3. Have the configured user model produce an isolated overlay. A local
    orchestrator may validate and mechanically apply it but must not author or
    repair model-owned integration files.
-4. Regenerate glue and run the generator's check mode. Generated files must be
-   reproducible from manifests.
-5. Build a wheel with custom operators required, not auto-disabled. Install it
-   into an isolated environment and keep every custom OPP private to the run.
+4. For a manifest route, regenerate glue and run the generator's check mode.
+   For an existing-module route, reject every file outside its reviewed overlay
+   allow-list.
+5. Build and install the wheel in an isolated environment. A custom-OPP route
+   must keep custom operators required; an official-binary route must link only
+   the verified installed CANN libraries and must not add a custom OPP.
 6. Run real NPU tests against the NumPy oracle. A skip, CPU fallback, import-only
    check, or unverified execution source is not a precision pass.
 7. Return raw compiler/runtime/precision logs to the configured model for each

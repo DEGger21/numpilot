@@ -1,45 +1,17 @@
-"""AsNumpy 覆盖集快照。
+"""Compatibility views over the versioned AsNumpy capability catalog."""
 
-来源:真实 asnumpy/src/asnumpy/__init__.py 的 _LAZY_MAPPING 键。
-再生成:python -c "import asnumpy,inspect; ..." 或手工比对上游。
-本 demo 用静态快照,避免运行时依赖 asnumpy。
-"""
+from numpilot.capability_catalog import ASNUMPY_CAPABILITY_CATALOG
 
-# 从 _LAZY_MAPPING 派生的算子名(去掉 dtype 别名与模块名如 linalg/random/custom_ops)
-SUPPORTED_OPS = frozenset({
-    # array 创建
-    "empty", "empty_like", "eye", "full", "full_like", "identity",
-    "linspace", "ones", "ones_like", "zeros", "zeros_like",
-    # linalg.direct
-    "dot", "einsum", "inner", "matmul", "outer", "vdot",
-    # logic
-    "all", "any", "equal", "greater", "greater_equal", "isfinite",
-    "isinf", "isneginf", "isposinf", "less", "less_equal",
-    "logical_and", "logical_not", "logical_or", "logical_xor", "not_equal",
-    # math
-    "absolute", "add", "amax", "amin", "around", "arccos", "arccosh",
-    "arcsin", "arcsinh", "arctan", "arctan2", "arctanh", "ceil", "clip",
-    "copysign", "cos", "cosh", "cross", "cumprod", "cumsum", "deg2rad",
-    "degrees", "divide", "divmod", "exp", "exp2", "expm1", "fabs", "fix",
-    "floor", "floor_divide", "fmax", "fmin", "fmod", "float_power", "gelu",
-    "gcd", "heaviside", "hypot", "lcm", "ldexp", "log", "log10", "log1p",
-    "log2", "logaddexp", "logaddexp2", "max", "maximum", "min", "minimum",
-    "mod", "modf", "multiply", "nan_to_num", "nancumprod", "nancumsum",
-    "nanmax", "nanprod", "nansum", "negative", "power", "positive", "prod",
-    "rad2deg", "radians", "real", "reciprocal", "relu", "remainder", "rint",
-    "round_", "sign", "signbit", "sin", "sinc", "sinh", "sqrt", "square",
-    "subtract", "sum", "tan", "tanh", "true_divide", "trunc",
-    # sorting / statistics / nn
-    "sort", "mean", "softmax",
-    # custom_ops
-    "angle",
-})
+
+# Historical callers consume a top-level frozenset.  Qualified/nested keys are
+# intentionally available only through ``ASNUMPY_CAPABILITY_CATALOG``.
+SUPPORTED_OPS = ASNUMPY_CAPABILITY_CATALOG.top_level_keys
 
 
 # asnumpy 提供的"自定义 / 非 numpy 原生"算子:relu/gelu/softmax 是 numpy 没有的 nn 算子,
 # 历史分类名保留兼容：这些是已有 AsNumpy 扩展 API，不代表本次迁移新生成了
 # Ascend C 自定义算子；真实实现来源仍以 capability/provenance manifest 为准。
-CUSTOM_OPS = frozenset({"relu", "gelu", "softmax", "angle"})
+CUSTOM_OPS = frozenset({"relu", "gelu", "softmax"})
 
 
 def is_supported(name: str) -> bool:
@@ -48,5 +20,5 @@ def is_supported(name: str) -> bool:
 
 
 def is_custom(name: str) -> bool:
-    """判断某算子是否为 asnumpy 自定义 / 非 numpy 原生算子(relu/gelu/softmax/angle)。"""
+    """判断某算子是否为 AsNumpy 非 NumPy 原生扩展 API。"""
     return name in CUSTOM_OPS

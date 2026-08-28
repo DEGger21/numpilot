@@ -1,0 +1,98 @@
+{
+  "activation_performed": false,
+  "audit_id": "asnumpy-0.3.1.dev4-g1929a3ba4-init8761f7f9-cannac907b3a-linalgd2965c2e-random6c9c7891-pinned-source-receipt-v2",
+  "backend": "npu",
+  "backend_version": "0.3.1.dev4+g1929a3ba4",
+  "cann_version": "9.0.0",
+  "gap_specs": [
+    {
+      "api_name": "matmul",
+      "asnumpy_api": "asnumpy.matmul",
+      "callsites": [
+        {
+          "call_expr": "numpy.matmul(...)",
+          "col_offset": 9,
+          "lineno": 14,
+          "qualified_api": "numpy.matmul",
+          "reason": "user rejected audited AsNumpy cpu_fallback; a separate NPU runtime must be generated, integrated, and qualified"
+        }
+      ],
+      "cann_version": "9.0.0",
+      "dtype_rules": [
+        "runtime_profile_required"
+      ],
+      "gap_id": "matmul-3f5218f98671d72e",
+      "qualified_api": "numpy.matmul",
+      "reference_cases": [],
+      "route": "ascendc_registry_candidate",
+      "route_decisions": [
+        {
+          "reason": "cpu_fallback",
+          "route": "existing_asnumpy_fallback",
+          "status": "user_rejected"
+        },
+        {
+          "reason": "integrate a new/private AsNumpy callable; do not relabel or overwrite the audited fallback runtime",
+          "route": "replacement_runtime",
+          "status": "required_before_qualification"
+        },
+        {
+          "reason": "the configured model may prepare an isolated draft; execution and activation remain gated",
+          "route": "ascendc_registry",
+          "status": "candidate_for_draft"
+        }
+      ],
+      "schema_version": 1,
+      "semantic_source": "numpy.matmul",
+      "shape_rules": [
+        "runtime_profile_required"
+      ],
+      "signature_variants": [
+        {
+          "keyword_args": [],
+          "positional_args": 2
+        }
+      ],
+      "source_path": "/home/ma-user/work/numpilot/examples/ops_nn_matmul_inference.py",
+      "source_sha256": "4cf236f427ae419a7a4969499e4197ed31be4ba4f40bd26e686886f69ce96046",
+      "target_soc": "Ascend910B4"
+    }
+  ],
+  "gaps": [
+    {
+      "asnumpy_api": "asnumpy.matmul",
+      "callsites": [
+        {
+          "api_path": "matmul",
+          "col_offset": 9,
+          "keyword_args": [],
+          "kind": "call",
+          "lineno": 14,
+          "positional_args": 2,
+          "qualified_api": "numpy.matmul",
+          "synthetic": false
+        }
+      ],
+      "current_available": true,
+      "current_provenance": "cpu_fallback",
+      "current_status": "fallback_available",
+      "generatable": true,
+      "qualified_api": "numpy.matmul",
+      "reason": "asnumpy@1929a3ba4: linalg/direct.py calls numpy.matmul on host arrays",
+      "signature_variants": [
+        [
+          2,
+          []
+        ]
+      ]
+    }
+  ],
+  "generated_code": false,
+  "qualification_performed": false,
+  "request_type": "script_api_gap",
+  "schema_version": 1,
+  "source_path": "/home/ma-user/work/numpilot/examples/ops_nn_matmul_inference.py",
+  "source_sha256": "4cf236f427ae419a7a4969499e4197ed31be4ba4f40bd26e686886f69ce96046",
+  "status": "gap_generation_required",
+  "target_soc": "Ascend910B4"
+}
