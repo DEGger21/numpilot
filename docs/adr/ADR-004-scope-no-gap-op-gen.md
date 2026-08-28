@@ -1,8 +1,11 @@
-# ADR-004:裁掉缺口算子自动生成(仅标记并终止)
+# ADR-004:早期 Demo 不做缺口算子自动生成
 
-- 状态:已接受，2026-07-18 修订
+- 状态:已被当前 Gap 恢复设计取代（Superseded）
 - 日期:2026-07-02
-- 相关:[quality-scenarios.md](../quality-scenarios.md) QA-5、`NumPilot20260615-v1.pdf`
+- 取代文档:[Gap 恢复状态](../gap-recovery-state.md)、[系统架构](../architecture.md)
+
+> 本 ADR 只记录 Demo v1 的历史范围决策，不描述当前 `0.3.x` 能力。当前实现已具备
+> official-first 解析和受约束候选链，但自动流程上限仍不是通用 activate/闭环发布。
 
 ## 背景(Context)
 

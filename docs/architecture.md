@@ -391,8 +391,8 @@ installed `official_binary` candidate 已有 hash-bound Artifact/adapter 输入�
 integration/qualification validator。
 六门固定为 artifact integrity、build、UT、NumPy numerical、public AsNumpy API 和真实 NPU
 execution；activation 是之后的独立状态。
-详细评估与分层实现状态见
-[官方算子复用评估](OPS-NN-REUSE-ASSESSMENT-20260825.md)，可编辑三页图见
+详细状态与授权边界见
+[Gap 恢复状态合同](gap-recovery-state.md)，可编辑三页图见
 [官方算子解析与缺口恢复架构图](numpilot-official-operator-resolution.drawio)。
 
 因此代码中的唯一状态名必须逐级如实记录：
@@ -474,9 +474,10 @@ ordinary `benchmark-script` 的强 NPU evidence 必须绑定：
 或性能，后者不外推到任意 Python、profiler 或冷启动端到端。legacy `bench-cpu/bench-npu` 只对其 contract 输入和由该链生成的产物负责；
 它们不得重新迁移普通 artifact 后冒充同一证据。
 
-当前比赛默认例子是 `examples/competition_power_log_exp.py`；根目录 `run_demo.sh` 编排
-五态分析、真实 configured GLM、数值门和产品 benchmark。历史
-[Demo v1 Case 01 定向证据](../evidence/demotest-case01-20260825/README.md)只作归档专项证据。
+当前比赛默认例子是 `examples/poisson_source_smooth_l1_map.py`；根目录 `run_demo.sh` 编排
+五态分析、真实 configured model、数值门和产品 benchmark。发布分支只保留
+[Poisson 应用阶段](../evidence/competition-poisson-stage-20260828/README.md)与
+[逐元素优势区间](../evidence/competition-ordinary-20260828/README.md)两份当前证据。
 
 ## 7. 包结构与当前扩展点
 

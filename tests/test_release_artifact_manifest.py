@@ -56,6 +56,9 @@ def _sdist(path: Path, *, extra: tuple[str, bytes] | None = None) -> None:
         f"{root}/THIRD_PARTY_NOTICES.md": b"notices\n",
         f"{root}/pyproject.toml": b"[build-system]\n",
         f"{root}/run_demo.sh": b"#!/bin/sh\n",
+        f"{root}/docs/numpilot-architecture-paper-style-zh-readable.pptx": b"pptx\n",
+        f"{root}/evidence/MANIFEST.sha256": b"",
+        f"{root}/tools/check_release_tree.py": b"# tool\n",
         f"{root}/tools/release_artifact_manifest.py": b"# tool\n",
     }
     if extra is not None:
@@ -154,6 +157,17 @@ def test_sdist_rejects_files_that_must_not_ship(tmp_path, member):
         )
 
 
+@pytest.mark.parametrize("suffix", ["runtime.db", "profile.log", "output.npy", "result.npz"])
+def test_sdist_rejects_intermediate_artifact_suffixes(tmp_path, suffix):
+    sdist = tmp_path / f"{NAME}-{VERSION}.tar.gz"
+    _sdist(sdist, extra=(f"{NAME}-{VERSION}/evidence/{suffix}", b"noise"))
+
+    with pytest.raises(release_manifest.ReleaseManifestError, match="intermediate"):
+        release_manifest.inspect_artifact(
+            sdist, expected_name=NAME, expected_version=VERSION
+        )
+
+
 def test_archive_path_traversal_is_rejected(tmp_path):
     wheel = tmp_path / f"{NAME}-{VERSION}-py3-none-any.whl"
     _wheel(wheel, extra=("../escape", b"unsafe"))
@@ -186,3 +200,6 @@ def test_sdist_manifest_excludes_historical_internal_material():
     )
     assert "exclude todo.md" in manifest.splitlines()
     assert "exclude NumPilot20260615-v1.pdf" in manifest.splitlines()
+    assert "prune tools" in manifest.splitlines()
+    assert "include tools/check_release_tree.py" in manifest.splitlines()
+    assert "include tools/release_artifact_manifest.py" in manifest.splitlines()

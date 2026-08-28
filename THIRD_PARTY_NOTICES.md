@@ -15,14 +15,10 @@ NumPilot 自有源码按顶层 Apache-2.0 发布。依赖和证据材料仍受�
 | Huawei CANN / CANNBot Skills | NPU 工具链、模板与算子开发参考 | CANN Open Software License Agreement Version 2.0；需遵守其用途和分发限制 |
 | Huawei ops-nn | official-first 缺口解析与定向算子来源；不随 NumPilot 默认安装或分发 | CANN Open Software License Agreement Version 2.0；下载、使用、修改或分发前需显式接受并遵守用途和分发限制 |
 
-`evidence/poisson-ritz-p0-20260821/qualification-evidence-v5/*/artifact/` 中的定向算子材料
-源自固定版本 CANNBot Skill 驱动的生成与修复流程，按其 `OperatorSpec` 标记为 CANN Open
-Software License Agreement Version 2.0。完整协议副本位于该证据目录的 `LICENSE`。
-
 项目不会把 AsNumpy、CANN、ops-nn 或完整 CANNBot 仓库复制进 Python 分发包。当前
 `numpilot bootstrap` 只支持按固定来源身份准备用户选择的 AsNumpy/CANNBot 依赖；
 official-first resolver 只读检查用户显式提供的 CANN 根目录和本地 ops-nn Git 对象，不会由
 bootstrap、import、analyze 或 migrate 隐式拉取源码。NumPilot 仓内仅保存自有的 resolver、
-来源/哈希收据和 AsNumpy 集成 patch，不重新分发 ops-nn 源码。用户仍应核对各自许可证与
+来源/哈希收据和一份 AsNumpy 集成参考 patch，不重新分发 ops-nn 或 CANNBot 生成的算子源码。用户仍应核对各自许可证与
 部署要求。发布二进制、wheel、OPP 或比赛交付包时，还应生成对应版本的完整 SBOM 和逐文件
 许可证清单。

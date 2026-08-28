@@ -29,7 +29,6 @@ numpilot = "numpilot.__main__:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=7", "build>=1"]
-demo = ["numpy==1.26.4", "loguru==0.7.3"]
 bootstrap = [
   "numpy>=2.0",
   "build>=1",

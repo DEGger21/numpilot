@@ -47,6 +47,7 @@ FORBIDDEN_PATH_PARTS = {
     ".numpilot-state",
     "__pycache__",
 }
+FORBIDDEN_SUFFIXES = {".db", ".log", ".npy", ".npz", ".orig", ".pyc", ".pyo", ".tmp"}
 
 
 class ReleaseManifestError(RuntimeError):
@@ -114,7 +115,8 @@ def _check_allowed_member(path: str) -> None:
         parts[-1] not in FORBIDDEN_BASENAMES,
         f"archive contains a forbidden release file: {path}",
     )
-    _require(not parts[-1].endswith((".pyc", ".pyo")), f"bytecode in archive: {path}")
+    suffix = PurePosixPath(parts[-1]).suffix.lower()
+    _require(suffix not in FORBIDDEN_SUFFIXES, f"intermediate artifact in archive: {path}")
 
 
 def _file_record(path: str, size: int, digest: str) -> dict[str, Any]:
@@ -258,6 +260,9 @@ def _check_required_members(kind: str, files: list[dict[str, Any]], name: str) -
             "THIRD_PARTY_NOTICES.md",
             "pyproject.toml",
             "run_demo.sh",
+            "docs/numpilot-architecture-paper-style-zh-readable.pptx",
+            "evidence/MANIFEST.sha256",
+            "tools/check_release_tree.py",
             "tools/release_artifact_manifest.py",
         ]
     missing = [suffix for suffix in required if not _has_suffix(paths, suffix)]

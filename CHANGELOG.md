@@ -65,9 +65,10 @@
 - 修复 ordinary 直接发现 missing API 时只写报告、不发布 `gap-request.json` 的断点；现在
   missing 与用户拒绝 audited fallback 两条路径都会生成 canonical GapSpec hand-off，且均不在
   缺口未解决时调用迁移模型；
-- 增加 10 个 ordinary demo 的黄金分类、7 个真实迁移结果，以及 strict/scoped/fallback 分层的
-  数值、cold-process、steady-script 和固定规模诊断证据；
-- 当前完整回归为 `1459 passed`，公开 evidence manifest 绑定 179 个精选文件。
+- 建立 `release/competition-submission` 比赛发布分支，重写可渲染 HTML 徽章首页与新机器
+  quickstart；删除历史 PDF、WIP/AI 交接稿、旧 profiler/数组/日志和已否决展示材料；
+- 公开 evidence 收敛为 Poisson 应用阶段与逐元素优势区间两案，新增发布树只读门禁，自动检查
+  文件白名单、大小/后缀、版本、证据清单、PPTX 完整性和本机绝对路径。
 
 ## 0.2.0a2 - 2026-08-25
 

@@ -50,7 +50,7 @@ from numpilot.gaps.recovery_ingest import ingest_official_recovery
 
 REPO = Path(__file__).resolve().parents[1]
 SOURCE = REPO / "examples" / "ops_nn_matmul_inference.py"
-EVIDENCE = REPO / "evidence" / "ops-nn-matmul-20260827"
+EVIDENCE = REPO / "tests" / "fixtures" / "ops-nn-recovery"
 MIGRATION = EVIDENCE / "pre-integration-gap-v2" / "script-migration-report.json"
 GAP_REQUEST = EVIDENCE / "pre-integration-gap-v2" / "gap-request.json"
 BASE_OFFICIAL = EVIDENCE / "official-resolution-linkage-v2.json"

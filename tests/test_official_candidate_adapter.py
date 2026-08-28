@@ -40,7 +40,7 @@ from numpilot.gaps.recovery import (
 
 
 REPO = Path(__file__).resolve().parents[1]
-EVIDENCE = REPO / "evidence" / "ops-nn-matmul-20260827"
+EVIDENCE = REPO / "tests" / "fixtures" / "ops-nn-recovery"
 GAP_REQUEST = EVIDENCE / "pre-integration-gap-v2" / "gap-request.json"
 OFFICIAL_REPORT = EVIDENCE / "official-resolution-linkage-v2.json"
 

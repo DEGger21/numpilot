@@ -4,6 +4,9 @@
 不得继续复用历史 `v0.2.0a1`/`v0.2.0a2` 标签。每项都是手工发布门禁；任一必需项失败都应
 停止发布、保留日志并修复后从干净源码重新开始。
 
+发布工作统一在 `release/competition-submission` 分支进行。该分支是持续整理的提交候选；只有
+完成本清单、冻结版本并创建 annotated tag 后，才能称为 RC。
+
 ## 1. 冻结发布身份
 
 - [ ] `pyproject.toml`、`numpilot/__init__.py` 和 CHANGELOG 的版本完全一致，且版本尚未被发布；
@@ -18,6 +21,8 @@
 ## 2. 干净源码门禁
 
 - [ ] 所有预期源码、测试和文档均已纳入版本控制；没有意外的未跟踪文件；
+- [ ] `python tools/check_release_tree.py --require-clean` 通过：只含两份当前公开证据，无 WIP、
+  profiler 数据库、数组、日志、缓存、构建目录或大体积历史材料；
 - [ ] `git status --short` 为空，HEAD 是计划发布的唯一 commit；
 - [ ] `git diff --check` 通过；
 - [ ] 从该 commit 创建全新 checkout/worktree，后续构建和安装验证只在该干净副本进行；
@@ -32,6 +37,8 @@
   同一 configured-GLM artifact 完成至少 20 样本的 opt-in 真机验收；
 - [ ] 验证 `python -m numpilot --help`、`python -m numpilot --version` 及所有公开子命令入口；
 - [ ] 核对精选证据：`sha256sum -c evidence/MANIFEST.sha256`；
+- [ ] 用 PowerPoint/WPS/LibreOffice 打开 `docs/numpilot-architecture-paper-style-zh-readable.pptx`，
+  确认无字体替换导致的溢出，实线/虚线与当前/目标状态语义一致；
 - [ ] 保存 Python、NumPilot、NumPy、AsNumpy、CANN、设备和操作系统版本到发布记录。
 
 ## 4. 从零构建
