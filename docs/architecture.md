@@ -1,8 +1,18 @@
 # NumPilot 当前架构
 
-> 版本：ordinary 主流程与 strict-NPU resident benchmark hardening，2026-08-28。本文区分“已经落地的
-> 通用接口/原语”“单个受限案例已经验证的路径”和“下一阶段自动闭环”，不把局部资格化
-> 外推成通用能力。
+> 架构文档更新：2026-08-31；仓库公开 NPU 证据截至 2026-08-28。本文区分“已经落地的通用接口/
+> 原语”“单个受限案例已经验证的路径”和“下一阶段自动闭环”，不把局部资格化外推成通用能力。
+
+完整 v6 架构图：[中文 SVG](numpilot-zh-v6.svg) · [English SVG](numpilot-en-v6.svg)。
+可机器审计边界图：[中文](assets/architecture/numpilot-architecture-zh.svg) ·
+[English](assets/architecture/numpilot-architecture-en.svg)。可编辑版：
+[中文 PPT](numpilot-zh.pptx) · [English PPT](numpilot-en.pptx)。单页图以实线标识已实现路径、以
+虚线标识规划路径。缺口输出因路由而异：官方二进制通用链到 `CANDIDATE_READY`，仅已审计的
+installed-ACLNN MatMul 定向切片到 `ADAPTER_CANDIDATE`，ops-nn 当前输出源码证据，固定 CANNBot
+Skills 与 configured model 当前输出未验证算子草稿。
+
+README 中的 v6 SVG 是完整展示版，文字已转为轮廓并内嵌了位图 Logo；文本化的边界图单独用于机器审计。
+PPT 保留原稿几何与视觉风格，公开发布前仍需用 PowerPoint/WPS 人工检查字体替换、文本溢出和线型。
 
 NumPilot 当前默认解决一个直接问题：用户提交带 `import numpy as np` 的普通纯 NumPy 文件，
 系统不执行源码，先检查实际 AsNumpy capability，再由用户配置模型生成受精确 AST/回执约束的迁移
@@ -47,7 +57,9 @@ flowchart TB
     BENCH[可选 benchmark-script<br/>单核 CPU / strict-NPU resident 门]
     BRECEIPT[write-once benchmark receipt]
     SRC --> SCAN --> CAP --> DECIDE
-    DECIDE --> MODEL --> AUDIT --> ARTIFACT
+    DECIDE -->|DIRECT / accepted fallback| MODEL --> AUDIT --> ARTIFACT
+    DECIDE -->|GAP_REQUIRED| GAP[official-first route-specific evidence]
+    DECIDE -->|audit required / blocked| STOP[fail closed]
     ARTIFACT --> VERIFY --> VRECEIPT
     ARTIFACT --> BENCH --> BRECEIPT
   end
@@ -69,8 +81,12 @@ flowchart TB
   核对全部已审计 Python wrapper hash；不会仅凭 commit 文本放行。
 - receipt 是当前用户边界内的本地 lineage/漂移门，不是签名供应链证明；不承诺对抗同一
   用户或 root 主动改写 receipt 与安装文件。
-- ordinary script 扫描和迁移阶段都不执行用户源码；只有独立的 `verify-script` 是显式代码执行
-  命令。
+- ordinary script 扫描和迁移阶段不执行用户源码，但 `migrate` 会把完整源码发送给用户配置的远端
+  模型。gap/operator 生成与修复会发送有界缺口合同、静态语义函数、选定 CANNBot Skill 上下文及
+  适用的草稿/诊断；AsNumpy adapter 路径会发送按目标投影的源码/头文件、Skill 上下文、overlay 与
+  诊断。CANNBot 提供工作流上下文，真正生成草稿的仍是 configured remote model。`verify-script`、
+  `benchmark-script` 与演示会以当前用户权限执行原脚本和候选；`python -I` 不是 OS 沙箱，不可信
+  输入必须使用独立容器或虚拟机。
 - `verify-script` 已提供 hash-bound 的通用基础数值验证，但固定
   `strict_npu_verified=false`、`performance_valid=false`、`os_sandbox=false`。
 - `benchmark-script` 已提供首版 ordinary strict-NPU resident 性能门：它只接受真实
@@ -291,8 +307,7 @@ GapSpec
     ├─ clean no_match：继续查询本地固定 ops-nn
     └─ incompatible / ambiguous / error：失败关闭
   → 固定 CANN 版本的本地 ops-nn Git object 只读查询
-    ├─ 候选：语义审计 → official Artifact → 私有 OPP
-    │         → configured model 返回 adapter exact edits → 本地重建 candidate
+    ├─ 候选 / 歧义：当前只发布源码发现证据；物化、构建与 adapter 接线尚未实现
     ├─ clean no_match：才进入 CANNBot Skill + configured model 新 kernel generation
     └─ incompatible / ambiguous / error：失败关闭
   → 仅 full-local-recovery 可授权未来 integrate / 六门 qualification / activate / rescan
@@ -411,8 +426,8 @@ created → analyzed → gap_prepared → resolved
 
 通用 provider 路径通常只产生 `prepared` 或 `generated_unverified`。Recovery 的 installed
 ACLNN 路线当前可到 `CANDIDATE_READY`，reviewed MatMul 可把未验证 adapter 绑定到
-`ADAPTER_CANDIDATE`，这也是 `candidate-generation` 当前的强制终点；pinned ops-nn resolver 仍只
-提供发现证据。MatMul 案例另行完成了
+`ADAPTER_CANDIDATE`；pinned ops-nn resolver 仍只提供发现证据，CANNBot 产物也不会自动成为
+adapter。MatMul 案例另行完成了
 installed-ACLNN adapter、六门 qualification、精确 runtime activation、rescan 和最终迁移，
 但没有实现可复用于任意候选的 `official_source` Artifact、定向构建/私有 OPP 或统一 runner。
 adapter 与 qualification/overlay 仍是可独立调用的安全原语，不是通用自动恢复流。
@@ -475,7 +490,7 @@ ordinary `benchmark-script` 的强 NPU evidence 必须绑定：
 它们不得重新迁移普通 artifact 后冒充同一证据。
 
 当前比赛默认例子是 `examples/poisson_source_smooth_l1_map.py`；根目录 `run_demo.sh` 编排
-五态分析、真实 configured model、数值门和产品 benchmark。发布分支只保留
+五态分析、真实 configured model、数值门和产品 benchmark。公开发布内容只保留
 [Poisson 应用阶段](../evidence/competition-poisson-stage-20260828/README.md)与
 [逐元素优势区间](../evidence/competition-ordinary-20260828/README.md)两份当前证据。
 

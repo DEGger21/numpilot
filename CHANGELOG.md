@@ -2,19 +2,22 @@
 
 ## 0.3.0a1.dev0 - Unreleased
 
+- 将公开首页整理为英文 `README.md` 与中文 `README.zh-CN.md`，增加双语安装/验收指南、按代码
+  边界更新的双语 SVG 架构主图，以及保持既有视觉风格且待 PowerPoint/WPS 人工视觉核查的
+  `docs/numpilot-en.pptx` / `docs/numpilot-zh.pptx`；同步收敛双分支 PR 发布约定；
 - 增加可选的 `NUMPILOT_LLM_REQUIRE_PROXY=1` fail-closed 门禁：真实模型请求必须命中与
   endpoint 协议匹配的标准 HTTP(S) 代理，缺失代理或命中 `NO_PROXY` 时在联网前终止；每次
   请求使用当前代理快照构造独立 opener，代理地址继续不进入配置、日志与回执；
-- 长期分支收敛为 `main`（始终可发布、比赛交付）与 `develop`（日常集成），完善无 force
-  push 的 `develop → main → annotated tag` 发布门禁，并增加英文可编辑论文风格架构 PPT；
+- 长期分支治理规范收敛为 `main`（发布、比赛交付）与 `develop`（日常集成），完善无 force
+  push 的 `develop → main → annotated tag` 发布门禁；服务端保护规则仍需管理员验收；
 - 增加 ordinary `benchmark-script`（`bench-script` 短别名）：只接受真实 configured-model
   `migrated_strict_npu` 产物，以显式 marker 划分一次输入准备和 steady resident 计算区；CPU/NPU
   独立 worker 在导入 NumPy 前固定到同一逻辑核，实测 CPU BLAS 单线程，并以 runtime identity、
   profile target、精确调用次数、逐样本前后同步、最终一次 D2H 和 named-output 数值门失败关闭。
   combined receipt 保留全部样本、中位/p10/p90、保守比与 bootstrap 95% 区间，并把输入准备、
   resident、最终 D2H 组件和明确标为非直接端到端采样；
-- 将根 `run_demo.sh` 从已经失配的 legacy/AST 路径改成比赛 ordinary 唯一主链：
-  `doctor → analyze → configured GLM migrate → verify-script → benchmark-script`，新增默认 9M
+- 将根 `run_demo.sh` 从已经失配的 legacy/AST 路径改成 ordinary 分阶段演示链：
+  `doctor → analyze → configured model migrate → verify-script → benchmark-script`，新增默认 9M
   `float32` Poisson-Ritz 源项/鲁棒残差阶段、唯一 run 目录、未知参数失败和 shell 编排回归；
   五步结束后只读四份 JSON 回执生成一屏评委摘要，明确分开 resident headline 与非直接
   E2E 的一次组件和；
@@ -52,9 +55,9 @@
   source/target/runtime/policy，每次 phase `+1` 必须有 parent/binding/kind/coverage 精确匹配的
   新生产者收据；新增 `recover-gaps ingest-official/status`，严格消费 migration、GapSpec 和
   official-resolution，幂等推进到 `RESOLVED`；新增三种冻结授权 profile、installed
-  `official_binary` fresh candidate materializer 和 reviewed MatMul adapter receipt，当前控制面
-  可到 `CANDIDATE_READY → ADAPTER_CANDIDATE`；`candidate-generation` 的已实现路径以此为终点，
-  且不能途中升级 profile。仅初始冻结的 `full-local-recovery` 可授权未来本地
+  `official_binary` fresh candidate materializer 和 reviewed MatMul adapter receipt；官方二进制
+  通用链到 `CANDIDATE_READY`，仅 reviewed MatMul 切片可继续到 `ADAPTER_CANDIDATE`，
+  `candidate-generation` profile 不能途中升级。仅初始冻结的 `full-local-recovery` 可授权未来本地
   integration/build/execution/activation producer，这些 producer 尚未自动接线；
 - 增加 `official_aclnn_existing_module` AsNumPy planner：精确绑定 installed candidate、五类
   official refs、目标源码 context/overlay allow-list 和 route-specific Skill；schema-2
@@ -70,8 +73,9 @@
 - 修复 ordinary 直接发现 missing API 时只写报告、不发布 `gap-request.json` 的断点；现在
   missing 与用户拒绝 audited fallback 两条路径都会生成 canonical GapSpec hand-off，且均不在
   缺口未解决时调用迁移模型；
-- 建立 `release/competition-submission` 比赛发布分支，重写可渲染 HTML 徽章首页与新机器
-  quickstart；删除历史 PDF、WIP/AI 交接稿、旧 profiler/数组/日志和已否决展示材料；
+- 重写可渲染 HTML 徽章首页与新机器 quickstart；退役曾使用的
+  `release/competition-submission` 方案并统一由 `main` 发布；删除历史 PDF、WIP/AI 交接稿、
+  旧 profiler/数组/日志和已否决展示材料；
 - 公开 evidence 收敛为 Poisson 应用阶段与逐元素优势区间两案，新增发布树只读门禁，自动检查
   文件白名单、大小/后缀、版本、证据清单、PPTX 完整性和本机绝对路径。
 

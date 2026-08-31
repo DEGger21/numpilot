@@ -75,7 +75,7 @@ def test_competition_demo_runs_one_ordinary_glm_chain(monkeypatch, tmp_path):
     assert "--engine ast" not in calls
     assert "--mode contract" not in calls
     assert "tools/render_demo_summary.py --analysis" in calls
-    assert "评委一屏摘要" in result.stdout
+    assert "一屏回执摘要" in result.stdout
     assert "UNAVAILABLE" in result.stdout
 
 

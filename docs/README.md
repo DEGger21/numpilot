@@ -1,18 +1,24 @@
 # NumPilot 文档中心
 
-这里仅保留面向使用、评审、架构复核和发布验收的当前文档。开发交接稿、阶段计划、失败轮次
-和历史性能原始文件不进入始终可发布的 `main`。
+[English README](../README.md) · [中文 README](../README.zh-CN.md)
+
+这里仅保留面向安装、使用、评审、架构复核和发布验收的当前文档。开发交接稿、阶段计划、失败
+轮次和未经筛选的原始运行材料不进入始终可发布的 `main`。
 
 ## 快速入口
 
 | 目标 | 文档 |
 |---|---|
-| 了解项目价值与当前成绩 | [比赛一页纸](COMPETITION-ONE-PAGER.md) |
-| 从新机器安装并运行 | [全新 Notebook 快速开始](FRESH-NOTEBOOK-QUICKSTART.md) |
+| 了解项目价值与当前边界 | [English README](../README.md) · [中文 README](../README.zh-CN.md) |
+| 快速安装并分层验收 | [English installation guide](installation.md) · [中文安装指南](installation.zh-CN.md) |
+| 在全新 Notebook 完成比赛链验收 | [全新 Notebook 快速开始](FRESH-NOTEBOOK-QUICKSTART.md) |
 | 现场逐项验收 | [可执行 Notebook](NumPilot-Demo-v1-Quickstart.ipynb) |
 | 理解 ordinary 与 gap 两条路径 | [系统架构](architecture.md) |
 | 查看三页可编辑架构图 | [NumPilot 架构图](numpilot-architecture.drawio) |
-| 用于论文或答辩主图 | [中文可编辑架构 PPT](numpilot-architecture-paper-style-zh-readable.pptx) · [English editable PPT](numpilot-architecture-paper-style-en.pptx) |
+| 查看完整 v6 架构图 | [中文 SVG](numpilot-zh-v6.svg) · [English SVG](numpilot-en-v6.svg) |
+| 审计架构状态边界 | [中文边界图](assets/architecture/numpilot-architecture-zh.svg) · [English boundary map](assets/architecture/numpilot-architecture-en.svg) |
+| 下载论文/答辩架构源文件 | [中文 PPT](numpilot-zh.pptx) · [English PPT](numpilot-en.pptx) |
+| 核对 Logo 来源与发布权利 | [品牌资产清单](assets/brand/README.md) |
 | 复核比赛证据 | [证据索引](../evidence/README.md) |
 | 了解 `main` / `develop` 双分支治理 | [分支治理与比赛提交约定](SUBMISSION.md) |
 | 准备提交包 | [比赛 RC 发布清单](RELEASE-CHECKLIST-DEMO-V1.md) |
@@ -37,6 +43,9 @@
 - [官方算子解析图](numpilot-official-operator-resolution.drawio)。
 
 ## 当前公开证据
+
+以下均为 `git_dirty=true` 的开发态、精确画像回执，不是发布基线；数字不得外推到其他硬件、软件、
+shape、dtype 或计时口径。
 
 - [Poisson-Ritz 应用阶段](../evidence/competition-poisson-stage-20260828/README.md)：
   resident 中位 `2.567×`、保守 `2.471×`；一次组件和 `0.789×`，不是直接 E2E；

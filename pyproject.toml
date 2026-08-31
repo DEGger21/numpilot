@@ -6,6 +6,8 @@ build-backend = "setuptools.build_meta"
 name = "numpilot"
 version = "0.3.0a1.dev0"
 description = "面向科学计算的 NumPy 到 Ascend NPU 可审计迁移工具"
+authors = [{name = "NumPilot Contributors"}]
+maintainers = [{name = "NumPilot Maintainers"}]
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
@@ -21,8 +23,10 @@ classifiers = [
 ]
 
 [project.urls]
+Homepage = "https://gitcode.com/li-xingHIT/numpilot"
 Repository = "https://gitcode.com/li-xingHIT/numpilot"
 Documentation = "https://gitcode.com/li-xingHIT/numpilot"
+Issues = "https://gitcode.com/li-xingHIT/numpilot/issues"
 
 [project.scripts]
 numpilot = "numpilot.__main__:main"

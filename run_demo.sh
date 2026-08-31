@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # NumPilot competition demo:
-# ordinary NumPy -> static five-state gate -> configured GLM -> numerical gate
+# ordinary NumPy -> static five-state gate -> configured model -> numerical gate
 # -> strict-NPU resident benchmark.  The submitted artifact is never AST-made.
 set -euo pipefail
 
@@ -19,7 +19,7 @@ Options:
   --core N        pin both CPU and NPU workers to logical CPU N
   --quick         2 warmups + 7 samples (live presentation)
   --full          3 warmups + 30 samples (stronger evidence)
-  --llm           accepted for compatibility; configured GLM is always used
+  --llm           accepted for compatibility; the configured model is always used
   -h, --help      show this help
 
 SOURCE must be an ordinary NumPy script, assign global `result`, and contain
@@ -94,14 +94,14 @@ banner() { printf '\n\033[1;36m========== %s ==========\033[0m\n' "$1"; }
 run()    { printf '\033[0;33m$ %s\033[0m\n' "$*"; "$@"; }
 
 if ! "$PY" -m numpilot configure-llm --check; then
-  echo "错误: configured GLM 不可用；请先配置 NUMPILOT_LLM_CONFIG_FILE 或运行 configure-llm" >&2
+  echo "错误: configured model 不可用；请先配置 NUMPILOT_LLM_CONFIG_FILE 或运行 configure-llm" >&2
   exit 1
 fi
 
-echo "NumPilot 比赛主流程演示"
+echo "NumPilot ordinary 分阶段流程演示"
 echo "  Python : $PY"
 echo "  ordinary source : $FILE"
-echo "  generator : configured GLM（禁止 AST 生成/回退）"
+echo "  generator : configured model（禁止 AST 生成/回退）"
 echo "  benchmark : single-core, warmup=$WARMUP, samples=$SAMPLES"
 echo "  run directory : $RUN_ROOT"
 
@@ -111,7 +111,7 @@ run "$PY" -m numpilot doctor --backend npu
 banner "2/5 ordinary 五态静态分析（不执行源码、不调用模型）"
 run "$PY" -m numpilot analyze "$FILE" --require-direct --out "$ANALYSIS_OUT"
 
-banner "3/5 configured GLM 迁移（真实远程回执 + AST 事后审计）"
+banner "3/5 configured model 迁移（真实远程回执 + AST 事后审计）"
 run "$PY" -m numpilot migrate "$FILE" \
   --mode script --engine llm --backend npu --fallback-policy reject \
   --out "$MIGRATION_OUT"
@@ -135,7 +135,7 @@ if [ -n "$CORE" ]; then
 fi
 run "$PY" -m numpilot "${BENCH_ARGS[@]}"
 
-banner "评委一屏摘要（只读 JSON 回执，不重新执行用户代码）"
+banner "一屏回执摘要（只读 JSON，不重新执行用户代码）"
 if ! "$PY" tools/render_demo_summary.py \
   --analysis "$ANALYSIS_OUT" \
   --migration "$MIGRATION_OUT/script-migration-report.json" \
@@ -145,6 +145,6 @@ if ! "$PY" tools/render_demo_summary.py \
 fi
 
 echo
-echo "✅ 比赛主流程完成: $RUN_ROOT"
+echo "✅ ordinary 分阶段流程完成: $RUN_ROOT"
 echo "   headline 只引用 $BENCHMARK_OUT 中 performance_valid=true 的设备驻留结果。"
 echo "   一次组件和仅为诊断账目；不是直接采样 E2E，不冒充端到端单次延迟。"

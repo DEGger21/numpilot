@@ -22,3 +22,13 @@ bootstrap、import、analyze 或 migrate 隐式拉取源码。NumPilot 仓内仅
 来源/哈希收据和一份 AsNumpy 集成参考 patch，不重新分发 ops-nn 或 CANNBot 生成的算子源码。用户仍应核对各自许可证与
 部署要求。发布二进制、wheel、OPP 或比赛交付包时，还应生成对应版本的完整 SBOM 和逐文件
 许可证清单。
+
+## 名称、Logo 与商标
+
+`docs/assets/brand/` 中的 AsNumpy、CANN、Ascend 和 CodeArts 名称及 Logo 仅用于说明文档中的
+技术关系。相关权利归各自所有者，不随 NumPilot 的 Apache-2.0 重新授权，也不表示赞助或背书。
+
+仓库中的派生图片仅对用户提供的文档截图进行裁切、缩放或透明区域保留，没有重绘或改变标识本身。
+逐资产来源、处理方式、哈希与待核权状态见
+[`docs/assets/brand/README.md`](docs/assets/brand/README.md)。截图或商标的公开再分发权不能从本项目
+Apache-2.0 许可证推导；正式公开前必须由仓库所有者确认或替换为获准资产。

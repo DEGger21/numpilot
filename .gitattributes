@@ -1,3 +1,7 @@
 # Patch payloads are content-addressed evidence.  Lines such as "+ " encode
 # an added blank source line and must not be rewritten by whitespace cleanup.
 integrations/asnumpy/*.patch -whitespace
+
+*.pptx binary
+docs/assets/brand/*.png binary
+*.svg text eol=lf

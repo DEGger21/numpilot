@@ -49,7 +49,7 @@ CLI 不提供任意布尔 policy 开关，只允许在首次 `ingest-official` �
 | Profile | 允许的后续副作用 | 典型用途 |
 |---|---|---|
 | `receipt-only` | 无 | 只导入和审计已有收据；默认值 |
-| `candidate-generation` | subprocess、network、configured model | official candidate 与未验证 adapter 候选；当前上限 `ADAPTER_CANDIDATE` |
+| `candidate-generation` | subprocess、network、configured model | official binary candidate；仅 reviewed MatMul 切片可到未验证 `ADAPTER_CANDIDATE`，ops-nn/CANNBot 各停在源码证据/未验证草稿 |
 | `full-local-recovery` | 上述全部，再加 system write、AsNumPy import、build、execution、activation | 仅授权未来完整本地恢复链；当前后续 producer 未接线 |
 
 profile 创建后不可升级或改写。授权只表示 producer 可以执行某类动作，不等于动作已经发生；
