@@ -104,6 +104,20 @@ def test_source_installer_prepares_private_default_receipt_parent():
     assert "custom receipt parent must already exist" in source
 
 
+def test_source_installer_rejects_system_or_fake_venv_paths_before_pip():
+    source = SCRIPT.read_text(encoding="utf-8")
+    path_policy = source.index("venv path failed the private non-system safety policy")
+    interpreter_policy = source.index("--venv must name a genuine isolated virtual environment")
+    pip_install = source.index('"$VENV_PYTHON" -m pip')
+
+    assert path_policy < interpreter_policy < pip_install
+    assert 'Path("/usr")' in source
+    assert "venv path must not traverse a symlink" in source
+    assert "venv parent must be user-owned and not group/world writable" in source
+    assert "sys.prefix == sys.base_prefix" in source
+    assert 'configuration = expected / "pyvenv.cfg"' in source
+
+
 def test_source_installer_prints_shell_quoted_activation_and_receipt_paths():
     source = SCRIPT.read_text(encoding="utf-8")
 

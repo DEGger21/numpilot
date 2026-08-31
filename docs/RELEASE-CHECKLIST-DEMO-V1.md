@@ -4,16 +4,17 @@
 不得继续复用历史 `v0.2.0a1`/`v0.2.0a2` 标签。每项都是手工发布门禁；任一必需项失败都应
 停止发布、保留日志并修复后从干净源码重新开始。
 
-日常发布准备统一在 `develop` 完成；只有通过本清单的提交才能通过正常 merge 或 fast-forward
-进入始终可发布的 `main`。比赛交付、RC 和 annotated tag 只能从已复核的 `main` commit
-生成。两个长期分支均禁止 force push，也不得通过历史改写绕过门禁。
+日常发布准备统一在 `develop` 完成；只有通过本清单的提交才能通过受保护的
+`develop → main` Pull Request 进入始终可发布的 `main`。比赛交付、RC 和 annotated tag 只能
+从已复核的 `main` commit 生成。两个长期分支均禁止直接绕过评审、force push 或历史改写。
 
 ## 1. 冻结发布身份
 
 - [ ] `pyproject.toml`、`numpilot/__init__.py` 和 CHANGELOG 的版本完全一致，且版本尚未被发布；
 - [ ] Python 支持范围与测试矩阵一致，Demo v1 最低版本为 Python 3.10；
 - [ ] CHANGELOG 的 Unreleased 内容已冻结到目标版本/date，且与待发布 commit 一致；
-- [ ] README、架构图、文档链接和安全支持策略与 `main`/`develop` 双分支约定一致；
+- [ ] 英文 `README.md`、中文 `README.zh-CN.md`、双语架构图、文档链接和安全支持策略与
+  `main`/`develop` 双分支约定一致；
 - [ ] 确认待发布 commit、固定 AsNumpy wheel、CANN/算子材料和精选 evidence 的身份与
   SHA-256，记录到 release manifest；
 - [ ] 完成 secret scan，确认源码、文档、测试、LLM 回执和精选 evidence 不包含凭据或
@@ -31,15 +32,23 @@
 
 ## 3. 测试与静态验证
 
+> 当前 `0.3.0a1.dev0` 仍有发布阻断：部分 gap-recovery 测试夹具把 `scan.source_path` 绑定到
+> 一个历史 checkout 的绝对路径，尚不能在其他 checkout 通过完整测试；Poisson qualification
+> harness 也要求发布矩阵中的 CPython 3.10。修复并在目标 Python 3.10 干净 checkout 重生/复核
+> 这些绑定夹具前，不得勾选本节完整测试门或把当前工作树标记为 RC。
+
 - [ ] 在 Python 3.10 的干净环境运行完整测试：
-  `python -m pytest -q -p no:cacheprovider`；
+  `env -u PYTHONPATH -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy python -m pytest -q -p no:cacheprovider`；
 - [ ] 运行离线、合成输入的普通脚本扫描/迁移 smoke test，不能使用比赛案例代替自动测试；
 - [ ] 运行 `benchmark-script` 的 parent/worker/CLI 全部 fail-closed 测试，并在目标 910B4 上对
   同一 configured-GLM artifact 完成至少 20 样本的 opt-in 真机验收；
 - [ ] 验证 `python -m numpilot --help`、`python -m numpilot --version` 及所有公开子命令入口；
 - [ ] 核对精选证据：`sha256sum -c evidence/MANIFEST.sha256`；
-- [ ] 用 PowerPoint/WPS/LibreOffice 打开 `docs/numpilot-architecture-paper-style-zh-readable.pptx`，
-  确认无字体替换导致的溢出，实线/虚线与当前/目标状态语义一致；
+- [ ] 用 PowerPoint/WPS/LibreOffice 分别打开 `docs/numpilot-zh.pptx` 与 `docs/numpilot-en.pptx`，
+  确认无字体替换导致的溢出，实线/虚线与当前/目标状态语义一致，并与 README 双语 SVG 的能力
+  边界一致；
+- [ ] 在 GitCode 桌面端和移动端实际预览 `docs/numpilot-zh-v6.svg` 与 `docs/numpilot-en-v6.svg`，
+  确认内嵌 Logo、轮廓文字、README 缩放展示和高清图链接均能正常渲染；
 - [ ] 保存 Python、NumPilot、NumPy、AsNumpy、CANN、设备和操作系统版本到发布记录。
 
 ## 4. 从零构建
@@ -53,7 +62,8 @@
 - [ ] 检查 wheel 与 sdist，至少包含：完整 `numpilot` 包、ordinary migration/verification/
   benchmark 父层与两个私有 worker、`LICENSE`、`THIRD_PARTY_NOTICES.md`、console entry point、
   CodeArts 4 个 agent + migration gate Skill，以及全部 AsNumpy integration Skill data files；
-  sdist 还必须包含 `run_demo.sh`、competition example、Notebook 指南/模板和精选 evidence；
+  sdist 还必须包含双语 README/安装指南/架构 PPT/SVG、`run_demo.sh`、competition example、
+  Notebook 指南/模板和精选 evidence；
 - [ ] 确认分发包未包含私有 LLM 配置、完整运行树、缓存、日志、旧 dist、上游源码 checkout、
   未筛选 profiler 产物或本机绝对路径材料；
 - [ ] 对 wheel/sdist 执行标准 metadata/包完整性检查，并保存检查输出。
@@ -106,12 +116,12 @@ python tools/release_artifact_manifest.py \
 
 ## 7. Push、Tag 与 Release
 
-- [ ] 正常 push 已完成集成验证的 `develop`；禁止 force push；
-- [ ] 通过正常 merge 或 fast-forward 将同一批已验证提交提升到 `main`，不得复制提交、
+- [ ] 确认已完成集成验证的提交通过 Pull Request 进入受保护的 `develop`；
+- [ ] 创建并完成满足审批与流水线条件的 `develop → main` Pull Request，不得直接 push、复制提交、
   rebase 已共享历史或跳过评审门禁；
 - [ ] 在 `main` 的干净 checkout 重跑发布门禁，复核 HEAD 与所有测试、包、manifest 中记录的
   commit 完全一致；
-- [ ] 正常 push `main`，确认远端 commit 与本地一致；禁止 force push；
+- [ ] 确认远端 `main` commit 与 Pull Request 中复核的提交一致；禁止补推或 force push；
 - [ ] 仅在该已验证的 `main` commit 创建与冻结版本一致的 annotated tag；
 - [ ] push 该 tag，再次确认远端 tag 指向已验证 commit；
 - [ ] 创建与冻结版本一致的比赛 RC release，上传本次新构建产物、SHA-256、SBOM、

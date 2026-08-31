@@ -247,6 +247,61 @@ find_cmake_package 'fmt*config.cmake' || fail \
 find_cmake_package 'spdlog*config.cmake' || fail \
     "system spdlog CMake package is missing (Ubuntu package: libspdlog-dev); NumPilot will not run sudo"
 
+if ! VENV_DIR=$(python3 - "$VENV_DIR" "$SCRIPT_DIR" <<'PY'
+import os
+from pathlib import Path
+import stat
+import sys
+
+raw_path, repository = sys.argv[1:]
+if not raw_path or "\x00" in raw_path or "\n" in raw_path or "\r" in raw_path:
+    raise SystemExit("venv path is empty or contains unsafe characters")
+
+path = Path(os.path.abspath(os.path.expanduser(raw_path)))
+repository_path = Path(repository).resolve()
+for forbidden in (
+    Path("/bin"),
+    Path("/etc"),
+    Path("/lib"),
+    Path("/lib64"),
+    Path("/opt"),
+    Path("/sbin"),
+    Path("/usr"),
+    Path("/var"),
+):
+    if path == forbidden or forbidden in path.parents:
+        raise SystemExit("venv must not be created in a system hierarchy")
+if path == Path(path.anchor) or path == repository_path:
+    raise SystemExit("venv path is too broad")
+
+current = path.parent
+while current != Path(current.anchor):
+    if os.path.lexists(current) and stat.S_ISLNK(current.lstat().st_mode):
+        raise SystemExit("venv path must not traverse a symlink")
+    current = current.parent
+
+parent = path.parent
+try:
+    parent_status = parent.lstat()
+except FileNotFoundError:
+    raise SystemExit("venv parent must already exist")
+if stat.S_ISLNK(parent_status.st_mode) or not stat.S_ISDIR(parent_status.st_mode):
+    raise SystemExit("venv parent must be a real directory")
+if parent_status.st_uid != os.getuid() or parent_status.st_mode & 0o022:
+    raise SystemExit("venv parent must be user-owned and not group/world writable")
+
+if os.path.lexists(path):
+    target_status = path.lstat()
+    if stat.S_ISLNK(target_status.st_mode) or not stat.S_ISDIR(target_status.st_mode):
+        raise SystemExit("existing venv path must be a real directory")
+    if target_status.st_uid != os.getuid() or target_status.st_mode & 0o022:
+        raise SystemExit("existing venv must be user-owned and not group/world writable")
+print(path)
+PY
+); then
+    fail "venv path failed the private non-system safety policy"
+fi
+
 if [ -e "$VENV_DIR" ] && [ ! -x "$VENV_DIR/bin/python" ]; then
     fail "refusing to overwrite a non-venv path: $VENV_DIR"
 fi
@@ -255,6 +310,20 @@ if [ ! -x "$VENV_DIR/bin/python" ]; then
 fi
 
 VENV_PYTHON="$VENV_DIR/bin/python"
+"$VENV_PYTHON" - "$VENV_DIR" <<'PY' || fail "--venv must name a genuine isolated virtual environment"
+from pathlib import Path
+import sys
+
+expected = Path(sys.argv[1]).resolve()
+configuration = expected / "pyvenv.cfg"
+if (
+    sys.prefix == sys.base_prefix
+    or Path(sys.prefix).resolve() != expected
+    or not configuration.is_file()
+    or configuration.is_symlink()
+):
+    raise SystemExit(1)
+PY
 PIP_ARGS=(install --disable-pip-version-check)
 if [ -n "$PIP_INDEX_URL_OVERRIDE" ]; then
     PIP_ARGS+=(--index-url "$PIP_INDEX_URL_OVERRIDE")

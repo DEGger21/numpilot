@@ -10,7 +10,7 @@
 
 - Linux aarch64、Ascend 910B、驱动、CANN 与 `npu-smi`；
 - CPython 3.10+（包含 `venv` 与 Python headers）；
-- Git、GCC/G++ 11.2+、CMake 3.26+；
+- Git、GCC/G++ 11.2+、CMake 3.26+，以及 Make 或 Ninja；
 - `fmt`、`spdlog` 的 CMake 开发包；
 - 首次准备依赖时可访问 GitCode 与 Python 包索引。
 
@@ -26,9 +26,9 @@ git status --short --branch
 git rev-parse HEAD
 ```
 
-`main` 始终保持可发布；日常集成在 `develop` 完成并通过正常 merge/fast-forward 进入 `main`，
-两个分支均禁止 force push。冻结比赛版本后应改用 `git clone --branch <immutable-tag>`，该 tag
-必须创建自已验证的 `main` commit。工作树必须干净。
+`main` 始终保持可发布；日常集成通过 Pull Request 进入 `develop`，发布提升再通过受保护的
+`develop → main` Pull Request 完成，两个分支均禁止 force push。冻结比赛版本后应改用
+`git clone --branch <immutable-tag>`，该 tag 必须创建自已验证的 `main` commit。工作树必须干净。
 
 ## 3. 固定来源安装
 

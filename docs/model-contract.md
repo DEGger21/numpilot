@@ -13,6 +13,12 @@ NumPilot 的生成路径使用用户自己配置的 OpenAI-compatible endpoint�
 可安全包含 `/`，例如 `org/model`；两端空白不会被 strip 后接受，而是直接拒绝。展示用脱敏文本
 从不参与身份比较。
 
+远端调用的 payload 不限于 ordinary migration：`migrate` 发送完整输入源码；gap/operator 生成与
+修复发送有界缺口合同、静态语义函数、选定 CANNBot Skill 内容以及适用的草稿/诊断；AsNumpy adapter
+生成与修复发送本地目标投影选中的源码/头文件、仓库 integration Skill、overlay 与诊断。CANNBot
+提供的是固定工作流上下文，实际草稿仍由 configured model 生成。所有真实生成/修复请求都可能
+产生费用；使用非本地 endpoint 前必须确认这些材料允许披露。
+
 ## 配置 schema 2
 
 `python -m numpilot configure-llm --init` 创建私有 `llm.json`：

@@ -16,6 +16,7 @@ import re
 import subprocess
 import sys
 from typing import Iterable
+import xml.etree.ElementTree as ET
 from zipfile import BadZipFile, ZipFile
 
 
@@ -26,6 +27,7 @@ REQUIRED_FILES = {
     "LICENSE",
     "MANIFEST.in",
     "README.md",
+    "README.zh-CN.md",
     "SECURITY.md",
     "THIRD_PARTY_NOTICES.md",
     "docs/COMPETITION-ONE-PAGER.md",
@@ -33,12 +35,26 @@ REQUIRED_FILES = {
     "docs/RELEASE-CHECKLIST-DEMO-V1.md",
     "docs/SUBMISSION.md",
     "docs/architecture.md",
-    "docs/numpilot-architecture-paper-style-zh-readable.pptx",
+    "docs/assets/architecture/numpilot-architecture-en.svg",
+    "docs/assets/architecture/numpilot-architecture-zh.svg",
+    "docs/assets/brand/asnumpy-mark.png",
+    "docs/assets/brand/ascend-wordmark.png",
+    "docs/assets/brand/cann-wordmark.png",
+    "docs/assets/brand/codearts-icon.png",
+    "docs/assets/brand/numpilot-wordmark.png",
+    "docs/assets/brand/README.md",
+    "docs/installation.md",
+    "docs/installation.zh-CN.md",
+    "docs/numpilot-en-v6.svg",
+    "docs/numpilot-en.pptx",
+    "docs/numpilot-zh-v6.svg",
+    "docs/numpilot-zh.pptx",
     "docs/numpilot-architecture.drawio",
     "evidence/MANIFEST.sha256",
     "evidence/README.md",
     "examples/poisson_source_smooth_l1_map.py",
     "install.sh",
+    "numpilot/__init__.py",
     "pyproject.toml",
     "run_demo.sh",
     "tools/audit_script_benchmark_receipt.py",
@@ -156,9 +172,12 @@ def _validate_evidence_manifest(root: Path, errors: list[str]) -> None:
         )
 
     entries: list[tuple[str, str]] = []
-    for line_number, line in enumerate(
-        manifest.read_text(encoding="utf-8").splitlines(), start=1
-    ):
+    try:
+        manifest_lines = manifest.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError) as error:
+        errors.append(f"cannot read evidence/MANIFEST.sha256: {error}")
+        return
+    for line_number, line in enumerate(manifest_lines, start=1):
         try:
             digest, relative = line.split("  ", 1)
         except ValueError:
@@ -179,12 +198,27 @@ def _validate_evidence_manifest(root: Path, errors: list[str]) -> None:
         target = root / relative
         if not re.fullmatch(r"[0-9a-f]{64}", digest):
             errors.append(f"invalid SHA-256 in evidence manifest: {relative}")
+        elif not target.is_file():
+            errors.append(f"evidence manifest target is missing: {relative}")
         elif _sha256(target) != digest:
             errors.append(f"evidence hash mismatch: {relative}")
 
 
 def _validate_versions(root: Path, errors: list[str]) -> str | None:
-    pyproject_text = (root / "pyproject.toml").read_text(encoding="utf-8")
+    required = (
+        root / "pyproject.toml",
+        root / "numpilot/__init__.py",
+        root / "CHANGELOG.md",
+    )
+    if not all(path.is_file() for path in required):
+        return None
+    try:
+        pyproject_text = required[0].read_text(encoding="utf-8")
+        init_text = required[1].read_text(encoding="utf-8")
+        changelog = required[2].read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as error:
+        errors.append(f"cannot read release version metadata: {error}")
+        return None
     project_match = re.search(r"(?ms)^\[project\]\s*(.*?)(?=^\[|\Z)", pyproject_text)
     version_match = (
         re.search(r'^version\s*=\s*["\']([^"\']+)["\']', project_match.group(1), re.MULTILINE)
@@ -192,33 +226,146 @@ def _validate_versions(root: Path, errors: list[str]) -> str | None:
         else None
     )
     version = version_match.group(1) if version_match is not None else None
-    init_text = (root / "numpilot/__init__.py").read_text(encoding="utf-8")
     match = re.search(r'^__version__\s*=\s*["\']([^"\']+)["\']', init_text, re.MULTILINE)
     if not isinstance(version, str) or match is None or match.group(1) != version:
         errors.append("pyproject.toml and numpilot.__version__ are inconsistent")
         return version if isinstance(version, str) else None
-    changelog = (root / "CHANGELOG.md").read_text(encoding="utf-8")
     if f"## {version} " not in changelog:
         errors.append(f"CHANGELOG has no section for {version}")
     return version
 
 
 def _validate_pptx(root: Path, errors: list[str]) -> None:
-    path = root / "docs/numpilot-architecture-paper-style-zh-readable.pptx"
-    if not path.is_file():
-        return
-    try:
-        with ZipFile(path) as archive:
-            bad = archive.testzip()
-            names = set(archive.namelist())
-    except BadZipFile:
-        errors.append(f"invalid PPTX ZIP container: {path.relative_to(root)}")
-        return
-    if bad is not None:
-        errors.append(f"corrupt PPTX member: {bad}")
-    for required in {"[Content_Types].xml", "ppt/presentation.xml", "ppt/slides/slide1.xml"}:
-        if required not in names:
-            errors.append(f"PPTX missing {required}")
+    for relative, planned_label in (
+        ("docs/numpilot-en.pptx", "planned"),
+        ("docs/numpilot-zh.pptx", "规划"),
+    ):
+        path = root / relative
+        if not path.is_file():
+            continue
+        try:
+            with ZipFile(path) as archive:
+                bad = archive.testzip()
+                names = set(archive.namelist())
+                payloads = {
+                    member: archive.read(member)
+                    for member in {
+                        "[Content_Types].xml",
+                        "ppt/presentation.xml",
+                        "ppt/slides/slide1.xml",
+                    }
+                    if member in names
+                }
+                notes_payload = (
+                    archive.read("ppt/notesSlides/notesSlide1.xml")
+                    if "ppt/notesSlides/notesSlide1.xml" in names
+                    else None
+                )
+        except (BadZipFile, KeyError, NotImplementedError, OSError, RuntimeError):
+            errors.append(f"invalid PPTX container or slide XML: {relative}")
+            continue
+        if bad is not None:
+            errors.append(f"corrupt PPTX member in {relative}: {bad}")
+        for required in {
+            "[Content_Types].xml",
+            "ppt/presentation.xml",
+            "ppt/slides/slide1.xml",
+        }:
+            if required not in names:
+                errors.append(f"{relative} is missing {required}")
+        if len(payloads) != 3:
+            continue
+        try:
+            content_types = ET.fromstring(payloads["[Content_Types].xml"])
+            presentation = ET.fromstring(payloads["ppt/presentation.xml"])
+            slide_element = ET.fromstring(payloads["ppt/slides/slide1.xml"])
+        except ET.ParseError:
+            errors.append(f"invalid PPTX XML payload: {relative}")
+            continue
+        expected_roots = (
+            (
+                content_types,
+                "{http://schemas.openxmlformats.org/package/2006/content-types}Types",
+            ),
+            (
+                presentation,
+                "{http://schemas.openxmlformats.org/presentationml/2006/main}presentation",
+            ),
+            (
+                slide_element,
+                "{http://schemas.openxmlformats.org/presentationml/2006/main}sld",
+            ),
+        )
+        if any(element.tag != expected for element, expected in expected_roots):
+            errors.append(f"unexpected PPTX XML root element: {relative}")
+            continue
+        slide = " ".join(
+            node.text or ""
+            for node in slide_element.iter(
+                "{http://schemas.openxmlformats.org/drawingml/2006/main}t"
+            )
+        )
+        notes = ""
+        if notes_payload is not None:
+            try:
+                notes_element = ET.fromstring(notes_payload)
+            except ET.ParseError:
+                errors.append(f"invalid PPTX notes XML: {relative}")
+                continue
+            notes = " ".join(
+                node.text or ""
+                for node in notes_element.iter(
+                    "{http://schemas.openxmlformats.org/drawingml/2006/main}t"
+                )
+            )
+        architecture_text = slide + " " + notes
+        if "ADAPTER_CANDIDATE" not in slide or planned_label not in slide:
+            errors.append(f"{relative} does not expose the current/planned architecture boundary")
+        for required_boundary in (
+            "CANDIDATE_READY",
+            "ops-nn",
+            "CANNBot",
+        ):
+            if required_boundary not in architecture_text:
+                errors.append(
+                    f"{relative} omits route-specific boundary: {required_boundary}"
+                )
+        if "Closed-Loop Migration" in slide or "闭环迁移" in slide:
+            errors.append(f"{relative} still presents the target loop as the current title")
+
+
+def _validate_architecture_svg(root: Path, errors: list[str]) -> None:
+    for relative in (
+        "docs/assets/architecture/numpilot-architecture-en.svg",
+        "docs/assets/architecture/numpilot-architecture-zh.svg",
+        "docs/numpilot-en-v6.svg",
+        "docs/numpilot-zh-v6.svg",
+    ):
+        path = root / relative
+        if not path.is_file():
+            continue
+        try:
+            tree = ET.parse(path)
+        except (ET.ParseError, OSError):
+            errors.append(f"invalid architecture SVG: {relative}")
+            continue
+        element = tree.getroot()
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            errors.append(f"cannot read architecture SVG: {relative}")
+            continue
+        if element.tag != "{http://www.w3.org/2000/svg}svg":
+            errors.append(f"architecture asset is not SVG: {relative}")
+        required_boundaries = (
+            "ADAPTER_CANDIDATE",
+            "CAPABILITY_AUDIT_REQUIRED",
+            "REVIEWED_MATMUL_ONLY",
+            "SOURCE_EVIDENCE_ONLY",
+            "UNVERIFIED_OPERATOR_DRAFT",
+        )
+        if any(boundary not in text for boundary in required_boundaries):
+            errors.append(f"architecture SVG omits required capability boundaries: {relative}")
 
 
 def _scan_public_text(root: Path, files: Iterable[str], errors: list[str]) -> None:
@@ -227,7 +374,7 @@ def _scan_public_text(root: Path, files: Iterable[str], errors: list[str]) -> No
         if path.suffix.lower() not in TEXT_SUFFIXES:
             continue
         if not (
-            relative == "README.md"
+            relative in {"README.md", "README.zh-CN.md"}
             or relative.startswith("docs/")
             or relative in {"SECURITY.md", "CONTRIBUTING.md", "THIRD_PARTY_NOTICES.md"}
         ):
@@ -260,21 +407,45 @@ def audit_release_tree(root: Path, *, require_clean: bool = False) -> dict:
         elif target.stat().st_size > MAX_FILE_BYTES:
             errors.append(f"file exceeds {MAX_FILE_BYTES} bytes: {relative}")
 
-    readme = (root / "README.md").read_text(encoding="utf-8")
-    if "<img" not in readme or "development--snapshot" not in readme:
-        errors.append("README must retain rendered badges and an honest development-stage label")
-    if "release/competition-submission" in readme:
-        warnings.append("README is branch-bound; replace with an immutable tag before final RC")
+    for relative in ("README.md", "README.zh-CN.md"):
+        path = root / relative
+        if not path.is_file():
+            continue
+        try:
+            readme = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as error:
+            errors.append(f"cannot read {relative}: {error}")
+            continue
+        if "<img" not in readme or "development--snapshot" not in readme:
+            errors.append(
+                f"{relative} must retain rendered badges and an honest development-stage label"
+            )
+        if "docs/assets/architecture/" not in readme or "docs/numpilot-" not in readme:
+            errors.append(f"{relative} must link the reviewed SVG and PPT architecture assets")
+        if "release/competition-submission" in readme:
+            warnings.append(f"{relative} is bound to a retired release branch")
 
-    manifest_in = (root / "MANIFEST.in").read_text(encoding="utf-8")
-    for stale in ("demotest-case01", "heat-diffusion-", "ops-nn-matmul-", "poisson-ritz-p0-"):
-        if stale in manifest_in:
-            errors.append(f"MANIFEST.in still packages historical material: {stale}")
+    manifest_path = root / "MANIFEST.in"
+    if manifest_path.is_file():
+        try:
+            manifest_in = manifest_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as error:
+            errors.append(f"cannot read MANIFEST.in: {error}")
+        else:
+            for stale in (
+                "demotest-case01",
+                "heat-diffusion-",
+                "ops-nn-matmul-",
+                "poisson-ritz-p0-",
+            ):
+                if stale in manifest_in:
+                    errors.append(f"MANIFEST.in still packages historical material: {stale}")
 
     _scan_public_text(root, files, errors)
     _validate_evidence_manifest(root, errors)
     version = _validate_versions(root, errors)
     _validate_pptx(root, errors)
+    _validate_architecture_svg(root, errors)
 
     status = _run_git(root, "status", "--porcelain", "--untracked-files=all")
     if status.returncode != 0:

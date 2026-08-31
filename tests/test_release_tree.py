@@ -4,10 +4,13 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import zipfile
 
 from tools.check_release_tree import (
     PUBLIC_EVIDENCE_CASES,
+    REQUIRED_FILES,
     _forbidden_path_reason,
+    _validate_pptx,
     audit_release_tree,
 )
 
@@ -51,3 +54,51 @@ def test_release_tree_cli_emits_machine_readable_report():
     report = json.loads(completed.stdout)
     assert completed.returncode == 0, report["errors"]
     assert report["ok"] is True
+
+
+def test_release_tree_cli_reports_missing_required_file_as_json(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "README.md").write_text("development snapshot\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q", repo], check=True)
+    subprocess.run(["git", "-C", repo, "add", "README.md"], check=True)
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "tools/check_release_tree.py"),
+            "--repo-root",
+            str(repo),
+            "--json",
+        ],
+        cwd=ROOT,
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+    report = json.loads(completed.stdout)
+    assert completed.returncode == 1
+    assert report["ok"] is False
+    assert "missing required release file: README.zh-CN.md" in report["errors"]
+    assert "missing required release file: numpilot/__init__.py" in report["errors"]
+    assert "README.zh-CN.md" in REQUIRED_FILES
+    assert "numpilot/__init__.py" in REQUIRED_FILES
+
+
+def test_release_tree_rejects_parseable_zip_with_invalid_pptx_xml(tmp_path):
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    presentation = docs / "numpilot-en.pptx"
+    with zipfile.ZipFile(presentation, "w") as archive:
+        archive.writestr("[Content_Types].xml", "not xml")
+        archive.writestr("ppt/presentation.xml", "also not xml")
+        archive.writestr(
+            "ppt/slides/slide1.xml", "not xml ADAPTER_CANDIDATE planned"
+        )
+
+    errors: list[str] = []
+    _validate_pptx(tmp_path, errors)
+
+    assert errors == ["invalid PPTX XML payload: docs/numpilot-en.pptx"]

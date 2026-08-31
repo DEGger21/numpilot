@@ -1,4 +1,5 @@
 include README.md
+include README.zh-CN.md
 include CHANGELOG.md
 include CONTRIBUTING.md
 include SECURITY.md
@@ -6,7 +7,7 @@ include THIRD_PARTY_NOTICES.md
 include install.sh
 include run_demo.sh
 
-recursive-include docs *.md *.drawio *.pptx *.ipynb
+recursive-include docs *.md *.drawio *.pptx *.ipynb *.svg *.png
 recursive-include examples *.py
 
 include evidence/README.md

@@ -16,6 +16,7 @@ import argparse
 import ast
 import datetime as dt
 import hashlib
+import io
 import json
 import os
 import platform
@@ -26,10 +27,12 @@ import sys
 import tarfile
 import tempfile
 import zipfile
+import zlib
 from email import policy
 from email.parser import BytesParser
 from pathlib import Path, PurePosixPath
 from typing import Any, BinaryIO, Iterable, Mapping
+import xml.etree.ElementTree as ET
 
 
 SCHEMA = "numpilot.release-artifact-manifest"
@@ -48,6 +51,19 @@ FORBIDDEN_PATH_PARTS = {
     "__pycache__",
 }
 FORBIDDEN_SUFFIXES = {".db", ".log", ".npy", ".npz", ".orig", ".pyc", ".pyo", ".tmp"}
+REVIEWED_ASSETS = (
+    "docs/numpilot-en.pptx",
+    "docs/numpilot-zh.pptx",
+    "docs/numpilot-en-v6.svg",
+    "docs/numpilot-zh-v6.svg",
+    "docs/assets/architecture/numpilot-architecture-en.svg",
+    "docs/assets/architecture/numpilot-architecture-zh.svg",
+    "docs/assets/brand/asnumpy-mark.png",
+    "docs/assets/brand/ascend-wordmark.png",
+    "docs/assets/brand/cann-wordmark.png",
+    "docs/assets/brand/codearts-icon.png",
+    "docs/assets/brand/numpilot-wordmark.png",
+)
 
 
 class ReleaseManifestError(RuntimeError):
@@ -123,6 +139,14 @@ def _file_record(path: str, size: int, digest: str) -> dict[str, Any]:
     return {"path": path, "sha256": digest, "size_bytes": size}
 
 
+def _retain_member_payload(member: str) -> bool:
+    return (
+        member.endswith("/METADATA")
+        or member.endswith("/PKG-INFO")
+        or any(member.endswith("/" + suffix) for suffix in REVIEWED_ASSETS)
+    )
+
+
 def _read_zip(path: Path) -> tuple[list[dict[str, Any]], dict[str, bytes]]:
     files: list[dict[str, Any]] = []
     metadata: dict[str, bytes] = {}
@@ -145,7 +169,7 @@ def _read_zip(path: Path) -> tuple[list[dict[str, Any]], dict[str, bytes]]:
                     not (info.flag_bits & 0x1),
                     f"encrypted archive member is not allowed: {member}",
                 )
-                retain = member.endswith("/METADATA") or member.endswith("/PKG-INFO")
+                retain = _retain_member_payload(member)
                 with archive.open(info, "r") as stream:
                     size, digest, payload = _stream_identity(stream, retain=retain)
                 _require(size == info.file_size, f"archive size mismatch: {member}")
@@ -176,7 +200,7 @@ def _read_tar(path: Path) -> tuple[list[dict[str, Any]], dict[str, bytes]]:
                 )
                 stream = archive.extractfile(info)
                 _require(stream is not None, f"cannot read archive member: {member}")
-                retain = member.endswith("/METADATA") or member.endswith("/PKG-INFO")
+                retain = _retain_member_payload(member)
                 with stream:
                     size, digest, payload = _stream_identity(stream, retain=retain)
                 _require(size == info.size, f"archive size mismatch: {member}")
@@ -236,36 +260,275 @@ def _select_metadata(
     return selected, _parse_metadata(metadata[selected], selected)
 
 
-def _has_suffix(paths: Iterable[str], suffix: str) -> bool:
-    return any(path == suffix or path.endswith("/" + suffix) for path in paths)
+def _payload_by_suffix(payloads: Mapping[str, bytes], suffix: str) -> bytes:
+    matches = [
+        payload
+        for path, payload in payloads.items()
+        if path == suffix or path.endswith("/" + suffix)
+    ]
+    _require(len(matches) == 1, f"sdist has ambiguous or missing reviewed asset: {suffix}")
+    return matches[0]
 
 
-def _check_required_members(kind: str, files: list[dict[str, Any]], name: str) -> None:
-    paths = [str(item["path"]) for item in files]
+def _validate_pptx_payload(payload: bytes, suffix: str) -> None:
+    required = {
+        "[Content_Types].xml": (
+            "{http://schemas.openxmlformats.org/package/2006/content-types}Types"
+        ),
+        "ppt/presentation.xml": (
+            "{http://schemas.openxmlformats.org/presentationml/2006/main}presentation"
+        ),
+        "ppt/slides/slide1.xml": (
+            "{http://schemas.openxmlformats.org/presentationml/2006/main}sld"
+        ),
+    }
+    try:
+        with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+            bad = archive.testzip()
+            _require(bad is None, f"corrupt PPTX member in {suffix}: {bad}")
+            names = set(archive.namelist())
+            missing = sorted(set(required) - names)
+            _require(not missing, f"{suffix} is missing PPTX members: {', '.join(missing)}")
+            elements = {
+                member: ET.fromstring(archive.read(member)) for member in required
+            }
+            notes = (
+                ET.fromstring(archive.read("ppt/notesSlides/notesSlide1.xml"))
+                if "ppt/notesSlides/notesSlide1.xml" in names
+                else None
+            )
+    except (
+        NotImplementedError,
+        OSError,
+        RuntimeError,
+        zipfile.BadZipFile,
+        ET.ParseError,
+    ) as error:
+        raise ReleaseManifestError(f"invalid PPTX asset {suffix}: {error}") from error
+    for member, expected_root in required.items():
+        _require(
+            elements[member].tag == expected_root,
+            f"unexpected XML root in {suffix}:{member}",
+        )
+    slide = " ".join(
+        node.text or ""
+        for node in elements["ppt/slides/slide1.xml"].iter(
+            "{http://schemas.openxmlformats.org/drawingml/2006/main}t"
+        )
+    )
+    note_text = ""
+    if notes is not None:
+        note_text = " ".join(
+            node.text or ""
+            for node in notes.iter(
+                "{http://schemas.openxmlformats.org/drawingml/2006/main}t"
+            )
+        )
+    architecture_text = slide + " " + note_text
+    planned = "规划" if suffix.endswith("-zh.pptx") else "planned"
+    _require(
+        "ADAPTER_CANDIDATE" in slide and planned in slide,
+        f"{suffix} omits the reviewed current/planned capability boundary",
+    )
+    for boundary in ("CANDIDATE_READY", "ops-nn", "CANNBot"):
+        _require(
+            boundary in architecture_text,
+            f"{suffix} omits route-specific boundary: {boundary}",
+        )
+
+
+def _validate_svg_payload(payload: bytes, suffix: str) -> None:
+    try:
+        element = ET.fromstring(payload)
+        text = payload.decode("utf-8")
+    except (ET.ParseError, UnicodeError) as error:
+        raise ReleaseManifestError(f"invalid SVG asset {suffix}: {error}") from error
+    _require(
+        element.tag == "{http://www.w3.org/2000/svg}svg",
+        f"architecture asset is not SVG: {suffix}",
+    )
+    required_boundaries = (
+        "ADAPTER_CANDIDATE",
+        "CAPABILITY_AUDIT_REQUIRED",
+        "REVIEWED_MATMUL_ONLY",
+        "SOURCE_EVIDENCE_ONLY",
+        "UNVERIFIED_OPERATOR_DRAFT",
+    )
+    _require(
+        all(boundary in text for boundary in required_boundaries),
+        f"{suffix} omits the reviewed capability boundary",
+    )
+
+
+def _validate_png_payload(payload: bytes, suffix: str) -> None:
+    _require(payload.startswith(b"\x89PNG\r\n\x1a\n"), f"invalid PNG signature: {suffix}")
+    offset = 8
+    chunks: list[tuple[bytes, bytes]] = []
+    while offset < len(payload):
+        _require(offset + 12 <= len(payload), f"truncated PNG chunk: {suffix}")
+        size = int.from_bytes(payload[offset : offset + 4], "big")
+        chunk_type = payload[offset + 4 : offset + 8]
+        end = offset + 12 + size
+        _require(end <= len(payload), f"truncated PNG payload: {suffix}")
+        data = payload[offset + 8 : offset + 8 + size]
+        expected_crc = int.from_bytes(payload[offset + 8 + size : end], "big")
+        actual_crc = zlib.crc32(chunk_type + data) & 0xFFFFFFFF
+        _require(actual_crc == expected_crc, f"PNG CRC mismatch: {suffix}")
+        chunks.append((chunk_type, data))
+        offset = end
+        if chunk_type == b"IEND":
+            break
+    _require(offset == len(payload), f"trailing bytes after PNG IEND: {suffix}")
+    _require(
+        bool(chunks) and chunks[0][0] == b"IHDR" and len(chunks[0][1]) == 13,
+        f"invalid PNG header: {suffix}",
+    )
+    _require(any(kind == b"IDAT" for kind, _ in chunks), f"PNG has no IDAT: {suffix}")
+    _require(chunks[-1] == (b"IEND", b""), f"PNG has no terminal IEND: {suffix}")
+    width = int.from_bytes(chunks[0][1][0:4], "big")
+    height = int.from_bytes(chunks[0][1][4:8], "big")
+    _require(width > 0 and height > 0, f"invalid PNG dimensions: {suffix}")
+
+
+def _validate_reviewed_assets(payloads: Mapping[str, bytes]) -> None:
+    for suffix in REVIEWED_ASSETS:
+        payload = _payload_by_suffix(payloads, suffix)
+        if suffix.endswith(".pptx"):
+            _validate_pptx_payload(payload, suffix)
+        elif suffix.endswith(".svg"):
+            _validate_svg_payload(payload, suffix)
+        else:
+            _validate_png_payload(payload, suffix)
+
+
+def _check_required_members(
+    kind: str,
+    files: list[dict[str, Any]],
+    name: str,
+    version: str,
+    metadata_path: str,
+) -> None:
+    paths = {str(item["path"]) for item in files}
     package = _canonical_project_name(name).replace("-", "_")
-    common = [f"{package}/__init__.py", f"{package}/__main__.py"]
+    common = [
+        f"{package}/__init__.py",
+        f"{package}/__main__.py",
+        f"{package}/_script_benchmark_worker.py",
+        f"{package}/_script_verification_worker.py",
+        f"{package}/script_benchmark.py",
+        f"{package}/script_migration.py",
+        f"{package}/script_verification.py",
+        f"{package}/agents/analysis.py",
+        f"{package}/agents/decision.py",
+        f"{package}/agents/migration.py",
+        f"{package}/agents/verification.py",
+    ]
+    installed_skill_data = [
+        "share/numpilot/codearts/ProjectSkillStatus.txt",
+        "share/numpilot/codearts/agents/numpilot-analyzer.md",
+        "share/numpilot/codearts/agents/numpilot-evidence-auditor.md",
+        "share/numpilot/codearts/agents/numpilot-operator-engineer.md",
+        "share/numpilot/codearts/agents/numpilot-orchestrator.md",
+        "share/numpilot/skills/numpilot-migration-gate/SKILL.md",
+        "share/numpilot/skills/asnumpy-custom-op-integration/SKILL.md",
+        "share/numpilot/skills/asnumpy-custom-op-integration/agents/openai.yaml",
+        "share/numpilot/skills/asnumpy-custom-op-integration/references/legacy-case-lessons.md",
+        "share/numpilot/skills/asnumpy-custom-op-integration/references/manifest-workflow.md",
+        "share/numpilot/skills/asnumpy-custom-op-integration/references/official-aclnn-existing-module.md",
+        "share/numpilot/skills/asnumpy-custom-op-integration/references/qualification-and-debug.md",
+    ]
     if kind == "wheel":
+        metadata_parts = PurePosixPath(metadata_path).parts
+        _require(
+            len(metadata_parts) == 2 and metadata_parts[1] == "METADATA",
+            "wheel metadata must be in a top-level dist-info directory",
+        )
+        dist_info = metadata_parts[0]
+        expected_dist_info = f"{package}-{version}.dist-info"
+        _require(
+            dist_info == expected_dist_info,
+            f"wheel dist-info root mismatch: expected {expected_dist_info}, got {dist_info}",
+        )
+        data_root = f"{package}-{version}.data/data"
         required = common + [
-            "METADATA",
-            "RECORD",
-            "entry_points.txt",
-            "licenses/LICENSE",
-            "licenses/THIRD_PARTY_NOTICES.md",
+            f"{dist_info}/METADATA",
+            f"{dist_info}/WHEEL",
+            f"{dist_info}/RECORD",
+            f"{dist_info}/entry_points.txt",
+            f"{dist_info}/licenses/LICENSE",
+            f"{dist_info}/licenses/THIRD_PARTY_NOTICES.md",
+            *(f"{data_root}/{member}" for member in installed_skill_data),
         ]
+        allowed_roots = (f"{package}/", f"{dist_info}/", f"{data_root}/")
+        misplaced = sorted(
+            path for path in paths if not any(path.startswith(root) for root in allowed_roots)
+        )
+        _require(
+            not misplaced,
+            f"wheel contains members outside canonical roots: {', '.join(misplaced[:5])}",
+        )
     else:
-        required = common + [
+        source_root = f"{_canonical_project_name(name)}-{version}"
+        _require(
+            metadata_path == f"{source_root}/PKG-INFO",
+            f"sdist root mismatch: expected {source_root}",
+        )
+        misplaced = sorted(
+            path for path in paths if not path.startswith(source_root + "/")
+        )
+        _require(
+            not misplaced,
+            f"sdist contains members outside canonical root: {', '.join(misplaced[:5])}",
+        )
+        source_required = common + [
             "LICENSE",
             "MANIFEST.in",
             "README.md",
+            "README.zh-CN.md",
             "THIRD_PARTY_NOTICES.md",
             "pyproject.toml",
             "run_demo.sh",
-            "docs/numpilot-architecture-paper-style-zh-readable.pptx",
+            "docs/installation.md",
+            "docs/installation.zh-CN.md",
+            "docs/numpilot-en.pptx",
+            "docs/numpilot-zh.pptx",
+            "docs/numpilot-en-v6.svg",
+            "docs/numpilot-zh-v6.svg",
+            "docs/assets/architecture/numpilot-architecture-en.svg",
+            "docs/assets/architecture/numpilot-architecture-zh.svg",
+            "docs/assets/brand/asnumpy-mark.png",
+            "docs/assets/brand/ascend-wordmark.png",
+            "docs/assets/brand/cann-wordmark.png",
+            "docs/assets/brand/codearts-icon.png",
+            "docs/assets/brand/numpilot-wordmark.png",
+            "docs/assets/brand/README.md",
+            "docs/FRESH-NOTEBOOK-QUICKSTART.md",
+            "docs/NumPilot-Demo-v1-Quickstart.ipynb",
+            "examples/competition_power_log_exp.py",
+            "evidence/competition-ordinary-20260828/qualified-analysis.json",
+            "evidence/competition-ordinary-20260828/script-benchmark-report.json",
+            "evidence/competition-ordinary-20260828/script-verification-report.json",
+            "evidence/competition-poisson-stage-20260828/qualified-analysis.json",
+            "evidence/competition-poisson-stage-20260828/script-benchmark-report.json",
+            "evidence/competition-poisson-stage-20260828/script-verification-report.json",
             "evidence/MANIFEST.sha256",
+            ".codeartsdoer/agents/numpilot-analyzer.md",
+            ".codeartsdoer/agents/numpilot-evidence-auditor.md",
+            ".codeartsdoer/agents/numpilot-operator-engineer.md",
+            ".codeartsdoer/agents/numpilot-orchestrator.md",
+            ".codeartsdoer/skills/ProjectSkillStatus.txt",
+            ".codeartsdoer/skills/numpilot-migration-gate/SKILL.md",
+            ".codeartsdoer/skills/asnumpy-custom-op-integration/SKILL.md",
+            ".codeartsdoer/skills/asnumpy-custom-op-integration/agents/openai.yaml",
+            ".codeartsdoer/skills/asnumpy-custom-op-integration/references/legacy-case-lessons.md",
+            ".codeartsdoer/skills/asnumpy-custom-op-integration/references/manifest-workflow.md",
+            ".codeartsdoer/skills/asnumpy-custom-op-integration/references/official-aclnn-existing-module.md",
+            ".codeartsdoer/skills/asnumpy-custom-op-integration/references/qualification-and-debug.md",
             "tools/check_release_tree.py",
             "tools/release_artifact_manifest.py",
         ]
-    missing = [suffix for suffix in required if not _has_suffix(paths, suffix)]
+        required = [f"{source_root}/{member}" for member in source_required]
+    missing = [path for path in required if path not in paths]
     _require(not missing, f"{kind} is missing required members: {', '.join(missing)}")
 
 
@@ -276,11 +539,11 @@ def inspect_artifact(
     _require(path.is_file(), f"release artifact does not exist: {path}")
     kind = _artifact_kind(path)
     if kind == "wheel" or path.name.lower().endswith(".zip"):
-        files, metadata_payloads = _read_zip(path)
+        files, retained_payloads = _read_zip(path)
     else:
-        files, metadata_payloads = _read_tar(path)
+        files, retained_payloads = _read_tar(path)
     _require(bool(files), f"release artifact is empty: {path.name}")
-    metadata_path, metadata = _select_metadata(kind, metadata_payloads)
+    metadata_path, metadata = _select_metadata(kind, retained_payloads)
     _require(
         _canonical_project_name(metadata["name"])
         == _canonical_project_name(expected_name),
@@ -290,7 +553,15 @@ def inspect_artifact(
         metadata["version"] == expected_version,
         f"artifact version mismatch: expected {expected_version}, got {metadata['version']}",
     )
-    _check_required_members(kind, files, expected_name)
+    _check_required_members(
+        kind,
+        files,
+        expected_name,
+        expected_version,
+        metadata_path,
+    )
+    if kind == "sdist":
+        _validate_reviewed_assets(retained_payloads)
     return {
         "filename": path.name,
         "kind": kind,
@@ -385,6 +656,33 @@ def _consistent_metadata(artifacts: list[dict[str, Any]]) -> None:
         )
 
 
+def _bind_reviewed_source_assets(
+    artifacts: list[dict[str, Any]], repo_root: Path
+) -> dict[str, str]:
+    sdists = [artifact for artifact in artifacts if artifact["kind"] == "sdist"]
+    if not sdists:
+        return {}
+    _require(len(sdists) == 1, "release manifest must contain at most one sdist")
+    records = sdists[0]["regular_files"]
+    bindings: dict[str, str] = {}
+    for relative in REVIEWED_ASSETS:
+        source = repo_root / relative
+        _require(source.is_file(), f"reviewed source asset is missing: {relative}")
+        source_digest = _sha256(source)
+        matches = [
+            item
+            for item in records
+            if item["path"] == relative or item["path"].endswith("/" + relative)
+        ]
+        _require(len(matches) == 1, f"sdist asset identity is ambiguous: {relative}")
+        _require(
+            matches[0]["sha256"] == source_digest,
+            f"sdist asset differs from reviewed source: {relative}",
+        )
+        bindings[relative] = source_digest
+    return bindings
+
+
 def generate_manifest(
     artifacts: Iterable[str | Path],
     *,
@@ -408,9 +706,18 @@ def generate_manifest(
     inspected.sort(key=lambda item: item["filename"])
     _consistent_metadata(inspected)
     provenance = _source_provenance(root)
+    provenance["reviewed_assets_sha256"] = _bind_reviewed_source_assets(inspected, root)
+    kinds = [artifact["kind"] for artifact in inspected]
+    pair_complete = (
+        kinds.count("wheel") == 1 and kinds.count("sdist") == 1 and len(kinds) == 2
+    )
     if require_clean:
         _require(not provenance["dirty"], "release source tree is dirty")
-    clean = not provenance["dirty"]
+        _require(
+            pair_complete,
+            "release candidate requires exactly one wheel and one sdist",
+        )
+    eligible = not provenance["dirty"] and pair_complete
     return {
         "artifacts": inspected,
         "build_environment": {
@@ -420,11 +727,11 @@ def generate_manifest(
         },
         "generated_at_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
         "project": project,
-        "release_candidate_eligible": clean,
+        "release_candidate_eligible": eligible,
         "schema": SCHEMA,
         "schema_version": SCHEMA_VERSION,
         "source": provenance,
-        "status": "release_candidate_ready" if clean else "development_only",
+        "status": "release_candidate_ready" if eligible else "development_only",
         "tool": {
             "path": "tools/release_artifact_manifest.py",
             "sha256": _sha256(Path(__file__).resolve()),
