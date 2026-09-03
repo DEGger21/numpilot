@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
     cat <<'EOF'
-NumPilot source-first installer
+NumPilot installer (frozen AsNumpy component by default)
 
 Usage:
   ./install.sh --allow-network [options]
@@ -17,7 +17,8 @@ Options:
                                  PATH/activate-numpilot.sh for later shells.
   --pip-index-url URL            Explicit package index for the initial Python dependencies.
   --cann-env PATH                CANN set_env.sh to source in this process.
-  --asnumpy-source PATH          Use an existing exact pinned AsNumpy checkout.
+  --asnumpy-component PATH       Use the release-adjacent exact AsNumpy wheel component.
+  --asnumpy-source PATH          (Maintainer-only) use an existing exact pinned source checkout.
   --with-cannbot                 Fetch or verify the pinned CANNBot Skills checkout.
   --cannbot-source PATH          Use an existing exact pinned CANNBot checkout.
   --accept-cannbot-license       Confirm acceptance of CANN Open Software License v2.0.
@@ -25,8 +26,9 @@ Options:
   --help                         Show this help.
 
 This script never runs sudo, edits shell startup files, stores credentials, or installs into
-the system Python. CANN itself, a working compiler, Python development headers, and the system
-fmt/spdlog development packages must already be present.
+the system Python. CANN itself must already be present. A working compiler, Python development
+headers, and the system fmt/spdlog development packages are required only for the explicit
+maintainer source-build path.
 EOF
 }
 
@@ -42,6 +44,7 @@ RECEIPT_PATH_EXPLICIT=false
 PIP_INDEX_URL_OVERRIDE=""
 CANN_ENV_FILE=""
 ASNUMPY_SOURCE=""
+ASNUMPY_COMPONENT=""
 CANNBOT_SOURCE=""
 PERSISTENT_ROOT=""
 ACTIVATION_PATH=""
@@ -80,6 +83,11 @@ while [ "$#" -gt 0 ]; do
             ASNUMPY_SOURCE=$2
             shift 2
             ;;
+        --asnumpy-component)
+            [ "$#" -ge 2 ] || fail "--asnumpy-component requires a path"
+            ASNUMPY_COMPONENT=$2
+            shift 2
+            ;;
         --with-cannbot)
             WITH_CANNBOT=true
             shift
@@ -114,12 +122,22 @@ done
 if [ "$WITH_CANNBOT" = true ] && [ "$ACCEPT_CANNBOT_LICENSE" != true ]; then
     fail "--with-cannbot requires --accept-cannbot-license after reviewing the license"
 fi
+if [ -n "$ASNUMPY_SOURCE" ] && [ -n "$ASNUMPY_COMPONENT" ]; then
+    fail "choose exactly one of --asnumpy-component or maintainer-only --asnumpy-source"
+fi
 
 command -v python3 >/dev/null 2>&1 || fail "python3 is required"
-command -v git >/dev/null 2>&1 || fail "git is required"
-command -v g++ >/dev/null 2>&1 || fail "g++ >= 11.2 is required"
 
-python3 - <<'PY' || fail "Python >= 3.10 with development headers is required"
+# A frozen component installs an already-built wheel and does not need a
+# compiler toolchain. Keep these checks on explicit source/CANNBot paths so a
+# release host is not forced to prepare build tools it will never use.
+if [ -n "$ASNUMPY_SOURCE" ] || [ "$WITH_CANNBOT" = true ]; then
+    command -v git >/dev/null 2>&1 || fail "git is required for source/CANNBot operations"
+fi
+if [ -n "$ASNUMPY_SOURCE" ]; then
+    command -v g++ >/dev/null 2>&1 || fail "g++ >= 11.2 is required for source builds"
+
+    python3 - <<'PY' || fail "Python >= 3.10 with development headers is required for source builds"
 import pathlib
 import sys
 import sysconfig
@@ -130,6 +148,7 @@ include = pathlib.Path(sysconfig.get_path("include"))
 if not (include / "Python.h").is_file():
     raise SystemExit(1)
 PY
+fi
 
 if [ -n "$PERSISTENT_ROOT" ]; then
     if ! PERSISTENT_ROOT=$(python3 - "$PERSISTENT_ROOT" <<'PY'
@@ -140,9 +159,34 @@ import sys
 raw = sys.argv[1]
 if not raw or "\x00" in raw or "\n" in raw or "\r" in raw:
     raise SystemExit(1)
-path = Path(os.path.abspath(os.path.expanduser(raw)))
+# Walk the unnormalized spelling first.  ``abspath`` would collapse
+# ``symlink/..`` even though the kernel follows the symlink before applying
+# ``..``; ordinary ``nested/../root`` remains valid.
+expanded = os.path.expanduser(raw)
+current = Path(os.path.abspath(os.sep)) if os.path.isabs(expanded) else Path(os.getcwd())
+for component in expanded.split(os.sep):
+    if not component or component == ".":
+        continue
+    if component == "..":
+        current = current.parent
+        continue
+    candidate = current / component
+    if os.path.lexists(candidate) and candidate.is_symlink():
+        raise SystemExit(1)
+    current = candidate
+path = Path(os.path.abspath(expanded))
 if path == Path(path.anchor) or path.is_symlink() or (path.exists() and not path.is_dir()):
     raise SystemExit(1)
+# A missing root may have several missing parents.  Inspect every existing
+# component before mkdir -p so a symlinked ancestor cannot redirect runtime
+# state outside the path the caller reviewed.
+current = path
+while True:
+    if os.path.lexists(current) and current.is_symlink():
+        raise SystemExit(1)
+    if current == current.parent:
+        break
+    current = current.parent
 print(path)
 PY
     ); then
@@ -242,10 +286,12 @@ find_cmake_package() {
     return 1
 }
 
-find_cmake_package 'fmt*config.cmake' || fail \
-    "system fmt CMake package is missing (Ubuntu package: libfmt-dev); NumPilot will not run sudo"
-find_cmake_package 'spdlog*config.cmake' || fail \
-    "system spdlog CMake package is missing (Ubuntu package: libspdlog-dev); NumPilot will not run sudo"
+if [ -n "$ASNUMPY_SOURCE" ]; then
+    find_cmake_package 'fmt*config.cmake' || fail \
+        "system fmt CMake package is missing (Ubuntu package: libfmt-dev); NumPilot will not run sudo"
+    find_cmake_package 'spdlog*config.cmake' || fail \
+        "system spdlog CMake package is missing (Ubuntu package: libspdlog-dev); NumPilot will not run sudo"
+fi
 
 if ! VENV_DIR=$(python3 - "$VENV_DIR" "$SCRIPT_DIR" <<'PY'
 import os
@@ -257,7 +303,21 @@ raw_path, repository = sys.argv[1:]
 if not raw_path or "\x00" in raw_path or "\n" in raw_path or "\r" in raw_path:
     raise SystemExit("venv path is empty or contains unsafe characters")
 
-path = Path(os.path.abspath(os.path.expanduser(raw_path)))
+# Check raw components before normalizing so a path such as
+# ``symlink/../venv`` cannot evade the symlink policy.
+expanded = os.path.expanduser(raw_path)
+current = Path(os.path.abspath(os.sep)) if os.path.isabs(expanded) else Path(os.getcwd())
+for component in expanded.split(os.sep):
+    if not component or component == ".":
+        continue
+    if component == "..":
+        current = current.parent
+        continue
+    candidate = current / component
+    if os.path.lexists(candidate) and candidate.is_symlink():
+        raise SystemExit("venv path must not traverse a symlink")
+    current = candidate
+path = Path(os.path.abspath(expanded))
 repository_path = Path(repository).resolve()
 for forbidden in (
     Path("/bin"),
@@ -328,15 +388,27 @@ PIP_ARGS=(install --disable-pip-version-check)
 if [ -n "$PIP_INDEX_URL_OVERRIDE" ]; then
     PIP_ARGS+=(--index-url "$PIP_INDEX_URL_OVERRIDE")
 fi
-"$VENV_PYTHON" -m pip "${PIP_ARGS[@]}" -e "$SCRIPT_DIR[bootstrap]"
+# The frozen component path only needs NumPilot's runtime dependencies.  The
+# heavier build extras (cmake/scikit-build/pybind11/build) are installed only
+# for an explicit maintainer source build.
+if [ -n "$ASNUMPY_SOURCE" ]; then
+    "$VENV_PYTHON" -m pip "${PIP_ARGS[@]}" -e "$SCRIPT_DIR[bootstrap]"
+else
+    "$VENV_PYTHON" -m pip "${PIP_ARGS[@]}" -e "$SCRIPT_DIR"
+fi
 
 # Console tools installed into the project venv (especially cmake) must win over
 # older system copies during bootstrap preflight and the subsequent source build.
 export PATH="$VENV_DIR/bin:$PATH"
 
-BOOTSTRAP_ARGS=(--build-asnumpy)
+if [ -z "$ASNUMPY_COMPONENT" ]; then
+    ASNUMPY_COMPONENT="$SCRIPT_DIR/components/asnumpy"
+fi
+BOOTSTRAP_ARGS=(--asnumpy-component "$ASNUMPY_COMPONENT")
 if [ -n "$ASNUMPY_SOURCE" ]; then
-    BOOTSTRAP_ARGS+=(--asnumpy-cache "$ASNUMPY_SOURCE")
+    # Source builds remain a maintainer-only escape hatch.  The normal
+    # installer never selects this path and therefore never fetches source.
+    BOOTSTRAP_ARGS=(--build-asnumpy --asnumpy-cache "$ASNUMPY_SOURCE")
 fi
 if [ "$WITH_CANNBOT" = true ]; then
     BOOTSTRAP_ARGS+=(--with-cannbot --accept-cannbot-license)
@@ -363,10 +435,35 @@ raw_path, explicit_text = sys.argv[1:]
 if not raw_path or "\x00" in raw_path or "\n" in raw_path or "\r" in raw_path:
     raise SystemExit("receipt path is empty or contains unsafe characters")
 
+# Check the original spelling before ``abspath`` normalizes ``..``.  A
+# symlinked component is unsafe even if the normalized path appears local.
+expanded = os.path.expanduser(raw_path)
+current = Path(os.path.abspath(os.sep)) if os.path.isabs(expanded) else Path(os.getcwd())
+for component in expanded.split(os.sep):
+    if not component or component == ".":
+        continue
+    if component == "..":
+        current = current.parent
+        continue
+    candidate = current / component
+    if os.path.lexists(candidate) and candidate.is_symlink():
+        raise SystemExit("receipt path must not traverse a symlink")
+    current = candidate
 receipt = Path(os.path.abspath(os.path.expanduser(raw_path)))
 parent = receipt.parent
 explicit = explicit_text == "true"
 current_uid = os.getuid()
+
+# Validate the complete existing ancestor chain, not only receipt.parent.  A
+# symlink several levels up would otherwise let the later default mkdir/write
+# escape the intended private state root.
+current = parent
+while True:
+    if os.path.lexists(current) and current.is_symlink():
+        raise SystemExit("receipt path must not traverse a symlink")
+    if current == current.parent:
+        break
+    current = current.parent
 
 try:
     parent_status = parent.lstat()
@@ -419,6 +516,7 @@ ACTIVATION_ARGS=(
     --destination "$ACTIVATION_PATH"
     --venv "$VENV_DIR"
     --cann-env "$CANN_ENV_FILE"
+    --asnumpy-component "$ASNUMPY_COMPONENT"
     --receipt "$RECEIPT_PATH"
 )
 if [ -n "$PERSISTENT_ROOT" ]; then

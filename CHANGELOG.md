@@ -2,12 +2,32 @@
 
 ## 0.3.0a1.dev0 - Unreleased
 
+- 增加 6 个显式 `OperatorSpec` 自定义算子案例（逐元素、稳定分支、归约、LayerNorm），并补充
+  AsNumpy 固定源码的 facade → pybind `_core` → C++/ACLNN 封装底稿；文档明确 lazy export
+  不是 kernel registry、host-assisted provenance 与 `generated_unverified` 边界；
+- 增加 LLM 手写算子批测脱敏报告：6 个真实远程 case 的完整 draft 成功率为 `0/6`，单 case
+  约 `60.6–61.0s`、HTTP 504；同步补齐 CodeArts Agent 重跑口径和截图要求，避免把连通性
+  探针或模型片段包装成算子接入成功；
+- 增加显式 `--allow-custom-operator-generation` draft-only 路由：仅静态绑定的 custom
+  `OperatorSpec` 可用，收据保留 `official_equivalence=not_proven`，不伪装官方 clean no-match，
+  且仍受 LLM/Skill/代理/六门资格化门禁；
+- `complete-gaps` 新增显式 `--continue-on-error` 多缺口调度模式：单个 Gap 的模型/本地校验失败
+  不再丢失同批次其余 Gap 的准备结果；`gap-report.json` 保留脱敏 `generation_failures`、远端
+  调用状态和 HTTP 状态，失败项只保留 GapSpec/Generation Request，默认行为仍为 fail-fast，
+  且含失败时 CLI 保持非零退出；
+- 增加统一的 TTY 交互层：空命令显示产品入口，ordinary 分析/迁移/验证/性能阶段显示可清除的
+  spinner 与持久耗时结果，`doctor`/`paths` 使用宽屏表格/窄屏列表的自适应 Rich 视图；JSON、单路径、重定向、`NO_COLOR`
+  和 `TERM=dumb` 均保持无动态控制符的纯文本。模型检查新增脱敏代理路由状态，强制代理缺失或
+  命中 bypass 时在联网前给出可操作错误；demo 失败会报告阶段、退出码、耗时和保留的运行目录；
+- 比赛就绪度对 hosted video 页面链接（含常见视频域名、Markdown/HTML 视频标签）做保守识别，
+  仍将未提供 `accessible=true` 回执的链接标为未独立验证，不把普通文档链接误当视频证明；
 - 将公开首页整理为英文 `README.md` 与中文 `README.zh-CN.md`，增加双语安装/验收指南、按代码
   边界更新的双语 SVG 架构主图，以及保持既有视觉风格且待 PowerPoint/WPS 人工视觉核查的
   `docs/numpilot-en.pptx` / `docs/numpilot-zh.pptx`；同步收敛双分支 PR 发布约定；
 - 增加可选的 `NUMPILOT_LLM_REQUIRE_PROXY=1` fail-closed 门禁：真实模型请求必须命中与
   endpoint 协议匹配的标准 HTTP(S) 代理，缺失代理或命中 `NO_PROXY` 时在联网前终止；每次
-  请求使用当前代理快照构造独立 opener，代理地址继续不进入配置、日志与回执；
+  请求使用单次环境快照完成 proxy/bypass 判定并构造固定代理 opener，代理地址继续不进入配置、
+  日志与回执；
 - 长期分支治理规范收敛为 `main`（发布、比赛交付）与 `develop`（日常集成），完善无 force
   push 的 `develop → main → annotated tag` 发布门禁；服务端保护规则仍需管理员验收；
 - 增加 ordinary `benchmark-script`（`bench-script` 短别名）：只接受真实 configured-model
@@ -20,9 +40,9 @@
   `doctor → analyze → configured model migrate → verify-script → benchmark-script`，新增默认 9M
   `float32` Poisson-Ritz 源项/鲁棒残差阶段、唯一 run 目录、未知参数失败和 shell 编排回归；
   五步结束后只读四份 JSON 回执生成一屏评委摘要，明确分开 resident headline 与非直接
-  E2E 的一次组件和；
+  E2E 的一次组件耗时；
 - 增加两份可随源码复核的 ordinary 真机证据：应用形态 Poisson 阶段在同核、CPU BLAS
-  单线程、20 样本下 resident 中位加速 `2.567×`（保守 `2.471×`），但一次组件和仅
+  单线程、20 样本下 resident 中位加速 `2.567×`（保守 `2.471×`），但一次组件总耗时仅
   `0.789×`；合成逐元素链 resident 中位 `8.079×`（保守 `7.503×`），组件和 `1.220×`。
   两者均由实际 `glm-5.3` 生成并通过 exact AST、数值、runtime 与 16/16 性能门；组件和均
   明确不是直接 E2E，Poisson 阶段也不冒充完整求解器或公开数据负载；

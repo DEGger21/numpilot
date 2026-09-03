@@ -1,8 +1,8 @@
 """Read-only planning and explicit bootstrap for the NumPilot NPU demo.
 
 Nothing in this module runs at package installation or import time.  Planning
-never fetches; applying requires an explicit AsNumpy source/wheel choice and an
-explicit CANNBot license decision.
+never fetches; applying requires an explicit AsNumpy component/wheel/source choice
+and an explicit CANNBot license decision.
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ from pathlib import Path, PurePosixPath
 import platform
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -30,6 +31,14 @@ from typing import Any, Callable, Dict, Mapping, Optional, Sequence, Tuple
 from zipfile import BadZipFile, ZipFile
 
 from numpilot import __version__
+from numpilot.asnumpy_component import (
+    AsNumpyComponent,
+    AsNumpyComponentError,
+    component_receipt_identity,
+    load_component_manifest,
+    resolve_component_wheel,
+    verify_component_attachments,
+)
 from numpilot.cannbot_skills import (
     CANNBOT_COMMIT,
     CANNBOT_LICENSE,
@@ -172,6 +181,8 @@ _MAX_WHEEL_UNCOMPRESSED_BYTES = 512 * 1024 * 1024
 _MAX_OUTPUT = 4096
 _COMMAND_TIMEOUT = 120
 _BUILD_TIMEOUT = 30 * 60
+_CANN_VERSION_MAX_BYTES = 64 * 1024
+_CANN_VERSION_VALUE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+:-]{0,127}$")
 
 Runner = Callable[..., Any]
 Finder = Callable[[str], Optional[str]]
@@ -454,8 +465,81 @@ def _cache(path: Path) -> Dict[str, Any]:
     }
 
 
+def _read_cann_version_file(path: Path) -> Optional[str]:
+    """Read a conventional CANN ``version.info`` without importing CANN.
+
+    CANN installations have used both ``Version=...`` and ``version=...`` in
+    different package metadata files.  This deliberately reads only a small
+    bounded prefix and accepts a conservative token, so a malformed or
+    user-controlled file cannot become a runtime identity by accident.
+    """
+
+    try:
+        if path.is_symlink() or not path.is_file() or path.stat().st_size > _CANN_VERSION_MAX_BYTES:
+            return None
+        lines = path.read_text(encoding="utf-8", errors="strict").splitlines()[:128]
+    except (OSError, UnicodeError):
+        return None
+    for line in lines:
+        key, separator, value = line.partition("=")
+        if not separator or key.strip().lower() != "version":
+            continue
+        value = value.strip().strip("\"'")
+        if _CANN_VERSION_VALUE.fullmatch(value):
+            return value
+    return None
+
+
+def _detect_cann_version(
+    environment: Mapping[str, str],
+    toolkit: Optional[Path],
+    opp: Optional[Path],
+) -> Dict[str, Any]:
+    """Return a side-effect-free CANN version observation for a plan.
+
+    The supplied environment mapping is used instead of reading process
+    globals, which keeps plans deterministic in tests and in CI adapters.  A
+    disagreement between metadata files is represented explicitly and is
+    treated as a failure by the component runtime gate.
+    """
+
+    observations: list[tuple[str, str]] = []
+    env_value = str(environment.get("CANN_VERSION", "")).strip()
+    if env_value.lower() not in {"", "unknown", "auto"} and _CANN_VERSION_VALUE.fullmatch(env_value):
+        observations.append(("CANN_VERSION", env_value))
+
+    candidates: list[tuple[str, Optional[Path]]] = [
+        ("toolkit/version.info", toolkit / "version.info" if toolkit else None),
+        ("toolkit/opp/version.info", toolkit / "opp" / "version.info" if toolkit else None),
+        ("opp/version.info", opp / "version.info" if opp else None),
+        (
+            "toolkit/aarch64-linux/ascend_toolkit_install.info",
+            toolkit / "aarch64-linux" / "ascend_toolkit_install.info" if toolkit else None,
+        ),
+        (
+            "toolkit/x86_64-linux/ascend_toolkit_install.info",
+            toolkit / "x86_64-linux" / "ascend_toolkit_install.info" if toolkit else None,
+        ),
+    ]
+    for source, path in candidates:
+        if path is None:
+            continue
+        value = _read_cann_version_file(path)
+        if value is not None:
+            observations.append((source, value))
+
+    values = sorted({value for _source, value in observations})
+    return {
+        "version": values[0] if len(values) == 1 else None,
+        "version_sources": [source for source, _value in observations],
+        "version_values": values,
+        "version_conflict": len(values) > 1,
+    }
+
+
 def build_bootstrap_plan(
     *,
+    asnumpy_component: Optional[Path] = None,
     asnumpy_wheel: Optional[Path] = None,
     expected_wheel_sha256: Optional[str] = None,
     build_asnumpy: bool = False,
@@ -484,26 +568,53 @@ def build_bootstrap_plan(
     opp_value = env.get("ASCEND_OPP_PATH")
     toolkit = Path(toolkit_value).expanduser() if toolkit_value else None
     opp = Path(opp_value).expanduser() if opp_value else None
+    cann_version = _detect_cann_version(env, toolkit, opp)
     npu_smi = finder("npu-smi")
     compiler = "g++" if finder("g++") else "gcc"
     package_reader = version_reader or metadata.version
     installed = _installed_version(package_reader)
 
+    component_selected = asnumpy_component is not None
     wheel_selected = asnumpy_wheel is not None or expected_wheel_sha256 is not None
+    component: Optional[AsNumpyComponent] = None
+    component_error: Optional[str] = None
+    if component_selected:
+        try:
+            component = load_component_manifest(asnumpy_component)
+        except AsNumpyComponentError as exc:
+            component_error = str(exc)
     requested_profile = (
         _AUDITED_WHEEL_PROFILES.get(expected_wheel_sha256.lower())
         if expected_wheel_sha256 and _SHA256.fullmatch(expected_wheel_sha256)
         else None
     )
     expected_installed_version = (
-        requested_profile["version"]
+        component.version
+        if component is not None
+        else requested_profile["version"]
         if requested_profile is not None
         else ASNUMPY_VERSION if build_asnumpy else None
     )
     issues = []
+    if component_selected and (wheel_selected or build_asnumpy):
+        issues.append(
+            "select exactly one AsNumpy mode: internal component, local wheel, or pinned source build"
+        )
+    if component_selected and component_error:
+        issues.append("internal AsNumpy component is invalid: %s" % component_error)
+    if component_selected and component is not None:
+        try:
+            resolve_component_wheel(component)
+            verify_component_attachments(component)
+        except AsNumpyComponentError as exc:
+            issues.append(str(exc))
     if wheel_selected and (asnumpy_wheel is None or expected_wheel_sha256 is None):
         issues.append("local wheel and expected SHA-256 must be supplied together")
-    if wheel_selected == bool(build_asnumpy):
+    # An internal component is already a complete, independently validated
+    # installation mode.  Do not apply the legacy wheel-vs-source XOR check
+    # to it; otherwise ``--plan --asnumpy-component`` is rejected before the
+    # component's own manifest/wheel checks can run.
+    if not component_selected and wheel_selected == bool(build_asnumpy):
         issues.append("select exactly one AsNumpy mode: local wheel or pinned source build")
     if expected_wheel_sha256 and not _SHA256.fullmatch(expected_wheel_sha256):
         issues.append("expected wheel SHA-256 must be 64 hexadecimal characters")
@@ -511,7 +622,12 @@ def build_bootstrap_plan(
         issues.append("CANNBot license acceptance is required before acquisition")
 
     actions = [{"action": "inspect_environment", "network": False}]
-    if asnumpy_wheel is not None:
+    if component_selected:
+        actions += [
+            {"action": "verify_internal_asnumpy_component", "network": False},
+            {"action": "pip_install_verified_component_wheel", "network": False},
+        ]
+    elif asnumpy_wheel is not None:
         actions += [
             {"action": "verify_local_wheel_sha256", "network": False},
             {"action": "pip_install_verified_wheel", "network": False},
@@ -565,6 +681,7 @@ def build_bootstrap_plan(
             "toolkit_directory": bool(toolkit and toolkit.is_dir()),
             "opp_path": str(opp) if opp else None,
             "opp_directory": bool(opp and opp.is_dir()),
+            **cann_version,
         },
         "npu_smi": {"path": npu_smi, "available": bool(npu_smi)},
         "asnumpy_installation": {
@@ -579,6 +696,13 @@ def build_bootstrap_plan(
         "repositories": {
             "asnumpy": (
                 {
+                    "mode": "internal-component",
+                    "component": component.summary(),
+                    "runtime_constraints": dict(component.runtime),
+                    "source_repository_claimed": True,
+                }
+                if component is not None
+                else {
                     "mode": "pinned-source-build",
                     "repository": ASNUMPY_REPOSITORY,
                     "commit": ASNUMPY_COMMIT,
@@ -624,11 +748,16 @@ def build_bootstrap_plan(
             },
         },
         "request": {
-            "asnumpy_mode": "wheel" if asnumpy_wheel else "source" if build_asnumpy else None,
+            "asnumpy_mode": (
+                "component"
+                if component_selected
+                else "wheel" if asnumpy_wheel else "source" if build_asnumpy else None
+            ),
             "wheel_path": str(asnumpy_wheel) if asnumpy_wheel else None,
             "expected_wheel_sha256": (
                 expected_wheel_sha256.lower() if expected_wheel_sha256 else None
             ),
+            "component_path": str(asnumpy_component) if asnumpy_component else None,
             "use_cannbot": bool(use_cannbot),
             "cannbot_license_accepted": bool(accept_cannbot_license),
         },
@@ -636,7 +765,7 @@ def build_bootstrap_plan(
         "network_required": any(action["network"] for action in actions),
         "network_policy": {
             "local_wheel_pip": "--isolated --no-index --no-deps",
-            "source_fetch": "only the pinned commit when its cache is missing",
+            "source_fetch": "disabled for internal component; maintainer-only source mode is explicit",
             "source_build_subprocess_network_isolated": False,
             "note": (
                 "source build is conservatively marked network=true because the "
@@ -667,31 +796,100 @@ def _environment_issues(plan: Mapping[str, Any], require_venv: bool) -> list[str
         for name, report in plan["python_packages"]["runtime"].items()
         if not report["ok"]
     ]
-    profile = plan["repositories"]["asnumpy"].get("wheel_profile")
+    asnumpy_repository = plan["repositories"]["asnumpy"]
+    profile = asnumpy_repository.get("wheel_profile")
     constraints = profile.get("runtime_constraints") if profile else None
+    constraint_label = "audited AsNumpy profile"
+    if asnumpy_repository.get("mode") == "internal-component":
+        component = asnumpy_repository.get("component")
+        if isinstance(component, Mapping):
+            candidate = component.get("runtime")
+            if isinstance(candidate, Mapping):
+                # The component lock uses flat dependency names so it remains
+                # easy to inspect in a release receipt.  Accept an explicit
+                # ``packages`` map as a backwards-compatible extension, but
+                # never infer a version from a minimum requirement.
+                normalized: Dict[str, Any] = dict(candidate)
+                packages = normalized.get("packages")
+                if isinstance(packages, Mapping):
+                    normalized_packages = dict(packages)
+                else:
+                    normalized_packages = {}
+                for package_name in ("numpy", "loguru"):
+                    key = "%s_version" % package_name
+                    if key in normalized:
+                        normalized_packages[package_name] = normalized[key]
+                if normalized_packages:
+                    normalized["packages"] = normalized_packages
+                constraints = normalized
+                constraint_label = "frozen AsNumpy component"
+                if component.get("artifact_required") is True:
+                    required_runtime = {
+                        "cann_version",
+                        "machine",
+                        "loguru_version",
+                        "numpy_version",
+                        "python_implementation",
+                        "python_major_minor",
+                    }
+                    missing_runtime = sorted(required_runtime - set(normalized))
+                    if missing_runtime:
+                        issues.append(
+                            "frozen AsNumpy component is missing runtime constraints: %s"
+                            % ", ".join(missing_runtime)
+                        )
+            elif component.get("artifact_required") is True:
+                issues.append(
+                    "frozen AsNumpy component has no runtime constraints"
+                )
     if constraints:
-        if plan["python"]["implementation"] != constraints["python_implementation"]:
+        expected_implementation = constraints.get("python_implementation")
+        if expected_implementation and plan["python"]["implementation"] != expected_implementation:
             issues.append(
-                "audited AsNumpy profile requires %s"
-                % constraints["python_implementation"]
+                "%s requires %s" % (constraint_label, expected_implementation)
             )
-        if plan["python"]["major_minor"] != constraints["python_major_minor"]:
+        expected_python = constraints.get("python_major_minor")
+        if expected_python and plan["python"]["major_minor"] != expected_python:
             issues.append(
-                "audited AsNumpy profile requires Python %s"
-                % constraints["python_major_minor"]
+                "%s requires Python %s" % (constraint_label, expected_python)
             )
-        if plan["machine"]["machine"] != constraints["machine"]:
+        expected_machine = constraints.get("machine")
+        if expected_machine and plan["machine"]["machine"] != expected_machine:
             issues.append(
-                "audited AsNumpy profile requires machine %s"
-                % constraints["machine"]
+                "%s requires machine %s" % (constraint_label, expected_machine)
             )
         packages = plan["python_packages"]["runtime"]
-        for name, expected in constraints["packages"].items():
-            if packages[name]["version"] != expected:
+        expected_packages = constraints.get("packages", {})
+        if isinstance(expected_packages, Mapping):
+            for name, expected in expected_packages.items():
+                if name not in packages:
+                    issues.append(
+                        "%s requires package %s == %s, but it was not inspected"
+                        % (constraint_label, name, expected)
+                    )
+                    continue
+                if not isinstance(expected, str) or packages[name]["version"] != expected:
+                    issues.append(
+                        "%s requires %s == %s" % (constraint_label, name, expected)
+                    )
+        expected_cann = constraints.get("cann_version")
+        if expected_cann:
+            observed_cann = plan.get("cann", {}).get("version")
+            if plan.get("cann", {}).get("version_conflict"):
                 issues.append(
-                    "audited AsNumpy profile requires %s == %s"
-                    % (name, expected)
+                    "%s cannot use CANN metadata with conflicting versions" % constraint_label
                 )
+            elif observed_cann != expected_cann:
+                if observed_cann is None:
+                    issues.append(
+                        "%s requires CANN %s, but the installed CANN version could not be determined"
+                        % (constraint_label, expected_cann)
+                    )
+                else:
+                    issues.append(
+                        "%s requires CANN %s (observed %s)"
+                        % (constraint_label, expected_cann, observed_cann)
+                    )
     return issues
 
 
@@ -737,10 +935,29 @@ def _verify_wheel(path: Path, expected: str) -> Dict[str, Any]:
             if sum(item.file_size for item in infos) > _MAX_WHEEL_UNCOMPRESSED_BYTES:
                 raise BootstrapError("AsNumpy wheel exceeds the uncompressed size limit")
             for item in infos:
-                member = PurePosixPath(item.filename)
-                if member.is_absolute() or ".." in member.parts or "\x00" in item.filename:
+                raw_name = item.filename
+                if not raw_name or "\x00" in raw_name or "\\" in raw_name:
                     raise BootstrapError("AsNumpy wheel contains an unsafe path")
-            names = [item.filename for item in infos]
+                name = raw_name[:-1] if raw_name.endswith("/") else raw_name
+                member = PurePosixPath(name)
+                if (
+                    not name
+                    or member.is_absolute()
+                    or ".." in member.parts
+                    or "" in member.parts
+                    or ":" in member.parts[0]
+                    or member.as_posix() != name
+                ):
+                    raise BootstrapError("AsNumpy wheel contains an unsafe path")
+                mode = item.external_attr >> 16
+                if stat.S_ISLNK(mode) or item.flag_bits & 0x1:
+                    raise BootstrapError(
+                        "AsNumpy wheel contains a symbolic link or encrypted member"
+                    )
+            names = [
+                item.filename[:-1] if item.filename.endswith("/") else item.filename
+                for item in infos
+            ]
             if len(names) != len(set(names)):
                 raise BootstrapError("AsNumpy wheel contains duplicate member paths")
             metadata_names = [
@@ -878,6 +1095,61 @@ def _verify_wheel(path: Path, expected: str) -> Dict[str, Any]:
         "installed_files": installed_files,
         "trust": trust,
     }
+
+
+def _verify_internal_component(
+    component: AsNumpyComponent,
+    *,
+    wheel_path: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """Verify one release-adjacent wheel against the immutable component lock."""
+
+    try:
+        wheel = resolve_component_wheel(component, wheel_path)
+        attachment_identity = verify_component_attachments(component)
+    except AsNumpyComponentError as exc:
+        raise BootstrapError(str(exc)) from exc
+    identity = _verify_wheel(wheel, component.wheel_sha256)
+    if identity["version"] != component.version:
+        raise BootstrapError(
+            "internal AsNumpy component version mismatch: expected %s, got %s"
+            % (component.version, identity["version"])
+        )
+    observed_tags = set(identity.get("tags") or ())
+    expected_tags = set(component.wheel_tags)
+    if observed_tags != expected_tags:
+        raise BootstrapError(
+            "internal AsNumpy component wheel tags mismatch: expected %s, got %s"
+            % (sorted(expected_tags), sorted(observed_tags))
+        )
+    if (
+        component.wheel_metadata_sha256 is not None
+        and identity["metadata_sha256"] != component.wheel_metadata_sha256
+    ):
+        raise BootstrapError("internal AsNumpy component METADATA hash mismatch")
+    if (
+        component.wheel_record_sha256 is not None
+        and identity["record_sha256"] != component.wheel_record_sha256
+    ):
+        raise BootstrapError("internal AsNumpy component RECORD hash mismatch")
+    expected_files = component.installed_files
+    if expected_files:
+        if dict(identity.get("installed_files") or {}) != dict(expected_files):
+            raise BootstrapError(
+                "internal AsNumpy component installed-file identity mismatch"
+            )
+    identity["component"] = component_receipt_identity(component)
+    if attachment_identity:
+        identity["component"]["verified_attachments"] = attachment_identity
+    identity["trust"] = {
+        "kind": "numpilot-internal-component",
+        "component_id": component.component_id,
+        "manifest_sha256": identity["component"]["manifest_sha256"],
+        "repository": component.repository,
+        "commit": component.commit,
+        "tree": component.tree,
+    }
+    return identity
 
 
 def _install_wheel(wheel: Path, runner: Optional[Runner]) -> None:
@@ -1174,6 +1446,7 @@ def _write_receipt(path: Path, payload: Mapping[str, Any]) -> None:
 def apply_bootstrap(
     *,
     receipt_path: Path,
+    asnumpy_component: Optional[Path] = None,
     asnumpy_wheel: Optional[Path] = None,
     expected_wheel_sha256: Optional[str] = None,
     build_asnumpy: bool = False,
@@ -1199,8 +1472,14 @@ def apply_bootstrap(
     env = dict(os.environ if environment is None else environment)
     source_cache = Path(asnumpy_cache) if asnumpy_cache else default_asnumpy_checkout(env)
     skill_cache = Path(cannbot_cache) if cannbot_cache else _default_cannbot_checkout(env)
+    component_requested = asnumpy_component is not None
     wheel_requested = asnumpy_wheel is not None or expected_wheel_sha256 is not None
-    if wheel_requested:
+    if component_requested:
+        asnumpy_identity = {
+            "mode": "internal-component",
+            "source_repository_claimed": True,
+        }
+    elif wheel_requested:
         asnumpy_identity = {
             "mode": "provided-wheel",
             "source_repository_claimed": False,
@@ -1238,10 +1517,14 @@ def apply_bootstrap(
     }
     _write_receipt(receipt_path, receipt)
     try:
+        if component_requested and (wheel_requested or build_asnumpy):
+            raise BootstrapError(
+                "select exactly one AsNumpy mode: internal component, local wheel, or pinned source build"
+            )
         wheel_mode = asnumpy_wheel is not None or expected_wheel_sha256 is not None
         if wheel_mode and (asnumpy_wheel is None or expected_wheel_sha256 is None):
             raise BootstrapError("local wheel and expected SHA-256 must be supplied together")
-        if wheel_mode == bool(build_asnumpy):
+        if not component_requested and wheel_mode == bool(build_asnumpy):
             raise BootstrapError(
                 "select exactly one AsNumpy mode: local wheel or pinned source build"
             )
@@ -1249,6 +1532,7 @@ def apply_bootstrap(
             raise BootstrapError("CANNBot license acceptance is required before acquisition")
 
         plan = build_bootstrap_plan(
+            asnumpy_component=asnumpy_component,
             asnumpy_wheel=asnumpy_wheel,
             expected_wheel_sha256=expected_wheel_sha256,
             build_asnumpy=build_asnumpy,
@@ -1276,7 +1560,25 @@ def apply_bootstrap(
         receipt["actions"].append("environment_gates_passed")
 
         provided_identity = None
-        if asnumpy_wheel is not None and expected_wheel_sha256 is not None:
+        component_manifest = None
+        if component_requested:
+            try:
+                component_manifest = load_component_manifest(asnumpy_component)
+            except AsNumpyComponentError as exc:
+                raise BootstrapError(str(exc)) from exc
+            provided_identity = _verify_internal_component(component_manifest)
+            receipt["repositories"]["asnumpy"].update(
+                {
+                    "mode": "internal-component",
+                    "component": component_receipt_identity(component_manifest),
+                    "repository": component_manifest.repository,
+                    "commit": component_manifest.commit,
+                    "tree": component_manifest.tree,
+                    "license": component_manifest.license,
+                }
+            )
+            receipt["actions"].append("internal_component_verified")
+        elif asnumpy_wheel is not None and expected_wheel_sha256 is not None:
             provided_identity = _verify_wheel(
                 asnumpy_wheel, expected_wheel_sha256
             )
@@ -1300,7 +1602,19 @@ def apply_bootstrap(
             receipt["actions"].append("cannbot_bundle_verified")
             receipt["verification"]["cannbot"] = _cannbot_skill_smoke(bundle)
 
-        if asnumpy_wheel is not None and provided_identity is not None:
+        if component_requested and provided_identity is not None:
+            wheel = Path(str(resolve_component_wheel(component_manifest)))
+            with tempfile.TemporaryDirectory(prefix="numpilot-component-") as temporary:
+                staged = Path(temporary) / wheel.name
+                shutil.copyfile(wheel, staged)
+                if not hmac.compare_digest(
+                    _file_sha256(staged), provided_identity["sha256"]
+                ):
+                    raise BootstrapError("AsNumpy component wheel changed while staging")
+                _install_wheel(staged, runner)
+            wheel_identity, wheel_kind = provided_identity, "internal-component"
+            receipt["actions"].append("verified_component_wheel_installed")
+        elif asnumpy_wheel is not None and provided_identity is not None:
             with tempfile.TemporaryDirectory(prefix="numpilot-wheel-") as temporary:
                 staged = Path(temporary) / asnumpy_wheel.name
                 shutil.copyfile(asnumpy_wheel, staged)

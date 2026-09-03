@@ -35,6 +35,27 @@ def test_explicit_paths_override_xdg(monkeypatch, tmp_path):
     assert reports_dir() == reports
 
 
+def test_runtime_root_is_descriptive_alias_for_persistent_home(
+    monkeypatch, tmp_path
+):
+    monkeypatch.delenv("NUMPILOT_HOME", raising=False)
+    monkeypatch.setenv("NUMPILOT_RUNTIME_ROOT", str(tmp_path))
+
+    assert state_home() == tmp_path / ".numpilot-state"
+    assert runs_dir() == tmp_path / ".numpilot-state" / "runs"
+
+
+def test_numpilot_home_takes_precedence_over_runtime_root(
+    monkeypatch, tmp_path
+):
+    primary = tmp_path / "primary"
+    secondary = tmp_path / "secondary"
+    monkeypatch.setenv("NUMPILOT_HOME", str(primary))
+    monkeypatch.setenv("NUMPILOT_RUNTIME_ROOT", str(secondary))
+
+    assert state_home() == primary / ".numpilot-state"
+
+
 def test_path_resolution_does_not_create_directories(monkeypatch, tmp_path):
     target = tmp_path / "not-created"
     monkeypatch.setenv("NUMPILOT_STATE_HOME", str(target))

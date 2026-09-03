@@ -49,6 +49,13 @@ npu = ["threadpoolctl"]
 include = ["numpilot*"]
 
 [tool.setuptools.data-files]
+"share/numpilot/components/asnumpy" = [
+  "components/asnumpy/manifest.json",
+  "components/asnumpy/README.md",
+  "components/asnumpy/LICENSE",
+  "components/asnumpy/SBOM.spdx.json",
+  "components/asnumpy/*.whl",
+]
 "share/numpilot/codearts" = [
   ".codeartsdoer/skills/ProjectSkillStatus.txt",
 ]

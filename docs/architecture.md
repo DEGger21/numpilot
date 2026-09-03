@@ -13,6 +13,16 @@ Skills 与 configured model 当前输出未验证算子草稿。
 
 README 中的 v6 SVG 是完整展示版，文字已转为轮廓并内嵌了位图 Logo；文本化的边界图单独用于机器审计。
 PPT 保留原稿几何与视觉风格，公开发布前仍需用 PowerPoint/WPS 人工检查字体替换、文本溢出和线型。
+当前仓库中的中英文 PPT 是单页架构源文件，不能单独视为赛题要求的完整方案介绍材料；提交前应
+另行拆分/补齐场景痛点、需求、CodeArts 五类使用记录、测试效果、部署和扩展性页面，并在目标
+演示环境检查中文字体与投影可读性。
+
+发布时 AsNumpy 是独立的、哈希绑定的内部运行时组件，不是浮动依赖。用户安装应只接收同一
+release 的本地 wheel/受控制品；源码 checkout 和缓存仅用于隔离构建下一版。固定身份、历史
+wheel 摘要、无隐式获取规则和升级/回滚合同见
+[AsNumpy 内部组件锁定说明](ASNUMPY-INTERNAL-COMPONENT-LOCK.zh-CN.md)。当前 Alpha 代码仍保留
+源码优先开发路径；发布/比赛 component 模式已完成本地 no-fetch、哈希和运行时画像门禁，源码
+路径仍只能由维护者显式选择，不能混入用户安装流程。
 
 NumPilot 当前默认解决一个直接问题：用户提交带 `import numpy as np` 的普通纯 NumPy 文件，
 系统不执行源码，先检查实际 AsNumpy capability，再由用户配置模型生成受精确 AST/回执约束的迁移
@@ -37,11 +47,13 @@ reviewed official existing-module adapter 不用 AST 决定 C++/pybind/Python �
 ```mermaid
 flowchart TB
   subgraph Bootstrap[显式依赖准备层]
-    INSTALL[install.sh<br/>显式 --allow-network]
+    INSTALL[install.sh<br/>显式 --allow-network；默认本地组件]
     PLAN[bootstrap 默认 plan<br/>--plan / --json]
-    LOCK[实现锁定 source commit/tree<br/>可接用户手工 clean checkout]
-    APPLY[bootstrap --apply<br/>默认源码构建]
+    LOCK[实现锁定 source commit/tree<br/>仅作构建/审计基线]
+    WHEEL[发布内部组件<br/>wheel + artifact SHA-256]
+    APPLY[bootstrap --apply<br/>release 用 wheel；开发可源码构建]
     INSTALL --> PLAN --> LOCK --> APPLY
+    INSTALL --> PLAN --> WHEEL --> APPLY
   end
 
   subgraph Product[NumPilot ordinary script 产品面]
@@ -113,20 +125,30 @@ python -m numpilot bootstrap
 python -m numpilot bootstrap --plan
 python -m numpilot bootstrap --plan --json
 
-# 默认 direct 手工路径：从实现锁定的 official source commit/tree 构建
+# 冻结 release 用户路径：只安装同一 release 附件中的内部 AsNumpy wheel + manifest/hash
+python -m numpilot bootstrap --apply \
+  --asnumpy-component /secure/release/components/asnumpy \
+  --receipt /secure/private/bootstrap-receipt.json
+
+# 兼容/迁移路径：已有可信 wheel 时显式提供文件与 hash
+python -m numpilot bootstrap --apply \
+  --asnumpy-wheel /secure/release/components/asnumpy/asnumpy-<locked>.whl \
+  --asnumpy-wheel-sha256 <release-manifest-sha256>
+
+# 维护者开发/构建下一版的 direct 手工路径：从锁定 source commit/tree 构建（非现场安装）
 python -m numpilot bootstrap --apply --build-asnumpy
 
 # 可选 gap/operator lane：增加固定 CANNBot bundle
 python -m numpilot bootstrap --apply --build-asnumpy \
   --with-cannbot --accept-cannbot-license
 
-# 用户手工准备两个 checkout；仍须满足精确 origin/commit/tree/clean 门禁
+# 维护者手工准备 checkout；仍须满足精确 origin/commit/tree/clean 门禁
 python -m numpilot bootstrap --apply --build-asnumpy \
   --asnumpy-cache /path/to/asnumpy \
   --with-cannbot --cannbot-cache /path/to/cannbot-skills \
   --accept-cannbot-license
 
-# 可选历史路径：本地 wheel 必须带来自可信发布物/用户输入的 hash
+# 非发布/兼容路径：本地 wheel 必须带来自可信发布物/用户输入的 hash
 python -m numpilot bootstrap --apply \
   --asnumpy-wheel /trusted/path/asnumpy.whl \
   --asnumpy-wheel-sha256 "$TRUSTED_ASNUMPY_SHA256"
@@ -139,8 +161,9 @@ python -m numpilot bootstrap --verify --with-cannbot --accept-cannbot-license
 命令的行为约束如下：
 
 1. 无模式或 `--plan` 只读环境和动作计划，不 clone、fetch、build 或 install；
-2. `--apply` 必须在 `--asnumpy-wheel PATH --asnumpy-wheel-sha256 HEX` 和
-   `--build-asnumpy` 之间二选一；`--receipt PATH` 可指定原子回执位置，但必须是绝对路径，
+2. `--apply` 必须在受控 `--asnumpy-component PATH`、成对的
+   `--asnumpy-wheel PATH --asnumpy-wheel-sha256 HEX` 和 `--build-asnumpy` 之间三选一；
+   `--receipt PATH` 可指定原子回执位置，但必须是绝对路径，
    且其父目录由当前用户拥有、不是符号链接、不可被 group/world 写入；
 3. 实现内锁定 official AsNumpy source commit/tree，源码构建只能由显式
    `--build-asnumpy` 触发；手工路径必须先安装 `numpilot[bootstrap]`，
@@ -151,10 +174,10 @@ python -m numpilot bootstrap --verify --with-cannbot --accept-cannbot-license
    cache 已存在也不会声称离线保证；
 4. 实现不内置 wheel URL 或 expected wheel hash。本地 wheel 的预期 SHA-256 来自
    可信发布物或用户输入，安装前校验，实际 hash 写入 receipt；
-5. 全新机器 Demo 默认从锁定源码构建，不使用 wheelhouse。预编译 wheel 只保留为
-   显式高级/历史路径；wheel tag、metadata、RECORD、安装后 module/native hash 与
-   实际版本都会进入 receipt，未知 wheel 即使 hash 匹配用户输入，也仍需后续
-   qualification；
+5. 开发机默认可从锁定源码构建，不使用 wheelhouse；冻结 release 则必须使用
+   component manifest/release manifest 绑定的内部 wheel，禁止在缓存缺失时获取源码。预编译 wheel 的
+   tag、metadata、RECORD、安装后 module/native hash 与实际版本都会进入 receipt，未知
+   wheel 即使 hash 匹配用户输入，也仍需后续 qualification；
 6. CANNBot official commit/bundle 身份在实现中固定；只有显式
    `--with-cannbot` 获取或复验其内容时才要求 `--accept-cannbot-license`。单独准备 AsNumpy
    不要求 CANN Open Software License Agreement（CANN OSL）；
@@ -173,6 +196,9 @@ python -m numpilot bootstrap --verify --with-cannbot --accept-cannbot-license
 10. NumPilot 不得通过 pip 安装钩子、`import`、`doctor`、`migrate` 或
    `complete-gaps` 隐式下载依赖。ordinary `migrate` 调用已配置模型是用户请求的模型动作，
    不是依赖安装；它必须保留远端回执，且只在调用进程临时使用用户配置的代理。
+11. release 模式还要把内部 AsNumpy wheel 的字节、METADATA/RECORD、安装后 Python/native
+    模块哈希写入同一 release manifest；任一缺失或漂移都返回阻断，不能切回 `--build-asnumpy`
+    或自动下载源码。
 
 ## 3. 默认 ordinary script 流程
 
@@ -330,6 +356,16 @@ ACLNN 动态符号；它不 import CANN、不加载共享库。`official_source.
 非零，official-first 证明已经是新 kernel 路径的强制门禁；无 Gap 时仍直接本地结束，不做模型
 readiness 探测。
 
+对于源码中明确声明的领域 `OperatorSpec`，另有一个必须显式开启的
+`--allow-custom-operator-generation` draft-only 路由。它只接受
+`provenance=custom_generation_candidate` 且 `route=ascendc_registry_candidate` 的静态契约，
+并把 `custom_operator_generation_allowed` 与
+`custom_generation_proof.official_equivalence=not_proven` 写入官方解析收据；
+`catalog_unreviewed_api` 仍保持 `ambiguous`，不会被伪装成 clean `no_match`。已发现的官方
+候选、非 OperatorSpec 缺口、身份漂移和错误状态不能被该开关覆盖。即使该路由获准，仍须
+配置模型、代理、固定 CANNBot Skill 和后续六门资格化；产物永远先是
+`generated_unverified`，恢复/激活流程不会把它当作已验证能力。
+
 `recover-gaps ingest-official` 对 schema-2 gap migration report、其 sibling
 `gap-request.json` 和上述 official resolution 做严格 bounded JSON 解析与全交叉绑定，再以每阶段
 新增、parent/binding/coverage/kind 精确匹配的 typed receipt 幂等推进到 `RESOLVED`。它固定
@@ -409,6 +445,12 @@ execution；activation 是之后的独立状态。
 详细状态与授权边界见
 [Gap 恢复状态合同](gap-recovery-state.md)，可编辑三页图见
 [官方算子解析与缺口恢复架构图](numpilot-official-operator-resolution.drawio)。
+
+自定义算子补全的分支、`OperatorSpec` 静态合同、CANNBot/模型草稿边界、隔离接入和六门资格化
+见[AsNumpy 自定义算子补全静态流程图](numpilot-asnumpy-custom-operator-flow.png)；对应的
+[固定坐标 draw.io 源文件](numpilot-asnumpy-custom-operator-flow.drawio)不使用自动布局。图中将
+`generated_unverified`、`ADAPTER_CANDIDATE` 与后续（标注为 `target/manual` 的）
+`QUALIFIED`/`ACTIVATED` 状态明确分开。
 
 因此代码中的唯一状态名必须逐级如实记录：
 

@@ -37,10 +37,11 @@ from numpilot.gaps.recovery import (
     OperatorCandidateOrigin,
     create_operator_candidate,
 )
+from tests.fixture_support import recovery_fixture_root
 
 
 REPO = Path(__file__).resolve().parents[1]
-EVIDENCE = REPO / "tests" / "fixtures" / "ops-nn-recovery"
+EVIDENCE = recovery_fixture_root()
 GAP_REQUEST = EVIDENCE / "pre-integration-gap-v2" / "gap-request.json"
 OFFICIAL_REPORT = EVIDENCE / "official-resolution-linkage-v2.json"
 

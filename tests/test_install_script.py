@@ -34,6 +34,7 @@ def test_source_installer_help_describes_one_click_and_manual_checkouts():
     assert "--allow-network" in result.stdout
     assert "--pip-index-url" in result.stdout
     assert "--asnumpy-source" in result.stdout
+    assert "--asnumpy-component" in result.stdout
     assert "--cannbot-source" in result.stdout
     assert "--persistent-root" in result.stdout
     assert "activate-numpilot.sh" in result.stdout
@@ -67,12 +68,15 @@ def test_source_installer_uses_explicit_bootstrap_plan_apply_verify_sequence():
     source = SCRIPT.read_text(encoding="utf-8")
 
     assert '"$VENV_PYTHON" -m pip "${PIP_ARGS[@]}" -e "$SCRIPT_DIR[bootstrap]"' in source
+    assert '"$VENV_PYTHON" -m pip "${PIP_ARGS[@]}" -e "$SCRIPT_DIR"' in source
+    assert "heavier build extras" in source
     assert 'export PATH="$VENV_DIR/bin:$PATH"' in source
     assert 'bootstrap --plan "${BOOTSTRAP_ARGS[@]}"' in source
     assert 'export NUMPILOT_BOOTSTRAP_RECEIPT=$RECEIPT_PATH' in source
     assert 'APPLY_ARGS=(--apply "${BOOTSTRAP_ARGS[@]}" --receipt "$RECEIPT_PATH")' in source
     assert 'VERIFY_ARGS=(--verify)' in source
     assert "doctor --backend npu" in source
+    assert "choose exactly one of --asnumpy-component or maintainer-only --asnumpy-source" in source
     assert "sudo " not in "\n".join(
         line for line in source.splitlines() if not line.lstrip().startswith("#")
     )

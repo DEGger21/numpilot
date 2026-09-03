@@ -53,7 +53,7 @@
           "positional_args": 2
         }
       ],
-      "source_path": "/home/ma-user/work/numpilot/examples/ops_nn_matmul_inference.py",
+      "source_path": "__NUMPILOT_SOURCE__",
       "source_sha256": "4cf236f427ae419a7a4969499e4197ed31be4ba4f40bd26e686886f69ce96046",
       "target_soc": "Ascend910B4"
     }
@@ -91,7 +91,7 @@
   "qualification_performed": false,
   "request_type": "script_api_gap",
   "schema_version": 1,
-  "source_path": "/home/ma-user/work/numpilot/examples/ops_nn_matmul_inference.py",
+  "source_path": "__NUMPILOT_SOURCE__",
   "source_sha256": "4cf236f427ae419a7a4969499e4197ed31be4ba4f40bd26e686886f69ce96046",
   "status": "gap_generation_required",
   "target_soc": "Ascend910B4"

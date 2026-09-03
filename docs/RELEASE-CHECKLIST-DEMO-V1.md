@@ -17,13 +17,21 @@
   `main`/`develop` 双分支约定一致；
 - [ ] 确认待发布 commit、固定 AsNumpy wheel、CANN/算子材料和精选 evidence 的身份与
   SHA-256，记录到 release manifest；
+- [ ] 阅读并冻结 [AsNumpy 内部组件锁定与发布合同](ASNUMPY-INTERNAL-COMPONENT-LOCK.zh-CN.md)：
+  release 只消费一份明确的 CPython/架构 wheel，不解析 `latest`、版本范围或浮动 Git 引用；
+- [ ] 实际 AsNumpy wheel 本体已放入受控发行附件（或已验证的内部制品库），文件名、字节数、
+  SHA-256、METADATA/RECORD、安装后 Python/native 模块哈希均已写入 release manifest；开发态
+  receipt 中的历史摘要不能替代可取得的二进制；
+- [ ] 已确认发布模式不会因组件缺失而 `git clone`/`git fetch`/下载 AsNumpy 源码或静默升级，
+  并保留一份失败关闭测试/日志作为证据；若代码门禁尚未落地，不得勾选本项；
 - [ ] 完成 secret scan，确认源码、文档、测试、LLM 回执和精选 evidence 不包含凭据或
   不应公开的环境信息。
 
 ## 2. 干净源码门禁
 
 - [ ] 所有预期源码、测试和文档均已纳入版本控制；没有意外的未跟踪文件；
-- [ ] `python tools/check_release_tree.py --require-clean` 通过：只含两份当前公开证据，无 WIP、
+- [ ] `python tools/check_release_tree.py --require-clean --require-asnumpy-component` 通过：组件
+  wheel、LICENSE、SBOM 与锁定身份均已校验；只含两份当前公开证据，无 WIP、
   profiler 数据库、数组、日志、缓存、构建目录或大体积历史材料；
 - [ ] `git status --short` 为空，HEAD 是计划发布的唯一 commit；
 - [ ] `git diff --check` 通过；
@@ -32,13 +40,13 @@
 
 ## 3. 测试与静态验证
 
-> 当前 `0.3.0a1.dev0` 仍有发布阻断：部分 gap-recovery 测试夹具把 `scan.source_path` 绑定到
-> 一个历史 checkout 的绝对路径，尚不能在其他 checkout 通过完整测试；Poisson qualification
-> harness 也要求发布矩阵中的 CPython 3.10。修复并在目标 Python 3.10 干净 checkout 重生/复核
-> 这些绑定夹具前，不得勾选本节完整测试门或把当前工作树标记为 RC。
+> 当前 gap-recovery 测试夹具已在运行时物化到独立临时目录，不再绑定开发机的绝对路径；本地工作树
+> 的全量回归可以通过，但这不替代目标 Python 3.10/AArch64/CANN 矩阵的干净 checkout 复核。
+> Poisson qualification harness 仍要求发布矩阵中的 CPython 3.10；在该矩阵和第二环境完成复核前，
+> 不得把当前开发树标记为 RC。
 
 - [ ] 在 Python 3.10 的干净环境运行完整测试：
-  `env -u PYTHONPATH -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy python -m pytest -q -p no:cacheprovider`；
+  `env -u PYTHONPATH -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u NO_PROXY -u http_proxy -u https_proxy -u all_proxy -u no_proxy -u NUMPILOT_LLM_REQUIRE_PROXY python -m pytest -q -p no:cacheprovider`；
 - [ ] 运行离线、合成输入的普通脚本扫描/迁移 smoke test，不能使用比赛案例代替自动测试；
 - [ ] 运行 `benchmark-script` 的 parent/worker/CLI 全部 fail-closed 测试，并在目标 910B4 上对
   同一 configured-GLM artifact 完成至少 20 样本的 opt-in 真机验收；
@@ -59,6 +67,9 @@
 - [ ] 在干净环境安装锁定/记录版本的构建工具；
 - [ ] 使用 `python -m build --outdir <新的空目录>` 同时生成 wheel 和 sdist；
 - [ ] 记录构建命令、构建工具版本、HEAD、开始/结束时间和输出文件 SHA-256；
+- [ ] 将本次实际交付的 AsNumpy 内部 wheel 放入同一 release 的 `components/asnumpy/`（或登记
+  不可变内部制品地址），并在主 release manifest 中绑定组件 artifact hash；不能只记录
+  `1929a3ba…` commit/tree；
 - [ ] 检查 wheel 与 sdist，至少包含：完整 `numpilot` 包、ordinary migration/verification/
   benchmark 父层与两个私有 worker、`LICENSE`、`THIRD_PARTY_NOTICES.md`、console entry point、
   CodeArts 4 个 agent + migration gate Skill，以及全部 AsNumpy integration Skill data files；
@@ -76,10 +87,12 @@ python tools/release_artifact_manifest.py \
   /path/to/numpilot-<version>.tar.gz \
   --repo-root . \
   --require-clean \
+  --require-asnumpy-component \
   --output /path/to/release-manifest.json
 python tools/release_artifact_manifest.py \
   --verify /path/to/release-manifest.json \
-  --artifact-dir /path/to
+  --artifact-dir /path/to \
+  --require-asnumpy-component
 ```
 
 该清单逐文件绑定归档内容、包元数据、发布文件哈希和 Git 溯源，但不替代完整的标准 SBOM
@@ -97,6 +110,10 @@ python tools/release_artifact_manifest.py \
   `analyze → configured GLM migrate → verify-script → benchmark-script`，保存原始回执；
 - [ ] 在干净 CPython 3.10/aarch64 Demo 环境运行 `numpilot bootstrap --verify`，确认
   `ap.ones((1000, 1000), dtype=ap.float32)`、实际版本、模块路径和 native hash 均通过；
+- [ ] 在无上游网络、空 AsNumpy 源码缓存的隔离环境中，仅用发行附件的锁定 wheel 完成安装和
+  README smoke；确认组件缺失/哈希篡改时命令失败关闭，且不会回退到源码获取；
+- [ ] 在第二个干净环境再次核对 wheel 字节 hash、`asnumpy/__init__.py`、native `_core`、
+  Python ABI/SoC/CANN 画像和 receipt 绑定；
 - [ ] 若发布 CANNBot 准备能力，运行
   `numpilot bootstrap --verify --with-cannbot --accept-cannbot-license`，确认本地
   固定 bundle 能回答“现在写 Ascend C 算子有哪些能参考的 Skill？”并列出已校验清单；
@@ -107,6 +124,9 @@ python tools/release_artifact_manifest.py \
 ## 6. 许可证、SBOM 与发布附件
 
 - [ ] 为 wheel、sdist、二进制/OPP 和比赛交付包分别生成完整 SBOM 与逐文件许可证清单；
+- [ ] AsNumpy 作为独立内部组件单列其 Apache-2.0 LICENSE、来源 commit/tree、artifact/module/
+  native hashes 和再分发范围；确认 CANN/OPP/ACLNN/CANNBot/ops-nn 的许可证没有被合并或误写成
+  NumPilot 自有代码；
 - [ ] 核对 `LICENSE`、`THIRD_PARTY_NOTICES.md`、AsNumpy、CANN/ops-nn/CANNBot 材料及精选
   evidence 内的许可证和再分发限制；
 - [ ] 核对根目录 PDF、图、外部材料和模型生成产物的来源与再分发授权；不明确的材料不发布；

@@ -2,16 +2,16 @@
   "binding": {
     "marker": "# NUMPILOT_DEVICE_INPUTS_END",
     "migrated": {
-      "path": "/home/ma-user/work/.numpilot-state/competition-main-0U17Jn/migration/migrated.py",
+      "path": "/REDACTED/numpilot-state/competition-main-0U17Jn/migration/migrated.py",
       "sha256": "c5937520402166ac227413b97661fe1ceac009d840251b6971f81de595cecfec"
     },
     "migration_report": {
-      "path": "/home/ma-user/work/.numpilot-state/competition-main-0U17Jn/migration/script-migration-report.json",
-      "sha256": "0ceff6efb719cb4d08a85934c16f4bffd93e15a67326ce23025a4ca356f28205"
+      "path": "/REDACTED/numpilot-state/competition-main-0U17Jn/migration/script-migration-report.json",
+      "sha256": "f9981e01a031b593ba87961044c229486c8631e8f38f557d9aa25dc7895ca61e"
     },
     "prefix_ast_sha256": "dbd9ee7307f92ff33954fd3a0f40ec3cb914b2f275e431fba3a7f0dd0a7ad587",
     "source": {
-      "path": "/home/ma-user/work/numpilot/examples/competition_power_log_exp.py",
+      "path": "examples/competition_power_log_exp.py",
       "sha256": "4ffcfd6f12f771cb40daadfe9de2ea3a2b3ae3e3db4b95e09c39c0c469d3de20"
     },
     "source_migrated_prefix_equivalent": true,
@@ -387,7 +387,7 @@
         "suffix_sample_executions": 20,
         "suffix_warmup_executions": 3
       },
-      "python_executable": "/home/ma-user/work/numpilot/.venv/bin/python",
+      "python_executable": "/REDACTED/python/venv/bin/python",
       "removed_sensitive_environment_variables": 3,
       "role": "cpu",
       "runtime_call_counts": null,
@@ -413,7 +413,7 @@
       },
       "threadpools": [
         {
-          "filepath": "/home/ma-user/work/numpilot/.venv/lib/python3.10/site-packages/numpy.libs/libscipy_openblas64_-128b20d9.so",
+          "filepath": "/REDACTED/python/venv/lib/python3.10/site-packages/numpy.libs/libscipy_openblas64_-128b20d9.so",
           "internal_api": "openblas",
           "num_threads": 1,
           "prefix": "openblas",
@@ -750,7 +750,7 @@
         ],
         "decision": "DIRECT",
         "issues": [],
-        "runtime_identity_sha256": "7d443cb390fdd8bb398e10ed00b82d1a5aed624c1ed777ca8d6652fc9cf1b124",
+        "runtime_identity_sha256": "34806791698747b46be8fba24b1d24252e6df76ec78bc420a1edaac1550e48eb",
         "runtime_identity_status": "matched",
         "source_sha256": "4ffcfd6f12f771cb40daadfe9de2ea3a2b3ae3e3db4b95e09c39c0c469d3de20"
       },
@@ -777,10 +777,10 @@
           "status": true,
           "strict_npu": true
         },
-        "path": "/tmp/numpilot-script-benchmark-fixxj52c/script-migration-report.json",
-        "sha256": "0ceff6efb719cb4d08a85934c16f4bffd93e15a67326ce23025a4ca356f28205"
+        "path": "/REDACTED/tmp/numpilot-script-benchmark-fixxj52c/script-migration-report.json",
+        "sha256": "f9981e01a031b593ba87961044c229486c8631e8f38f557d9aa25dc7895ca61e"
       },
-      "migration_report_sha256": "0ceff6efb719cb4d08a85934c16f4bffd93e15a67326ce23025a4ca356f28205",
+      "migration_report_sha256": "f9981e01a031b593ba87961044c229486c8631e8f38f557d9aa25dc7895ca61e",
       "outputs": [
         {
           "data_bytes": 36000000,
@@ -870,9 +870,9 @@
           }
         },
         "environment": {
-          "cann_home": "/usr/local/Ascend/cann-9.0.0",
+          "cann_home": "/REDACTED/cann",
           "cann_version": "9.0.0",
-          "module_path": "/home/ma-user/work/numpilot/.venv/lib/python3.10/site-packages/asnumpy/__init__.py",
+          "module_path": "/REDACTED/python/venv/lib/python3.10/site-packages/asnumpy/__init__.py",
           "python_version": "3.10.20",
           "soc_version": "unknown"
         },
@@ -906,7 +906,7 @@
         "suffix_sample_executions": 20,
         "suffix_warmup_executions": 3
       },
-      "python_executable": "/home/ma-user/work/numpilot/.venv/bin/python",
+      "python_executable": "/REDACTED/python/venv/bin/python",
       "removed_sensitive_environment_variables": 3,
       "role": "npu",
       "runtime_call_counts": {
@@ -935,17 +935,17 @@
         "asnumpy_tree": "bf2f353825f60bd96f910c3a90fd5b75d4c3c8d0",
         "asnumpy_version": "0.3.1.dev4+g1929a3ba4",
         "audit_id": "asnumpy-0.3.1.dev4-g1929a3ba4-init8761f7f9-cannac907b3a-linalgd2965c2e-random6c9c7891-pinned-source-receipt-v2",
-        "bootstrap_receipt_path": "/home/ma-user/work/.numpilot-state/bootstrap/receipt.json",
+        "bootstrap_receipt_path": "/REDACTED/numpilot-state/bootstrap/receipt.json",
         "bootstrap_receipt_sha256": "d7693723b06867e386db97f60292c03a4d3fbae8b94b05cbbe515dc46c6aa38a",
-        "cann_home": "/usr/local/Ascend/cann-9.0.0",
+        "cann_home": "/REDACTED/cann",
         "cann_version": "9.0.0",
-        "identity_sha256": "7d443cb390fdd8bb398e10ed00b82d1a5aed624c1ed777ca8d6652fc9cf1b124",
+        "identity_sha256": "34806791698747b46be8fba24b1d24252e6df76ec78bc420a1edaac1550e48eb",
         "issues": [],
-        "module_path": "/home/ma-user/work/numpilot/.venv/lib/python3.10/site-packages/asnumpy/__init__.py",
+        "module_path": "/REDACTED/python/venv/lib/python3.10/site-packages/asnumpy/__init__.py",
         "module_sha256": "8761f7f9fe557606df6c6683245f4dfc3b8ac69385689a0673f3c90e33afd28e",
-        "native_module_path": "/home/ma-user/work/numpilot/.venv/lib/python3.10/site-packages/asnumpy/_core.cpython-310-aarch64-linux-gnu.so",
+        "native_module_path": "/REDACTED/python/venv/lib/python3.10/site-packages/asnumpy/_core.cpython-310-aarch64-linux-gnu.so",
         "native_module_sha256": "efe87bf5d045c3573af99f4341a45ae0e0f90dc261ee2a5f4507c171876e1d76",
-        "python_executable": "/home/ma-user/miniconda3/bin/python3.10",
+        "python_executable": "/REDACTED/python/base/bin/python3.10",
         "python_version": "3.10.20",
         "schema_version": 1,
         "soc_model": "Ascend910B4",
@@ -975,17 +975,17 @@
         "asnumpy_tree": "bf2f353825f60bd96f910c3a90fd5b75d4c3c8d0",
         "asnumpy_version": "0.3.1.dev4+g1929a3ba4",
         "audit_id": "asnumpy-0.3.1.dev4-g1929a3ba4-init8761f7f9-cannac907b3a-linalgd2965c2e-random6c9c7891-pinned-source-receipt-v2",
-        "bootstrap_receipt_path": "/home/ma-user/work/.numpilot-state/bootstrap/receipt.json",
+        "bootstrap_receipt_path": "/REDACTED/numpilot-state/bootstrap/receipt.json",
         "bootstrap_receipt_sha256": "d7693723b06867e386db97f60292c03a4d3fbae8b94b05cbbe515dc46c6aa38a",
-        "cann_home": "/usr/local/Ascend/cann-9.0.0",
+        "cann_home": "/REDACTED/cann",
         "cann_version": "9.0.0",
-        "identity_sha256": "7d443cb390fdd8bb398e10ed00b82d1a5aed624c1ed777ca8d6652fc9cf1b124",
+        "identity_sha256": "34806791698747b46be8fba24b1d24252e6df76ec78bc420a1edaac1550e48eb",
         "issues": [],
-        "module_path": "/home/ma-user/work/numpilot/.venv/lib/python3.10/site-packages/asnumpy/__init__.py",
+        "module_path": "/REDACTED/python/venv/lib/python3.10/site-packages/asnumpy/__init__.py",
         "module_sha256": "8761f7f9fe557606df6c6683245f4dfc3b8ac69385689a0673f3c90e33afd28e",
-        "native_module_path": "/home/ma-user/work/numpilot/.venv/lib/python3.10/site-packages/asnumpy/_core.cpython-310-aarch64-linux-gnu.so",
+        "native_module_path": "/REDACTED/python/venv/lib/python3.10/site-packages/asnumpy/_core.cpython-310-aarch64-linux-gnu.so",
         "native_module_sha256": "efe87bf5d045c3573af99f4341a45ae0e0f90dc261ee2a5f4507c171876e1d76",
-        "python_executable": "/home/ma-user/miniconda3/bin/python3.10",
+        "python_executable": "/REDACTED/python/base/bin/python3.10",
         "python_version": "3.10.20",
         "schema_version": 1,
         "soc_model": "Ascend910B4",
@@ -1029,7 +1029,7 @@
       },
       "threadpools": [
         {
-          "filepath": "/home/ma-user/work/numpilot/.venv/lib/python3.10/site-packages/numpy.libs/libscipy_openblas64_-128b20d9.so",
+          "filepath": "/REDACTED/python/venv/lib/python3.10/site-packages/numpy.libs/libscipy_openblas64_-128b20d9.so",
           "internal_api": "openblas",
           "num_threads": 1,
           "prefix": "openblas",

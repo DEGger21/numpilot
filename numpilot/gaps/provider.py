@@ -32,6 +32,17 @@ from numpilot.llm_config import (
 class DraftGenerationError(RuntimeError):
     """The model response is invalid or cannot be published safely."""
 
+    def __init__(self, message: str):
+        # These fields are deliberately non-authoritative telemetry only.  A
+        # provider fills them after a bounded attempt chain; callers must still
+        # rely on the signed artifact/receipt for any claim of remote work.
+        # Initialising them here keeps failure handling predictable for local
+        # validation errors and for custom provider implementations.
+        self.request_count = 0
+        self.receipt_count = 0
+        self.actual_remote_call = False
+        super().__init__(message)
+
 
 class DraftRepairError(DraftGenerationError):
     """A bounded remote operation failed with separate request/receipt counts."""
@@ -57,10 +68,10 @@ class DraftRepairError(DraftGenerationError):
             or request_count < receipt_count
         ):
             raise ValueError("invalid remote request/receipt counts")
+        super().__init__(message)
         self.receipt_count = receipt_count
         self.request_count = request_count
         self.actual_remote_call = request_count > 0
-        super().__init__(message)
 
 
 _ALLOWED_ROOT_FILES = frozenset({
@@ -3624,10 +3635,18 @@ class LlmDraftProvider:
                         % (stage, stage_attempt, failure[:500])
                     )
             else:
-                raise DraftGenerationError(
+                error = DraftGenerationError(
                     "staged model generation failed after %d total request(s): %s"
                     % (total_attempts, "; ".join(failures))
                 )
+                # Keep transport accounting available to the caller without
+                # putting response text into a durable error/report.  The
+                # pipeline consumes these bounded attributes when the caller
+                # explicitly requests multi-gap continuation.
+                error.request_count = total_attempts
+                error.receipt_count = len(remote_receipts)
+                error.actual_remote_call = True
+                raise error
 
         names = [str(path) for path, _content in collected]
         if len(names) != len(set(names)):
@@ -5044,14 +5063,24 @@ class LlmDraftProvider:
                 "local_validation": "passed",
                 "fallback": "disabled",
             })
-            return self._publish_draft(
-                spec,
-                workspace,
-                draft_dir,
-                summary,
-                files,
-                generation,
-            )
+            try:
+                return self._publish_draft(
+                    spec,
+                    workspace,
+                    draft_dir,
+                    summary,
+                    files,
+                    generation,
+                )
+            except DraftGenerationError as exc:
+                # A model may have been contacted successfully while local
+                # publication failed.  Preserve that fact in-memory for a
+                # sanitized continuation report; never persist the exception
+                # message or response body.
+                exc.request_count = attempt_count
+                exc.receipt_count = len(remote_receipts)
+                exc.actual_remote_call = generation["mode"] == "remote_llm"
+                raise
         failure = ""
         summary = ""
         files: Tuple[Tuple[PurePosixPath, str], ...] = ()
@@ -5121,10 +5150,14 @@ class LlmDraftProvider:
                     "attempt %d: %s" % (attempt_count, failure[:500])
                 )
         else:
-            raise DraftGenerationError(
+            error = DraftGenerationError(
                 "model failed to produce a safe draft after %d attempt(s): %s"
                 % (self.max_attempts, "; ".join(attempt_failures))
             )
+            error.request_count = attempt_count
+            error.receipt_count = len(remote_receipts)
+            error.actual_remote_call = generation_base["mode"] == "remote_llm"
+            raise error
         generation = dict(generation_base)
         generation.update({
             "attempt_count": attempt_count,
@@ -5136,11 +5169,17 @@ class LlmDraftProvider:
             "local_validation": "passed",
             "fallback": "disabled",
         })
-        return self._publish_draft(
-            spec,
-            workspace,
-            draft_dir,
-            summary,
-            files,
-            generation,
-        )
+        try:
+            return self._publish_draft(
+                spec,
+                workspace,
+                draft_dir,
+                summary,
+                files,
+                generation,
+            )
+        except DraftGenerationError as exc:
+            exc.request_count = attempt_count
+            exc.receipt_count = len(remote_receipts)
+            exc.actual_remote_call = generation["mode"] == "remote_llm"
+            raise

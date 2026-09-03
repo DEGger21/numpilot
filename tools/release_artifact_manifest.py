@@ -4,7 +4,9 @@
 This tool intentionally depends only on the Python standard library.  It does
 not extract or execute archive members.  The generated JSON binds wheel/sdist
 bytes, their complete regular-file inventories, core package metadata, and the
-Git source identity used for the build.
+Git source identity used for the build.  When requested, it also binds the
+frozen AsNumpy component manifest, license, SBOM, and exact wheel bytes carried
+by both archives.
 
 A dirty source tree is recorded as ``development_only``.  Pass
 ``--require-clean`` for an RC/release gate.
@@ -68,6 +70,15 @@ REVIEWED_ASSETS = (
 
 class ReleaseManifestError(RuntimeError):
     """Raised when artifacts cannot support a release manifest."""
+
+
+def _strict_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate JSON key: {key}")
+        result[key] = value
+    return result
 
 
 def _require(condition: bool, message: str) -> None:
@@ -413,11 +424,14 @@ def _check_required_members(
     common = [
         f"{package}/__init__.py",
         f"{package}/__main__.py",
+        f"{package}/cli_ui.py",
+        f"{package}/competition_readiness.py",
         f"{package}/_script_benchmark_worker.py",
         f"{package}/_script_verification_worker.py",
         f"{package}/script_benchmark.py",
         f"{package}/script_migration.py",
         f"{package}/script_verification.py",
+        f"{package}/workflow.py",
         f"{package}/agents/analysis.py",
         f"{package}/agents/decision.py",
         f"{package}/agents/migration.py",
@@ -503,6 +517,7 @@ def _check_required_members(
             "docs/assets/brand/numpilot-wordmark.png",
             "docs/assets/brand/README.md",
             "docs/FRESH-NOTEBOOK-QUICKSTART.md",
+            "docs/COMPETITION-READINESS.md",
             "docs/NumPilot-Demo-v1-Quickstart.ipynb",
             "examples/competition_power_log_exp.py",
             "evidence/competition-ordinary-20260828/qualified-analysis.json",
@@ -683,11 +698,204 @@ def _bind_reviewed_source_assets(
     return bindings
 
 
+_ASNUMPY_COMPONENT_FILES = (
+    "manifest.json",
+    "README.md",
+    "LICENSE",
+    "SBOM.spdx.json",
+)
+
+
+def _component_record_matches(
+    artifact: Mapping[str, Any], name: str
+) -> list[dict[str, Any]]:
+    """Return archive records for one release-adjacent component filename."""
+
+    records = artifact.get("regular_files")
+    if not isinstance(records, list):
+        return []
+    suffixes = (
+        "/share/numpilot/components/asnumpy/" + name,
+        "/components/asnumpy/" + name,
+    )
+    return [
+        item
+        for item in records
+        if isinstance(item, Mapping)
+        and isinstance(item.get("path"), str)
+        and any(item["path"].endswith(suffix) for suffix in suffixes)
+    ]
+
+
+def _read_component_lock(root: Path) -> tuple[dict[str, Any], dict[str, Any]] | None:
+    """Read the public component lock and return it with source identities."""
+
+    manifest_path = root / "components" / "asnumpy" / "manifest.json"
+    if not manifest_path.is_file() or manifest_path.is_symlink():
+        return None
+    try:
+        payload = manifest_path.read_bytes()
+        raw = json.loads(
+            payload.decode("utf-8"),
+            object_pairs_hook=lambda pairs: _strict_object(pairs),
+            parse_constant=lambda value: (_ for _ in ()).throw(
+                ValueError("non-standard JSON constant: %s" % value)
+            ),
+        )
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as error:
+        raise ReleaseManifestError(f"invalid AsNumpy component manifest: {error}") from error
+    _require(isinstance(raw, dict), "AsNumpy component manifest root is not an object")
+    _require(raw.get("schema") == "numpilot.asnumpy-component", "unexpected AsNumpy component schema")
+    _require(raw.get("schema_version") == 1, "unsupported AsNumpy component schema version")
+    wheel = raw.get("wheel")
+    _require(isinstance(wheel, dict), "AsNumpy component manifest wheel is missing")
+    wheel_name = wheel.get("filename")
+    wheel_digest = wheel.get("sha256")
+    _require(isinstance(wheel_name, str) and Path(wheel_name).name == wheel_name, "unsafe AsNumpy component wheel filename")
+    _require(isinstance(wheel_digest, str) and re.fullmatch(r"[0-9a-fA-F]{64}", wheel_digest) is not None, "invalid AsNumpy component wheel SHA-256")
+    component_id = raw.get("component_id")
+    version = raw.get("version")
+    _require(isinstance(component_id, str) and component_id, "AsNumpy component id is missing")
+    _require(isinstance(version, str) and version, "AsNumpy component version is missing")
+    source_root = manifest_path.parent
+    source_files: dict[str, dict[str, Any]] = {}
+    for name in (*_ASNUMPY_COMPONENT_FILES, wheel_name):
+        target = source_root / name
+        _require(target.is_file() and not target.is_symlink(), f"AsNumpy component attachment is missing: {name}")
+        digest = _sha256(target)
+        source_files[name] = {
+            "filename": name,
+            "sha256": digest,
+            "size_bytes": target.stat().st_size,
+        }
+    for field, filename_key in (("license_file", "LICENSE"), ("sbom", "SBOM.spdx.json")):
+        block = raw.get(field)
+        if isinstance(block, dict):
+            declared_name = block.get("filename")
+            declared_hash = block.get("sha256")
+            _require(declared_name == filename_key, f"AsNumpy component {field} filename is not bound")
+            _require(declared_hash == source_files[filename_key]["sha256"], f"AsNumpy component {field} hash does not match source")
+    _require(wheel_digest.lower() == source_files[wheel_name]["sha256"], "AsNumpy component wheel hash does not match source")
+    return raw, {
+        "manifest_sha256": _sha256(manifest_path),
+        "component_id": component_id,
+        "version": version,
+        "wheel_filename": wheel_name,
+        "wheel_sha256": wheel_digest.lower(),
+        "source_files": source_files,
+    }
+
+
+def _bind_asnumpy_component(
+    artifacts: list[dict[str, Any]],
+    repo_root: Path,
+    *,
+    required: bool = False,
+) -> dict[str, Any]:
+    """Bind the frozen AsNumpy bundle into the top-level release manifest.
+
+    This is intentionally optional for synthetic/development projects that do
+    not ship AsNumpy.  A real NumPilot RC passes ``required=True`` so both the
+    sdist and wheel carry the same manifest, legal attachments and exact wheel
+    bytes.
+    """
+
+    loaded = _read_component_lock(repo_root)
+    if loaded is None:
+        _require(not required, "release candidate requires components/asnumpy/manifest.json")
+        return {}
+    raw, identity = loaded
+    names = (*_ASNUMPY_COMPONENT_FILES, identity["wheel_filename"])
+    by_artifact: dict[str, Any] = {}
+    for artifact in artifacts:
+        kind = str(artifact.get("kind"))
+        bindings: dict[str, Any] = {}
+        for name in names:
+            matches = _component_record_matches(artifact, name)
+            _require(len(matches) == 1, f"{kind} does not carry exactly one AsNumpy component file: {name}")
+            match = matches[0]
+            expected = identity["source_files"][name]
+            _require(match.get("sha256") == expected["sha256"], f"{kind} AsNumpy component differs from source: {name}")
+            _require(match.get("size_bytes") == expected["size_bytes"], f"{kind} AsNumpy component size differs from source: {name}")
+            bindings[name] = {
+                "path": match["path"],
+                "sha256": match["sha256"],
+                "size_bytes": match["size_bytes"],
+            }
+        by_artifact[kind] = bindings
+    return {
+        "schema": raw["schema"],
+        "schema_version": raw["schema_version"],
+        "component_id": identity["component_id"],
+        "version": identity["version"],
+        "manifest_sha256": identity["manifest_sha256"],
+        "wheel_filename": identity["wheel_filename"],
+        "wheel_sha256": identity["wheel_sha256"],
+        "artifacts": by_artifact,
+    }
+
+
+def _verify_asnumpy_component_binding(
+    binding: Mapping[str, Any], artifacts: list[dict[str, Any]]
+) -> None:
+    """Verify a previously generated component binding against archives."""
+
+    _require(binding.get("schema") == "numpilot.asnumpy-component", "invalid AsNumpy component binding schema")
+    _require(binding.get("schema_version") == 1, "invalid AsNumpy component binding version")
+    wheel_name = binding.get("wheel_filename")
+    wheel_digest = binding.get("wheel_sha256")
+    _require(isinstance(wheel_name, str) and isinstance(wheel_digest, str), "incomplete AsNumpy component binding")
+    artifact_bindings = binding.get("artifacts")
+    _require(isinstance(artifact_bindings, dict), "AsNumpy component artifact bindings are missing")
+    expected_names = {"manifest.json", "README.md", "LICENSE", "SBOM.spdx.json", wheel_name}
+    expected_kinds = {str(artifact.get("kind")) for artifact in artifacts}
+    _require(set(artifact_bindings) == expected_kinds, "AsNumpy component artifact bindings do not match release artifacts")
+    for artifact in artifacts:
+        kind = str(artifact.get("kind"))
+        declared = artifact_bindings.get(kind)
+        _require(isinstance(declared, dict), f"AsNumpy component binding has no {kind} entry")
+        _require(set(declared) == expected_names, f"{kind} AsNumpy component binding is incomplete")
+        for name, record in declared.items():
+            _require(isinstance(record, dict), f"invalid AsNumpy component binding record: {name}")
+            record_path = record.get("path")
+            record_hash = record.get("sha256")
+            record_size = record.get("size_bytes")
+            record_posix = PurePosixPath(record_path) if isinstance(record_path, str) else None
+            _require(
+                isinstance(record_path, str)
+                and bool(record_path)
+                and record_posix is not None
+                and not record_posix.is_absolute()
+                and record_posix.as_posix() == record_path
+                and all(part not in {"", ".", ".."} for part in record_posix.parts)
+                and "\\" not in record_path,
+                f"invalid {kind} AsNumpy component member path: {name}",
+            )
+            _require(
+                isinstance(record_hash, str)
+                and re.fullmatch(r"[0-9a-f]{64}", record_hash) is not None
+                and isinstance(record_size, int)
+                and record_size >= 0,
+                f"invalid {kind} AsNumpy component member identity: {name}",
+            )
+            matches = [
+                item
+                for item in artifact.get("regular_files", [])
+                if isinstance(item, Mapping) and item.get("path") == record_path
+            ]
+            _require(len(matches) == 1, f"{kind} AsNumpy component member is missing: {name}")
+            _require(matches[0].get("sha256") == record_hash, f"{kind} AsNumpy component hash changed: {name}")
+            _require(matches[0].get("size_bytes") == record_size, f"{kind} AsNumpy component size changed: {name}")
+        wheel_records = [record for name, record in declared.items() if name == wheel_name]
+        _require(len(wheel_records) == 1 and wheel_records[0].get("sha256") == wheel_digest, f"{kind} AsNumpy wheel binding changed")
+
+
 def generate_manifest(
     artifacts: Iterable[str | Path],
     *,
     repo_root: str | Path,
     require_clean: bool = False,
+    require_asnumpy_component: bool = False,
 ) -> dict[str, Any]:
     root = Path(repo_root).resolve()
     project = _load_project(root)
@@ -707,6 +915,9 @@ def generate_manifest(
     _consistent_metadata(inspected)
     provenance = _source_provenance(root)
     provenance["reviewed_assets_sha256"] = _bind_reviewed_source_assets(inspected, root)
+    component_binding = _bind_asnumpy_component(
+        inspected, root, required=require_asnumpy_component
+    )
     kinds = [artifact["kind"] for artifact in inspected]
     pair_complete = (
         kinds.count("wheel") == 1 and kinds.count("sdist") == 1 and len(kinds) == 2
@@ -725,6 +936,9 @@ def generate_manifest(
             "platform": platform.platform(),
             "python": platform.python_version(),
         },
+        "components": (
+            {"asnumpy": component_binding} if component_binding else {}
+        ),
         "generated_at_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
         "project": project,
         "release_candidate_eligible": eligible,
@@ -740,7 +954,10 @@ def generate_manifest(
 
 
 def verify_manifest(
-    manifest_path: str | Path, *, artifact_directory: str | Path | None = None
+    manifest_path: str | Path,
+    *,
+    artifact_directory: str | Path | None = None,
+    require_asnumpy_component: bool = False,
 ) -> dict[str, Any]:
     path = Path(manifest_path).resolve()
     try:
@@ -777,6 +994,14 @@ def verify_manifest(
         _require(actual == entry, f"artifact no longer matches manifest: {filename}")
         checked.append(actual)
     _consistent_metadata(checked)
+    components = manifest.get("components", {})
+    _require(isinstance(components, dict), "release manifest components block is invalid")
+    component_binding = components.get("asnumpy")
+    if component_binding is None:
+        _require(not require_asnumpy_component, "release manifest has no AsNumpy component binding")
+    else:
+        _require(isinstance(component_binding, dict), "release manifest AsNumpy component binding is invalid")
+        _verify_asnumpy_component_binding(component_binding, checked)
     return {
         "artifacts_verified": len(checked),
         "manifest_sha256": _sha256(path),
@@ -808,6 +1033,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--output", type=Path, help="new JSON manifest path")
     parser.add_argument("--repo-root", type=Path, default=Path.cwd())
     parser.add_argument("--require-clean", action="store_true")
+    parser.add_argument(
+        "--require-asnumpy-component",
+        action="store_true",
+        help="require the frozen components/asnumpy bundle and bind it into the manifest",
+    )
     parser.add_argument("--force", action="store_true", help="replace an existing output")
     parser.add_argument("--verify", type=Path, help="verify an existing JSON manifest")
     parser.add_argument(
@@ -823,12 +1053,21 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         if args.verify is not None:
-            if args.artifacts or args.output is not None or args.require_clean or args.force:
+            if (
+                args.artifacts
+                or args.output is not None
+                or args.require_clean
+                or args.force
+            ):
                 parser.error(
                     "--verify cannot be combined with artifacts, --output, "
                     "--require-clean, or --force"
                 )
-            result = verify_manifest(args.verify, artifact_directory=args.artifact_dir)
+            result = verify_manifest(
+                args.verify,
+                artifact_directory=args.artifact_dir,
+                require_asnumpy_component=args.require_asnumpy_component,
+            )
             print(json.dumps(result, ensure_ascii=False, sort_keys=True))
             return 0
         if args.artifact_dir is not None:
@@ -839,6 +1078,7 @@ def main(argv: list[str] | None = None) -> int:
             args.artifacts,
             repo_root=args.repo_root,
             require_clean=args.require_clean,
+            require_asnumpy_component=args.require_asnumpy_component,
         )
         _write_json(args.output.resolve(), manifest, force=args.force)
         print(

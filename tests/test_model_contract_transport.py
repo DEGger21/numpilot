@@ -8,7 +8,11 @@ import urllib.request
 import pytest
 
 from numpilot.contracts import OffloadPlan
-from numpilot.engines.llm import LlmEngine, LlmError
+from numpilot.engines.llm import (
+    LlmEngine,
+    LlmError,
+    llm_proxy_route_status,
+)
 from numpilot.gaps.pipeline import GapCompletionPipeline
 from numpilot.gaps.provider import LlmDraftProvider
 from numpilot.llm_config import LlmConfigError, load_llm_config, save_llm_config
@@ -252,6 +256,82 @@ def test_required_proxy_routes_request_through_explicit_proxy_snapshot(
     ]
 
 
+def test_required_proxy_uses_one_bypass_decision_per_request(
+    isolated_model_environment, monkeypatch
+):
+    target = "http://model-origin.invalid/v1"
+    with _FakeHttpProxy(_chat_response("snapshot-response")) as proxy:
+        monkeypatch.setenv("NUMPILOT_LLM_REQUIRE_PROXY", "1")
+        monkeypatch.setenv("http_proxy", proxy.url)
+        _configure_url(target, isolated_model_environment)
+        calls = 0
+
+        def changing_bypass(_host, _proxies):
+            nonlocal calls
+            calls += 1
+            return calls > 1
+
+        monkeypatch.setattr(
+            urllib.request,
+            "proxy_bypass_environment",
+            changing_bypass,
+        )
+
+        actual, _receipt = LlmEngine._chat_with_receipt("system", "user")
+
+    assert actual == "snapshot-response"
+    assert calls == 1
+    assert proxy.request_count == 1
+
+
+def test_proxy_route_status_is_redacted_and_network_free(monkeypatch):
+    proxy_secret = "http://proxy-secret.invalid:8080"
+    monkeypatch.setenv("NUMPILOT_LLM_REQUIRE_PROXY", "1")
+    monkeypatch.setenv(
+        "NUMPILOT_LLM_BASE_URL", "https://private-endpoint.invalid/v1"
+    )
+    monkeypatch.setenv("https_proxy", proxy_secret)
+
+    status = llm_proxy_route_status()
+
+    assert status == {
+        "policy": "required",
+        "scheme": "https",
+        "matched": True,
+        "bypassed": False,
+        "route": "enforced",
+    }
+    assert proxy_secret not in repr(status)
+    assert "private-endpoint" not in repr(status)
+
+
+def test_proxy_route_status_reports_blocked_without_exposing_bypass(monkeypatch):
+    monkeypatch.setenv("NUMPILOT_LLM_REQUIRE_PROXY", "1")
+    monkeypatch.setenv(
+        "NUMPILOT_LLM_BASE_URL", "https://private-endpoint.invalid/v1"
+    )
+    monkeypatch.setenv(
+        "https_proxy", "http://proxy-secret.invalid:8080"
+    )
+    monkeypatch.setenv("no_proxy", "private-endpoint.invalid")
+
+    status = llm_proxy_route_status()
+
+    assert status["route"] == "blocked"
+    assert status["bypassed"] is True
+    assert "private-endpoint" not in repr(status)
+
+
+def test_proxy_route_status_rejects_pathlike_conversion_errors():
+    class ExplodingPath:
+        def __fspath__(self):
+            raise RuntimeError("private endpoint details")
+
+    with pytest.raises(LlmConfigError, match="endpoint is invalid") as caught:
+        llm_proxy_route_status(ExplodingPath())
+    assert "private endpoint details" not in str(caught.value)
+
+
 def test_required_proxy_fails_before_transport_when_matching_proxy_is_missing(
     isolated_model_environment, monkeypatch
 ):
@@ -260,7 +340,6 @@ def test_required_proxy_fails_before_transport_when_matching_proxy_is_missing(
         isolated_model_environment,
     )
     monkeypatch.setenv("NUMPILOT_LLM_REQUIRE_PROXY", "1")
-    monkeypatch.setattr(urllib.request, "getproxies", lambda: {})
 
     def forbidden_transport(*_args, **_kwargs):
         raise AssertionError("network transport must not start")
@@ -280,12 +359,10 @@ def test_required_proxy_fails_before_transport_when_endpoint_is_bypassed(
         isolated_model_environment,
     )
     monkeypatch.setenv("NUMPILOT_LLM_REQUIRE_PROXY", "1")
-    monkeypatch.setattr(
-        urllib.request,
-        "getproxies",
-        lambda: {"https": "http://proxy-secret.invalid:8080"},
+    monkeypatch.setenv(
+        "https_proxy", "http://proxy-secret.invalid:8080"
     )
-    monkeypatch.setattr(urllib.request, "proxy_bypass", lambda _host: True)
+    monkeypatch.setenv("no_proxy", "model-origin.invalid")
 
     def forbidden_transport(*_args, **_kwargs):
         raise AssertionError("network transport must not start")
@@ -295,6 +372,24 @@ def test_required_proxy_fails_before_transport_when_endpoint_is_bypassed(
 
     with pytest.raises(LlmConfigError, match="proxy bypass policy") as caught:
         LlmEngine._chat_with_receipt("system", "user")
+    assert "proxy-secret" not in str(caught.value)
+
+
+def test_required_proxy_rejects_malformed_proxy_without_leaking_credentials(
+    isolated_model_environment, monkeypatch
+):
+    _configure_url(
+        "https://model-origin.invalid/v1",
+        isolated_model_environment,
+    )
+    monkeypatch.setenv("NUMPILOT_LLM_REQUIRE_PROXY", "1")
+    monkeypatch.setenv("https_proxy", "http://user:proxy-secret@")
+
+    with pytest.raises(
+        LlmConfigError, match="proxy configuration is invalid"
+    ) as caught:
+        LlmEngine._chat_with_receipt("system", "user")
+
     assert "proxy-secret" not in str(caught.value)
 
 

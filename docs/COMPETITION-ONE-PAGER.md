@@ -57,6 +57,10 @@ exact；exact AST、数值和 16/16 性能门全部通过。
 [`evidence/competition-poisson-stage-20260828/`](../evidence/competition-poisson-stage-20260828/README.md)
 和
 [`evidence/competition-ordinary-20260828/`](../evidence/competition-ordinary-20260828/README.md)。
+上表数字来自上述日期的冻结回执（3 次预热、20 个样本）；当前 `run_demo.sh --full` 默认使用
+3 次预热、30 个样本，提交前应按新协议重新冻结。现场 `./run_demo.sh --quick` 使用更短的协议，
+结果会随设备温度、运行时和样本数变化，必须在演示截图中同时展示 `warmup/samples`，不能把
+quick 结果改写成冻结数字。
 [标准库只读审计器](../tools/audit_script_benchmark_receipt.py)能在不执行用户代码、不导入
 NumPy/AsNumpy、不联网、不访问 NPU 的情况下，重算 artifact hash、全部计时统计和协议绑定：
 
@@ -80,8 +84,11 @@ python tools/audit_script_benchmark_receipt.py \
 ### 0:35–1:05：五态静态门
 
 ```bash
+# The analysis receipt is write-once; keep it in a fresh private directory.
+RUN=$(mktemp -d /tmp/numpilot-analysis.XXXXXX)
+chmod 700 "$RUN"
 python -m numpilot analyze examples/poisson_source_smooth_l1_map.py \
-  --require-direct --out /tmp/numpilot-analysis.json
+  --require-direct --out "$RUN/qualified-analysis.json"
 ```
 
 强调分析不执行不可信脚本、不调用模型；只有所有调用点都是当前 hash-bound runtime 下的
@@ -90,8 +97,13 @@ python -m numpilot analyze examples/poisson_source_smooth_l1_map.py \
 ### 1:05–2:05：真实 GLM 与本地反证门
 
 ```bash
-./run_demo.sh --quick
+RUNTIME_ROOT=/absolute/persistent/numpilot-runtime
+source "$RUNTIME_ROOT/activate-numpilot.sh"
+./run_demo.sh --llm-config "$RUNTIME_ROOT/.numpilot-config/llm.json" --quick
 ```
+
+现场先从已授权的运行时目录读取私有 `llm.json`；不要把配置文件或 Token 放入源码包。若已
+source 运行时 activation，也可只使用 `./run_demo.sh --quick`。
 
 在迁移步骤展示 configured/requested/response model、HTTP/TLS receipt 和迁移产物；指出大模型
 负责生成，本地 exact AST 负责否决越权改写，失败时不回退到伪造的 AST 产物。
@@ -136,6 +148,7 @@ NumPilot 会返回 `GAP_REQUIRED`、`CAPABILITY_AUDIT_REQUIRED` 或 `BLOCKED`，
    之外的补充解释，不把组件和改写成端到端结果，也不扩大当前 `2.567× / 8.079×` 口径。
 5. 让 PPT、演示视频、源码 revision、证据 manifest 和最终 release 指向同一个不可变版本。
 
-详细评分映射见
-[`COMPETITION-REQUIREMENTS-MAP-20260827.md`](COMPETITION-REQUIREMENTS-MAP-20260827.md)，
-最终发布门见 [`RELEASE-CHECKLIST-DEMO-V1.md`](RELEASE-CHECKLIST-DEMO-V1.md)。
+评分维度与当前可核查证据见
+[`COMPETITION-READINESS.md`](COMPETITION-READINESS.md)，最终发布门见
+[`RELEASE-CHECKLIST-DEMO-V1.md`](RELEASE-CHECKLIST-DEMO-V1.md)。原始赛题映射和内部阶段计划属于
+本地交付工作底稿，不随对外源码树发布。

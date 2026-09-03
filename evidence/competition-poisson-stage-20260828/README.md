@@ -79,5 +79,5 @@ python -m numpilot benchmark-script \
     evidence/competition-poisson-stage-20260828/migration/script-migration-report.json \
   --migrated evidence/competition-poisson-stage-20260828/migration/migrated.py \
   --output result --warmup 3 --samples 20 \
-  --out /tmp/numpilot-poisson-stage-benchmark.json
+  --out $RUN/poisson-stage-benchmark.json
 ```

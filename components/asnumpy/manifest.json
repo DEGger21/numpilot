@@ -1,0 +1,67 @@
+{
+  "artifact_required": true,
+  "artifact_status": "bundled-and-verified",
+  "build": {
+    "compiler": "GCC 14.3.0",
+    "cann_version": "9.0.0",
+    "method": "pinned-source-build-with-installed-native-repack",
+    "python": "CPython 3.10.20",
+    "source_commit": "1929a3ba44eb532a9f544f774a249cdf1c4119be",
+    "source_tree": "bf2f353825f60bd96f910c3a90fd5b75d4c3c8d0"
+  },
+  "commit": "1929a3ba44eb532a9f544f774a249cdf1c4119be",
+  "component_id": "asnumpy-0.3.1.dev4+g1929a3ba4-cp310-cp310-linux_aarch64",
+  "distribution": "asnumpy",
+  "license": "Apache-2.0",
+  "license_file": {
+    "filename": "LICENSE",
+    "sha256": "1eb85fc97224598dad1852b5d6483bbcf0aa8608790dcc657a5a2a761ae9c8c6"
+  },
+  "repository": "https://gitcode.com/cann/asnumpy.git",
+  "runtime": {
+    "cann_version": "9.0.0",
+    "machine": "aarch64",
+    "loguru_version": "0.7.3",
+    "numpy_version": "2.2.6",
+    "python_implementation": "CPython",
+    "python_major_minor": "3.10"
+  },
+  "schema": "numpilot.asnumpy-component",
+  "schema_version": 1,
+  "sbom": {
+    "filename": "SBOM.spdx.json",
+    "format": "SPDX-2.3",
+    "sha256": "a1ed973ab1f15e2b40d726266ff9c64a466cb312d4a0d7e739dfc8d03f8aa7ed"
+  },
+  "source_files_sha256": {
+    "CMakeLists.txt": "d76544dae90390e791fc89caa4018f9bfd1bcd4617b52ae7c23ae05abe87e7a4",
+    "LICENSE": "1eb85fc97224598dad1852b5d6483bbcf0aa8608790dcc657a5a2a761ae9c8c6",
+    "README.md": "9634533554d62b8bfd0286da7d0b6a1d6974e7154299b88cb809ea10af3f1aee",
+    "bindings/python/CMakeLists.txt": "4d1e928a8a4e3f695a2bc009a4dbfb8441339bd3a035c532eee57d8639361e35",
+    "csrc/CMakeLists.txt": "3f5ca526867de88dbefc8912d9563053ad78b6e3bc0b58630baacbc37ae281b6",
+    "pyproject.toml": "517be204bad4626bce5c0050a894c73a602d88e5d9e282015507667de4e67e1e"
+  },
+  "tree": "bf2f353825f60bd96f910c3a90fd5b75d4c3c8d0",
+  "version": "0.3.1.dev4+g1929a3ba4",
+  "wheel": {
+    "filename": "asnumpy-0.3.1.dev4+g1929a3ba4-cp310-cp310-linux_aarch64.whl",
+    "installed_files": {
+      "module": {
+        "path": "asnumpy/__init__.py",
+        "sha256": "8761f7f9fe557606df6c6683245f4dfc3b8ac69385689a0673f3c90e33afd28e"
+      },
+      "native_modules": [
+        {
+          "path": "asnumpy/_core.cpython-310-aarch64-linux-gnu.so",
+          "sha256": "4166713fcc87fde10d707a09ea40b8acfaf46496298697925d6b22b180011173"
+        }
+      ]
+    },
+    "metadata_sha256": "bb1206b150596ee9d5be3930c0477cc902bb09c1f2b2232547116ac7eedaddf9",
+    "record_sha256": "8aa704914cd7b767a1c625041bd2c238ebf15d62bf8c05ec1b41c002c52be7d5",
+    "sha256": "8d4dbd083b1b1a5033431ec6fb9c0b793c96b1cd89386acad1738926b8138271",
+    "tags": [
+      "cp310-cp310-linux_aarch64"
+    ]
+  }
+}

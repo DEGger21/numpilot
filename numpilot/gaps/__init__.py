@@ -11,6 +11,8 @@ from numpilot.gaps.pipeline import (
 from numpilot.gaps.provider import LlmDraftProvider
 from numpilot.gaps.official_resolution import (
     BLOCKED_ROUTE,
+    CUSTOM_GENERATION_ROUTE,
+    CUSTOM_OPERATOR_ROUTE,
     INSTALLED_ADAPTER_ROUTE,
     NEW_KERNEL_ROUTE,
     OFFICIAL_SOURCE_ROUTE,
@@ -103,6 +105,8 @@ from numpilot.gaps.adapter_recovery import (
 __all__ = [
     "CapabilityOverlay",
     "BLOCKED_ROUTE",
+    "CUSTOM_GENERATION_ROUTE",
+    "CUSTOM_OPERATOR_ROUTE",
     "EvidenceRef",
     "GapCallsite",
     "GapCompletionError",

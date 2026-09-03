@@ -116,7 +116,7 @@
       "output_boundary_count": 0,
       "rewrite_count": 5,
       "schema_version": 1,
-      "source_path": "/home/ma-user/work/numpilot/examples/ops_nn_matmul_inference.py",
+      "source_path": "__NUMPILOT_SOURCE__",
       "source_sha256": "4cf236f427ae419a7a4969499e4197ed31be4ba4f40bd26e686886f69ce96046",
       "synthetic_divide_count": 0,
       "terminal_item_count": 0,
@@ -324,7 +324,7 @@
     "runtime_identity_sha256": "7d443cb390fdd8bb398e10ed00b82d1a5aed624c1ed777ca8d6652fc9cf1b124",
     "runtime_identity_status": "matched",
     "schema_version": 1,
-    "source_path": "/home/ma-user/work/numpilot/examples/ops_nn_matmul_inference.py",
+    "source_path": "__NUMPILOT_SOURCE__",
     "source_sha256": "4cf236f427ae419a7a4969499e4197ed31be4ba4f40bd26e686886f69ce96046",
     "speedup": null
   },

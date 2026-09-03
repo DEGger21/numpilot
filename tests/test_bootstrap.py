@@ -213,6 +213,25 @@ def test_default_plan_is_json_safe_and_never_fetches(monkeypatch, tmp_path):
     )
 
 
+def test_component_plan_uses_component_mode_without_legacy_xor_error(tmp_path):
+    component_dir = tmp_path / "component"
+    component_dir.mkdir()
+    manifest = Path(__file__).resolve().parents[1] / "components/asnumpy/manifest.json"
+    (component_dir / "manifest.json").write_bytes(manifest.read_bytes())
+
+    plan = build_bootstrap_plan(
+        asnumpy_component=component_dir,
+        environment=_apply_environment(tmp_path),
+        runner=_successful_runner([]),
+        tool_finder=_tool_finder,
+        version_reader=_version_reader,
+    )
+
+    assert plan["request"]["asnumpy_mode"] == "component"
+    assert not any("select exactly one AsNumpy mode" in issue for issue in plan["issues"])
+    assert any("wheel" in issue.lower() for issue in plan["issues"])
+
+
 @pytest.mark.parametrize("value", ["1.0rc1", "0.12.1.dev0", "build 999 only"])
 def test_version_parser_rejects_prerelease_or_unqualified_banners(value):
     assert bootstrap._parse_version(value) is None

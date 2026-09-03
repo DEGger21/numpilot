@@ -46,11 +46,12 @@ from numpilot.gaps.recovery import (
     recovery_policy_for_profile,
 )
 from numpilot.gaps.recovery_ingest import ingest_official_recovery
+from tests.fixture_support import recovery_fixture_root
 
 
 REPO = Path(__file__).resolve().parents[1]
 SOURCE = REPO / "examples" / "ops_nn_matmul_inference.py"
-EVIDENCE = REPO / "tests" / "fixtures" / "ops-nn-recovery"
+EVIDENCE = recovery_fixture_root()
 MIGRATION = EVIDENCE / "pre-integration-gap-v2" / "script-migration-report.json"
 GAP_REQUEST = EVIDENCE / "pre-integration-gap-v2" / "gap-request.json"
 BASE_OFFICIAL = EVIDENCE / "official-resolution-linkage-v2.json"

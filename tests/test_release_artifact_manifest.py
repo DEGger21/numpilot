@@ -1,6 +1,7 @@
 import base64
 import io
 import json
+import shutil
 import subprocess
 import tarfile
 import zipfile
@@ -78,11 +79,18 @@ REVIEWED_PAYLOADS = {
 PACKAGE_MEMBERS = (
     f"{NAME}/__init__.py",
     f"{NAME}/__main__.py",
+    # Public orchestration/readiness modules are part of the release surface.
+    # Keep synthetic wheel/sdist fixtures aligned with the production
+    # manifest's required-member contract so these tests continue to exercise
+    # the intended validation (rather than failing at fixture admission).
+    f"{NAME}/cli_ui.py",
+    f"{NAME}/competition_readiness.py",
     f"{NAME}/_script_benchmark_worker.py",
     f"{NAME}/_script_verification_worker.py",
     f"{NAME}/script_benchmark.py",
     f"{NAME}/script_migration.py",
     f"{NAME}/script_verification.py",
+    f"{NAME}/workflow.py",
     f"{NAME}/agents/analysis.py",
     f"{NAME}/agents/decision.py",
     f"{NAME}/agents/migration.py",
@@ -169,6 +177,7 @@ def _sdist(
         **{f"{root}/{member}": payload for member, payload in REVIEWED_PAYLOADS.items()},
         f"{root}/docs/assets/brand/README.md": b"brand inventory\n",
         f"{root}/docs/FRESH-NOTEBOOK-QUICKSTART.md": b"notebook guide\n",
+        f"{root}/docs/COMPETITION-READINESS.md": b"readiness guide\n",
         f"{root}/docs/NumPilot-Demo-v1-Quickstart.ipynb": b"{}\n",
         f"{root}/examples/competition_power_log_exp.py": b"pass\n",
         f"{root}/evidence/MANIFEST.sha256": b"",
@@ -418,6 +427,61 @@ def test_release_candidate_requires_wheel_and_sdist_pair(tmp_path):
 
     with pytest.raises(release_manifest.ReleaseManifestError, match="wheel and one sdist"):
         release_manifest.generate_manifest([wheel], repo_root=repo, require_clean=True)
+
+
+def _copy_asnumpy_component(root: Path) -> Path:
+    source = Path(__file__).resolve().parents[1] / "components" / "asnumpy"
+    target = root / "components" / "asnumpy"
+    target.parent.mkdir(parents=True)
+    shutil.copytree(source, target)
+    return target
+
+
+def _component_artifact_records(root: Path, *, kind: str) -> list[dict[str, object]]:
+    component = root / "components" / "asnumpy"
+    records = []
+    for path in sorted(component.iterdir()):
+        if not path.is_file():
+            continue
+        if kind == "wheel":
+            relative = (
+                "numpilot-0.3.0a1.dev0.data/data/share/numpilot/components/asnumpy/"
+                + path.name
+            )
+        else:
+            relative = "numpilot-0.3.0a1.dev0/components/asnumpy/" + path.name
+        records.append(
+            {
+                "path": relative,
+                "sha256": release_manifest._sha256(path),
+                "size_bytes": path.stat().st_size,
+            }
+        )
+    return records
+
+
+def test_asnumpy_component_binding_is_hash_bound_for_each_release_archive(tmp_path):
+    _copy_asnumpy_component(tmp_path)
+    loaded = release_manifest._read_component_lock(tmp_path)
+    assert loaded is not None
+    _raw, identity = loaded
+    artifacts = [
+        {"kind": "wheel", "regular_files": _component_artifact_records(tmp_path, kind="wheel")},
+        {"kind": "sdist", "regular_files": _component_artifact_records(tmp_path, kind="sdist")},
+    ]
+
+    binding = release_manifest._bind_asnumpy_component(artifacts, tmp_path, required=True)
+
+    assert binding["wheel_sha256"] == identity["wheel_sha256"]
+    assert set(binding["artifacts"]) == {"wheel", "sdist"}
+    release_manifest._verify_asnumpy_component_binding(binding, artifacts)
+
+
+def test_asnumpy_component_binding_required_mode_fails_without_lock(tmp_path):
+    artifacts = [{"kind": "wheel", "regular_files": []}]
+
+    with pytest.raises(release_manifest.ReleaseManifestError, match="requires components/asnumpy/manifest.json"):
+        release_manifest._bind_asnumpy_component(artifacts, tmp_path, required=True)
 
 
 def test_sdist_manifest_excludes_historical_internal_material():

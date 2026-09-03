@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" modified="2026-09-03T00:00:00.000Z" agent="Codex" version="24.7.17" type="device">
+  <diagram id="asnumpy-custom-fixed" name="AsNumpy 自定义算子补全">
+    <mxGraphModel dx="2400" dy="1200" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2400" pageHeight="1200" math="0" shadow="0" background="#F8FAFC">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <!-- fixed-coordinate lanes -->
+        <mxCell id="lane-1" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#2563EB;strokeWidth=3;arcSize=14;" vertex="1" parent="1">
+          <mxGeometry x="40" y="120" width="2320" height="245" as="geometry"/>
+        </mxCell>
+        <mxCell id="lane-2" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F3FF;strokeColor=#7C3AED;strokeWidth=3;arcSize=14;" vertex="1" parent="1">
+          <mxGeometry x="40" y="390" width="2320" height="300" as="geometry"/>
+        </mxCell>
+        <mxCell id="lane-3" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF7ED;strokeColor=#D97706;strokeWidth=3;arcSize=14;" vertex="1" parent="1">
+          <mxGeometry x="40" y="715" width="2320" height="300" as="geometry"/>
+        </mxCell>
+        <mxCell id="boundary" value="关键边界： --allow-custom-operator-generation 不是任意缺失 API 的开关；generated_unverified ≠ 已支持；custom route 必须记录 official_equivalence=not_proven。&#xa;只有隔离接入、六项验证、显式激活和重扫全部通过，能力目录才可以改变。" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#DC2626;strokeWidth=3;fontSize=18;fontColor=#1F2937;align=left;verticalAlign=middle;spacingLeft=20;spacingRight=20;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1050" width="2320" height="95" as="geometry"/>
+        </mxCell>
+
+        <!-- headings -->
+        <mxCell id="title" value="AsNumpy 缺失 NumPy API：自定义算子补全" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=38;fontStyle=1;fontColor=#1F2937;" vertex="1" parent="1">
+          <mxGeometry x="60" y="18" width="1200" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="subtitle" value="固定坐标静态图：箭头按主线绘制，适合录屏与汇报" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=20;fontColor=#475569;" vertex="1" parent="1">
+          <mxGeometry x="60" y="72" width="1100" height="32" as="geometry"/>
+        </mxCell>
+        <mxCell id="lane-1-title" value="1. 识别缺口并优先查官方算子" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=25;fontStyle=1;fontColor=#1F2937;" vertex="1" parent="1">
+          <mxGeometry x="70" y="132" width="600" height="36" as="geometry"/>
+        </mxCell>
+        <mxCell id="lane-2-title" value="2. 三种结果与生成路径" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=25;fontStyle=1;fontColor=#1F2937;" vertex="1" parent="1">
+          <mxGeometry x="70" y="402" width="600" height="36" as="geometry"/>
+        </mxCell>
+        <mxCell id="lane-3-title" value="3. 接入 AsNumpy、验证并回流" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=25;fontStyle=1;fontColor=#1F2937;" vertex="1" parent="1">
+          <mxGeometry x="70" y="727" width="650" height="36" as="geometry"/>
+        </mxCell>
+
+        <!-- top lane nodes -->
+        <mxCell id="source" value="NumPy 源码&#xa;np.missing_api(...)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#64748B;strokeWidth=3;fontSize=21;fontStyle=1;fontColor=#1F2937;align=center;verticalAlign=middle;spacing=8;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="75" y="205" width="270" height="105" as="geometry"/>
+        </mxCell>
+        <mxCell id="gap" value="GAP_REQUIRED&#xa;AsNumpy 没有该 API" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3E8FF;strokeColor=#7C3AED;strokeWidth=3;fontSize=21;fontStyle=1;fontColor=#1F2937;align=center;verticalAlign=middle;spacing=8;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="420" y="205" width="270" height="105" as="geometry"/>
+        </mxCell>
+        <mxCell id="spec" value="GapSpec + oracle&#xa;signature / dtype / shape&#xa;SoC / CANN 绑定" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#2563EB;strokeWidth=3;fontSize=21;fontStyle=1;fontColor=#1F2937;align=center;verticalAlign=middle;spacing=8;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="765" y="190" width="330" height="135" as="geometry"/>
+        </mxCell>
+        <mxCell id="official" value="官方优先解析&#xa;installed CANN / ACLNN&#xa;pinned ops-nn（只读）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFEDD5;strokeColor=#D97706;strokeWidth=3;fontSize=21;fontStyle=1;fontColor=#1F2937;align=center;verticalAlign=middle;spacing=8;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1170" y="190" width="365" height="135" as="geometry"/>
+        </mxCell>
+        <mxCell id="decision" value="结果分流" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#D97706;strokeWidth=3;fontSize=21;fontStyle=1;fontColor=#1F2937;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="1560" y="190" width="240" height="135" as="geometry"/>
+        </mxCell>
+        <mxCell id="evidence" value="只产生证据&#xa;候选 / clean NO_MATCH / ambiguity&#xa;不直接安装、构建或激活" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F1F5F9;strokeColor=#64748B;strokeWidth=3;fontSize=21;fontStyle=1;fontColor=#1F2937;align=center;verticalAlign=middle;spacing=8;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1835" y="190" width="470" height="135" as="geometry"/>
+        </mxCell>
+
+        <!-- result lane nodes -->
+        <mxCell id="route-official" value="官方候选&#xa;复用 + 语义审计&#xa;不生成 custom kernel" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#16A34A;strokeWidth=3;fontSize=21;fontStyle=1;fontColor=#1F2937;align=center;verticalAlign=middle;spacing=8;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="75" y="500" width="390" height="135" as="geometry"/>
+        </mxCell>
+        <mxCell id="route-ordinary" value="普通缺口&#xa;两层 clean NO_MATCH&#xa;→ NEW_KERNEL_ROUTE" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F1F5F9;strokeColor=#64748B;strokeWidth=3;dashed=1;fontSize=21;fontStyle=1;fontColor=#1F2937;align=center;verticalAlign=middle;spacing=8;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="590" y="500" width="390" height="135" as="geometry"/>
+        </mxCell>
+        <mxCell id="route-custom" value="显式 OperatorSpec&#xa;目录未审计（catalog_unreviewed_api）+ opt-in&#xa;→ CUSTOM_OPERATOR_ROUTE（draft-only）&#xa;official_equivalence=not_proven" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#D97706;strokeWidth=3;fontSize=21;fontStyle=1;fontColor=#1F2937;align=center;verticalAlign=middle;spacing=8;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1080" y="485" width="510" height="165" as="geometry"/>
+        </mxCell>
+        <mxCell id="route-stop" value="其他结果&#xa;歧义 / 错误 / 漂移&#xa;REVIEW_REQUIRED / BLOCKED" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#DC2626;strokeWidth=3;fontSize=21;fontStyle=1;fontColor=#1F2937;align=center;verticalAlign=middle;spacing=8;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1700" y="500" width="440" height="135" as="geometry"/>
+        </mxCell>
+
+        <!-- fixed bus and audited-route band -->
+        <mxCell id="merge-band" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EDE9FE;strokeColor=#7C3AED;strokeWidth=2;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="75" y="657" width="1515" height="28" as="geometry"/>
+        </mxCell>
+
+        <!-- bottom lane nodes -->
+        <mxCell id="integration" value="AsNumpy integration&#xa;private venv / private OPP&#xa;manifest：op.yaml → generator&#xa;legacy：Python → pybind → ACLNN" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3E8FF;strokeColor=#7C3AED;strokeWidth=3;fontSize=21;fontStyle=1;fontColor=#1F2937;align=center;verticalAlign=middle;spacing=8;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="75" y="805" width="540" height="155" as="geometry"/>
+        </mxCell>
+        <mxCell id="validation" value="六项验证&#xa;artifact / build / UT / NumPy numerical&#xa;public API / strict NPU execution&#xa;任一失败 → FAILED / BLOCKED" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F1F5F9;strokeColor=#64748B;strokeWidth=3;dashed=1;fontSize=21;fontStyle=1;fontColor=#1F2937;align=center;verticalAlign=middle;spacing=8;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="710" y="805" width="540" height="155" as="geometry"/>
+        </mxCell>
+        <mxCell id="report" value="迁移报告 + 能力回流&#xa;全部通过才可显式激活、重扫&#xa;性能结论绑定精确 runtime/profile&#xa;再宣传为 AsNumpy 支持" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F1F5F9;strokeColor=#64748B;strokeWidth=3;dashed=1;fontSize=21;fontStyle=1;fontColor=#1F2937;align=center;verticalAlign=middle;spacing=8;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1345" y="805" width="540" height="155" as="geometry"/>
+        </mxCell>
+
+        <!-- invisible fixed junctions keep the branch arrows vertical -->
+        <mxCell id="j-decision" value="" style="shape=ellipse;opacity=0;fillOpacity=0;strokeOpacity=0;" vertex="1" parent="1"><mxGeometry x="1679" y="449" width="2" height="2" as="geometry"/></mxCell>
+        <mxCell id="j-bus-left" value="" style="shape=ellipse;opacity=0;fillOpacity=0;strokeOpacity=0;" vertex="1" parent="1"><mxGeometry x="209" y="449" width="2" height="2" as="geometry"/></mxCell>
+        <mxCell id="j-bus-right" value="" style="shape=ellipse;opacity=0;fillOpacity=0;strokeOpacity=0;" vertex="1" parent="1"><mxGeometry x="2139" y="449" width="2" height="2" as="geometry"/></mxCell>
+        <mxCell id="j-official" value="" style="shape=ellipse;opacity=0;fillOpacity=0;strokeOpacity=0;" vertex="1" parent="1"><mxGeometry x="269" y="449" width="2" height="2" as="geometry"/></mxCell>
+        <mxCell id="j-ordinary" value="" style="shape=ellipse;opacity=0;fillOpacity=0;strokeOpacity=0;" vertex="1" parent="1"><mxGeometry x="784" y="449" width="2" height="2" as="geometry"/></mxCell>
+        <mxCell id="j-custom" value="" style="shape=ellipse;opacity=0;fillOpacity=0;strokeOpacity=0;" vertex="1" parent="1"><mxGeometry x="1334" y="449" width="2" height="2" as="geometry"/></mxCell>
+        <mxCell id="j-stop" value="" style="shape=ellipse;opacity=0;fillOpacity=0;strokeOpacity=0;" vertex="1" parent="1"><mxGeometry x="1919" y="449" width="2" height="2" as="geometry"/></mxCell>
+        <mxCell id="j-merge-official" value="" style="shape=ellipse;opacity=0;fillOpacity=0;strokeOpacity=0;" vertex="1" parent="1"><mxGeometry x="269" y="656" width="2" height="2" as="geometry"/></mxCell>
+        <mxCell id="j-merge-ordinary" value="" style="shape=ellipse;opacity=0;fillOpacity=0;strokeOpacity=0;" vertex="1" parent="1"><mxGeometry x="784" y="656" width="2" height="2" as="geometry"/></mxCell>
+        <mxCell id="j-merge-custom" value="" style="shape=ellipse;opacity=0;fillOpacity=0;strokeOpacity=0;" vertex="1" parent="1"><mxGeometry x="1334" y="656" width="2" height="2" as="geometry"/></mxCell>
+        <mxCell id="j-merge-mid1" value="" style="shape=ellipse;opacity=0;fillOpacity=0;strokeOpacity=0;" vertex="1" parent="1"><mxGeometry x="831" y="784" width="2" height="2" as="geometry"/></mxCell>
+        <mxCell id="j-merge-mid2" value="" style="shape=ellipse;opacity=0;fillOpacity=0;strokeOpacity=0;" vertex="1" parent="1"><mxGeometry x="344" y="784" width="2" height="2" as="geometry"/></mxCell>
+
+        <!-- arrows: edgeStyle=none + explicit ports/waypoints prevents auto-rerouting -->
+        <mxCell id="branch-bus" style="edgeStyle=none;rounded=0;html=1;strokeColor=#94A3B8;strokeWidth=4;dashed=1;startArrow=none;endArrow=none;" edge="1" parent="1" source="j-bus-left" target="j-bus-right"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e-top-1" style="edgeStyle=none;rounded=0;html=1;strokeColor=#2563EB;strokeWidth=5;endArrow=block;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="source" target="gap"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e-top-2" style="edgeStyle=none;rounded=0;html=1;strokeColor=#2563EB;strokeWidth=5;endArrow=block;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="gap" target="spec"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e-top-3" style="edgeStyle=none;rounded=0;html=1;strokeColor=#2563EB;strokeWidth=5;endArrow=block;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="spec" target="official"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e-top-4" style="edgeStyle=none;rounded=0;html=1;strokeColor=#D97706;strokeWidth=5;endArrow=block;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="official" target="decision"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e-top-5" style="edgeStyle=none;rounded=0;html=1;strokeColor=#64748B;strokeWidth=5;endArrow=block;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="decision" target="evidence"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <mxCell id="e-decision-down" style="edgeStyle=none;rounded=0;html=1;strokeColor=#64748B;strokeWidth=5;endArrow=block;endFill=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0.5;" edge="1" parent="1" source="decision" target="j-decision"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e-branch-official" style="edgeStyle=none;rounded=0;html=1;strokeColor=#16A34A;strokeWidth=5;endArrow=block;endFill=1;exitX=0.5;exitY=0.5;entryX=0.5;entryY=0;" edge="1" parent="1" source="j-official" target="route-official"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e-branch-ordinary" style="edgeStyle=none;rounded=0;html=1;strokeColor=#64748B;strokeWidth=5;endArrow=block;endFill=1;exitX=0.5;exitY=0.5;entryX=0.5;entryY=0;" edge="1" parent="1" source="j-ordinary" target="route-ordinary"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e-branch-custom" style="edgeStyle=none;rounded=0;html=1;strokeColor=#D97706;strokeWidth=5;endArrow=block;endFill=1;exitX=0.5;exitY=0.5;entryX=0.5;entryY=0;" edge="1" parent="1" source="j-custom" target="route-custom"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e-branch-stop" style="edgeStyle=none;rounded=0;html=1;strokeColor=#DC2626;strokeWidth=5;endArrow=block;endFill=1;exitX=0.5;exitY=0.5;entryX=0.5;entryY=0;" edge="1" parent="1" source="j-stop" target="route-stop"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <!-- audited branches enter the merge band as straight, non-crossing lines -->
+        <mxCell id="e-merge-official" style="edgeStyle=none;rounded=0;html=1;strokeColor=#16A34A;strokeWidth=5;endArrow=none;exitX=0.5;exitY=1;" edge="1" parent="1" source="route-official" target="j-merge-official"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e-merge-ordinary" style="edgeStyle=none;rounded=0;html=1;strokeColor=#64748B;strokeWidth=5;endArrow=none;exitX=0.5;exitY=1;" edge="1" parent="1" source="route-ordinary" target="j-merge-ordinary"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e-merge-custom" style="edgeStyle=none;rounded=0;html=1;strokeColor=#D97706;strokeWidth=5;endArrow=none;exitX=0.5;exitY=1;" edge="1" parent="1" source="route-custom" target="j-merge-custom"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e-merge-down" style="edgeStyle=none;rounded=0;html=1;strokeColor=#7C3AED;strokeWidth=5;endArrow=none;exitX=0.5;exitY=1;" edge="1" parent="1" source="merge-band" target="j-merge-mid1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e-merge-left" style="edgeStyle=none;rounded=0;html=1;strokeColor=#7C3AED;strokeWidth=5;endArrow=none;" edge="1" parent="1" source="j-merge-mid1" target="j-merge-mid2"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e-merge-integration" value="" style="edgeStyle=none;rounded=0;html=1;strokeColor=#7C3AED;strokeWidth=5;endArrow=block;endFill=1;" edge="1" parent="1" source="j-merge-mid2" target="integration"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e-integration-validation" style="edgeStyle=none;rounded=0;html=1;strokeColor=#7C3AED;strokeWidth=5;endArrow=block;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="integration" target="validation"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e-validation-report" style="edgeStyle=none;rounded=0;html=1;strokeColor=#64748B;strokeWidth=5;endArrow=block;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="validation" target="report"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <!-- labels are separate fixed text cells so edge routing cannot move them -->
+        <mxCell id="label-official" value="official candidate" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;fontSize=18;fontStyle=1;fontColor=#475569;" vertex="1" parent="1"><mxGeometry x="80" y="455" width="170" height="28" as="geometry"/></mxCell>
+        <mxCell id="label-ordinary" value="普通路径" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;fontSize=18;fontStyle=1;fontColor=#475569;" vertex="1" parent="1"><mxGeometry x="600" y="455" width="160" height="28" as="geometry"/></mxCell>
+        <mxCell id="label-custom" value="显式 custom" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;fontSize=18;fontStyle=1;fontColor=#475569;" vertex="1" parent="1"><mxGeometry x="1160" y="455" width="160" height="28" as="geometry"/></mxCell>
+        <mxCell id="label-stop" value="停止" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;fontSize=18;fontStyle=1;fontColor=#475569;" vertex="1" parent="1"><mxGeometry x="1800" y="455" width="100" height="28" as="geometry"/></mxCell>
+        <mxCell id="merge-label" value="通过审计的路径 → 进入隔离接入（官方复用或 custom draft）" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;fontSize=18;fontColor=#1F2937;" vertex="1" parent="1"><mxGeometry x="100" y="657" width="1465" height="28" as="geometry"/></mxCell>
+        <mxCell id="label-audit" value="审计通过" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;fontSize=18;fontStyle=1;fontColor=#475569;" vertex="1" parent="1"><mxGeometry x="720" y="755" width="225" height="28" as="geometry"/></mxCell>
+        <mxCell id="label-candidate" value="候选接入" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;fontSize=18;fontColor=#475569;" vertex="1" parent="1"><mxGeometry x="600" y="842" width="120" height="28" as="geometry"/></mxCell>
+        <mxCell id="label-pass" value="全部通过" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;fontSize=18;fontColor=#475569;" vertex="1" parent="1"><mxGeometry x="1240" y="842" width="120" height="28" as="geometry"/></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -42,16 +42,16 @@ use the release Python environment. Do not treat an arbitrary Python 3.10+ host 
 
 ## 2. NPU prerequisites
 
-Install these outside NumPilot before running `install.sh`:
+For the frozen-component mode, prepare these outside NumPilot before running `install.sh`:
 
 - a compatible Ascend driver, firmware, CANN Toolkit, and OPP;
 - a visible NPU (`npu-smi info` must work);
-- Python 3.10+ with `venv` and development headers (`Python.h`);
-- Git, CMake, Make or Ninja, and GCC/G++ 11.2 or newer;
-- system CMake package files for `fmt` and `spdlog`;
-- enough user-owned disk space for a virtual environment, source cache, build tree, and runtime receipts.
+- Python 3.10+ with `venv`/`pip`;
+- user-owned space for the virtual environment, persistent state, and runtime receipts.
 
-On Ubuntu, the host administrator may install the generic build prerequisites with:
+Installing the fixed wheel does not require Git, CMake, Make/Ninja, GCC/G++, Python development headers, or
+system CMake packages for `fmt` and `spdlog`. Those tools are needed only for the explicit maintainer
+source-first build; on Ubuntu, the host administrator may install them with:
 
 ```bash
 sudo apt-get update
@@ -62,19 +62,50 @@ sudo apt-get install -y \
 Package names differ by distribution. CANN, the driver, firmware, and OPP must be installed according to the
 target Ascend/CANN documentation; NumPilot does not install or modify them.
 
-Check the critical tools before starting:
+Check the fixed-component prerequisites before starting:
 
 ```bash
 python3 --version
-g++ --version
 npu-smi info
 test -f /usr/local/Ascend/cann-9.0.0/set_env.sh
 ```
 
+For source-first mode, additionally check `git --version`, `g++ --version`, `cmake --version`, Python
+`Python.h`, and the `fmt`/`spdlog` development packages.
+
 Replace the CANN path with the exact installation you intend to audit. Choosing `latest` may be convenient for a
 basic smoke test, but it does not make a newer CANN version part of the current strict profile.
 
-## 3. Source-first NPU installation
+## 3. Frozen internal AsNumpy component (release/competition mode)
+
+Use this mode for a released NumPilot build. The repository already carries the companion under
+`components/asnumpy/` (or it may be copied from the same immutable release bundle). Its manifest binds the
+wheel, upstream LICENSE, SBOM, METADATA/RECORD, and installed native hashes. Do not use a PyPI `latest`,
+a version range, or a moving Git branch. A missing or mismatched wheel is a release-blocking failure; the
+installer must not fall back to downloading source.
+
+```bash
+python -m numpilot bootstrap --apply \
+  --asnumpy-component components/asnumpy \
+  --receipt /secure/runtime/bootstrap-receipt.json
+python -m numpilot bootstrap --verify --json
+```
+
+The release manifest must also bind the wheel `METADATA`/`RECORD`, installed `asnumpy/__init__.py`,
+native `_core` hashes, Python/architecture tag and the audited CANN/SoC profile. Keep the upstream
+Apache-2.0 LICENSE beside the component and include it in the SBOM/license inventory. See
+[AsNumpy internal-component lock](ASNUMPY-INTERNAL-COMPONENT-LOCK.zh-CN.md) for the reference identity,
+artifact caveat and upgrade/rollback procedure.
+
+The current attachment targets Linux AArch64, CPython 3.10, and CANN 9.0.0. It does not include the CANN
+driver, firmware, or OPP. You no longer need to fetch or compile AsNumpy on site, but the local wheel still
+has to be installed once into the target virtual environment after loading the matching CANN environment.
+
+The source-first flow below is retained only to build and audit a future component in an isolated
+development workspace. It may fetch the **pinned** source when explicitly authorized; that behavior is
+not the user-facing contract for a frozen release.
+
+## 4. Source-first NPU installation (development/build preparation)
 
 Use `main` for a release candidate and `develop` only for integration work. The current Alpha snapshot is not a
 verified public package release, so do not substitute `pip install numpilot` for this flow.
@@ -87,6 +118,7 @@ git clone --branch main --depth 1 https://gitcode.com/li-xingHIT/numpilot.git
 cd numpilot
 
 ./install.sh --allow-network \
+  --asnumpy-source /absolute/path/to/pinned/asnumpy \
   --cann-env /usr/local/Ascend/cann-9.0.0/set_env.sh \
   --venv /absolute/user-owned/numpilot-venv \
   --persistent-root /absolute/user-owned/numpilot-runtime
@@ -108,9 +140,10 @@ Useful alternatives:
   --venv /absolute/user-owned/numpilot-venv \
   --persistent-root /absolute/user-owned/numpilot-runtime
 
-# Select an explicit Python package index. Do not put credentials in the URL.
+# In frozen-component mode, select an explicit Python package index. Do not put credentials in the URL.
 ./install.sh --allow-network \
   --pip-index-url https://mirror.example.invalid/simple \
+  --asnumpy-component "$PWD/components/asnumpy" \
   --cann-env /absolute/path/to/CANN/set_env.sh \
   --venv /absolute/user-owned/numpilot-venv \
   --persistent-root /absolute/user-owned/numpilot-runtime
@@ -120,11 +153,11 @@ The source build is not an OS-level network sandbox and the dependency ranges ar
 A pinned Git commit also does not guarantee byte-for-byte identical local wheels; a formal release must preserve
 the exact wheel, hash, constraints, and wheelhouse used for qualification.
 
-## 4. Post-install verification
+## 5. Post-install verification
 
 Run every check from the generated activation environment.
 
-### 4.1 Identity and isolated dependencies
+### 5.1 Identity and isolated dependencies
 
 ```bash
 python -m numpilot --version
@@ -136,7 +169,7 @@ Unsetting `PYTHONPATH` isolates the project virtual environment from optional Py
 A failure from CANN's vendor packages in the fully injected environment is not, by itself, proof that the
 NumPilot virtual environment is broken.
 
-### 4.2 Bootstrap receipt and AsNumpy
+### 5.2 Bootstrap receipt and AsNumpy
 
 ```bash
 NUMPILOT_RECEIPT="$(python -m numpilot paths --get bootstrap_receipt)"
@@ -166,7 +199,7 @@ PY
 
 This proves only that the local AsNumpy/NPU path can execute the smoke operation.
 
-### 4.3 NPU doctor and strict-profile decision
+### 5.3 NPU doctor and strict-profile decision
 
 ```bash
 python -m numpilot doctor --backend npu
@@ -175,12 +208,12 @@ python -m numpilot analyze examples/poisson_source_smooth_l1_map.py \
   --require-direct --json
 ```
 
-`doctor` checks basic CANN/NPU/AsNumpy operation; it has no `--json` option and is not a strict-profile
-qualification. `analyze --require-direct` is the next gate. An exit code of `1` with
+`doctor` checks basic CANN/NPU/AsNumpy operation; use `doctor --json` when a machine-readable report is
+needed. It is not a strict-profile qualification. `analyze --require-direct` is the next gate. An exit code of `1` with
 `CAPABILITY_AUDIT_REQUIRED` is an honest runtime-profile drift result, not an installation error to bypass with
 `--skip-env-check`.
 
-## 5. Optional CANNBot Skills
+## 6. Optional CANNBot Skills
 
 The ordinary direct path does not need CANNBot. Install it only for the gap/operator path after reviewing the
 official [CANNBot LICENSE](https://gitcode.com/cann/cannbot-skills/blob/master/LICENSE) and accepting **CANN Open
@@ -222,7 +255,7 @@ CANNBot Skills and `cann/ops-nn` are different dependencies. The installer does 
 `ops-nn`; the current official-source resolver accepts only an explicitly provided, version-matched local
 checkout and currently pins the CANN 9.0.0 source mapping.
 
-## 6. Configure and probe the model
+## 7. Configure and probe the model
 
 ```bash
 python -m numpilot configure-llm --init
@@ -231,9 +264,10 @@ python -m numpilot configure-llm --check
 python -m numpilot configure-llm --probe
 ```
 
-`--check` is local-only. `--probe` performs a real request, may incur cost, and requires the expected readiness
-marker. Configuration needs `base_url`, `auth_token`, and `model`; `provider` is only an audit label, and the
-current protocol is `openai-chat-completions`.
+`--check` is network-free and validates both local configuration and the current proxy gate. `--probe` performs
+a real request, may incur cost, and requires the expected readiness marker. Configuration needs `base_url`,
+`auth_token`, and `model`; `provider` is only an audit label, and the current protocol is
+`openai-chat-completions`.
 
 The configuration directory must be `0700` and `llm.json` must be `0600`. Never commit the token, endpoint,
 proxy URL, or raw response body.
@@ -265,13 +299,15 @@ python -m numpilot configure-llm --probe
 The fail-closed proxy mode rejects a missing protocol-matched proxy or a matching `NO_PROXY` bypass before
 network transport begins.
 
-## 7. First run
+## 8. First run
 
 Use the complete `analyze → migrate → verify-script` example in the [English README](../README.md#run-the-ordinary-flow)
 for your own trusted script. `./run_demo.sh --quick` runs the repository's staged example and adds a scoped
-benchmark. It writes each run to a new repository-external directory shown by `python -m numpilot paths --json`.
+benchmark. If the model config lives in a separate runtime directory, pass
+`--llm-config /absolute/persistent/numpilot-runtime/.numpilot-config/llm.json`; each run is written to a new
+repository-external directory shown by `python -m numpilot paths --json`.
 
-## 8. Troubleshooting
+## 9. Troubleshooting
 
 | Symptom | Check |
 |---|---|
@@ -289,7 +325,7 @@ benchmark. It writes each run to a new repository-external directory shown by `p
 Source the generated activation file in a fresh shell rather than manually combining multiple CANN versions.
 Sourcing it twice is supported and removes known toolkit/devlib conflicts.
 
-## 9. Safe cleanup
+## 10. Safe cleanup
 
 NumPilot has no `uninstall` command. First record the exact paths:
 

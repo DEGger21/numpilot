@@ -53,6 +53,40 @@ class EnvReport:
     def ok(self):
         return not self.errors
 
+    @property
+    def status(self):
+        """Return the aggregate status used by machine-readable consumers."""
+        if self.errors:
+            return ERROR
+        if self.warnings:
+            return WARN
+        return OK
+
+    def to_dict(self):
+        """Return a detached, JSON-safe report without terminal decorations.
+
+        ``doctor --json`` and CodeArts/CI adapters consume this shape.  Keep
+        the human ``render`` method separate so ANSI/progress presentation can
+        never contaminate a machine-readable stdout contract.
+        """
+        return {
+            "schema_version": 1,
+            "record_type": "numpilot_environment_report",
+            "backend": self.backend,
+            "status": self.status,
+            "ok": bool(self.ok),
+            "error_count": len(self.errors),
+            "warning_count": len(self.warnings),
+            "items": [
+                {
+                    "name": item.name,
+                    "status": item.status,
+                    "detail": item.detail,
+                }
+                for item in self.items
+            ],
+        }
+
     def render(self) -> str:
         lines = ["NumPilot 环境自检(backend=%s)" % self.backend, "=" * 40]
         for it in self.items:

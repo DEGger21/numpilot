@@ -18,11 +18,21 @@ recursive-include evidence/competition-poisson-stage-20260828 *
 include integrations/asnumpy/README.md
 include integrations/asnumpy/0001-move-private-native-results.patch
 
+# AsNumpy is delivered as a release-adjacent, hash-bound internal component.
+# Keep legal/provenance attachments and the exact platform wheel beside the
+# lock.  Explicit names avoid packaging unrelated build output.
+include components/asnumpy/manifest.json
+include components/asnumpy/README.md
+include components/asnumpy/LICENSE
+include components/asnumpy/SBOM.spdx.json
+include components/asnumpy/*.whl
+
 prune tools
 include tools/audit_script_benchmark_receipt.py
 include tools/check_release_tree.py
 include tools/release_artifact_manifest.py
 include tools/render_demo_summary.py
+include tools/render_migration_report.py
 
 recursive-include .codeartsdoer/agents *.md
 include .codeartsdoer/skills/ProjectSkillStatus.txt

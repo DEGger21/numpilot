@@ -4,7 +4,12 @@ from pathlib import Path
 import pytest
 
 from numpilot.__main__ import main
-from numpilot.suite_check import SuiteCheckError, check_suite, write_suite_report
+from numpilot.suite_check import (
+    SuiteCheckError,
+    check_suite,
+    public_suite_report,
+    write_suite_report,
+)
 
 
 DIRECT = """\
@@ -262,6 +267,29 @@ def test_suite_report_is_private_json_and_symlinks_are_rejected(tmp_path):
         )
 
 
+def test_public_suite_report_redacts_nested_gap_source_without_mutating_receipt(
+    tmp_path,
+):
+    case = _write(tmp_path / "gap.py", SINGLE_GAP)
+    private = check_suite(
+        [str(case)], target_soc="ascend910b", cann_version="9.0.0"
+    )
+
+    public = public_suite_report(private)
+
+    assert public["path_redacted"] is True
+    assert public["cases"][0]["path"] == "gap.py"
+    assert (
+        public["cases"][0]["generatable_gaps"][0]["source_path"]
+        == "gap.py"
+    )
+    assert private["cases"][0]["path"] == str(case.absolute())
+    assert (
+        private["cases"][0]["generatable_gaps"][0]["source_path"]
+        == str(case.absolute())
+    )
+
+
 def test_suite_expectation_mismatch_fails_without_reclassifying_case(tmp_path):
     case = _write(tmp_path / "direct.py", DIRECT)
 
@@ -307,3 +335,56 @@ def test_check_suite_cli_writes_report_and_uses_nonzero_for_mismatch(
     terminal = capsys.readouterr()
     assert "execution_performed=no" in terminal.out
     assert "expected 5 direct candidates" in terminal.err
+
+
+def test_check_suite_cli_json_is_strict_stdout_and_can_publish_receipt(
+    tmp_path, capsys
+):
+    direct = _write(tmp_path / "direct.py", DIRECT)
+    output = tmp_path / "suite.json"
+
+    rc = main([
+        "check-suite",
+        str(direct),
+        "--expect-direct", "1",
+        "--expect-single-gap", "0",
+        "--out", str(output),
+        "--json",
+    ])
+
+    assert rc == 0
+    captured = capsys.readouterr()
+    # A JSON consumer must not have to strip the normal human summary.
+    payload = json.loads(captured.out)
+    assert payload["status"] == "pass"
+    assert payload["path_redacted"] is True
+    assert payload["execution_performed"] is False
+    assert payload["counts"]["direct_migration_candidate"] == 1
+    assert payload["cases"][0]["path"] == "direct.py"
+    assert str(tmp_path) not in captured.out
+    assert captured.err == ""
+    private_payload = json.loads(output.read_text(encoding="utf-8"))
+    assert private_payload["status"] == "pass"
+    assert private_payload["cases"][0]["path"] == str(direct.absolute())
+
+
+def test_check_suite_cli_json_failure_preserves_exit_contract(tmp_path, capsys):
+    direct = _write(tmp_path / "direct.py", DIRECT)
+
+    rc = main([
+        "check-suite",
+        str(direct),
+        "--expect-direct", "2",
+        "--json",
+    ])
+
+    assert rc == 1
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert payload["status"] == "fail"
+    assert payload["path_redacted"] is True
+    assert payload["expectation_errors"]
+    assert "[测试集准入]" not in captured.out
+    # Diagnostics remain available to a human/CI log on stderr without
+    # corrupting the machine-readable stdout stream.
+    assert captured.err == ""

@@ -49,24 +49,24 @@
           "file_hash_status": "hashed",
           "file_sha256": "8761f7f9fe557606df6c6683245f4dfc3b8ac69385689a0673f3c90e33afd28e",
           "file_size": 9264,
-          "path": "/home/ma-user/work/numpilot/.venv/lib/python3.10/site-packages/asnumpy/__init__.py",
-          "realpath": "/home/ma-user/work/numpilot/.venv/lib/python3.10/site-packages/asnumpy/__init__.py",
+          "path": "/REDACTED/python/venv/lib/python3.10/site-packages/asnumpy/__init__.py",
+          "realpath": "/REDACTED/python/venv/lib/python3.10/site-packages/asnumpy/__init__.py",
           "version": "0.3.1.dev4+g1929a3ba4"
         },
         "asnumpy._core": {
           "file_hash_status": "hashed",
           "file_sha256": "efe87bf5d045c3573af99f4341a45ae0e0f90dc261ee2a5f4507c171876e1d76",
           "file_size": 1896216,
-          "path": "/home/ma-user/work/numpilot/.venv/lib/python3.10/site-packages/asnumpy/_core.cpython-310-aarch64-linux-gnu.so",
-          "realpath": "/home/ma-user/work/numpilot/.venv/lib/python3.10/site-packages/asnumpy/_core.cpython-310-aarch64-linux-gnu.so",
+          "path": "/REDACTED/python/venv/lib/python3.10/site-packages/asnumpy/_core.cpython-310-aarch64-linux-gnu.so",
+          "realpath": "/REDACTED/python/venv/lib/python3.10/site-packages/asnumpy/_core.cpython-310-aarch64-linux-gnu.so",
           "version": null
         },
         "numpy": {
           "file_hash_status": "hashed",
           "file_sha256": "6ae17b070c0f70a8e3cad89a510a256942e5a1f37ea5feb120cec167ed2a6236",
           "file_size": 22147,
-          "path": "/home/ma-user/work/numpilot/.venv/lib/python3.10/site-packages/numpy/__init__.py",
-          "realpath": "/home/ma-user/work/numpilot/.venv/lib/python3.10/site-packages/numpy/__init__.py",
+          "path": "/REDACTED/python/venv/lib/python3.10/site-packages/numpy/__init__.py",
+          "realpath": "/REDACTED/python/venv/lib/python3.10/site-packages/numpy/__init__.py",
           "version": "2.2.6"
         }
       },
@@ -87,13 +87,13 @@
         }
       ],
       "pid": 181736,
-      "python_base_prefix": "/home/ma-user/miniconda3",
-      "python_executable": "/home/ma-user/work/numpilot/.venv/bin/python",
-      "python_executable_realpath": "/home/ma-user/miniconda3/bin/python3.10",
+      "python_base_prefix": "/REDACTED/python/base",
+      "python_executable": "/REDACTED/python/venv/bin/python",
+      "python_executable_realpath": "/REDACTED/python/base/bin/python3.10",
       "python_executable_sha256": "13d1dbcada281a545abcd1a6c1878d25b88e714dbcbe4d46b6ab1710d694a6fd",
       "python_executable_size": 4338584,
-      "python_invocation_path": "/home/ma-user/work/numpilot/.venv/bin/python",
-      "python_prefix": "/home/ma-user/work/numpilot/.venv",
+      "python_invocation_path": "/REDACTED/python/venv/bin/python",
+      "python_prefix": "/REDACTED/python/venv",
       "python_version": "3.10.20",
       "removed_sensitive_environment_variables": 3,
       "script_sha256": "c5937520402166ac227413b97661fe1ceac009d840251b6971f81de595cecfec",
@@ -110,8 +110,8 @@
           "file_hash_status": "hashed",
           "file_sha256": "6ae17b070c0f70a8e3cad89a510a256942e5a1f37ea5feb120cec167ed2a6236",
           "file_size": 22147,
-          "path": "/home/ma-user/work/numpilot/.venv/lib/python3.10/site-packages/numpy/__init__.py",
-          "realpath": "/home/ma-user/work/numpilot/.venv/lib/python3.10/site-packages/numpy/__init__.py",
+          "path": "/REDACTED/python/venv/lib/python3.10/site-packages/numpy/__init__.py",
+          "realpath": "/REDACTED/python/venv/lib/python3.10/site-packages/numpy/__init__.py",
           "version": "2.2.6"
         }
       },
@@ -132,13 +132,13 @@
         }
       ],
       "pid": 181638,
-      "python_base_prefix": "/home/ma-user/miniconda3",
-      "python_executable": "/home/ma-user/work/numpilot/.venv/bin/python",
-      "python_executable_realpath": "/home/ma-user/miniconda3/bin/python3.10",
+      "python_base_prefix": "/REDACTED/python/base",
+      "python_executable": "/REDACTED/python/venv/bin/python",
+      "python_executable_realpath": "/REDACTED/python/base/bin/python3.10",
       "python_executable_sha256": "13d1dbcada281a545abcd1a6c1878d25b88e714dbcbe4d46b6ab1710d694a6fd",
       "python_executable_size": 4338584,
-      "python_invocation_path": "/home/ma-user/work/numpilot/.venv/bin/python",
-      "python_prefix": "/home/ma-user/work/numpilot/.venv",
+      "python_invocation_path": "/REDACTED/python/venv/bin/python",
+      "python_prefix": "/REDACTED/python/venv",
       "python_version": "3.10.20",
       "removed_sensitive_environment_variables": 3,
       "script_sha256": "4ffcfd6f12f771cb40daadfe9de2ea3a2b3ae3e3db4b95e09c39c0c469d3de20",
@@ -153,10 +153,10 @@
   "failure": null,
   "finished_at_utc": "2026-08-28T08:48:04.552767Z",
   "migration": {
-    "migrated_path": "/home/ma-user/work/.numpilot-state/competition-main-0U17Jn/migration/migrated.py",
+    "migrated_path": "/REDACTED/numpilot-state/competition-main-0U17Jn/migration/migrated.py",
     "migrated_sha256": "c5937520402166ac227413b97661fe1ceac009d840251b6971f81de595cecfec",
-    "report_path": "/home/ma-user/work/.numpilot-state/competition-main-0U17Jn/migration/script-migration-report.json",
-    "report_sha256": "0ceff6efb719cb4d08a85934c16f4bffd93e15a67326ce23025a4ca356f28205",
+    "report_path": "/REDACTED/numpilot-state/competition-main-0U17Jn/migration/script-migration-report.json",
+    "report_sha256": "f9981e01a031b593ba87961044c229486c8631e8f38f557d9aa25dc7895ca61e",
     "report_status": "migrated_strict_npu"
   },
   "numerically_consistent": true,
@@ -164,7 +164,7 @@
   "receipt_type": "ordinary_script_numerical_verification",
   "schema_version": 1,
   "source": {
-    "path": "/home/ma-user/work/numpilot/examples/competition_power_log_exp.py",
+    "path": "examples/competition_power_log_exp.py",
     "sha256": "4ffcfd6f12f771cb40daadfe9de2ea3a2b3ae3e3db4b95e09c39c0c469d3de20"
   },
   "started_at_utc": "2026-08-28T08:47:57.166519Z",

@@ -3682,3 +3682,143 @@ def test_mixed_generatable_and_signature_gaps_are_partially_blocked(tmp_path):
     assert result.status == "prepared_partially_blocked"
     assert result.specs[0].qualified_api == "numpy.cbrt"
     assert result.blocked
+
+
+def test_continue_on_error_completes_independent_gaps_and_redacts_failure(
+    tmp_path,
+):
+    """An opted-in multi-gap run leaves a useful, non-secret report."""
+
+    source = tmp_path / "two-gaps.py"
+    source.write_text(
+        "import numpy as np\n"
+        "def forward(x):\n"
+        "    first = np.cbrt(x)\n"
+        "    second = np.spacing(x)\n"
+        "    return second\n",
+        encoding="utf-8",
+    )
+    calls = []
+    secret = "model-response-secret-that-must-not-be-persisted"
+
+    def chat(_system, _user):
+        calls.append(1)
+        # The first gap receives an invalid response; the second remains
+        # independently generatable.  The provider only raises a sanitized
+        # DraftGenerationError after its bounded attempt.
+        return secret if len(calls) == 1 else _valid_bundle()
+
+    result = GapCompletionPipeline(
+        provider=LlmDraftProvider(chat=chat, max_attempts=1)
+    ).run(
+        str(source),
+        str(tmp_path / "out"),
+        target_soc="ascend910b",
+        cann_version="9.0.0",
+        continue_on_error=True,
+    )
+
+    assert result.continue_on_error is True
+    assert result.status == "generated_unverified_with_failures"
+    assert len(result.specs) == 2
+    assert len(result.drafts) == 1
+    assert len(result.generation_failures) == 1
+    failure = result.generation_failures[0]
+    assert failure["qualified_api"] == "numpy.cbrt"
+    assert failure["status"] == "generation_failed"
+    assert failure["actual_remote_call"] is False
+    assert "model-response-secret" not in json.dumps(result.to_dict())
+    assert calls == [1, 1]
+
+    report = json.loads(
+        (tmp_path / "out" / "gap-report.json").read_text(encoding="utf-8")
+    )
+    assert report["continue_on_error"] is True
+    assert report["generation_failures"] == [failure]
+    failed_workspace = tmp_path / "out" / "gaps" / result.specs[0].gap_id
+    assert (failed_workspace / "gap-spec.json").is_file()
+    assert (failed_workspace / "GENERATION_REQUEST.md").is_file()
+    assert not (failed_workspace / "draft").exists()
+
+
+def test_continue_on_error_remains_opt_in_fail_fast_default(tmp_path):
+    source = tmp_path / "two-gaps.py"
+    source.write_text(
+        "import numpy as np\n"
+        "def forward(x):\n"
+        "    first = np.cbrt(x)\n"
+        "    second = np.spacing(x)\n"
+        "    return second\n",
+        encoding="utf-8",
+    )
+    calls = []
+
+    def chat(_system, _user):
+        calls.append(1)
+        return "invalid bundle"
+
+    with pytest.raises(GapCompletionError, match="draft generation failed"):
+        GapCompletionPipeline(
+            provider=LlmDraftProvider(chat=chat, max_attempts=1)
+        ).run(
+            str(source),
+            str(tmp_path / "out"),
+            target_soc="ascend910b",
+            cann_version="9.0.0",
+        )
+    assert calls == [1]
+
+
+def test_complete_gaps_cli_exposes_continue_on_error_switch(tmp_path, monkeypatch):
+    from numpilot import __main__ as cli
+
+    observed = {}
+
+    def fake_complete(args):
+        observed["continue_on_error"] = args.continue_on_error
+        return 0
+
+    monkeypatch.setattr(cli, "_cmd_complete_gaps", fake_complete)
+    result = cli.main([
+        "complete-gaps",
+        str(tmp_path / "source.py"),
+        "--continue-on-error",
+    ])
+    assert result == 0
+    assert observed == {"continue_on_error": True}
+
+
+def test_continue_on_error_extracts_only_redacted_http_status(tmp_path):
+    source = tmp_path / "two-gaps.py"
+    source.write_text(
+        "import numpy as np\n"
+        "def forward(x):\n"
+        "    first = np.cbrt(x)\n"
+        "    second = np.spacing(x)\n"
+        "    return second\n",
+        encoding="utf-8",
+    )
+    calls = []
+
+    def chat(_system, _user):
+        calls.append(1)
+        if len(calls) == 1:
+            raise LlmHttpError(503)
+        return _valid_bundle()
+
+    result = GapCompletionPipeline(
+        provider=LlmDraftProvider(chat=chat, max_attempts=1)
+    ).run(
+        str(source),
+        str(tmp_path / "out"),
+        target_soc="ascend910b",
+        cann_version="9.0.0",
+        continue_on_error=True,
+    )
+    failure = result.generation_failures[0]
+    assert failure["error_code"] == "remote_http_error"
+    assert failure["http_status"] == 503
+    # This test uses an injected callable, so the HTTP-shaped exception is
+    # still a local test-double call rather than evidence of a remote request.
+    assert failure["actual_remote_call"] is False
+    assert "remote LLM HTTP status" not in json.dumps(failure)

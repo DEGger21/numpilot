@@ -17,9 +17,9 @@
     },
     "cann": {
       "opp_directory": true,
-      "opp_path": "/usr/local/Ascend/cann-9.0.0/opp",
+      "opp_path": "/REDACTED/cann/opp",
       "toolkit_directory": true,
-      "toolkit_path": "/usr/local/Ascend/cann-9.0.0"
+      "toolkit_path": "/REDACTED/cann"
     },
     "machine": {
       "machine": "aarch64",
@@ -27,10 +27,10 @@
     },
     "npu_smi": {
       "available": true,
-      "path": "/usr/local/sbin/npu-smi"
+      "path": "/REDACTED/system/sbin/npu-smi"
     },
     "python": {
-      "executable": "/home/ma-user/work/numpilot/.venv/bin/python",
+      "executable": "/REDACTED/python/venv/bin/python",
       "implementation": "CPython",
       "major_minor": "3.10",
       "minimum": "3.10",
@@ -39,8 +39,8 @@
     },
     "venv": {
       "active": true,
-      "base_prefix": "/home/ma-user/miniconda3",
-      "prefix": "/home/ma-user/work/numpilot/.venv"
+      "base_prefix": "/REDACTED/python/base",
+      "prefix": "/REDACTED/python/venv"
     }
   },
   "numpilot_version": "0.3.0a1.dev0",
@@ -76,9 +76,9 @@
     "asnumpy": {
       "asnumpy_version": "0.3.1.dev4+g1929a3ba4",
       "dtype": "float32",
-      "interpreter": "/home/ma-user/work/numpilot/.venv/bin/python",
+      "interpreter": "/REDACTED/python/venv/bin/python",
       "loguru_version": "0.7.3",
-      "module_path": "/home/ma-user/work/numpilot/.venv/lib/python3.10/site-packages/asnumpy/__init__.py",
+      "module_path": "/REDACTED/python/venv/lib/python3.10/site-packages/asnumpy/__init__.py",
       "module_sha256": "8761f7f9fe557606df6c6683245f4dfc3b8ac69385689a0673f3c90e33afd28e",
       "native_modules": [
         {

@@ -44,7 +44,8 @@ git switch -c change/<short-topic> upstream/develop
 # 修改并验证
 python tools/check_release_tree.py
 env -u PYTHONPATH -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY \
-  -u http_proxy -u https_proxy -u all_proxy \
+  -u NO_PROXY -u http_proxy -u https_proxy -u all_proxy -u no_proxy \
+  -u NUMPILOT_LLM_REQUIRE_PROXY \
   python -m pytest -q -p no:cacheprovider
 git diff --check
 
@@ -71,7 +72,8 @@ git switch develop
 git pull --ff-only origin develop
 python tools/check_release_tree.py
 env -u PYTHONPATH -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY \
-  -u http_proxy -u https_proxy -u all_proxy \
+  -u NO_PROXY -u http_proxy -u https_proxy -u all_proxy -u no_proxy \
+  -u NUMPILOT_LLM_REQUIRE_PROXY \
   python -m pytest -q -p no:cacheprovider
 git diff --check
 git status --short
@@ -114,11 +116,15 @@ git ls-remote --heads origin
 1. 在 `develop` 的干净提交上重跑目标 NPU configured-model 主链；
 2. 替换仍带 `git_dirty=true` 的开发态证据；
 3. 冻结 `pyproject.toml`、`numpilot.__version__`、CHANGELOG 与 SECURITY；
-4. 完成完整门禁后，通过受保护的 `develop → main` Pull Request 提升目标提交；
-5. 在 `main` 运行 `python tools/check_release_tree.py --require-clean`；
-6. 从 `main` 的全新 checkout 构建 wheel 与 sdist，并做双环境安装冒烟；
-7. 生成 release manifest、SBOM 和许可证清单；
-8. 仅在同一个已验证的 `main` commit 上创建 annotated tag，并正常推送分支与 tag。
+4. 冻结 AsNumpy 内部组件：选择一份实际可取得的 CPython/架构 wheel，记录字节、metadata、
+   安装后 native 哈希，并禁止发布安装路径访问浮动上游源码；具体合同见
+   [AsNumpy 内部组件锁定说明](ASNUMPY-INTERNAL-COMPONENT-LOCK.zh-CN.md)；
+5. 完成完整门禁后，通过受保护的 `develop → main` Pull Request 提升目标提交；
+6. 在 `main` 运行 `python tools/check_release_tree.py --require-clean --require-asnumpy-component`；
+7. 从 `main` 的全新 checkout 构建 wheel 与 sdist，并做双环境安装冒烟；
+8. 生成 release manifest、SBOM 和许可证清单，并把 AsNumpy 组件作为同一 release 的独立附件
+   绑定进去；
+9. 仅在同一个已验证的 `main` commit 上创建 annotated tag，并正常推送分支与 tag。
 
 完整门禁见 [比赛 RC 发布清单](RELEASE-CHECKLIST-DEMO-V1.md)。直接压缩日常工作目录不是有效
 提交方式；比赛 ZIP 应来自已验证 tag 的 `git archive`、wheel/sdist 或干净 checkout。

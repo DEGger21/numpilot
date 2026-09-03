@@ -41,16 +41,16 @@ Python 环境。任意 Python 3.10+ 主机不能自动视为完整测试资格�
 
 ## 2. NPU 安装前提
 
-运行 `install.sh` 前，需要在 NumPilot 之外准备：
+运行固定组件模式的 `install.sh` 前，需要在 NumPilot 之外准备：
 
 - 兼容的 Ascend 驱动、固件、CANN Toolkit 与 OPP；
 - `npu-smi info` 可见的 NPU；
-- Python 3.10+、`venv` 与开发头文件（`Python.h`）；
-- Git、CMake、Make 或 Ninja，以及 GCC/G++ 11.2 或更高版本；
-- 系统 `fmt`、`spdlog` 的 CMake package 文件；
-- 当前用户独占的 venv、源码缓存、构建目录和运行回执空间。
+- Python 3.10+、`venv`/`pip`；
+- 当前用户独占的 venv、运行回执空间和持久化状态目录。
 
-Ubuntu 主机管理员可用以下示例准备通用构建依赖：
+固定 wheel 安装不需要 Git、CMake、Make/Ninja、GCC/G++、Python 开发头文件或系统
+`fmt`/`spdlog` CMake 包。只有维护者显式选择源码优先构建时，才需要以下工具链；Ubuntu 主机管理员
+可用示例准备：
 
 ```bash
 sudo apt-get update
@@ -61,19 +61,47 @@ sudo apt-get install -y \
 其他发行版的包名不同。CANN、驱动、固件和 OPP 必须按目标 Ascend/CANN 文档安装；NumPilot 不会
 安装或修改这些组件。
 
-开始前检查关键工具：
+固定组件模式开始前检查：
 
 ```bash
 python3 --version
-g++ --version
 npu-smi info
 test -f /usr/local/Ascend/cann-9.0.0/set_env.sh
 ```
 
+源码优先模式再额外检查 `git --version`、`g++ --version`、`cmake --version` 和 Python
+`Python.h`/`fmt`/`spdlog` 开发包。
+
 请把 CANN 路径替换为实际准备审计的精确安装。选择 `latest` 可能通过基础冒烟，但不会自动让新版
 CANN 进入当前 strict 画像。
 
-## 3. NPU 源码优先安装
+## 3. 固定 AsNumpy 内部组件（发布/比赛模式）
+
+正式发布或比赛交付时，直接使用仓库随附的 `components/asnumpy/`（或同一 release 的不可变附件）。
+其中的 manifest 已绑定 wheel、LICENSE、SBOM、METADATA/RECORD 和安装后 native 哈希。不要使用
+PyPI `latest`、版本范围或浮动 Git 分支；组件缺失或哈希不匹配就是发布阻断，安装器不得退回下载源码。
+
+```bash
+python -m numpilot bootstrap --apply \
+  --asnumpy-component components/asnumpy \
+  --receipt /secure/runtime/bootstrap-receipt.json
+python -m numpilot bootstrap --verify --json
+```
+
+release manifest 还必须绑定 wheel 的 `METADATA`/`RECORD`、安装后的
+`asnumpy/__init__.py` 与 native `_core` 哈希、Python/架构标签，以及已审计的 CANN/SoC 画像。
+组件旁应保留上游 Apache-2.0 LICENSE，并在 SBOM/逐文件许可证清单中单列。参考锁定值、历史
+wheel 摘要和升级/回滚流程见
+[AsNumpy 内部组件锁定与发布合同](ASNUMPY-INTERNAL-COMPONENT-LOCK.zh-CN.md)。
+
+当前附件只适用于 Linux AArch64、CPython 3.10 和 CANN 9.0.0；它不包含 CANN 驱动、固件或 OPP。
+因此现场不再需要拉取/编译 AsNumpy 源码，但仍要在目标 venv 中执行一次本地 wheel 安装，并先
+加载匹配的 CANN `set_env.sh`。
+
+下方源码优先流程仅用于隔离地构建和审计下一版组件；它在显式授权时可能获取**固定**源码，
+不是固定发行版的用户安装合同。
+
+## 4. NPU 源码优先安装（开发/构建准备）
 
 发布候选使用 `main`，集成开发才使用 `develop`。当前 Alpha 快照没有已核实的公开包发行，因此
 不要用 `pip install numpilot` 替代以下流程。
@@ -86,6 +114,7 @@ git clone --branch main --depth 1 https://gitcode.com/li-xingHIT/numpilot.git
 cd numpilot
 
 ./install.sh --allow-network \
+  --asnumpy-source /absolute/path/to/pinned/asnumpy \
   --cann-env /usr/local/Ascend/cann-9.0.0/set_env.sh \
   --venv /absolute/user-owned/numpilot-venv \
   --persistent-root /absolute/user-owned/numpilot-runtime
@@ -106,9 +135,10 @@ AsNumpy 源码。它不会运行 `sudo`、修改 shell 启动文件、保存模�
   --venv /absolute/user-owned/numpilot-venv \
   --persistent-root /absolute/user-owned/numpilot-runtime
 
-# 显式选择 Python 包索引；不要把凭据写进 URL。
+# 固定组件模式下显式选择 Python 包索引；不要把凭据写进 URL。
 ./install.sh --allow-network \
   --pip-index-url https://mirror.example.invalid/simple \
+  --asnumpy-component "$PWD/components/asnumpy" \
   --cann-env /absolute/path/to/CANN/set_env.sh \
   --venv /absolute/user-owned/numpilot-venv \
   --persistent-root /absolute/user-owned/numpilot-runtime
@@ -117,11 +147,11 @@ AsNumpy 源码。它不会运行 `sudo`、修改 shell 启动文件、保存模�
 源码构建没有 OS 级网络沙箱，依赖范围也不是完整发布锁。固定 Git commit 不保证本地 wheel 逐字节
 一致；正式发布必须保存资格化时实际使用的 wheel、哈希、constraints 和 wheelhouse。
 
-## 4. 安装后分层验收
+## 5. 安装后分层验收
 
 所有检查都应在生成的 activation 环境中运行。
 
-### 4.1 身份与隔离依赖
+### 5.1 身份与隔离依赖
 
 ```bash
 python -m numpilot --version
@@ -132,7 +162,7 @@ env -u PYTHONPATH python -m pip --isolated check
 清除 `PYTHONPATH` 是为了把项目 venv 与 CANN 注入的可选 Python 包隔离。CANN 完整注入环境中的
 vendor 包缺少可选依赖，不能单独作为 NumPilot venv 损坏的证明。
 
-### 4.2 Bootstrap 回执与 AsNumpy
+### 5.2 Bootstrap 回执与 AsNumpy
 
 ```bash
 NUMPILOT_RECEIPT="$(python -m numpilot paths --get bootstrap_receipt)"
@@ -161,7 +191,7 @@ PY
 
 该命令只证明本地 AsNumpy/NPU 可以执行这一冒烟算子。
 
-### 4.3 NPU doctor 与 strict 画像判定
+### 5.3 NPU doctor 与 strict 画像判定
 
 ```bash
 python -m numpilot doctor --backend npu
@@ -170,11 +200,11 @@ python -m numpilot analyze examples/poisson_source_smooth_l1_map.py \
   --require-direct --json
 ```
 
-`doctor` 检查 CANN/NPU/AsNumpy 基础运行，没有 `--json` 选项，也不是 strict 画像资格化。
-`analyze --require-direct` 是下一道门。退出码 `1` 且结果为 `CAPABILITY_AUDIT_REQUIRED`，表示真实的
+`doctor` 检查 CANN/NPU/AsNumpy 基础运行；需要机器可读结果时可使用 `doctor --json`，但它不是
+strict 画像资格化。`analyze --require-direct` 是下一道门。退出码 `1` 且结果为 `CAPABILITY_AUDIT_REQUIRED`，表示真实的
 运行时画像漂移，不是应该用 `--skip-env-check` 绕过的普通安装错误。
 
-## 5. 可选 CANNBot Skills
+## 6. 可选 CANNBot Skills
 
 ordinary direct 路径不需要 CANNBot。只有在阅读官方
 [CANNBot LICENSE](https://gitcode.com/cann/cannbot-skills/blob/master/LICENSE) 并接受 **CANN Open Software
@@ -213,7 +243,7 @@ python -m numpilot setup-skills \
 CANNBot Skills 与 `cann/ops-nn` 是不同依赖。安装器不会自动获取 `ops-nn`；当前 official-source
 resolver 只接受用户显式提供、与版本匹配的本地 checkout，且现有源码映射只固定 CANN 9.0.0。
 
-## 6. 配置并探测模型
+## 7. 配置并探测模型
 
 ```bash
 python -m numpilot configure-llm --init
@@ -222,7 +252,8 @@ python -m numpilot configure-llm --check
 python -m numpilot configure-llm --probe
 ```
 
-`--check` 只检查本地配置。`--probe` 会执行真实请求、可能产生费用，并要求预期 readiness marker。
+`--check` 不联网，只检查本地配置和当前代理门禁。`--probe` 会执行真实请求、可能产生费用，并要求
+预期 readiness marker。
 配置需要 `base_url`、`auth_token`、`model`；`provider` 只是审计标签，当前协议为
 `openai-chat-completions`。
 
@@ -254,13 +285,14 @@ python -m numpilot configure-llm --probe
 
 失败关闭代理模式会在网络传输前拒绝缺少协议匹配代理或被 `NO_PROXY` 绕过的目标。
 
-## 7. 首次运行
+## 8. 首次运行
 
 针对自己的可信脚本，请使用[中文 README 的完整 `analyze → migrate → verify-script` 示例](../README.zh-CN.md#运行-ordinary-主链)。
-`./run_demo.sh --quick` 运行仓库内置的分阶段示例，并额外执行范围绑定基准。每次运行都会写入
-`python -m numpilot paths --json` 所示的新仓库外目录。
+`./run_demo.sh --quick` 运行仓库内置的分阶段示例，并额外执行范围绑定基准。若模型配置位于独立
+运行时目录，可显式传入 `--llm-config /absolute/persistent/numpilot-runtime/.numpilot-config/llm.json`；
+每次运行都会写入 `python -m numpilot paths --json` 所示的新仓库外目录。
 
-## 8. 常见问题
+## 9. 常见问题
 
 | 现象 | 检查方向 |
 |---|---|
@@ -278,7 +310,7 @@ python -m numpilot configure-llm --probe
 新 shell 应 source 生成的 activation 文件，不要手工拼接多个 CANN 版本。该脚本支持重复 source，并会
 清理已知 toolkit/devlib 冲突。
 
-## 9. 安全清理
+## 10. 安全清理
 
 NumPilot 没有 `uninstall` 命令。先记录所有精确路径：
 

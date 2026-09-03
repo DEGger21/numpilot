@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import stat
 import tempfile
 from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
@@ -503,6 +504,12 @@ class GapCompletionResult:
     blocked: Tuple[Mapping[str, Any], ...]
     drafts: Tuple[OperatorDraft, ...] = ()
     skill_bundle: Optional[Mapping[str, Any]] = None
+    # A provider failure normally aborts the pipeline (the historical,
+    # fail-fast behaviour).  When ``continue_on_error`` is explicitly opted
+    # into, failed gaps are retained here as *sanitized* records so a
+    # multi-gap run can finish the independent gaps and leave a durable report.
+    generation_failures: Tuple[Mapping[str, Any], ...] = ()
+    continue_on_error: bool = False
 
     @property
     def generated_count(self) -> int:
@@ -521,6 +528,10 @@ class GapCompletionResult:
             "generated_count": self.generated_count,
             "qualified_count": 0,
             "activated_count": 0,
+            "generation_failures": [
+                dict(item) for item in self.generation_failures
+            ],
+            "continue_on_error": self.continue_on_error,
         }
         if self.skill_bundle is not None:
             result["skill_bundle"] = dict(self.skill_bundle)
@@ -656,6 +667,83 @@ def _write_json(path: Path, data: Mapping[str, Any], *, replace: bool) -> None:
     _atomic_write(path, payload, replace=replace)
 
 
+def _sanitize_generation_failure(
+    spec: GapSpec,
+    error: BaseException,
+) -> Dict[str, Any]:
+    """Return a bounded failure record safe to persist in ``gap-report``.
+
+    A model/transport exception is not trusted input.  In particular, an
+    adapter supplied by a caller can put the raw model response (or a token)
+    in ``str(error)``.  Completion reports are durable artifacts, so retain
+    only stable type/status metadata and never the exception message.
+    """
+
+    error_type = type(error).__name__
+    if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_.-]{0,95}", error_type):
+        error_type = "GenerationError"
+    status_code = getattr(error, "status_code", None)
+    if (
+        isinstance(status_code, bool)
+        or not isinstance(status_code, int)
+        or status_code < 100
+        or status_code > 599
+    ):
+        status_code = None
+    # ``LlmDraftProvider`` deliberately wraps bounded retry failures in a
+    # generic DraftGenerationError for backwards compatibility.  Recover only
+    # a numeric HTTP status from that already-redacted message; never persist
+    # the message itself (which could contain untrusted model text).
+    if status_code is None:
+        try:
+            message = str(error)
+        except Exception:
+            message = ""
+        match = re.search(r"\bHTTP status ([1-5][0-9]{2})\b", message)
+        if match:
+            status_code = int(match.group(1))
+    request_count = getattr(error, "request_count", None)
+    receipt_count = getattr(error, "receipt_count", None)
+    counts_valid = all(
+        isinstance(value, int) and not isinstance(value, bool) and value >= 0
+        for value in (request_count, receipt_count)
+    )
+    if not counts_valid or receipt_count > request_count:
+        request_count = None
+        receipt_count = None
+    actual_remote_call = getattr(error, "actual_remote_call", None)
+    if not isinstance(actual_remote_call, bool):
+        actual_remote_call = (
+            True
+            if status_code is not None
+            else (request_count > 0 if request_count is not None else None)
+        )
+    if status_code is not None:
+        error_code = "remote_http_error"
+        detail = "remote model request failed (HTTP %d)" % status_code
+    elif actual_remote_call is True:
+        error_code = "remote_generation_failed"
+        detail = "remote model response was not publishable"
+    else:
+        error_code = "generation_failed"
+        detail = "local generation validation or configuration failed"
+    record: Dict[str, Any] = {
+        "gap_id": spec.gap_id,
+        "qualified_api": spec.qualified_api,
+        "status": "generation_failed",
+        "error_code": error_code,
+        "error_type": error_type,
+        "detail": detail,
+        "actual_remote_call": actual_remote_call,
+    }
+    if status_code is not None:
+        record["http_status"] = status_code
+    if request_count is not None:
+        record["request_count"] = request_count
+        record["receipt_count"] = receipt_count
+    return record
+
+
 class GapCompletionPipeline:
     """Detect gaps, prepare specs, and optionally create unverified LLM drafts."""
 
@@ -682,7 +770,10 @@ class GapCompletionPipeline:
         requested_specs: Optional[Sequence[GapSpec]] = None,
         requested_blocked: Sequence[Mapping[str, Any]] = (),
         preparation: Optional[GapPreparation] = None,
+        continue_on_error: bool = False,
     ) -> GapCompletionResult:
+        if not isinstance(continue_on_error, bool):
+            raise GapCompletionError("continue_on_error must be a boolean")
         if preparation is None:
             preparation = prepare_gap_completion(
                 source_path,
@@ -719,6 +810,7 @@ class GapCompletionPipeline:
                 replace=False,
             )
         drafts = []
+        generation_failures = []
         for spec in specs:
             workspace = gaps_dir / spec.gap_id
             _ensure_directory(workspace, private=True)
@@ -775,12 +867,29 @@ class GapCompletionPipeline:
                         generation_request=request.decode("utf-8"),
                     ))
                 except DraftGenerationError as exc:
-                    raise GapCompletionError(
-                        "draft generation failed for %s: %s"
-                        % (spec.qualified_api, exc)
-                    ) from exc
+                    if not continue_on_error:
+                        raise GapCompletionError(
+                            "draft generation failed for %s: %s"
+                            % (spec.qualified_api, exc)
+                        ) from exc
+                    # Do not persist ``str(exc)``.  Provider errors are
+                    # generally sanitized already, but an injected provider
+                    # (or a future transport implementation) could include a
+                    # response fragment or secret in its message.  The report
+                    # only needs bounded, machine-readable state for the next
+                    # repair/triage step.
+                    generation_failures.append(
+                        _sanitize_generation_failure(spec, exc)
+                    )
 
-        if drafts and blocked:
+        if generation_failures:
+            if drafts:
+                status = "generated_unverified_with_failures"
+            else:
+                status = "generation_failed"
+            if blocked:
+                status += "_partially_blocked"
+        elif drafts and blocked:
             status = "generated_unverified_partially_blocked"
         elif specs and blocked:
             status = "prepared_partially_blocked"
@@ -804,6 +913,8 @@ class GapCompletionPipeline:
                 self.skill_bundle.manifest()
                 if self.skill_bundle is not None else None
             ),
+            generation_failures=tuple(generation_failures),
+            continue_on_error=continue_on_error,
         )
         _write_json(output / "gap-report.json", result.to_dict(), replace=True)
         return result

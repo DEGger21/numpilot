@@ -23,8 +23,15 @@ python -m numpilot paths --json
 | AsNumpy 源码缓存 | `<应用缓存根>/asnumpy/<commit>` |
 | CANNBot Skill 缓存 | `$XDG_CACHE_HOME/numpilot/cannbot-skills/<commit>` |
 
+冻结 release 另有一条**内部 AsNumpy 组件**边界：用户安装使用发行附件或受控内部制品库中的
+精确 wheel（推荐 `components/asnumpy/`），而不是依赖上面的可重建源码缓存。组件文件、wheel
+metadata/RECORD、安装后 Python/native 模块和 bootstrap receipt 的 SHA-256 必须进入同一份
+release manifest；发布模式不得因缓存为空而联网拉取 AsNumpy，也不得后台升级已安装组件。详见
+[AsNumpy 内部组件锁定与发布合同](ASNUMPY-INTERNAL-COMPONENT-LOCK.zh-CN.md)。源码缓存只供
+隔离构建下一版使用，不能作为用户安装时的隐式 fallback。
+
 临时 HOME/Notebook 可在安装时传 `--persistent-root /absolute/root`。统一优先级是：显式细分
-变量 > `NUMPILOT_HOME` > XDG > 标准 HOME。单一根映射为
+变量 > `NUMPILOT_HOME`（或其描述性别名 `NUMPILOT_RUNTIME_ROOT`） > XDG > 标准 HOME。单一根映射为
 `<root>/.numpilot-state`、`<root>/.numpilot-config` 和
 `<root>/.numpilot-cache/numpilot`。命令行 `--out` / `--reports-dir` 仍优先于这些默认值：
 
@@ -32,7 +39,7 @@ python -m numpilot paths --json
 export NUMPILOT_STATE_HOME=/data/numpilot-state
 export NUMPILOT_RUNS_DIR=/data/numpilot-runs
 export NUMPILOT_REPORTS_DIR=/data/numpilot-reports
-export NUMPILOT_HOME=/data/persistent-root
+export NUMPILOT_RUNTIME_ROOT=/data/persistent-root
 ```
 
 `NUMPILOT_CONFIG_HOME`、`NUMPILOT_CACHE_HOME`、`NUMPILOT_LLM_CONFIG_FILE`、
@@ -41,7 +48,25 @@ cache base，NumPilot 再追加固定 commit。`NUMPILOT_CANNBOT_SKILLS` 是经�
 覆盖，优先于 CANNBot cache base；`NUMPILOT_BOOTSTRAP_RECEIPT` 是精确文件覆盖。不要把
 私有配置或运行状态指回 Git 工作树。
 
-成功的 source-first 安装会生成 mode `0600` 的 `activate-numpilot.sh`。它只冻结本地路径、venv
+如果模型配置位于单独的比赛/运行时根目录，可只指定运行时根，不必把凭据复制到仓库：
+
+```bash
+export NUMPILOT_RUNTIME_ROOT=/absolute/persistent/numpilot-runtime
+python -m numpilot configure-llm --check
+```
+
+也可以对单次演示显式指定配置文件：
+
+```bash
+./run_demo.sh --llm-config /absolute/persistent/numpilot-runtime/.numpilot-config/llm.json --quick
+```
+
+`run_demo.sh --llm-config` 只传递私有 JSON 的路径，并覆盖同名继承环境变量；它不会把 Token
+放进参数或日志。省略该选项时，脚本继续使用 `NUMPILOT_LLM_CONFIG_FILE`、已 source 的
+`NUMPILOT_CONFIG_HOME` 或默认 XDG 路径。NumPilot 不会自动扫描固定机器路径，以免误读其他项目
+或用户的凭据。
+
+成功的安装（固定组件或维护者 source-first 模式）会生成 mode `0600` 的 `activate-numpilot.sh`。它只冻结本地路径、venv
 和已校验 CANN set_env，不包含模型 Token、endpoint、代理或 pip 索引，也不修改 `.bashrc`。
 每个新 shell source 一次即可；重复 source 会去重 PATH/LD_LIBRARY_PATH，并清理不同 CANN
 toolkit 根及其 `devlib`，同时保留 driver、NNAL/ATB、无关 `devlib` 和其他自定义库路径。

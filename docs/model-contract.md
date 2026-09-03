@@ -35,6 +35,11 @@ NumPilot 的生成路径使用用户自己配置的 OpenAI-compatible endpoint�
 }
 ```
 
+对于仓库外的比赛运行根，可设置
+`NUMPILOT_RUNTIME_ROOT=/absolute/persistent/numpilot-runtime`；单次命令也可用
+`python -m numpilot --llm-config /absolute/persistent/numpilot-runtime/.numpilot-config/llm.json configure-llm --check`
+显式选择私有文件（`--llm-config` 放在子命令后也可）。该选项只传递路径，不会输出 Token。
+
 目录权限为 `0700`、文件权限为 `0600`。环境变量逐字段优先于文件；若环境显式覆盖 `model`，
 不会继承旧模型的 alias allowlist。`--check` 使用与生成相同的本地 readiness/profile 校验且
 不联网；`--probe` 才执行真实请求。probe 与 gap/repair/adapter 的远端 readiness 都要求响应
@@ -56,8 +61,9 @@ python -m numpilot configure-llm --probe
 门禁按 endpoint 协议要求匹配的 `HTTP_PROXY` 或 `HTTPS_PROXY`，并检查 `NO_PROXY` / `no_proxy`
 没有绕过目标。缺少匹配代理或命中 bypass 时，请求会在任何网络传输前 fail closed；启用门禁后
 每次请求都从当前环境快照构造独立 proxy opener，避免复用缓存了旧代理环境的全局 opener。
-`--check` 仍只验证本地模型配置，`--probe` 才同时验证实际代理路径与远端合同。代理 URL、Token、
-endpoint 和响应正文都不得进入回执、日志或 Git。
+`--check` 不联网：它验证本地模型配置，并在启用强制代理策略时校验当前代理环境和 bypass 门禁。
+`--probe` 才验证实际代理传输与远端合同。代理 URL、Token、endpoint 和响应正文都不得进入回执、
+日志或 Git。
 
 ## 身份规则
 

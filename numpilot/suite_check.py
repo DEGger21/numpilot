@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import copy
 import hashlib
 import json
 import os
@@ -633,6 +634,45 @@ def check_suite(
             "single-gap candidates still require CANNBot generation, AsNumpy integration and six-gate qualification",
         ],
     }
+
+
+def public_suite_report(report: Mapping[str, Any]) -> Dict[str, Any]:
+    """Return a log-safe view of a suite report.
+
+    The private receipt written by :func:`write_suite_report` intentionally
+    keeps absolute source paths so an operator can trace a case locally.  A
+    report printed to CI/CodeArts stdout is often retained in a shared build
+    log, however, so exposing the checkout path is unnecessary.  Redact the
+    path-bearing fields to basenames while preserving hashes, line numbers,
+    diagnostics, and all admission decisions.  The original mapping is never
+    mutated and remains suitable for ``--out`` publication.
+    """
+
+    if not isinstance(report, Mapping):
+        raise SuiteCheckError("suite report must be a mapping")
+    public = copy.deepcopy(dict(report))
+
+    def visit(value: Any) -> None:
+        if isinstance(value, dict):
+            for key, item in list(value.items()):
+                if key in {"path", "source_path"} and isinstance(item, str):
+                    # ``Path.name`` handles both absolute and relative POSIX
+                    # paths without retaining parent directories.  Keep a
+                    # malformed value bounded rather than failing a logging
+                    # path after the static check itself already succeeded.
+                    try:
+                        value[key] = Path(item).name or "<root>"
+                    except (TypeError, ValueError, OSError):
+                        value[key] = "<redacted>"
+                else:
+                    visit(item)
+        elif isinstance(value, list):
+            for item in value:
+                visit(item)
+
+    visit(public)
+    public["path_redacted"] = True
+    return public
 
 
 def write_suite_report(path: str, report: Mapping[str, Any]) -> None:

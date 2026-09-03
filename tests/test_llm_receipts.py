@@ -534,6 +534,46 @@ def test_oversized_stream_fails_during_bounded_incremental_read(monkeypatch):
         LlmEngine._chat_with_receipt("system", "user", stream=True)
 
 
+def test_non_stream_reader_enforces_total_deadline_between_chunks(monkeypatch):
+    class _DripResponse:
+        def __init__(self):
+            self.read_sizes = []
+
+        def read(self, size=-1):
+            self.read_sizes.append(size)
+            return b"x"
+
+    response = _DripResponse()
+    ticks = iter((100.0, 100.1, 100.2))
+    monkeypatch.setattr(llm_module.time, "monotonic", lambda: next(ticks))
+
+    with pytest.raises(LlmTransportError, match="request_timeout"):
+        llm_module._read_response_body(response, deadline=100.15)
+
+    assert response.read_sizes == [llm_module._MAX_RESPONSE_READ_CHUNK_BYTES]
+
+
+def test_non_stream_socket_timeout_is_classified_as_request_deadline(
+    monkeypatch,
+):
+    _configure(monkeypatch)
+
+    class _TimedOutResponse(_Response):
+        def read(self, size=-1):
+            del size
+            raise TimeoutError("socket details must stay redacted")
+
+    monkeypatch.setattr(
+        "urllib.request.urlopen",
+        lambda *_args, **_kwargs: _TimedOutResponse(b""),
+    )
+
+    with pytest.raises(LlmTransportError, match="request_timeout") as caught:
+        LlmEngine._chat_with_receipt("system", "user")
+
+    assert "socket details" not in str(caught.value)
+
+
 def test_streaming_timeout_is_a_total_request_deadline(monkeypatch):
     _configure(monkeypatch)
     monkeypatch.setenv("NUMPILOT_LLM_TIMEOUT", "10")

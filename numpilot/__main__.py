@@ -17,6 +17,8 @@ import shutil
 import stat
 import sys
 import tempfile
+import unicodedata
+import uuid
 
 
 def parse_cpu_threads(val):
@@ -64,15 +66,24 @@ from numpilot.asnumpy_skill import (                         # noqa: E402
 )
 from numpilot.bench import run_cpu_baseline, run_npu_compare  # noqa: E402
 from numpilot.capabilities import load_analysis_profile_set    # noqa: E402
+from numpilot.cli_ui import (                                 # noqa: E402
+    render_doctor,
+    render_home,
+    render_paths,
+    render_readiness as render_readiness_tty,
+    terminal_status,
+)
 from numpilot.coverage import is_custom                       # noqa: E402
 from numpilot.engines.llm import (LlmEngine, LlmError,        # noqa: E402
                                   LlmHttpError, LlmResponseError,
-                                  LlmTransportError)
+                                  LlmTransportError,
+                                  llm_proxy_route_status)
 from numpilot.env_check import Env                            # noqa: E402
 from numpilot.llm_config import (LlmConfigError,               # noqa: E402
                                  OPENAI_CHAT_COMPLETIONS_PROTOCOL,
                                  configure_llm_interactive,
                                  init_llm_config_template,
+                                 llm_config_path,
                                  load_llm_config,
                                  validate_llm_timeout)
 from numpilot.model_contract import (                          # noqa: E402
@@ -271,6 +282,15 @@ def _resolve_backend_name(args):
     return args.backend or os.getenv("NUMPILOT_BACKEND", "shim")
 
 
+def _llm_config_arg(value):
+    """Validate a CLI config path before it can influence model loading."""
+
+    try:
+        return str(llm_config_path(value))
+    except LlmConfigError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+
+
 _ANALYZE_MAX_SOURCE_BYTES = 4 * 1024 * 1024
 _ANALYZE_AUDIT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+:-]{0,255}$")
 
@@ -285,12 +305,16 @@ def _read_analyze_source(value):
         or len(value) > 4096
     ):
         raise AnalyzeCliError("source path is invalid")
+    if _analyze_path_has_symlink(value):
+        raise AnalyzeCliError("source path contains a symlink")
     source_path = os.path.abspath(os.path.expanduser(value))
     flags = os.O_RDONLY
     if hasattr(os, "O_CLOEXEC"):
         flags |= os.O_CLOEXEC
     if hasattr(os, "O_NONBLOCK"):
         flags |= os.O_NONBLOCK
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
     descriptor = -1
     try:
         descriptor = os.open(source_path, flags)
@@ -347,14 +371,42 @@ def _analyze_paths_alias(source_path, output_path):
     return False
 
 
-def _analyze_parent_has_symlink(path):
-    current = Path(path)
-    while True:
-        if os.path.lexists(current) and current.is_symlink():
+def _analyze_path_has_symlink(value):
+    """Check a path's lexical components before ``abspath`` can hide ``..``.
+
+    A spelling such as ``link/../file`` is normalized by ``abspath`` before
+    ordinary component checks, although the kernel follows ``link`` first.
+    Walk the original components and reject any existing symlink while still
+    allowing a normal relative path such as ``nested/../file``.
+    """
+
+    try:
+        rendered = os.fspath(value)
+        if not isinstance(rendered, str):
             return True
-        if current == current.parent:
-            return False
-        current = current.parent
+        expanded = os.path.expanduser(rendered)
+        current = (
+            Path(os.path.abspath(os.sep))
+            if os.path.isabs(expanded)
+            else Path(os.getcwd())
+        )
+        for component in expanded.split(os.sep):
+            if not component or component == ".":
+                continue
+            if component == "..":
+                current = current.parent
+                continue
+            candidate = current / component
+            if os.path.lexists(candidate) and candidate.is_symlink():
+                return True
+            current = candidate
+    except (OSError, RuntimeError, TypeError, ValueError):
+        return True
+    return False
+
+
+def _analyze_parent_has_symlink(path):
+    return _analyze_path_has_symlink(path)
 
 
 def _write_analyze_receipt(output_value, source_path, payload):
@@ -367,9 +419,14 @@ def _write_analyze_receipt(output_value, source_path, payload):
         or len(output_value) > 4096
     ):
         raise AnalyzeCliError("output path is invalid")
+    # Check source/output aliasing before rejecting symlink spelling.  A
+    # symlink output pointing at the source must retain the established,
+    # source-specific diagnostic (and, importantly, is never modified).
     output = Path(os.path.abspath(os.path.expanduser(output_value)))
     if _analyze_paths_alias(source_path, output):
         raise AnalyzeCliError("output aliases the source file: %s" % output)
+    if _analyze_path_has_symlink(output_value):
+        raise AnalyzeCliError("output parent must be a real directory (symlink)")
     if os.path.lexists(output):
         raise AnalyzeCliError("analysis output already exists: %s" % output)
 
@@ -507,15 +564,20 @@ def _cmd_analyze(args):
 
     try:
         source, source_path = _read_analyze_source(args.file)
-        try:
-            runtime_identity = NpuBackend().runtime_identity()
-        except Exception:
-            # A probe failure is an audit-required fact, not a reason to execute
-            # the source or silently switch to a less strict runtime.
-            runtime_identity = {
-                "status": "audit_required",
-                "identity_sha256": None,
-            }
+        with terminal_status(
+            "读取当前 AsNumpy / NPU 资格身份",
+            enabled=not args.json,
+        ) as progress:
+            try:
+                runtime_identity = NpuBackend().runtime_identity()
+            except Exception:
+                # A probe failure is an audit-required fact, not a reason to execute
+                # the source or silently switch to a less strict runtime.
+                runtime_identity = {
+                    "status": "audit_required",
+                    "identity_sha256": None,
+                }
+                progress.warning()
         analysis = analyze_qualified_script(
             source,
             source_path,
@@ -560,17 +622,23 @@ def _cmd_verify_script(args):
     )
 
     try:
-        receipt = verify_script(
-            args.file,
-            args.migration_report,
-            args.outputs,
-            args.out,
-            migrated_path=args.migrated,
-            timeout_seconds=args.timeout,
-            max_output_bytes=args.max_output_bytes,
-            source_python_executable=args.source_python,
-            migrated_python_executable=args.migrated_python,
-        )
+        with terminal_status(
+            "在隔离进程中执行原脚本与迁移产物",
+            enabled=not args.json,
+        ) as progress:
+            receipt = verify_script(
+                args.file,
+                args.migration_report,
+                args.outputs,
+                args.out,
+                migrated_path=args.migrated,
+                timeout_seconds=args.timeout,
+                max_output_bytes=args.max_output_bytes,
+                source_python_executable=args.source_python,
+                migrated_python_executable=args.migrated_python,
+            )
+            if receipt.status != "passed":
+                progress.error()
     except ScriptVerificationError as exc:
         print(
             "[普通脚本验证] %s: %s" % (exc.code, exc),
@@ -630,21 +698,27 @@ def _cmd_benchmark_script(args):
     )
 
     try:
-        receipt = benchmark_script(
-            args.file,
-            args.migration_report,
-            args.outputs,
-            args.out,
-            migrated_path=args.migrated,
-            marker=args.marker,
-            core=args.core,
-            warmup=args.warmup,
-            samples=args.samples,
-            timeout_seconds=args.timeout,
-            max_output_bytes=args.max_output_bytes,
-            source_python_executable=args.source_python,
-            migrated_python_executable=args.migrated_python,
-        )
+        with terminal_status(
+            "执行单核 CPU / strict-NPU 设备驻留评测",
+            enabled=not args.json,
+        ) as progress:
+            receipt = benchmark_script(
+                args.file,
+                args.migration_report,
+                args.outputs,
+                args.out,
+                migrated_path=args.migrated,
+                marker=args.marker,
+                core=args.core,
+                warmup=args.warmup,
+                samples=args.samples,
+                timeout_seconds=args.timeout,
+                max_output_bytes=args.max_output_bytes,
+                source_python_executable=args.source_python,
+                migrated_python_executable=args.migrated_python,
+            )
+            if receipt.status != "passed":
+                progress.error()
     except ScriptBenchmarkError as exc:
         print(
             "[普通脚本性能] %s: %s" % (exc.code, exc),
@@ -700,9 +774,165 @@ def _cmd_benchmark_script(args):
     return 0
 
 
+def _workflow_log_tail(path, *, lines=8):
+    """Return a small, display-safe tail of a private workflow log."""
+
+    try:
+        text = Path(path).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    # Workflow stderr is produced by a child process (and may ultimately
+    # contain model/user-controlled bytes).  Do not pass terminal control
+    # sequences, carriage returns, bidi marks, or other format characters
+    # through the human-readable CLI.  Replacing rather than dropping them
+    # preserves enough shape for diagnosis while making the output safe to
+    # paste into a terminal/log viewer.  JSON mode keeps the original bounded
+    # log file and hashes; this sanitization is presentation-only.
+    safe_chars = []
+    for character in text:
+        if character in {"\n", "\t"} or (
+            character.isprintable()
+            and not unicodedata.category(character).startswith("C")
+        ):
+            safe_chars.append(character)
+        else:
+            safe_chars.append("�")
+    values = "".join(safe_chars).splitlines()
+    if len(values) > lines:
+        values = values[-lines:]
+    return "\n".join(values)
+
+
+def _cmd_run(args):
+    """Run the competition-facing ordinary chain with one user command."""
+
+    from numpilot.workflow import WorkflowError, run_ordinary_workflow
+
+    try:
+        # ``None`` means "choose the private default"; an explicitly empty
+        # value is still a caller-provided path and must be rejected by the
+        # workflow admission contract rather than silently changing roots.
+        if args.out is not None:
+            if isinstance(args.out, str) and not args.out:
+                raise ValueError("empty output path")
+            out_dir = Path(args.out).expanduser()
+        else:
+            root = default_demo_dir()
+            # ``run_ordinary_workflow`` deliberately admits only a non-existing
+            # output path.  Generate a collision-resistant name here and let the
+            # workflow create both the parent and boundary atomically; pre-creating
+            # either one would make the normal one-command path look like an unsafe
+            # retry and would turn a default-directory error into an uncaught
+            # exception before WorkflowError handling is installed.
+            out_dir = root / ("workflow-" + uuid.uuid4().hex)
+    except (OSError, RuntimeError, TypeError, ValueError):
+        # Path expansion/default-root resolution happens before the workflow
+        # can translate filesystem failures into WorkflowError.  Keep this
+        # CLI boundary stable and deliberately omit the raw path/exception,
+        # which may contain user or environment details.
+        print(
+            "[一键流水线] invalid_path: workflow output path is invalid",
+            file=sys.stderr,
+        )
+        return 2
+
+    try:
+        with terminal_status(
+            "执行一键流水线：分析 → 模型迁移 → 数值验证"
+            + (" → strict-NPU 性能" if args.benchmark else ""),
+            enabled=not args.json,
+        ) as progress:
+            result = run_ordinary_workflow(
+                args.file,
+                out_dir,
+                backend=args.backend,
+                fallback_policy=args.fallback_policy,
+                target_soc=args.target_soc,
+                cann_version=args.cann_version,
+                outputs=args.outputs or ("result",),
+                benchmark=bool(args.benchmark),
+                warmup=args.warmup,
+                samples=args.samples,
+                core=args.core,
+                skip_env_check=bool(args.skip_env_check),
+                timeout_seconds=args.timeout,
+                python_executable=args.python,
+            )
+            if result["status"] != "passed":
+                progress.error()
+    except WorkflowError as exc:
+        print("[一键流水线] %s: %s" % (exc.code, exc), file=sys.stderr)
+        return 2
+
+    if args.json:
+        print(json.dumps(
+            result,
+            ensure_ascii=False,
+            allow_nan=False,
+            indent=2,
+            sort_keys=True,
+        ))
+    else:
+        print("── NumPilot 一键普通脚本流水线 ──")
+        print("[源码] %s" % result["source_path"])
+        print("[运行目录] %s" % out_dir.absolute())
+        print(
+            "[策略] backend=%s · engine=llm · fallback=%s · benchmark=%s"
+            % (result["backend"], result["fallback_policy"], result["benchmark_requested"])
+        )
+        for stage in result["stages"]:
+            marker = {"passed": "✓", "failed": "✗", "blocked": "✗", "timeout": "!"}.get(
+                stage["status"], "?"
+            )
+            print(
+                "[%s] %s · status=%s · %.2fs"
+                % (marker, stage["name"], stage["status"], stage["elapsed_seconds"])
+            )
+            if stage["status"] not in {"passed"}:
+                tail = _workflow_log_tail(stage["stderr_path"])
+                if tail:
+                    print("    stderr:")
+                    for line in tail.splitlines():
+                        print("      " + line)
+                print("    日志=%s" % stage["stderr_path"])
+        claims = result["claims"]
+        print(
+            "[事实] model_generated=%s · numerically_verified=%s · "
+            "strict_npu_performance_verified=%s"
+            % (
+                claims["model_generated"],
+                claims["numerically_verified"],
+                claims["strict_npu_performance_verified"],
+            )
+        )
+        print("[下一步] %s" % result["next_action"])
+        print("[回执] %s" % result["workflow_report"])
+    return 0 if result["status"] == "passed" else (1 if result["status"] == "blocked" else 2)
+
+
 def _cmd_doctor(args):
-    rep = Env.check(backend=_resolve_backend_name(args))
-    print(rep.render())
+    backend_name = _resolve_backend_name(args)
+    machine = bool(getattr(args, "json", False))
+    with terminal_status(
+        "检查 Python、CANN、NPU 与 AsNumpy",
+        enabled=not machine,
+    ) as progress:
+        rep = Env.check(backend=backend_name)
+        if rep.errors:
+            progress.error()
+        elif rep.warnings:
+            progress.warning()
+    if machine:
+        print(json.dumps(
+            rep.to_dict(),
+            ensure_ascii=False,
+            allow_nan=False,
+            indent=2,
+            sort_keys=True,
+        ))
+        return 1 if rep.errors else 0
+    if not render_doctor(rep):
+        print(rep.render())
     return 1 if rep.errors else 0
 
 
@@ -713,9 +943,10 @@ def _cmd_paths(args):
     elif args.json:
         print(json.dumps(paths, ensure_ascii=False, indent=2, sort_keys=True))
     else:
-        print("NumPilot 路径（本命令不会创建目录）:")
-        for name, path in paths.items():
-            print(f"  {name:14} {path}")
+        if not render_paths(paths):
+            print("NumPilot 路径（本命令不会创建目录）:")
+            for name, path in paths.items():
+                print(f"  {name:14} {path}")
     return 0
 
 
@@ -723,6 +954,11 @@ def _bootstrap_arguments(args):
     """Map the public CLI to the deliberately small bootstrap API."""
 
     return {
+        "asnumpy_component": (
+            Path(args.asnumpy_component).expanduser()
+            if args.asnumpy_component is not None
+            else None
+        ),
         "asnumpy_wheel": (
             Path(args.asnumpy_wheel).expanduser()
             if args.asnumpy_wheel is not None
@@ -794,6 +1030,7 @@ def _cmd_bootstrap(args):
                 values["asnumpy_wheel"] is not None,
                 values["expected_wheel_sha256"] is not None,
                 values["build_asnumpy"],
+                values["asnumpy_component"] is not None,
                 values["asnumpy_cache"] is not None,
             )
         ):
@@ -860,6 +1097,7 @@ def _cmd_check_suite(args):
     from numpilot.suite_check import (
         SuiteCheckError,
         check_suite,
+        public_suite_report,
         write_suite_report,
     )
 
@@ -876,6 +1114,21 @@ def _cmd_check_suite(args):
     except SuiteCheckError as exc:
         print("[测试集准入] 失败: %s" % exc, file=sys.stderr)
         return 2
+
+    # Keep stdout a strict JSON stream when requested.  This is useful for
+    # CodeArts/CI jobs that consume the admission receipt directly.  The
+    # optional ``--out`` publication still happens above, so callers can both
+    # capture a pipe-safe payload and retain the private, mode-0600 receipt.
+    if getattr(args, "json", False):
+        public_report = public_suite_report(report)
+        print(json.dumps(
+            public_report,
+            ensure_ascii=False,
+            allow_nan=False,
+            indent=2,
+            sort_keys=True,
+        ))
+        return 0 if report["status"] == "pass" else 1
 
     counts = report["counts"]
     print(
@@ -909,6 +1162,46 @@ def _cmd_check_suite(args):
     return 0 if report["status"] == "pass" else 1
 
 
+def _cmd_competition_readiness(args):
+    """Run the local, read-only competition submission checklist."""
+
+    from numpilot.competition_readiness import (
+        assess_competition_readiness,
+        render_readiness,
+        write_readiness_report,
+    )
+
+    written_report = None
+    try:
+        report = assess_competition_readiness(
+            args.repo_root,
+            llm_config=getattr(args, "llm_config", None),
+        )
+        # ``None`` means no publication; an explicitly empty path is still a
+        # caller error and must cross the writer's validation boundary.  Keep
+        # the returned normalized Path for display so a hostile PathLike is
+        # never converted a second time after successful publication.
+        if args.out is not None:
+            written_report = write_readiness_report(report, args.out)
+    except (OSError, ValueError, TypeError) as exc:
+        print("[比赛就绪度] 失败: %s" % exc, file=sys.stderr)
+        return 2
+
+    if args.json:
+        print(json.dumps(report.to_dict(), ensure_ascii=False, indent=2, sort_keys=True))
+    else:
+        if not render_readiness_tty(report):
+            print(render_readiness(report))
+        if written_report is not None:
+            print("\n[比赛就绪度] report=%s" % written_report)
+    # ``--strict`` is a release gate for mandatory (critical) requirements;
+    # advisory non-critical partial/warn findings remain inspectable without
+    # making CI fail once all mandatory evidence is complete.
+    if args.strict and report.blockers:
+        return 1
+    return 0
+
+
 def _load_llm_or_report():
     """Load framework-managed credentials; never prompt from non-wizard commands."""
     try:
@@ -922,6 +1215,58 @@ def _load_llm_or_report():
         print("[LLM] 请运行交互配置，或用 configure-llm --init 生成文件后手填。", file=sys.stderr)
         return None
     return status
+
+
+def _llm_proxy_status_or_report():
+    """Return a redacted local proxy snapshot or print an actionable error."""
+
+    try:
+        proxy_status = llm_proxy_route_status()
+    except LlmConfigError as exc:
+        print("[LLM proxy] 配置无效: %s" % exc, file=sys.stderr)
+        return None
+    if (
+        proxy_status["policy"] == "required"
+        and proxy_status["route"] != "enforced"
+    ):
+        if proxy_status["bypassed"]:
+            reason = "模型 endpoint 命中 NO_PROXY/no_proxy，已禁止绕过代理"
+        elif not proxy_status["matched"]:
+            reason = "endpoint 协议没有匹配的 HTTP_PROXY/HTTPS_PROXY"
+        else:
+            reason = "代理路由无法被强制证明"
+        print("[LLM proxy] 门禁失败: %s" % reason, file=sys.stderr)
+        return None
+    return proxy_status
+
+
+def _render_llm_proxy_status(proxy_status):
+    """Render only non-sensitive route facts."""
+
+    return (
+        "[LLM proxy] policy=%s scheme=%s matched=%s bypass=%s route=%s"
+        % (
+            proxy_status["policy"],
+            proxy_status["scheme"],
+            "yes" if proxy_status["matched"] else "no",
+            "yes" if proxy_status["bypassed"] else "no",
+            proxy_status["route"],
+        )
+    )
+
+
+def _llm_proxy_for_remote_call(stage):
+    """Validate and display the redacted route before a model workflow."""
+
+    proxy_status = _llm_proxy_status_or_report()
+    if proxy_status is None:
+        print(
+            "[%s] fail · 代理路由门禁未通过，模型调用未开始" % stage,
+            file=sys.stderr,
+        )
+        return None
+    print(_render_llm_proxy_status(proxy_status))
+    return proxy_status
 
 
 _LLM_READY_MARKER = "NUMPILOT_LLM_READY"
@@ -1262,8 +1607,12 @@ def _cmd_configure_llm(args):
         status = _load_llm_or_report()
         if status is None:
             return 1
+        proxy_status = _llm_proxy_status_or_report()
+        if proxy_status is None:
+            return 1
         print(status.summary())
         print(f"配置路径: {status.path}")
+        print(_render_llm_proxy_status(proxy_status))
         return 0
 
     if args.probe:
@@ -1274,8 +1623,18 @@ def _cmd_configure_llm(args):
                 file=sys.stderr,
             )
             return 1
+        proxy_status = _llm_proxy_status_or_report()
+        if proxy_status is None:
+            print(
+                "[LLM probe] 失败: 本地代理门禁未通过，未发起远端请求。",
+                file=sys.stderr,
+            )
+            return 1
         try:
-            gate = _run_llm_readiness_gate(status, require_marker=True)
+            with terminal_status(
+                "连接已配置模型并校验真实响应",
+            ):
+                gate = _run_llm_readiness_gate(status, require_marker=True)
         except LlmResponseError as exc:
             if "readiness_gate_validation_failed" in str(exc):
                 print(
@@ -1290,6 +1649,12 @@ def _cmd_configure_llm(args):
                     file=sys.stderr,
                 )
             return 4
+        except LlmConfigError as exc:
+            print(
+                "[LLM probe] 失败: 本地配置或代理门禁无效: %s" % exc,
+                file=sys.stderr,
+            )
+            return 1
         except (LlmHttpError, LlmTransportError) as exc:
             print(
                 "[LLM probe] 失败: 未成功获得可验证的远端模型响应: %s"
@@ -1321,6 +1686,7 @@ def _cmd_configure_llm(args):
                 receipt["content_sha256"],
             )
         )
+        print(_render_llm_proxy_status(proxy_status))
         return 0
 
     token = None
@@ -1582,6 +1948,9 @@ def _cmd_resolve_gaps(args):
             cann_root=args.cann_root,
             ops_nn_root=args.ops_nn_root,
             accept_cann_osl=args.accept_cann_osl,
+            allow_custom_operator_generation=getattr(
+                args, "allow_custom_operator_generation", False
+            ),
         )
         report.validate_preparation(preparation)
         write_official_resolution_report(report, args.out)
@@ -1694,11 +2063,31 @@ def _cmd_complete_gaps(args):
                 args.official_resolution_report
             )
             official_report.validate_preparation(preparation)
+            receipt_custom_routes = [
+                decision for decision in official_report.decisions
+                if decision.route == "custom_operator_generation_allowed"
+            ]
+            if receipt_custom_routes and not getattr(
+                args, "allow_custom_operator_generation", False
+            ):
+                print(
+                    "[官方算子门禁] 收据包含 custom OperatorSpec 路由；必须显式提供 "
+                    "--allow-custom-operator-generation，默认不调用模型",
+                    file=sys.stderr,
+                )
+                print(
+                    "[算子生成] actual_remote_generation_call=no · 未读取 Skill",
+                    file=sys.stderr,
+                )
+                return 3
             current_report = resolve_official_operators(
                 preparation,
                 cann_root=official_report.cann_root,
                 ops_nn_root=official_report.ops_nn_root,
                 accept_cann_osl=official_report.cann_osl_accepted,
+                allow_custom_operator_generation=getattr(
+                    args, "allow_custom_operator_generation", False
+                ),
             )
             current_report.validate_preparation(preparation)
             if current_report.resolution_id != official_report.resolution_id:
@@ -1775,6 +2164,8 @@ def _cmd_complete_gaps(args):
         configuration_status = _load_llm_or_report()
         if configuration_status is None:
             print("[生成门禁 1/2] fail · LLM 本地配置不可用", file=sys.stderr)
+            return 4
+        if _llm_proxy_for_remote_call("生成门禁 1/2") is None:
             return 4
         try:
             require_model_status(configuration_status)
@@ -1880,6 +2271,7 @@ def _cmd_complete_gaps(args):
             requested_specs=requested_specs,
             requested_blocked=requested_blocked,
             preparation=preparation,
+            continue_on_error=getattr(args, "continue_on_error", False),
         )
         if provider is not None and result.drafts:
             report_path = os.path.join(result.out_dir, "gap-report.json")
@@ -1971,6 +2363,23 @@ def _cmd_complete_gaps(args):
             ),
             file=sys.stderr,
         )
+    for item in result.generation_failures:
+        # Failure records are intentionally sanitized by the pipeline; never
+        # print an exception string or a model response here.
+        detail = item.get("detail", "generation failed")
+        status = item.get("http_status")
+        suffix = " HTTP %s" % status if status is not None else ""
+        remote = item.get("actual_remote_call")
+        remote_text = "unknown" if remote is None else str(remote).lower()
+        print(
+            "[生成失败] {api}: {detail}{suffix} · actual_remote_call={remote}".format(
+                api=item.get("qualified_api", "?"),
+                detail=detail,
+                suffix=suffix,
+                remote=remote_text,
+            ),
+            file=sys.stderr,
+        )
     if result.drafts:
         print(
             "[安全门禁] 已生成 Ascend C 草稿，但尚未编译、单测、数值校验或激活；"
@@ -2022,6 +2431,13 @@ def _cmd_complete_gaps(args):
             "本次没有可生成的合格缺口，"
             "因此没有请求大模型。"
         )
+    if result.generation_failures:
+        print(
+            "[算子生成] 本次有 %d 个缺口未生成；已保留其 GapSpec/请求文件，"
+            "未生成可激活产物。" % len(result.generation_failures),
+            file=sys.stderr,
+        )
+        return 2
     return 1 if result.blocked else 0
 
 
@@ -2060,6 +2476,8 @@ def _cmd_repair_draft(args):
     configuration_status = _load_llm_or_report()
     if configuration_status is None:
         print("[修复门禁 1/2] fail · LLM 本地配置不可用", file=sys.stderr)
+        return 4
+    if _llm_proxy_for_remote_call("修复门禁 1/2") is None:
         return 4
     try:
         llm_gate = _run_llm_readiness_gate(
@@ -2530,6 +2948,8 @@ def _cmd_generate_asnumpy_adapter(args):
     if configuration_status is None:
         print("[接入门禁 1/2] fail · LLM 本地配置不可用", file=sys.stderr)
         return 4
+    if _llm_proxy_for_remote_call("接入门禁 1/2") is None:
+        return 4
     try:
         llm_gate = _run_llm_readiness_gate(
             configuration_status, require_marker=True
@@ -2741,6 +3161,8 @@ def _cmd_repair_asnumpy_adapter(args):
     if configuration_status is None:
         print("[接入修复门禁 1/2] fail · LLM 本地配置不可用", file=sys.stderr)
         return 4
+    if _llm_proxy_for_remote_call("接入修复门禁 1/2") is None:
+        return 4
     try:
         llm_gate = _run_llm_readiness_gate(
             configuration_status, require_marker=True
@@ -2856,7 +3278,14 @@ def _preflight(backend_name, skip):
     if skip:
         print("[env-check] 已通过 --skip-env-check 跳过环境自检")
         return
-    rep = Env.check(backend=backend_name)
+    with terminal_status(
+        "执行迁移前环境自检 · backend=%s" % backend_name,
+    ) as progress:
+        rep = Env.check(backend=backend_name)
+        if rep.errors:
+            progress.error()
+        elif rep.warnings:
+            progress.warning()
     if rep.errors:
         print(rep.render(), file=sys.stderr)
         print(
@@ -3237,6 +3666,13 @@ def _cmd_migrate(args):
             )
             print("[报告] %s" % paths["report"])
             return 4
+        if _llm_proxy_for_remote_call("迁移模型门禁") is None:
+            paths = write_current_script_result(
+                status="llm_configuration_required",
+                fallback_accepted=fallback_accepted,
+            )
+            print("[报告] %s" % paths["report"])
+            return 4
         try:
             generation_values = {
                 "expected_model": configuration_status.model,
@@ -3250,19 +3686,23 @@ def _cmd_migrate(args):
                     configuration_status, "response_model_aliases", ()
                 ),
             }
-            if qualified_analysis is None:
-                artifact = generate_script_with_configured_model(
-                    analysis,
-                    **generation_values,
-                )
-            else:
-                artifact = generate_qualified_script_with_configured_model(
-                    analysis,
-                    qualified_analysis=qualified_analysis,
-                    runtime_identity_provider=runtime_identity_provider,
-                    fallback_accepted=fallback_accepted,
-                    **generation_values,
-                )
+            with terminal_status(
+                "调用已配置模型 %s 生成迁移代码"
+                % (configuration_status.model or "unknown"),
+            ):
+                if qualified_analysis is None:
+                    artifact = generate_script_with_configured_model(
+                        analysis,
+                        **generation_values,
+                    )
+                else:
+                    artifact = generate_qualified_script_with_configured_model(
+                        analysis,
+                        qualified_analysis=qualified_analysis,
+                        runtime_identity_provider=runtime_identity_provider,
+                        fallback_accepted=fallback_accepted,
+                        **generation_values,
+                    )
         except ScriptMigrationError:
             raise
         if fallback_accepted:
@@ -3300,8 +3740,11 @@ def _cmd_migrate(args):
     if mode != "contract":
         raise ScriptMigrationError("unknown migration mode: %s" % mode)
     contract_engine = args.engine or "llm"
-    if contract_engine == "llm" and _load_llm_or_report() is None:
-        return 4
+    if contract_engine == "llm":
+        if _load_llm_or_report() is None:
+            return 4
+        if _llm_proxy_for_remote_call("合同迁移门禁") is None:
+            return 4
 
     orch = Orchestrator(
         backend=backend,
@@ -3391,11 +3834,38 @@ def _migrate_report_info(res):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(prog="numpilot")
+    arguments = sys.argv[1:] if argv is None else list(argv)
+    if not arguments and render_home(__version__):
+        return 0
+
+    parser = argparse.ArgumentParser(
+        prog="numpilot",
+        description=(
+            "将普通 NumPy 程序迁移为可验证、可审计的 Ascend NPU 产物。"
+        ),
+        epilog=(
+            "常用流程:\n"
+            "  numpilot doctor --backend npu\n"
+            "  numpilot analyze script.py\n"
+            "  numpilot migrate script.py\n"
+            "使用 `numpilot <command> --help` 查看命令参数。"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument(
         "--version",
         action="version",
         version=f"%(prog)s {__version__}",
+    )
+    parser.add_argument(
+        "--llm-config",
+        type=_llm_config_arg,
+        default=None,
+        metavar="PATH",
+        help=(
+            "本次命令使用指定的私有 llm.json；可放在命令前或子命令后，"
+            "不会打印 Token"
+        ),
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
@@ -3443,6 +3913,14 @@ def main(argv=None):
     bootstrap.add_argument("--json", action="store_true", help="输出完整 JSON")
     asnumpy_mode = bootstrap.add_mutually_exclusive_group()
     asnumpy_mode.add_argument(
+        "--asnumpy-component",
+        metavar="PATH",
+        help=(
+            "安装发行附件中的固定 AsNumpy 内部组件目录（默认只读本地 "
+            "manifest.json + 精确 SHA-256 wheel，不联网）"
+        ),
+    )
+    asnumpy_mode.add_argument(
         "--asnumpy-wheel",
         metavar="PATH",
         help="可信发布物提供的本地 AsNumpy wheel；不会自动猜测下载地址",
@@ -3450,7 +3928,10 @@ def main(argv=None):
     asnumpy_mode.add_argument(
         "--build-asnumpy",
         action="store_true",
-        help="从固定官方 commit 显式构建 AsNumpy（可能联网获取固定源码）",
+        help=(
+            "维护者构建下一版 AsNumpy（开发态显式开关，可能联网获取固定源码；"
+            "用户安装请使用不联网的 --asnumpy-component）"
+        ),
     )
     bootstrap.add_argument(
         "--asnumpy-wheel-sha256",
@@ -3546,6 +4027,94 @@ def main(argv=None):
         "--analysis-profiles",
         default=None,
         help="与源 SHA/callsite 精确绑定的 runtime profile JSON",
+    )
+
+    run_parser = sub.add_parser(
+        "run",
+        aliases=["pipeline"],
+        help=(
+            "一键执行 ordinary 主链：静态分析→configured-model 迁移→"
+            "数值验证（可选 strict-NPU 性能门）"
+        ),
+    )
+    run_parser.add_argument("file", help="普通 NumPy 源文件")
+    run_parser.add_argument(
+        "--backend",
+        choices=["npu", "shim"],
+        default="npu",
+        help="目标后端；比赛演示建议 npu，shim 仅用于数值诊断（不产生 NPU 结论）",
+    )
+    run_parser.add_argument(
+        "--fallback-policy",
+        choices=["ask", "accept", "reject"],
+        default="reject",
+        help="遇到已审计 fallback 时的策略（默认 reject，避免非交互误放行）",
+    )
+    run_parser.add_argument(
+        "--target-soc",
+        default=os.getenv("ASCEND_SOC_VERSION", "unknown"),
+        help="缺口恢复绑定的目标 SoC",
+    )
+    run_parser.add_argument(
+        "--cann-version",
+        default=os.getenv("CANN_VERSION", "unknown"),
+        help="缺口恢复绑定的 CANN 版本",
+    )
+    run_parser.add_argument(
+        "--output",
+        dest="outputs",
+        action="append",
+        default=None,
+        help="显式命名的数值/布尔全局输出（可重复，默认 result）",
+    )
+    run_parser.add_argument(
+        "--out",
+        default=None,
+        help="全新私有运行目录；省略时创建在 NumPilot runs/demo 下",
+    )
+    run_parser.add_argument(
+        "--benchmark",
+        action="store_true",
+        help="在数值验证通过后追加 strict-NPU resident 性能门（仅 backend=npu，可能耗时）",
+    )
+    run_parser.add_argument(
+        "--warmup",
+        type=int,
+        default=3,
+        help="性能门预热次数（默认 3）",
+    )
+    run_parser.add_argument(
+        "--samples",
+        type=int,
+        default=20,
+        help="性能门原始样本数（默认 20；启用 --benchmark 时至少 7）",
+    )
+    run_parser.add_argument(
+        "--core",
+        type=int,
+        default=None,
+        help="CPU/NPU worker 共用的逻辑核；默认当前 affinity 中第一个核",
+    )
+    run_parser.add_argument(
+        "--timeout",
+        type=float,
+        default=3600.0,
+        help="每个阶段子进程的超时秒数（默认 3600）",
+    )
+    run_parser.add_argument(
+        "--python",
+        default=None,
+        help="阶段子进程使用的 Python；默认当前解释器",
+    )
+    run_parser.add_argument(
+        "--skip-env-check",
+        action="store_true",
+        help="传递给迁移阶段；仅在已自行完成环境审计时使用",
+    )
+    run_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="只输出 workflow-report JSON，不混入阶段日志",
     )
 
     verify = sub.add_parser(
@@ -3729,7 +4298,10 @@ def main(argv=None):
         help="与源 SHA/callsite 精确绑定的 runtime profile JSON",
     )
 
-    wiz = sub.add_parser("wizard", help="交互式迁移向导(启动界面→选代码→进度迁移→反馈)")
+    wiz = sub.add_parser(
+        "wizard",
+        help="legacy contract 开发向导(build_inputs/forward；ordinary 请用 migrate)",
+    )
     wiz.add_argument("file", nargs="?", default=None,
                      help="待迁移程序路径(省略则进入交互提示)")
     wiz.add_argument("--engine", choices=["ast", "llm"], default=None,
@@ -3749,6 +4321,11 @@ def main(argv=None):
     doc = sub.add_parser("doctor", help="环境自检:检查 Python/numpy/CANN/NPU/asnumpy")
     doc.add_argument("--backend", choices=["shim", "npu"], default=None,
                      help="以指定后端语义评估硬依赖(npu 更严格)")
+    doc.add_argument(
+        "--json",
+        action="store_true",
+        help="只向标准输出写机器可读 JSON；不混入 Rich/进度文本",
+    )
 
     paths = sub.add_parser(
         "paths", help="显示配置、缓存与运行产物的仓库外路径"
@@ -3759,7 +4336,7 @@ def main(argv=None):
         choices=("persistent_home", "state", "config", "cache", "runs",
                  "reports", "benchmark", "wizard", "gaps", "demo",
                  "bootstrap_receipt", "llm_config", "asnumpy_cache_base",
-                 "asnumpy_cache", "cannbot_cache_base", "cannbot_cache"),
+                 "asnumpy_component", "asnumpy_cache", "cannbot_cache_base", "cannbot_cache"),
         help="只输出一个路径值",
     )
 
@@ -3798,6 +4375,37 @@ def main(argv=None):
         "--out",
         default=None,
         help="可选：原子写入 JSON 准入报告",
+    )
+    suite.add_argument(
+        "--json",
+        action="store_true",
+        help="只向标准输出写机器可读 JSON；不混入人类摘要",
+    )
+
+    readiness = sub.add_parser(
+        "competition-readiness",
+        aliases=("readiness",),
+        help="只读审计比赛材料、CodeArts/华为云证据与发布缺口",
+    )
+    readiness.add_argument(
+        "--repo-root",
+        default=".",
+        help="待审计仓库根目录（默认当前目录）",
+    )
+    readiness.add_argument(
+        "--json",
+        action="store_true",
+        help="输出完整机器可读 JSON（不混入摘要文本）",
+    )
+    readiness.add_argument(
+        "--out",
+        default=None,
+        help="可选：写入一次性脱敏 JSON 报告，不覆盖已有文件",
+    )
+    readiness.add_argument(
+        "--strict",
+        action="store_true",
+        help="发现关键缺口时以退出码 1 结束；默认仅报告，不阻断 shell",
     )
 
     cfg = sub.add_parser(
@@ -3918,6 +4526,16 @@ def main(argv=None):
             "仅 installed no_match 后读取 ops-nn 时需要"
         ),
     )
+    resolve_gaps.add_argument(
+        "--allow-custom-operator-generation",
+        action="store_true",
+        help=(
+            "显式允许 provenance=custom_generation_candidate 且 route="
+            "ascendc_registry_candidate 的 OperatorSpec 进入 draft-only "
+            "路由；不把 catalog_unreviewed_api 伪装成 clean no_match，"
+            "官方候选仍优先"
+        ),
+    )
 
     recover_gaps = sub.add_parser(
         "recover-gaps",
@@ -4033,6 +4651,15 @@ def main(argv=None):
         ),
     )
     gaps.add_argument(
+        "--allow-custom-operator-generation",
+        action="store_true",
+        help=(
+            "显式接受 custom OperatorSpec 的未验证 LLM 草稿路由；仅当 "
+            "official-resolution.json 明确记录 custom route 时生效，"
+            "仍需 LLM/Skill/代理门禁且不可激活"
+        ),
+    )
+    gaps.add_argument(
         "--out",
         default=str(default_gap_dir()),
         help="规格、草稿和审计报告目录（默认 %(default)s）",
@@ -4071,6 +4698,14 @@ def main(argv=None):
         choices=[1, 2, 3],
         default=3,
         help="模型输出未通过本地结构校验时的最大尝试次数(最多 3)",
+    )
+    gaps.add_argument(
+        "--continue-on-error",
+        action="store_true",
+        help=(
+            "多缺口 llm 生成时，单个缺口失败后继续处理其余缺口；"
+            "最终仍以非零退出，并在 gap-report.json 中记录已脱敏失败状态"
+        ),
     )
     gaps.add_argument(
         "--llm-timeout",
@@ -4279,7 +4914,60 @@ def main(argv=None):
         help="兼容旧命令；内置 AsNumpy Skill 从不联网",
     )
 
-    args = parser.parse_args(argv)
+    # Repeat the safe path option on subcommands so both of these ergonomic
+    # forms work without changing the long-standing command contracts:
+    # ``numpilot --llm-config FILE migrate ...`` and
+    # ``numpilot migrate ... --llm-config FILE``.  ``SUPPRESS`` is important:
+    # an omitted child option must not overwrite a value parsed by the root.
+    _llm_config_parsers = [
+        analyze,
+        bootstrap,
+        mig,
+        run_parser,
+        verify,
+        benchmark_script_parser,
+        bc,
+        bn,
+        wiz,
+        doc,
+        paths,
+        suite,
+        cfg,
+        skills,
+        resolve_gaps,
+        recover_gaps,
+        gaps,
+        repair,
+        seal,
+        adapter,
+        adapter_repair,
+        recovery_ingest,
+        recovery_status_parser,
+        recovery_materialize,
+        recovery_adapter,
+        readiness,
+    ]
+    for _command_parser in _llm_config_parsers:
+        _command_parser.add_argument(
+            "--llm-config",
+            dest="llm_config",
+            type=_llm_config_arg,
+            default=argparse.SUPPRESS,
+            metavar="PATH",
+            help=argparse.SUPPRESS,
+        )
+
+    args = parser.parse_args(arguments)
+    _llm_config_override = getattr(args, "llm_config", None)
+    _llm_config_had_previous = "NUMPILOT_LLM_CONFIG_FILE" in os.environ
+    _llm_config_previous = os.environ.get("NUMPILOT_LLM_CONFIG_FILE")
+    if _llm_config_override:
+        # Keep the existing field-by-field environment precedence inside
+        # ``load_llm_config`` while making the one-shot CLI choice explicit.
+        # The override is scoped to this invocation; ``main`` is also used as
+        # an in-process API by notebooks/tests and must not leak a temporary
+        # credential path into the next command.
+        os.environ["NUMPILOT_LLM_CONFIG_FILE"] = _llm_config_override
     try:
         if args.cmd == "analyze":
             return _cmd_analyze(args)
@@ -4289,6 +4977,8 @@ def main(argv=None):
             return _cmd_benchmark_script(args)
         if args.cmd == "bootstrap":
             return _cmd_bootstrap(args)
+        if args.cmd in {"run", "pipeline"}:
+            return _cmd_run(args)
         if args.cmd == "configure-llm":
             return _cmd_configure_llm(args)
         if args.cmd == "setup-skills":
@@ -4301,6 +4991,8 @@ def main(argv=None):
             return _cmd_paths(args)
         if args.cmd == "check-suite":
             return _cmd_check_suite(args)
+        if args.cmd in {"competition-readiness", "readiness"}:
+            return _cmd_competition_readiness(args)
         if args.cmd == "complete-gaps":
             return _cmd_complete_gaps(args)
         if args.cmd == "repair-draft":
@@ -4325,8 +5017,11 @@ def main(argv=None):
         if args.cmd == "bench-cpu":
             return run_cpu_baseline(args.file, args.out, parse_cpu_threads(args.cpu_threads))
         if args.cmd == "bench-npu":
-            if args.engine == "llm" and _load_llm_or_report() is None:
-                return 4
+            if args.engine == "llm":
+                if _load_llm_or_report() is None:
+                    return 4
+                if _llm_proxy_for_remote_call("NPU 评测迁移门禁") is None:
+                    return 4
             backend, analysis_profiles = _qualified_runtime_inputs(args, "npu")
             _preflight("npu", args.skip_env_check)
             return run_npu_compare(args.file, args.out, engine=_make_engine(args.engine),
@@ -4338,6 +5033,10 @@ def main(argv=None):
     except LlmError as e:
         print(f"\n[LLM] 迁移终止:{e}", file=sys.stderr)
         print("[LLM] 已按 strict 语义直接终止(未回退 AST)。", file=sys.stderr)
+        return 4
+    except LlmConfigError as e:
+        print(f"[LLM] 配置或代理门禁失败:{e}", file=sys.stderr)
+        print("[LLM] 未发起或已终止远端模型调用。", file=sys.stderr)
         return 4
     except RuntimeActivationConfigError as e:
         print(f"[qualification runtime] {e}", file=sys.stderr)
@@ -4415,6 +5114,14 @@ def main(argv=None):
                 file=sys.stderr,
             )
         return 2
+    finally:
+        if _llm_config_override:
+            if _llm_config_had_previous:
+                os.environ["NUMPILOT_LLM_CONFIG_FILE"] = (
+                    _llm_config_previous or ""
+                )
+            else:
+                os.environ.pop("NUMPILOT_LLM_CONFIG_FILE", None)
 
 
 if __name__ == "__main__":

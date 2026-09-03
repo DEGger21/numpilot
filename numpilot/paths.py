@@ -28,7 +28,11 @@ def persistent_home(
 ) -> Optional[Path]:
     """Return the optional platform-persistent root without creating it."""
 
-    value = _environment(environment).get("NUMPILOT_HOME")
+    values = _environment(environment)
+    # ``NUMPILOT_RUNTIME_ROOT`` is an intentionally descriptive alias for
+    # NUMPILOT_HOME.  It makes a separately provisioned competition runtime
+    # self-documenting while preserving the historical variable's precedence.
+    value = values.get("NUMPILOT_HOME") or values.get("NUMPILOT_RUNTIME_ROOT")
     return _expanded(value) if value else None
 
 
@@ -90,6 +94,28 @@ def asnumpy_cache_base(
     values = _environment(environment)
     explicit = values.get("NUMPILOT_ASNUMPY_CACHE")
     return _expanded(explicit) if explicit else cache_home(values) / "asnumpy"
+
+
+def asnumpy_component_dir(
+    environment: Optional[Mapping[str, str]] = None,
+) -> Path:
+    """Return the local release-adjacent AsNumpy component directory.
+
+    The environment override is intentionally separate from the historical
+    source cache.  A component directory contains manifest.json and the
+    exact wheel attachment; it is never a Git checkout and is never fetched.
+    """
+
+    values = _environment(environment)
+    explicit = values.get("NUMPILOT_ASNUMPY_COMPONENT_DIR")
+    if explicit:
+        return _expanded(explicit)
+    source = Path(__file__).resolve().parents[1] / "components" / "asnumpy"
+    if source.exists():
+        return source
+    import sys
+
+    return Path(sys.prefix) / "share" / "numpilot" / "components" / "asnumpy"
 
 
 def cannbot_cache_base(
@@ -166,6 +192,7 @@ def path_summary() -> Dict[str, str]:
         "bootstrap_receipt": str(default_bootstrap_receipt()),
         "llm_config": str(llm_config_path()),
         "asnumpy_cache_base": str(asnumpy_cache_base()),
+        "asnumpy_component": str(asnumpy_component_dir()),
         "asnumpy_cache": str(default_asnumpy_checkout()),
         "cannbot_cache_base": str(cannbot_cache_base()),
         "cannbot_cache": str(default_skill_checkout()),

@@ -815,10 +815,10 @@
   ],
   "required_rewrites": [],
   "runtime_audit_id": "asnumpy-0.3.1.dev4-g1929a3ba4-init8761f7f9-cannac907b3a-linalgd2965c2e-random6c9c7891-pinned-source-receipt-v2",
-  "runtime_identity_sha256": "eba3e3d7e91d667fb3de44cbd1dc438487ebf78c06b8884d427f95e8bb2433bb",
+  "runtime_identity_sha256": "d73fb1386d957dc3c6aa713f31e3354e0b669ae9055ffb7e95b25887ea0b2774",
   "runtime_identity_status": "matched",
   "schema_version": 1,
-  "source_path": "/home/ma-user/work/numpilot/examples/poisson_source_smooth_l1_map.py",
+  "source_path": "examples/poisson_source_smooth_l1_map.py",
   "source_sha256": "dd12feda38d7677a879a00b56c26f34570537a0dc66741553a8ae7479f751808",
   "speedup": null
 }

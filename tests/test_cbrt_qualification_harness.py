@@ -164,7 +164,7 @@ def test_qualification_spec_changes_only_the_three_scope_fields():
         "shape_rules": ["runtime_profile_required"],
         "signature_variants": [{"keyword_args": [], "positional_args": 1}],
         "source_path": (
-            "/home/ma-user/work/numpilot-showcases/cbrt_sensor_calibration/"
+            "/REDACTED/showcases/cbrt_sensor_calibration/"
             "source/cube_root_sensor_calibration.py"
         ),
         "source_sha256": (

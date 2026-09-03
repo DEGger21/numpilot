@@ -362,10 +362,10 @@
   ],
   "required_rewrites": [],
   "runtime_audit_id": "asnumpy-0.3.1.dev4-g1929a3ba4-init8761f7f9-cannac907b3a-linalgd2965c2e-random6c9c7891-pinned-source-receipt-v2",
-  "runtime_identity_sha256": "7d443cb390fdd8bb398e10ed00b82d1a5aed624c1ed777ca8d6652fc9cf1b124",
+  "runtime_identity_sha256": "34806791698747b46be8fba24b1d24252e6df76ec78bc420a1edaac1550e48eb",
   "runtime_identity_status": "matched",
   "schema_version": 1,
-  "source_path": "/home/ma-user/work/numpilot/examples/competition_power_log_exp.py",
+  "source_path": "examples/competition_power_log_exp.py",
   "source_sha256": "4ffcfd6f12f771cb40daadfe9de2ea3a2b3ae3e3db4b95e09c39c0c469d3de20",
   "speedup": null
 }

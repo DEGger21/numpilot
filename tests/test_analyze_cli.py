@@ -271,3 +271,56 @@ def test_analyze_refuses_output_parent_symlink(tmp_path, capsys):
     assert rc == 2
     assert not (real_parent / "analysis.json").exists()
     assert "real directory" in capsys.readouterr().err
+
+
+def test_analyze_rejects_source_dotdot_path_that_crosses_symlink(
+    tmp_path, capsys
+):
+    real_source = tmp_path / "case.py"
+    real_source.write_text(DIRECT_SOURCE, encoding="utf-8")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    linked = tmp_path / "linked"
+    linked.symlink_to(outside, target_is_directory=True)
+
+    rc = cli.main(["analyze", str(linked / ".." / real_source.name), "--json"])
+
+    assert rc == 2
+    assert "symlink" in capsys.readouterr().err
+
+
+def test_analyze_rejects_output_dotdot_path_that_crosses_symlink(
+    tmp_path, capsys
+):
+    source = tmp_path / "case.py"
+    source.write_text(DIRECT_SOURCE, encoding="utf-8")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    linked = tmp_path / "linked"
+    linked.symlink_to(outside, target_is_directory=True)
+
+    rc = cli.main([
+        "analyze",
+        str(source),
+        "--out",
+        str(linked / ".." / "analysis.json"),
+    ])
+
+    assert rc == 2
+    assert not (outside / "analysis.json").exists()
+    assert "symlink" in capsys.readouterr().err
+
+
+def test_analyze_accepts_ordinary_nested_dotdot_paths(tmp_path, capsys):
+    source_dir = tmp_path / "inputs"
+    source_dir.mkdir()
+    source = source_dir / "case.py"
+    source.write_text(DIRECT_SOURCE, encoding="utf-8")
+    output = tmp_path / "reports" / "nested" / ".." / "analysis.json"
+
+    rc = cli.main(["analyze", str(source_dir / ".." / "inputs" / "case.py"),
+                   "--out", str(output)])
+
+    assert rc == 0
+    assert output.resolve().is_file()
+    assert "analysis.json" in capsys.readouterr().out

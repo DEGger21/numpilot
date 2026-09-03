@@ -68,7 +68,7 @@ python -m numpilot benchmark-script \
     evidence/competition-ordinary-20260828/migration/script-migration-report.json \
   --migrated evidence/competition-ordinary-20260828/migration/migrated.py \
   --output result --warmup 3 --samples 20 \
-  --out /tmp/numpilot-ordinary-benchmark.json
+  --out $RUN/ordinary-benchmark.json
 ```
 
 目录内 `MANIFEST.sha256` 绑定本案例的全部文件；仓库级

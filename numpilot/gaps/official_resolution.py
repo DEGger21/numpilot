@@ -43,18 +43,28 @@ from numpilot.gaps.official_source import (
     OpsNnSourceResolver,
 )
 from numpilot.gaps.pipeline import GapPreparation
+from numpilot.gaps.spec import is_custom_generation_operator_gap
 
 
 OFFICIAL_RESOLUTION_SCHEMA_VERSION = 1
 INSTALLED_ADAPTER_ROUTE = "installed_cann_adapter_candidate"
 OFFICIAL_SOURCE_ROUTE = "official_source_candidate"
 NEW_KERNEL_ROUTE = "new_kernel_generation_allowed"
+# Explicit escape hatch for a declared domain OperatorSpec whose API is not in
+# the reviewed official catalog.  This is deliberately distinct from
+# ``NEW_KERNEL_ROUTE``: the latter means two audited official providers proved
+# a clean miss, while this route records that official equivalence is *not*
+# proven and the user explicitly opted into an unverified LLM draft.
+CUSTOM_OPERATOR_ROUTE = "custom_operator_generation_allowed"
+# Alias kept for callers that describe the route as a generation candidate.
+CUSTOM_GENERATION_ROUTE = CUSTOM_OPERATOR_ROUTE
 BLOCKED_ROUTE = "blocked"
 
 _ROUTES = frozenset({
     INSTALLED_ADAPTER_ROUTE,
     OFFICIAL_SOURCE_ROUTE,
     NEW_KERNEL_ROUTE,
+    CUSTOM_OPERATOR_ROUTE,
     BLOCKED_ROUTE,
 })
 _PROVIDER_STATUSES = frozenset({
@@ -146,6 +156,70 @@ def _source_has_candidates(payload: Mapping[str, Any]) -> bool:
     candidates = payload.get("candidates")
     return isinstance(candidates, list) and bool(candidates) and all(
         isinstance(item, Mapping) for item in candidates
+    )
+
+
+def _custom_generation_proof(payload: Mapping[str, Any]) -> bool:
+    """Validate the non-equivalence evidence attached to a custom route.
+
+    The proof intentionally says that no official equivalence was established;
+    it is not a synthetic ``no_match`` result.  Keeping this as a strict,
+    bounded object lets receipt loading reject a hand-edited route even before
+    the source-bound recheck runs.
+    """
+
+    proof = payload.get("custom_generation_proof")
+    return (
+        isinstance(proof, Mapping)
+        and set(proof) == {
+            "operator_spec_provenance",
+            "operator_spec_route",
+            "official_equivalence",
+        }
+        and proof.get("operator_spec_provenance")
+        == "custom_generation_candidate"
+        and proof.get("operator_spec_route")
+        == "ascendc_registry_candidate"
+        and proof.get("official_equivalence") == "not_proven"
+    )
+
+
+def _custom_route_evidence(
+    installed: Mapping[str, Any],
+    source: Optional[Mapping[str, Any]],
+) -> bool:
+    """Return whether provider evidence is eligible for custom opt-in.
+
+    ``catalog_unreviewed_api`` is an ambiguity, not a negative result.  A
+    source candidate, an inventory error, or any other provider status must
+    remain blocked/official-first and cannot be converted to this route.
+    """
+
+    if not (
+        installed.get("status") == AMBIGUOUS
+        and installed.get("reason_code") == "catalog_unreviewed_api"
+        and installed.get("adapter_candidate") is False
+        and installed.get("semantic_equivalence") == "unverified"
+    ):
+        return False
+    if source is None:
+        return True
+    if source.get("status") in {EXACT_CANDIDATE, AMBIGUOUS}:
+        # A positive-looking source result is allowed to win only when it has
+        # an actual candidate list; an empty/malformed positive result is not
+        # evidence for either route and must fail closed.
+        return False
+    if _source_clean_no_match(source):
+        return True
+    # ``_blocked_provider_payload`` is the only accepted non-negative source
+    # fallback: it records why a local source checkout was not consulted while
+    # keeping activation disabled and the candidate set empty.  Arbitrary
+    # malformed payloads do not unlock custom generation.
+    return (
+        source.get("provider") == "ops_nn_source"
+        and source.get("status") in {INCOMPATIBLE, ERROR}
+        and source.get("candidates") == []
+        and source.get("activation_allowed") is False
     )
 
 
@@ -283,11 +357,27 @@ class OfficialGapResolution:
             source is not None and _source_clean_no_match(source)
         ):
             expected_route = NEW_KERNEL_ROUTE
+        elif _custom_route_evidence(installed, source) and _custom_generation_proof(
+            installed
+        ):
+            # This branch is intentionally after all official candidates and
+            # clean misses.  ``catalog_unreviewed_api`` remains ambiguous; the
+            # custom route merely records an explicit user opt-in and never
+            # relabels that ambiguity as ``no_match``.
+            expected_route = CUSTOM_OPERATOR_ROUTE
+        if self.route == CUSTOM_OPERATOR_ROUTE and not self.qualified_api.startswith(
+            "operator."
+        ):
+            raise OfficialResolutionError(
+                "custom route requires an operator.* qualified API"
+            )
         if self.route != expected_route:
             raise OfficialResolutionError(
                 "official-resolution route contradicts provider evidence"
             )
-        if self.new_kernel_generation_allowed != (self.route == NEW_KERNEL_ROUTE):
+        if self.new_kernel_generation_allowed != (
+            self.route in {NEW_KERNEL_ROUTE, CUSTOM_OPERATOR_ROUTE}
+        ):
             raise OfficialResolutionError(
                 "new-kernel permission contradicts the selected route"
             )
@@ -301,14 +391,18 @@ class OfficialGapResolution:
 
     @property
     def semantic_audit_required(self) -> bool:
-        return self.route in {INSTALLED_ADAPTER_ROUTE, OFFICIAL_SOURCE_ROUTE}
+        return self.route in {
+            INSTALLED_ADAPTER_ROUTE,
+            OFFICIAL_SOURCE_ROUTE,
+            CUSTOM_OPERATOR_ROUTE,
+        }
 
     @property
     def source_build_required(self) -> bool:
         return self.route == OFFICIAL_SOURCE_ROUTE
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        result = {
             "gap_id": self.gap_id,
             "qualified_api": self.qualified_api,
             "gap_spec_sha256": self.gap_spec_sha256,
@@ -326,6 +420,16 @@ class OfficialGapResolution:
             "source_build_required": self.source_build_required,
             "activation_allowed": False,
         }
+        if self.route == CUSTOM_OPERATOR_ROUTE:
+            # Explicitly state that this is an unreviewed custom route.  This
+            # is evidence of *non-equivalence*, never a fabricated official
+            # negative result.
+            result["custom_generation_proof"] = {
+                "operator_spec_provenance": "custom_generation_candidate",
+                "operator_spec_route": "ascendc_registry_candidate",
+                "official_equivalence": "not_proven",
+            }
+        return result
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "OfficialGapResolution":
@@ -344,7 +448,27 @@ class OfficialGapResolution:
             "source_build_required",
             "activation_allowed",
         }
-        if not isinstance(data, Mapping) or set(data) != expected:
+        if not isinstance(data, Mapping):
+            raise OfficialResolutionError(
+                "official gap decision fields are incomplete or unknown"
+            )
+        actual_fields = set(data)
+        if actual_fields - expected - {"custom_generation_proof"}:
+            raise OfficialResolutionError(
+                "official gap decision fields are incomplete or unknown"
+            )
+        if "custom_generation_proof" in data:
+            if data.get("route") != CUSTOM_OPERATOR_ROUTE or not _custom_generation_proof(
+                data
+            ):
+                raise OfficialResolutionError(
+                    "custom generation proof is invalid or misplaced"
+                )
+        elif data.get("route") == CUSTOM_OPERATOR_ROUTE:
+            raise OfficialResolutionError(
+                "custom route requires an explicit non-equivalence proof"
+            )
+        if actual_fields - {"custom_generation_proof"} != expected:
             raise OfficialResolutionError(
                 "official gap decision fields are incomplete or unknown"
             )
@@ -432,6 +556,7 @@ class OfficialOperatorResolutionReport:
             "no_gaps",
             "official_candidate_found",
             "new_kernel_generation_allowed",
+            "custom_operator_generation_allowed",
             "mixed_routes",
             "blocked",
         }:
@@ -564,6 +689,24 @@ class OfficialOperatorResolutionReport:
             raise OfficialResolutionError(
                 "official resolution target does not match the current GapSpecs"
             )
+        specs_by_key = {
+            (spec.gap_id, spec.qualified_api): spec
+            for spec in preparation.specs
+        }
+        for decision in self.decisions:
+            if decision.route != CUSTOM_OPERATOR_ROUTE:
+                continue
+            spec = specs_by_key.get((decision.gap_id, decision.qualified_api))
+            if spec is None or not is_custom_generation_operator_gap(
+                preparation.source, spec
+            ):
+                raise OfficialResolutionError(
+                    "custom route is not bound to an explicit custom OperatorSpec"
+                )
+            if not _custom_generation_proof(decision.installed_cann):
+                raise OfficialResolutionError(
+                    "custom route is missing its non-equivalence proof"
+                )
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "OfficialOperatorResolutionReport":
@@ -659,6 +802,8 @@ def _aggregate_status(decisions: Sequence[OfficialGapResolution]) -> str:
         return "blocked"
     if routes == {NEW_KERNEL_ROUTE}:
         return "new_kernel_generation_allowed"
+    if routes == {CUSTOM_OPERATOR_ROUTE}:
+        return "custom_operator_generation_allowed"
     if routes.issubset({INSTALLED_ADAPTER_ROUTE, OFFICIAL_SOURCE_ROUTE}):
         return "official_candidate_found"
     return "mixed_routes"
@@ -692,15 +837,18 @@ def resolve_official_operators(
     cann_root: str,
     ops_nn_root: str = "",
     accept_cann_osl: bool = False,
+    allow_custom_operator_generation: bool = False,
     inventory_loader: InventoryLoader = inventory_installed_cann,
     installed_resolver: InstalledResolver = resolve_installed_aclnn_from_inventory,
     source_resolver_factory: SourceResolverFactory = OpsNnSourceResolver,
 ) -> OfficialOperatorResolutionReport:
     """Resolve all prepared gaps with installed-CANN-first precedence.
 
-    ``ops_nn_root`` is consulted only after an installed ``no_match`` and only
-    when ``accept_cann_osl`` is true.  Any inability to prove a clean miss is a
-    block, never permission to ask the model for a new kernel.
+    ``ops_nn_root`` is consulted only after an installed ``no_match`` (or an
+    explicitly opted-in, catalog-unreviewed custom OperatorSpec) and only when
+    ``accept_cann_osl`` is true.  Any inability to prove a clean miss is a
+    block, except for that explicit custom route, which records
+    ``official_equivalence=not_proven`` and remains draft-only.
     """
 
     if not isinstance(preparation, GapPreparation):
@@ -711,6 +859,10 @@ def resolve_official_operators(
         raise OfficialResolutionError("ops-nn root must be a path string")
     if not isinstance(accept_cann_osl, bool):
         raise OfficialResolutionError("license acceptance must be boolean")
+    if not isinstance(allow_custom_operator_generation, bool):
+        raise OfficialResolutionError(
+            "custom operator generation opt-in must be boolean"
+        )
     specs = tuple(preparation.specs)
     source_path = str(Path(preparation.source_path).absolute())
     source_digest = hashlib.sha256(preparation.source.encode("utf-8")).hexdigest()
@@ -807,6 +959,9 @@ def resolve_official_operators(
     source_resolver = None
     decisions = []
     for spec in specs:
+        custom_opt_in = allow_custom_operator_generation and (
+            is_custom_generation_operator_gap(preparation.source, spec)
+        )
         if inventory is None:
             installed_payload = {
                 "schema_version": 1,
@@ -872,7 +1027,15 @@ def resolve_official_operators(
                 adapter_generation_required=True,
             ))
             continue
-        if not _installed_clean_no_match(installed_payload):
+        # An unreviewed ``operator.*`` API may enter the explicit custom lane,
+        # but only after its identity was proven from the source AST.  All
+        # ordinary gaps and all other ambiguous/error statuses retain the
+        # historical fail-closed branch below.
+        custom_unreviewed = custom_opt_in and (
+            installed_payload.get("status") == AMBIGUOUS
+            and installed_payload.get("reason_code") == "catalog_unreviewed_api"
+        )
+        if not _installed_clean_no_match(installed_payload) and not custom_unreviewed:
             decisions.append(OfficialGapResolution(
                 gap_id=spec.gap_id,
                 qualified_api=spec.qualified_api,
@@ -915,30 +1078,84 @@ def resolve_official_operators(
                     "ops-nn source resolver failed safely: %s" % type(exc).__name__,
                 )
         source_status = source_payload.get("status")
+        custom_route_allowed = custom_unreviewed and _custom_route_evidence(
+            installed_payload, source_payload
+        )
         if _source_clean_no_match(source_payload):
-            route = NEW_KERNEL_ROUTE
-            reason = (
-                "installed CANN and the version-pinned official source both "
-                "returned a clean no_match"
-            )
-            allow_kernel = True
-            needs_adapter = False
+            if custom_route_allowed:
+                # Keep the ambiguity visible.  A clean source miss does not
+                # turn the unreviewed installed catalog into a clean miss.
+                route = CUSTOM_OPERATOR_ROUTE
+                reason = (
+                    "explicit custom OperatorSpec opt-in; installed ACLNN "
+                    "catalog is unreviewed for this operator, so official "
+                    "equivalence is not proven"
+                )
+                installed_payload = dict(installed_payload)
+                installed_payload["custom_generation_proof"] = {
+                    "operator_spec_provenance": "custom_generation_candidate",
+                    "operator_spec_route": "ascendc_registry_candidate",
+                    "official_equivalence": "not_proven",
+                }
+                allow_kernel = True
+                needs_adapter = False
+            else:
+                route = NEW_KERNEL_ROUTE
+                reason = (
+                    "installed CANN and the version-pinned official source both "
+                    "returned a clean no_match"
+                )
+                allow_kernel = True
+                needs_adapter = False
         elif (
             source_status in {EXACT_CANDIDATE, AMBIGUOUS}
             and _source_has_candidates(source_payload)
         ):
-            route = OFFICIAL_SOURCE_ROUTE
-            reason = (
-                "version-pinned official source contains a candidate; semantic "
-                "audit and isolated build must pass before adapter generation can be planned"
-            )
-            allow_kernel = False
-            needs_adapter = False
+            if _installed_clean_no_match(installed_payload):
+                route = OFFICIAL_SOURCE_ROUTE
+                reason = (
+                    "version-pinned official source contains a candidate; semantic "
+                    "audit and isolated build must pass before adapter generation can be planned"
+                )
+                allow_kernel = False
+                needs_adapter = False
+            else:
+                # A positive official source candidate must never be hidden by
+                # the custom opt-in.  Keep the result blocked until a human
+                # resolves the official candidate/installed ambiguity.
+                route = BLOCKED_ROUTE
+                reason = (
+                    "official source contains a candidate while installed "
+                    "ACLNN coverage is unreviewed; custom generation is not "
+                    "allowed to override an official candidate"
+                )
+                allow_kernel = False
+                needs_adapter = False
         else:
-            route = BLOCKED_ROUTE
-            reason = "official source lookup did not produce a clean miss or usable candidate"
-            allow_kernel = False
-            needs_adapter = False
+            if custom_route_allowed:
+                # No source result (for example no accepted local checkout) is
+                # also not a clean negative.  The explicit custom flag permits
+                # a *draft-only* experiment while the receipt records that
+                # official equivalence remains unproven.
+                route = CUSTOM_OPERATOR_ROUTE
+                reason = (
+                    "explicit custom OperatorSpec opt-in; official catalog "
+                    "lookup is unreviewed and no official equivalence proof "
+                    "was available"
+                )
+                installed_payload = dict(installed_payload)
+                installed_payload["custom_generation_proof"] = {
+                    "operator_spec_provenance": "custom_generation_candidate",
+                    "operator_spec_route": "ascendc_registry_candidate",
+                    "official_equivalence": "not_proven",
+                }
+                allow_kernel = True
+                needs_adapter = False
+            else:
+                route = BLOCKED_ROUTE
+                reason = "official source lookup did not produce a clean miss or usable candidate"
+                allow_kernel = False
+                needs_adapter = False
         decisions.append(OfficialGapResolution(
             gap_id=spec.gap_id,
             qualified_api=spec.qualified_api,

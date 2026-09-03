@@ -92,6 +92,58 @@ def gap_spec_identity_matches(spec: GapSpec) -> bool:
     )
 
 
+def is_custom_generation_operator_gap(source: str, spec: GapSpec) -> bool:
+    """Return whether ``spec`` is an explicit, opt-in custom OperatorSpec.
+
+    A ``GapSpec`` is normally produced by :func:`build_gap_specs`, but route
+    receipts are persisted and may be supplied by another process.  Checking
+    only the serialized route would therefore make it possible to relabel an
+    ordinary/unknown gap as a custom operator.  Re-parse the inert source AST
+    and require the exact decorator provenance and route as an additional
+    identity check.  No user code is imported or executed here.
+    """
+
+    if not isinstance(source, str) or not isinstance(spec, GapSpec):
+        return False
+    if (
+        not spec.qualified_api.startswith("operator.")
+        or spec.route != "ascendc_registry_candidate"
+        or not spec.semantic_source.startswith("operator-spec:")
+        or spec.asnumpy_api != "asnumpy." + spec.api_name
+    ):
+        return False
+    # ``build_gap_specs`` records these states in the canonical route trace;
+    # retain the check so a manually assembled GapSpec cannot opt in by merely
+    # changing its top-level route.
+    states = {
+        (str(item.get("route", "")), str(item.get("status", "")))
+        for item in spec.route_decisions
+        if isinstance(item, Mapping)
+    }
+    if (
+        ("ascendc_registry_candidate", "selected_for_qualification") not in states
+        or ("direct_generation", "custom_generation_candidate") not in states
+    ):
+        return False
+    try:
+        tree = ast.parse(source)
+        static_specs = collect_static_operator_specs(tree)
+    except (SyntaxError, TypeError, ValueError, MemoryError, RecursionError):
+        return False
+    for operator in static_specs.specs.values():
+        if (
+            operator.name == spec.api_name
+            and operator.qualified_api == spec.qualified_api
+            and operator.target_api == spec.asnumpy_api
+            and operator.target_soc == spec.target_soc
+            and operator.cann_version == spec.cann_version
+            and operator.provenance == "custom_generation_candidate"
+            and operator.route == "ascendc_registry_candidate"
+        ):
+            return True
+    return False
+
+
 _SCRIPT_REPLACEABLE_PROVENANCE = frozenset({
     "cpu_fallback",
     "conditional_cpu_fallback",
@@ -506,6 +558,17 @@ def render_generation_request(
         f"- Use the AsNumpy ACLNN/pybind integration reference: `{reference}`\n",
         embedded_note,
         route_note,
+        (
+            "- This is an explicit custom OperatorSpec route: official semantic "
+            "equivalence is not proven. Do not describe the draft as Huawei-official "
+            "or as a validated replacement.\n"
+            if any(
+                isinstance(item, Mapping)
+                and item.get("route") == "direct_generation"
+                and item.get("status") == "custom_generation_candidate"
+                for item in spec.route_decisions
+            ) else ""
+        ),
         "- Target only the SoC and CANN version recorded in gap-spec.json.\n",
         "- op_host must define the schema, shape/dtype inference, tiling registration, and tiling data.\n",
         "- op_kernel must use Init -> CopyIn -> Compute -> CopyOut, with arguments ordered as inputs, outputs, workspace, tiling.\n",

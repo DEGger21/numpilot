@@ -8,6 +8,8 @@
   <a href="README.md">English</a> ·
   <a href="docs/installation.zh-CN.md">安装指南</a> ·
   <a href="docs/architecture.md">系统架构</a> ·
+  <a href="docs/COMPETITION-READINESS.md">比赛就绪度</a> ·
+  <a href="docs/TERMINAL-COMPLETE-MIGRATION-DEMO.zh-CN.md">终端迁移录屏</a> ·
   <a href="evidence/README.md">证据审计</a> ·
   <a href="CONTRIBUTING.md">参与贡献</a>
 </p>
@@ -31,8 +33,9 @@
 > NumPilot 当前是 Alpha 开发快照，不是已经发布的 RC。安装器或 `doctor` 通过只证明 NPU 基础可用；
 > strict-NPU 与性能结论只对生成证据时绑定的精确运行时画像和哈希回执有效。
 
-**NumPilot 的目标是将输入 NumPy 程序中的每个 API 自动迁移为功能等价的 NPU 算子实现。**
-在保持程序语义和计算结果一致的前提下，充分发挥 NPU 的大规模并行计算能力，加速大规模数据处理。
+**NumPilot 会在受支持、可静态分析的 NumPy 子集中自动生成等价的 NPU 算子实现。**
+对于不支持或语义不明确的 Python 行为，系统会明确报告并失败关闭，不会静默改写成“已支持”。
+在这个边界内，NumPilot 保持程序语义和计算结果一致，并利用 NPU 的大规模并行能力加速数据处理。
 
 当前 Alpha 快照支持可静态分析的普通单文件 NumPy 子集。输入需使用顶层 `import numpy as np`，
 并在迁移前通过失败关闭的全程序能力门禁。系统会对已安装的 AsNumpy/CANN/SoC 运行时、模型响应、
@@ -61,7 +64,8 @@
   <sub>
     打开<a href="docs/numpilot-zh-v6.svg">中文高清架构图</a> ·
     <a href="docs/numpilot-en-v6.svg">English diagram</a> ·
-    <a href="docs/numpilot-zh.pptx">中文 PPT</a> ·
+    <a href="docs/numpilot-zh.pptx">单页架构 PPT</a> ·
+    <a href="docs/ASNUMPY-INTERNAL-COMPONENT-LOCK.zh-CN.md">AsNumpy 内部组件锁定合同</a> ·
     <a href="docs/assets/architecture/numpilot-architecture-zh.svg">可机器审计的边界图</a>
   </sub>
 </p>
@@ -76,8 +80,12 @@ v6 架构图使用实线表示当前原语，使用虚线表示目标自动化�
 | 1. 未分类工作负载 | 解析完整程序，提取 NumPy 调用点、签名和有界数据流 | 入口不预先标注 API 已支持或缺失 |
 | 2. 能力检查 | 依据精确的 AsNumpy/CANN/SoC 画像逐调用点匹配，并独立记录判定 | 采用最严格的逐调用结果，生成失败关闭的整份工作负载结论 |
 | 3. 全文件迁移 | 全部调用合格后，用户配置模型才改写完整文件；NumPilot 随后执行精确响应与 AST 检查 | 只产生迁移候选，不自动信任模型结果 |
-| 4. 缺口补全 | API 缺失时优先查找可复用的华为官方算子；只有官方路径明确无匹配后，才由 CANNBot Skills 约束用户配置模型补写自定义算子 | 两条路线统一汇入 AsNumpy 公共 API 接入边界 |
+| 4. 缺口补全 | API 缺失时优先查找可复用的华为官方算子；默认只有官方路径明确无匹配后才生成；显式 `OperatorSpec` 可用 `--allow-custom-operator-generation` 开启“官方等价未证明”的 draft-only 试验 | 两条路线统一汇入 AsNumpy 公共 API 接入边界 |
 | 5. 资格化与回流 | 接入候选依次通过制品、构建、单测、数值、公共 API 和真实 NPU 门禁，然后重新扫描原工作负载 | 只有重扫后全部调用合格，才能返回迁移与验证主链 |
+
+对于彼此独立的多缺口试验，可使用 `complete-gaps --continue-on-error`：单个模型或本地校验
+失败后继续处理其余缺口，但命令仍返回非零，并只在 `gap-report.json` 写入脱敏失败元数据；
+默认策略仍是 fail-fast，失败缺口不会被激活。
 
 <details>
 <summary><strong>文本版架构流程与当前路由边界</strong></summary>
@@ -128,7 +136,7 @@ installed-ACLNN MatMul 定向切片可到 `ADAPTER_CANDIDATE`；固定 `ops-nn` 
 | 数值验证 | 已实现 | 原脚本与迁移脚本分别由 `python -I` worker 执行；这不是 OS 沙箱 |
 | strict-NPU resident 基准 | 已实现但范围受限 | 要求精确合格画像，不代表通用能力或冷启动 E2E |
 | 官方算子发现 | 已实现 | 先检查已安装 ACLNN，再检查固定本地 `ops-nn` 只读源码证据；发现本身不负责构建或接入 |
-| 自定义算子草稿 | 部分实现 | 两层明确无匹配后，CANNBot Skills 约束用户配置模型；输出工程仍未验证 |
+| 自定义算子草稿 | 部分实现 | 默认要求两层明确无匹配；显式 custom `OperatorSpec` 可记录 `official_equivalence=not_proven` 后进入 draft-only；输出工程仍未验证 |
 | 通用缺口补全 | 部分实现 | 官方二进制通用链到 `CANDIDATE_READY`；仅已审计 MatMul 到 `ADAPTER_CANDIDATE`；资格化与激活仍在规划 |
 | CodeArts 协作 | 可选集成 | 仓库包含角色/Skill；真实控制面仍需在目标账号验证 |
 
@@ -144,21 +152,48 @@ cd numpilot
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install -e '.[dev]'
+python -m numpilot              # TTY 产品首页
 python -m numpilot --help
 python -m numpilot doctor --backend shim
 ```
 
+交互终端会显示精简产品首页、阶段进度以及自适应的 `doctor`/`paths` 视图（宽屏表格、窄屏
+纵向列表）；重定向输出和全部 JSON/单值模式仍保持稳定纯文本，可设置 `NO_COLOR=1` 强制使用纯文本。
+
 完整测试套件是固定发布矩阵的门禁，不是任意 Python 3.10+ 环境都能复现的快速检查；运行时必须隔离
 CANN 注入的 `PYTHONPATH` 和代理环境，详见[贡献指南](CONTRIBUTING.md)。
 
-### NPU 源码优先安装
+### NPU 安装与固定 AsNumpy 组件
 
-目标机器必须预装兼容的 Ascend 驱动、CANN、OPP、Python 开发头文件、Git、CMake、Make 或 Ninja、
-GCC 11.2+，以及系统 `fmt`/`spdlog` CMake 开发包。NumPilot 不会运行 `sudo`，也不会修改 shell
-启动文件。
+内部发布或比赛交付应采用**固定 AsNumpy 内部组件模式**，详见
+[AsNumpy 内部组件锁定与发布合同](docs/ASNUMPY-INTERNAL-COMPONENT-LOCK.zh-CN.md)。本仓库已经在
+`components/asnumpy/` 提供 Linux/AArch64、CPython 3.10 的精确 wheel、SHA-256、上游 LICENSE 和
+SPDX SBOM；安装器只接受并校验本地附件，不能解析 `latest`、未固定版本范围或浮动 Git 引用，也不能
+在缓存缺失时自动获取 AsNumpy 源码。组件缺失或哈希不匹配必须返回 `CAPABILITY_AUDIT_REQUIRED`/
+`BLOCKED`，不能静默换用另一构建。
+
+冻结发布提交前，同时核对源码候选与组件附件：
+
+```bash
+python tools/check_release_tree.py --require-asnumpy-component --json
+```
+
+日常开发可运行不带 `--require-asnumpy-component` 的普通审计；平台 wheel 缺失时只会明确报告 warning，
+不会把缺失附件变成成功安装。
+
+维护者的源码优先流程仅用于**开发/构建下一版组件**，不是固定发行版的用户安装合同；完整命令见
+[安装指南的源码构建章节](docs/installation.zh-CN.md)。固定组件现场仍须预装匹配的 CANN/驱动/OPP，
+只需把仓库内 wheel 安装到目标 venv，不需要拉取 AsNumpy 源码。
+
+固定组件现场只要求目标机器预装兼容的 Ascend 驱动/固件、CANN 与 OPP、可见的 NPU，以及
+Python 3.10+、`venv`/`pip` 和当前用户可写的运行目录。固定 wheel 安装不需要 Git、CMake、编译器、
+Python 开发头文件或 `fmt`/`spdlog` 开发包；安装器也不会运行 `sudo` 或修改 shell 启动文件。
+只有维护者显式使用 `--asnumpy-source` 构建下一版组件时，才需要完整的 Git、GCC 11.2+、Python
+开发头文件、CMake/Make/Ninja 和系统 `fmt`/`spdlog` CMake 包。
 
 ```bash
 ./install.sh --allow-network \
+  --asnumpy-component "$PWD/components/asnumpy" \
   --cann-env /usr/local/Ascend/cann-9.0.0/set_env.sh \
   --venv /absolute/user-owned/numpilot-venv \
   --persistent-root /absolute/user-owned/numpilot-runtime
@@ -169,9 +204,10 @@ python -m numpilot doctor --backend npu
 ```
 
 `--venv` 的直接父目录必须预先存在、归当前用户所有，且不能对 group/world 开放写权限。
-请把示例路径替换为当前账号独占的绝对路径。`--allow-network` 是安装依赖和在缓存缺失时获取固定
-AsNumpy 源码的显式授权。完整依赖矩阵、CANNBot 可选安装、安装回执、strict 画像检查、排错和安全
-清理步骤见 **[完整安装指南](docs/installation.zh-CN.md)**。
+请把示例路径替换为当前账号独占的绝对路径。使用 `--asnumpy-component` 时，安装器只读取本地哈希
+绑定 wheel，不会拉取 AsNumpy 源码；该安装器仍要求显式的 `--allow-network`，但网络只用于可能的
+NumPilot 基础依赖安装。`--asnumpy-source` 仅供维护者显式构建下一版组件。完整依赖矩阵、CANNBot 可选
+安装、安装回执、strict 画像检查、排错和安全清理步骤见 **[完整安装指南](docs/installation.zh-CN.md)**。
 
 当前源码树没有已核实的公开包发行版本，因此不要把 `pip install numpilot` 写成安装入口。
 
@@ -180,9 +216,14 @@ AsNumpy 源码的显式授权。完整依赖矩阵、CANNBot 可选安装、安�
 ```bash
 python -m numpilot configure-llm --init
 # 编辑命令打印出的私有 llm.json。
-python -m numpilot configure-llm --check   # 只检查本地配置，不联网
+python -m numpilot configure-llm --check   # 本地配置与代理门禁，不联网
 python -m numpilot configure-llm --probe   # 一次真实请求，可能产生费用
 ```
+
+如果比赛运行时把私有文件放在仓库之外，可在会话级设置
+`NUMPILOT_RUNTIME_ROOT=/absolute/persistent/numpilot-runtime`；也可只为一次命令显式选择文件：
+`python -m numpilot --llm-config /absolute/persistent/numpilot-runtime/.numpilot-config/llm.json configure-llm --check`。
+该选项放在子命令后同样有效，且不会打印 Token。
 
 配置目录权限必须为 `0700`，`llm.json` 必须为 `0600`。Token、私有 endpoint、代理地址和原始模型
 响应正文不得提交。代理失败关闭与回执规则见[模型合同](docs/model-contract.md)。
@@ -195,6 +236,44 @@ python -m numpilot configure-llm --probe   # 一次真实请求，可能产生�
 > `verify-script`、`benchmark-script` 与 `run_demo.sh` 会以当前用户权限执行原脚本和候选；
 > `python -I` **不是** OS 沙箱。只能发送有权披露的材料、执行可信程序；不可信输入须放入独立容器
 > 或虚拟机。
+
+## 比赛提交前自检
+
+`competition-readiness` 只读检查评分维度、提交材料和证据缺口，不执行源码、不联网，也不会把
+仓库中的 CodeArts Agent/Skill 配置误写成平台执行记录。运行时私有模型配置应放在仓库外，可
+直接这样使用（路径也可通过 `NUMPILOT_LLM_CONFIG_FILE` 指定）：
+
+```bash
+RUNTIME_ROOT=/absolute/persistent/numpilot-runtime
+source "$RUNTIME_ROOT/activate-numpilot.sh"
+python -m numpilot --llm-config "$RUNTIME_ROOT/.numpilot-config/llm.json" \
+  competition-readiness --json
+```
+
+需要在现场展示一键主链时，可使用 `run`；`--benchmark` 仍仅发布满足严格门禁的设备驻留性能，
+不是冷启动或端到端延迟：
+
+```bash
+python -m numpilot --llm-config "$RUNTIME_ROOT/.numpilot-config/llm.json" \
+  run examples/poisson_source_smooth_l1_map.py --backend npu --benchmark
+# 或：./run_demo.sh --llm-config "$RUNTIME_ROOT/.numpilot-config/llm.json" --quick
+```
+
+真实终端会在末尾显示彩色“证据回放”卡片（宽屏为阶段表格，窄屏自动改为纵向门禁）。卡片只读
+已有四份 JSON 回执；录屏或日志重定向时可用 `tools/render_demo_summary.py --plain`，以保留可复制
+的完整路径。`--quick` 是 2 次预热/7 个样本的现场口径，正式提交请另用 `--full` 重新冻结并在材料
+中写明对应协议。
+
+若显式传入 `run --out`，目录必须尚不存在；写一次回执会拒绝复用旧运行目录。省略 `--out` 时，
+NumPilot 会在仓库外的 demo 状态目录自动创建唯一目录。
+
+没有 Ascend 环境时可显式使用 `--backend shim --fallback-policy accept` 做数值诊断；该路径仍会
+保留模型/AST/数值回执，但永远不会发布 strict-NPU 或性能结论，也不能替代比赛真机演示。
+
+报告中的 `official_score` 永远为空；它只列出“已观察证据”和待补动作，CodeArts 真实账号运行、
+华为云部署、视频访问和真实业务数据仍须单独留存可核查回执。终端完整迁移录屏请按
+[命令行迁移录屏手册](docs/TERMINAL-COMPLETE-MIGRATION-DEMO.zh-CN.md)执行；详见
+[比赛就绪度检查](docs/COMPETITION-READINESS.md)。
 
 ## 运行 ordinary 主链
 
@@ -234,6 +313,9 @@ python -m numpilot verify-script "$SOURCE" \
 Ascend 910B4、CANN 9.0.0、CPython 3.10.20，以及固定 AsNumpy 源码、安装文件和回执哈希。其他硬件、
 CANN、Python ABI、wrapper、原生库或回执在独立审计前只能算基础安装或候选证据；未公开的工作记录
 不作为发布证据。
+固定组件发行还必须绑定 AsNumpy wheel 字节及安装后的 Python/native 模块哈希；仅有 Git commit 不能
+推出可复现的二进制。参考身份、历史 wheel 摘要和升级流程见
+[内部组件锁定合同](docs/ASNUMPY-INTERNAL-COMPONENT-LOCK.zh-CN.md)。
 
 仓库保留以下可审计开发态证据：
 
@@ -255,6 +337,20 @@ Request 完成。两个分支在 GitCode 上**必须**配置保护，禁止 forc
 修改。本地引用已经对齐；服务端默认分支、远端 heads 与保护规则仍须管理员核验。详见
 [分支治理与发布约定](docs/SUBMISSION.md)。
 
+### 手动推送前交接
+
+NumPilot 不会替你执行 `git add`、`git commit` 或 `git push`。交给维护者前，请先检查完整候选集并运行：
+
+```bash
+git status --short --untracked-files=all
+python tools/check_release_tree.py --require-asnumpy-component --json
+git diff --check
+```
+
+只暂存已经复核的源码、公开精选证据和 `components/asnumpy/` 附件；CodeArts/华为云/视频原始记录、
+虚拟环境、运行状态、构建输出和本地归档均应留在 Git 之外。按照[提交约定](docs/SUBMISSION.md)
+通过受保护的 Pull Request 流程推送，不要直接推送到 `main`。
+
 ## 文档
 
 - [安装与验收](docs/installation.zh-CN.md)
@@ -262,6 +358,8 @@ Request 完成。两个分支在 GitCode 上**必须**配置保护，禁止 forc
 - [文档中心](docs/README.md)
 - [脚本数值验证合同](docs/script-verification.md)
 - [strict-NPU 基准合同](docs/script-benchmark.md)
+- [AsNumpy 内部组件锁定与发布合同](docs/ASNUMPY-INTERNAL-COMPONENT-LOCK.zh-CN.md)
+- [AsNumpy 缺失 API 自定义算子补全流程图（静态 PNG）](docs/numpilot-asnumpy-custom-operator-flow.png) · [固定坐标 draw.io 源](docs/numpilot-asnumpy-custom-operator-flow.drawio)
 - [Gap 恢复状态机](docs/gap-recovery-state.md)
 - [变更记录](CHANGELOG.md)
 - [问题追踪](https://gitcode.com/li-xingHIT/numpilot/issues)

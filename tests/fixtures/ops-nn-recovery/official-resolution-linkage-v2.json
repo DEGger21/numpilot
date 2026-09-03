@@ -1,7 +1,7 @@
 {
   "activation_allowed": false,
   "cann_osl_accepted": true,
-  "cann_root": "/usr/local/Ascend/cann-9.0.0",
+  "cann_root": "__CANN_ROOT__",
   "cann_version": "9.0.0",
   "decisions": [
     {
@@ -9,7 +9,7 @@
       "adapter_generation_allowed": false,
       "adapter_generation_required": true,
       "gap_id": "matmul-3f5218f98671d72e",
-      "gap_spec_sha256": "9c2f4b41b67b86e28db0af5cc580fe7ac89cb16b87b03caea85f398b43bb0bd9",
+      "gap_spec_sha256": "9a52cf6871b888e42f7c76a4e909bbb0ceff0fbb237078315c3dbf63c9fe52ed",
       "installed_cann": {
         "adapter_candidate": true,
         "alternatives": [],
@@ -185,7 +185,7 @@
     ],
     "operating_system": "linux",
     "platform": "aarch64-linux",
-    "root": "/usr/local/Ascend/cann-9.0.0",
+    "root": "__CANN_ROOT__",
     "version": "9.0.0",
     "version_evidence": [
       {
@@ -206,11 +206,11 @@
   },
   "model_kernel_generation_allowed": false,
   "network_access_performed": false,
-  "ops_nn_root": "/home/ma-user/work/ops-nn",
+  "ops_nn_root": "__OPS_NN_ROOT__",
   "report_type": "official_operator_resolution",
-  "resolution_id": "9b99a4f423d873dbe03d76e8ec5f48e7708437e126e4f77379b322fd6c7d611e",
+  "resolution_id": "c27364ee09f5be4f9fd13d043c0b7959e0a0dd96e962bbb44af20a9572e21b4a",
   "schema_version": 1,
-  "source_path": "/home/ma-user/work/numpilot/examples/ops_nn_matmul_inference.py",
+  "source_path": "__NUMPILOT_SOURCE__",
   "source_sha256": "4cf236f427ae419a7a4969499e4197ed31be4ba4f40bd26e686886f69ce96046",
   "status": "official_candidate_found",
   "system_write_performed": false,

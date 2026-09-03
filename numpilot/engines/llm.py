@@ -15,6 +15,7 @@ CLI 会优先读取以下环境变量，并可通过 ``numpilot configure-llm`` 
 closed；配置缺失、调用失败或响应不合格时绝不回退成本地 AST 产物。
 真实凭据不入库；框架管理的用户配置以 0600 权限保存在用户配置目录。
 """
+import base64
 import hashlib
 import json
 import os
@@ -22,6 +23,7 @@ import re
 import ssl
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from typing import Dict, Optional, Tuple
@@ -32,6 +34,7 @@ from numpilot.llm_config import (
     DEFAULT_PROVIDER_LABEL,
     OPENAI_CHAT_COMPLETIONS_PROTOCOL,
     LlmConfigError,
+    load_llm_config,
     model_identity_sha256,
     response_model_aliases_from_environment,
     validate_llm_timeout,
@@ -96,6 +99,10 @@ _REQUEST_ID_HEADERS = (
     "x-trace-id",
 )
 _MAX_RESPONSE_BODY_BYTES = 3 * 1024 * 1024
+# Keep individual non-stream reads small enough that the monotonic deadline
+# can be re-checked regularly.  ``HTTPResponse.read(amt)`` may otherwise wait
+# for all requested bytes while a peer slowly dribbles a response body.
+_MAX_RESPONSE_READ_CHUNK_BYTES = 64 * 1024
 _MAX_STREAM_EVENTS = 100_000
 _MIN_PER_CALL_MAX_TOKENS = 1
 _MAX_PER_CALL_MAX_TOKENS = 1_000_000
@@ -123,6 +130,113 @@ def _proxy_is_required() -> bool:
     return value == "1"
 
 
+def _environment_proxy_snapshot() -> Dict[str, str]:
+    """Capture standard proxy variables once for one local decision."""
+
+    return dict(urllib.request.getproxies_environment())
+
+
+def _proxy_bypassed(host: str, proxies: Dict[str, str]) -> bool:
+    """Evaluate NO_PROXY from the same environment snapshot as the proxy."""
+
+    return bool(urllib.request.proxy_bypass_environment(host, proxies))
+
+
+class _PinnedProxyHandler(urllib.request.ProxyHandler):
+    """ProxyHandler that cannot re-read a changed bypass environment.
+
+    The required-proxy path has already evaluated ``NO_PROXY`` against its
+    captured mapping.  This mirrors the standard library handler except for
+    deliberately omitting its second, process-global bypass lookup.
+    """
+
+    def proxy_open(self, request, proxy, _proxy_type):
+        try:
+            original_type = request.type
+            parsed_type, user, password, hostport = urllib.request._parse_proxy(
+                proxy
+            )
+            if parsed_type is None:
+                parsed_type = original_type
+            if user and password:
+                user_pass = "%s:%s" % (
+                    urllib.parse.unquote(user),
+                    urllib.parse.unquote(password),
+                )
+                credentials = base64.b64encode(user_pass.encode()).decode(
+                    "ascii"
+                )
+                request.add_header(
+                    "Proxy-authorization", "Basic " + credentials
+                )
+            hostport = urllib.parse.unquote(hostport)
+            if not hostport:
+                raise ValueError("empty proxy host")
+            request.set_proxy(hostport, parsed_type)
+        except (TypeError, UnicodeError, ValueError):
+            raise LlmConfigError(
+                "matching HTTP(S) proxy configuration is invalid"
+            ) from None
+        if original_type == parsed_type or original_type == "https":
+            return None
+        return self.parent.open(request, timeout=request.timeout)
+
+
+def llm_proxy_route_status(base_url: Optional[str] = None) -> Dict[str, object]:
+    """Return a redacted, network-free summary of the current proxy route.
+
+    No endpoint hostname, proxy URL, credentials, or ``NO_PROXY`` values are
+    returned.  The result is therefore safe for CLI diagnostics and receipts.
+    """
+
+    required = _proxy_is_required()
+    if base_url is None:
+        endpoint = os.getenv("NUMPILOT_LLM_BASE_URL", "")
+    else:
+        try:
+            endpoint = os.fspath(base_url)
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            raise LlmConfigError("LLM endpoint is invalid") from exc
+        if not isinstance(endpoint, str):
+            raise LlmConfigError("LLM endpoint is invalid")
+    try:
+        parsed = urllib.parse.urlsplit(endpoint)
+    except (TypeError, UnicodeError, ValueError):
+        parsed = urllib.parse.SplitResult("", "", "", "", "")
+    scheme = parsed.scheme.lower()
+    supported_scheme = scheme in {"http", "https"}
+    proxies = _environment_proxy_snapshot()
+    selected = proxies.get(scheme) if supported_scheme else None
+    matched = isinstance(selected, str) and bool(selected.strip())
+    try:
+        bypassed = bool(
+            supported_scheme
+            and parsed.netloc
+            and _proxy_bypassed(parsed.netloc, proxies)
+        )
+    except (OSError, RuntimeError, TypeError, UnicodeError, ValueError):
+        # An uninspectable bypass policy cannot prove a safe direct route.
+        # Treat it as bypassed so a required-proxy call is blocked.
+        bypassed = True
+    if required:
+        route = (
+            "enforced"
+            if supported_scheme and matched and not bypassed
+            else "blocked"
+        )
+    elif supported_scheme and matched and not bypassed:
+        route = "environment"
+    else:
+        route = "direct"
+    return {
+        "policy": "required" if required else "optional",
+        "scheme": scheme if supported_scheme else "unknown",
+        "matched": matched,
+        "bypassed": bypassed,
+        "route": route,
+    }
+
+
 def _open_remote_request(
     request: urllib.request.Request,
     *,
@@ -147,20 +261,20 @@ def _open_remote_request(
 
     scheme = request.type.lower()
     host = request.host
-    proxies = urllib.request.getproxies()
+    proxies = _environment_proxy_snapshot()
     selected_proxy = proxies.get(scheme)
     if not isinstance(selected_proxy, str) or not selected_proxy.strip():
         raise LlmConfigError(
             "%s=1 but no matching HTTP(S) proxy is configured"
             % _REQUIRE_PROXY_ENV
         )
-    if not host or urllib.request.proxy_bypass(host):
+    if not host or _proxy_bypassed(host, proxies):
         raise LlmConfigError(
             "%s=1 but the LLM endpoint is excluded by proxy bypass policy"
             % _REQUIRE_PROXY_ENV
         )
 
-    handlers = [urllib.request.ProxyHandler({scheme: selected_proxy})]
+    handlers = [_PinnedProxyHandler({scheme: selected_proxy})]
     if scheme == "https":
         handlers.append(urllib.request.HTTPSHandler(context=context))
     opener = urllib.request.build_opener(*handlers)
@@ -290,6 +404,51 @@ def _set_response_socket_timeout(response: object, timeout: float) -> None:
         sock.settimeout(max(timeout, 0.001))
     except (AttributeError, OSError, TypeError, ValueError):
         return
+
+
+def _read_response_body(
+    response: object,
+    *,
+    deadline: Optional[float] = None,
+) -> bytes:
+    """Read a bounded non-stream body while enforcing a total deadline.
+
+    ``urlopen(timeout=...)`` only limits socket inactivity.  A gateway that
+    sends a few bytes before each inactivity interval can therefore keep a
+    non-stream request alive indefinitely if the body is read in one call.
+    Read bounded chunks, apply the remaining deadline to the underlying
+    socket when available, and check the monotonic clock around every read.
+    """
+
+    payload = bytearray()
+    while True:
+        if deadline is not None:
+            remaining_seconds = deadline - time.monotonic()
+            if remaining_seconds <= 0:
+                raise LlmTransportError("request_timeout")
+            _set_response_socket_timeout(response, remaining_seconds)
+
+        remaining_bytes = _MAX_RESPONSE_BODY_BYTES - len(payload)
+        read_size = min(
+            _MAX_RESPONSE_READ_CHUNK_BYTES,
+            remaining_bytes + 1,
+        )
+        try:
+            chunk = response.read(read_size)
+        except TimeoutError:
+            if deadline is not None:
+                raise LlmTransportError("request_timeout") from None
+            raise
+        if not isinstance(chunk, bytes):
+            raise LlmTransportError("invalid_response_read")
+        if len(chunk) > remaining_bytes:
+            raise LlmTransportError("response_too_large")
+        payload.extend(chunk)
+
+        if deadline is not None and time.monotonic() > deadline:
+            raise LlmTransportError("request_timeout")
+        if not chunk:
+            return bytes(payload)
 
 
 def _read_stream_response_body(
@@ -596,10 +755,27 @@ class LlmEngine(MigrationEngine):
         if not isinstance(stream, bool):
             raise LlmConfigError("per-call LLM stream must be a boolean")
 
-        base = os.environ["NUMPILOT_LLM_BASE_URL"].rstrip("/")
-        token = os.environ["NUMPILOT_LLM_AUTH_TOKEN"]
+        # Validate the shared timeout profile before touching required
+        # environment keys.  Direct callers (including the probe path) may
+        # provide a private config file instead of preloading its values into
+        # ``os.environ``; indexing the mapping first used to leak ``KeyError``
+        # and made an invalid timeout impossible to diagnose cleanly.
+        timeout = validate_llm_timeout(
+            os.getenv("NUMPILOT_LLM_TIMEOUT", "120")
+        )
+        status = load_llm_config()
+        if not status.configured:
+            raise LlmConfigError(
+                "LLM 未配置，缺少: " + ", ".join(status.missing)
+            )
+
+        # ``load_llm_config`` is the single configuration boundary.  Use
+        # ``get`` after it succeeds so a concurrent environment edit still
+        # becomes a stable configuration error rather than a raw KeyError.
+        base = os.getenv("NUMPILOT_LLM_BASE_URL", "").rstrip("/")
+        token = os.getenv("NUMPILOT_LLM_AUTH_TOKEN", "")
         configured_model = validate_model_id(
-            os.environ["NUMPILOT_LLM_MODEL"]
+            os.getenv("NUMPILOT_LLM_MODEL", "")
         )
         requested_model = configured_model
         provider = validate_provider_label(
@@ -637,9 +813,6 @@ class LlmEngine(MigrationEngine):
         insecure = os.getenv("NUMPILOT_LLM_INSECURE", "0") == "1"
         tls_verification_enabled = base.lower().startswith("https://") and not insecure
         ctx = ssl._create_unverified_context() if insecure else None
-        timeout = validate_llm_timeout(
-            os.getenv("NUMPILOT_LLM_TIMEOUT", "120")
-        )
         request_deadline = time.monotonic() + timeout
         started_at = _utc_now()
         try:
@@ -688,10 +861,11 @@ class LlmEngine(MigrationEngine):
                         deadline=request_deadline,
                     )
                     if stream
-                    else resp.read(_MAX_RESPONSE_BODY_BYTES + 1)
+                    else _read_response_body(
+                        resp,
+                        deadline=request_deadline,
+                    )
                 )
-                if len(response_body) > _MAX_RESPONSE_BODY_BYTES:
-                    raise LlmTransportError("response_too_large")
         except (LlmHttpError, LlmTransportError):
             raise
         except Exception as exc:

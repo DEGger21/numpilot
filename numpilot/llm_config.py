@@ -13,7 +13,9 @@ import json
 import os
 from pathlib import Path
 import re
+import stat
 import tempfile
+import unicodedata
 from typing import Any, Callable, Dict, Iterable, Optional, Tuple
 from urllib.parse import urlsplit
 
@@ -40,6 +42,8 @@ OPENAI_CHAT_COMPLETIONS_PROTOCOL = "openai-chat-completions"
 DEFAULT_PROVIDER_LABEL = "openai-compatible"
 MIN_LLM_TIMEOUT_SECONDS = 10.0
 MAX_LLM_TIMEOUT_SECONDS = 3600.0
+MAX_SAVED_CONFIG_BYTES = 1 * 1024 * 1024
+MAX_BASE_URL_LENGTH = 4096
 _MODEL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/+@-]{0,511}$")
 _PROVIDER_LABEL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,127}$")
 
@@ -52,6 +56,16 @@ _LLM_CONFIG_TEMPLATE = {
     "protocol": OPENAI_CHAT_COMPLETIONS_PROTOCOL,
     "response_model_aliases": [],
 }
+
+
+def _contains_control_text(value: str) -> bool:
+    """Return whether text contains terminal/control or format characters."""
+
+    return any(
+        not character.isprintable()
+        or unicodedata.category(character).startswith("C")
+        for character in value
+    )
 
 
 def validate_model_id(value: object, *, field: str = "MODEL") -> str:
@@ -219,31 +233,156 @@ class LlmConfigStatus:
         )
 
 
+def _validated_config_path(value: object) -> Path:
+    """Validate one explicit or environment-derived config path."""
+
+    if not isinstance(value, (str, os.PathLike)):
+        raise LlmConfigError("LLM 配置路径必须是字符串")
+    try:
+        raw_path = os.fspath(value)  # type: ignore[arg-type]
+    except (OSError, RuntimeError, TypeError, ValueError) as exc:
+        raise LlmConfigError("LLM 配置路径无效") from exc
+    if not isinstance(raw_path, str):
+        raise LlmConfigError("LLM 配置路径必须是字符串")
+    if (
+        not raw_path
+        or _contains_control_text(raw_path)
+        or len(raw_path) > 4096
+    ):
+        raise LlmConfigError("LLM 配置路径无效")
+    try:
+        return Path(raw_path).expanduser()
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise LlmConfigError("LLM 配置路径无效") from exc
+
+
 def llm_config_path(path: Optional[str] = None) -> Path:
     """Resolve the private per-user JSON path, with test/automation overrides."""
-    if path:
-        return Path(path).expanduser()
+    if path is not None:
+        # Explicit paths are useful for CI and for a separately provisioned
+        # competition runtime, but they still cross a command/configuration
+        # boundary.  Reject control characters early so a malformed path
+        # cannot produce confusing diagnostics or terminal/log injection.
+        return _validated_config_path(path)
     explicit = os.getenv("NUMPILOT_LLM_CONFIG_FILE")
     if explicit:
-        return Path(explicit).expanduser()
+        # Reuse the same validation for the environment override.  This also
+        # keeps the CLI ``--llm-config`` and direct environment setup exactly
+        # equivalent without ever reading the file before validation.
+        return _validated_config_path(explicit)
     from numpilot.paths import config_home
 
-    return config_home() / "llm.json"
+    try:
+        default_path = config_home() / "llm.json"
+    except (OSError, RuntimeError, TypeError, ValueError) as exc:
+        raise LlmConfigError("LLM 配置路径无效") from exc
+    return _validated_config_path(default_path)
+
+
+def _reject_symlink_components(path: Path) -> None:
+    """Refuse a config path redirected through an existing symlink.
+
+    The config contains a credential, so checking only the final file is not
+    enough: a symlinked parent could redirect both reads and writes outside
+    the user's intended private directory.  Missing components are allowed
+    and are created by the caller after this lexical walk.
+    """
+
+    try:
+        rendered = os.fspath(path)
+        if not isinstance(rendered, str):
+            raise LlmConfigError("LLM 配置路径必须是字符串")
+        # Do not call ``abspath`` until after this walk: it normalizes
+        # ``link/..`` and would hide a symlink that the kernel follows before
+        # applying ``..``.  Missing components are fine because callers may
+        # create a fresh private config directory.
+        expanded = os.path.expanduser(rendered)
+        current = (
+            Path(os.path.abspath(os.sep))
+            if os.path.isabs(expanded)
+            else Path(os.getcwd())
+        )
+        for component in expanded.split(os.sep):
+            if not component or component == ".":
+                continue
+            if component == "..":
+                current = current.parent
+                continue
+            candidate = current / component
+            if os.path.lexists(candidate) and candidate.is_symlink():
+                raise LlmConfigError(
+                    "LLM 配置路径不得包含符号链接: %s" % candidate
+                )
+            current = candidate
+    except LlmConfigError:
+        raise
+    except (OSError, RuntimeError, TypeError, ValueError) as exc:
+        raise LlmConfigError("无法检查 LLM 配置路径") from exc
+
+
+def _require_private_config_directory(path: Path) -> None:
+    """Reject an existing config parent that is accessible to other users."""
+
+    if os.name != "posix":
+        return
+    parent = path.parent
+    try:
+        mode = parent.stat().st_mode
+    except FileNotFoundError:
+        # ``configure --init``/``save`` create and tighten the directory;
+        # a missing parent is not a readable credential boundary yet.
+        return
+    except OSError as exc:
+        raise LlmConfigError("无法检查 LLM 配置目录权限") from exc
+    if not stat.S_ISDIR(mode):
+        raise LlmConfigError("LLM 配置父路径必须是目录: %s" % parent)
+    permissions = stat.S_IMODE(mode)
+    if permissions & 0o077:
+        raise LlmConfigError(
+            "LLM 配置目录权限过宽(%03o): %s；请执行 chmod 700"
+            % (permissions, parent)
+        )
 
 
 def _read_saved(path: Path) -> Dict[str, Any]:
-    if not path.is_file():
-        return {}
-    if os.name == "posix":
-        mode = path.stat().st_mode & 0o777
-        if mode & 0o077:
-            raise LlmConfigError(
-                f"LLM 配置权限过宽({mode:03o}): {path}；请执行 chmod 600"
-            )
+    _reject_symlink_components(path)
+    _require_private_config_directory(path)
+    descriptor = -1
     try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+        flags |= getattr(os, "O_NOFOLLOW", 0)
+        descriptor = os.open(os.fspath(path), flags)
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode):
+            return {}
+        if os.name == "posix":
+            mode = stat.S_IMODE(metadata.st_mode)
+            if mode & 0o077:
+                raise LlmConfigError(
+                    f"LLM 配置权限过宽({mode:03o}): {path}；请执行 chmod 600"
+                )
+        if metadata.st_size > MAX_SAVED_CONFIG_BYTES:
+            raise LlmConfigError(
+                "LLM 配置文件过大；请重新生成一个小于 1 MiB 的配置"
+            )
+        with os.fdopen(descriptor, "rb", closefd=True) as handle:
+            descriptor = -1
+            payload = handle.read(MAX_SAVED_CONFIG_BYTES + 1)
+        if len(payload) > MAX_SAVED_CONFIG_BYTES:
+            raise LlmConfigError(
+                "LLM 配置文件过大；请重新生成一个小于 1 MiB 的配置"
+            )
+        raw = json.loads(payload.decode("utf-8"))
+    except (FileNotFoundError, IsADirectoryError):
+        return {}
+    except (OSError, UnicodeError, json.JSONDecodeError, RecursionError) as exc:
         raise LlmConfigError(f"无法读取 LLM 配置 {path}: {type(exc).__name__}") from exc
+    finally:
+        if descriptor >= 0:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
     if not isinstance(raw, dict):
         raise LlmConfigError(f"LLM 配置必须是 JSON object: {path}")
 
@@ -332,28 +471,47 @@ def load_llm_config(path: Optional[str] = None) -> LlmConfigStatus:
         return _status(target, "environment")
 
     saved = _read_saved(target)
-    loaded = False
-    for field, env_name in _FIELD_TO_ENV.items():
-        value = saved.get(field)
-        if value and not _env_has(env_name):
-            os.environ[env_name] = value
+    # Loading fields mutates the process environment, so make the operation
+    # transactional: a malformed provider/URL/timeout must not leave a
+    # partially loaded token or model behind for a later command in the same
+    # process.  Keep the original presence (including empty overrides) and
+    # restore it on every validation or assignment failure.
+    sentinel = object()
+    env_keys = tuple(_FIELD_TO_ENV.values()) + (_ALIASES_ENV,)
+    original_environment = {
+        key: os.environ.get(key, sentinel) for key in env_keys
+    }
+    try:
+        loaded = False
+        for field, env_name in _FIELD_TO_ENV.items():
+            value = saved.get(field)
+            if value and not _env_has(env_name):
+                os.environ[env_name] = value
+                loaded = True
+        aliases = saved.get("response_model_aliases")
+        model_was_explicit = "NUMPILOT_LLM_MODEL" in present_before
+        if aliases and not _env_has(_ALIASES_ENV) and not model_was_explicit:
+            os.environ[_ALIASES_ENV] = json.dumps(
+                list(aliases), ensure_ascii=True, separators=(",", ":")
+            )
             loaded = True
-    aliases = saved.get("response_model_aliases")
-    model_was_explicit = "NUMPILOT_LLM_MODEL" in present_before
-    if aliases and not _env_has(_ALIASES_ENV) and not model_was_explicit:
-        os.environ[_ALIASES_ENV] = json.dumps(
-            list(aliases), ensure_ascii=True, separators=(",", ":")
-        )
-        loaded = True
-    if loaded and present_before:
-        source = "environment+user-config"
-    elif loaded:
-        source = "user-config"
-    elif present_before:
-        source = "environment(partial)"
-    else:
-        source = "unconfigured"
-    return _status(target, source)
+        if loaded and present_before:
+            source = "environment+user-config"
+        elif loaded:
+            source = "user-config"
+        elif present_before:
+            source = "environment(partial)"
+        else:
+            source = "unconfigured"
+        status = _status(target, source)
+    except Exception:
+        for key, value in original_environment.items():
+            if value is sentinel:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+        raise
+    return status
 
 
 def _validate_values(
@@ -364,6 +522,8 @@ def _validate_values(
     protocol: str,
     response_model_aliases: object,
 ) -> Tuple[str, str, str, Tuple[str, ...]]:
+    if not isinstance(base_url, str) or len(base_url) > MAX_BASE_URL_LENGTH:
+        raise LlmConfigError("BASE_URL 必须是完整的 http(s) URL")
     try:
         parsed = urlsplit(base_url)
         port = parsed.port
@@ -379,13 +539,15 @@ def _validate_values(
         or parsed.password is not None
         or parsed.query
         or parsed.fragment
-        or any(ord(character) <= 32 or ord(character) == 127 for character in base_url)
+        or any(character.isspace() for character in base_url)
+        or _contains_control_text(base_url)
     ):
         raise LlmConfigError("BASE_URL 必须是完整的 http(s) URL")
     if (
         not auth_token
         or len(auth_token) > 16 * 1024
-        or any(ord(character) <= 32 or ord(character) == 127 for character in auth_token)
+        or any(character.isspace() for character in auth_token)
+        or _contains_control_text(auth_token)
     ):
         raise LlmConfigError("AUTH_TOKEN 不能为空或包含空白/控制字符")
     model = validate_model_id(model)
@@ -404,6 +566,7 @@ def init_llm_config_template(path: Optional[str] = None) -> Tuple[Path, bool]:
     never changed, so repeated setup commands cannot overwrite credentials.
     """
     target = llm_config_path(path)
+    _reject_symlink_components(target)
     try:
         target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         if os.name == "posix":
@@ -463,10 +626,21 @@ def save_llm_config(
     response_model_aliases: object = (),
 ) -> Path:
     """Atomically save a validated config with a private directory/file mode."""
-    base_url = base_url.strip().rstrip("/")
-    auth_token = auth_token.strip()
-    model = model.strip()
-    provider = provider.strip() or DEFAULT_PROVIDER_LABEL
+    def normalize_text(value: object, field: str) -> str:
+        if not isinstance(value, str):
+            raise LlmConfigError("%s 必须是字符串" % field)
+        try:
+            # Call the base ``str`` methods explicitly so an unusual str
+            # subclass cannot turn this public API boundary into an arbitrary
+            # exception or side effect.
+            return str.strip(value)
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            raise LlmConfigError("%s 无效" % field) from exc
+
+    base_url = normalize_text(base_url, "BASE_URL").rstrip("/")
+    auth_token = normalize_text(auth_token, "AUTH_TOKEN")
+    model = normalize_text(model, "MODEL")
+    provider = normalize_text(provider, "PROVIDER") or DEFAULT_PROVIDER_LABEL
     model, provider, protocol, aliases = _validate_values(
         base_url,
         auth_token,
@@ -477,6 +651,7 @@ def save_llm_config(
     )
 
     target = llm_config_path(path)
+    _reject_symlink_components(target)
     target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     if os.name == "posix":
         os.chmod(target.parent, 0o700)
@@ -534,6 +709,30 @@ def configure_llm_interactive(
     target = llm_config_path(path)
     saved = _read_saved(target)
 
+    def interactive_text(value: object, field: str) -> str:
+        """Normalize one optional interactive value without leaking AttributeError."""
+
+        if not isinstance(value, str):
+            raise LlmConfigError("%s 必须是字符串" % field)
+        try:
+            return str.strip(value)
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            raise LlmConfigError("%s 无效" % field) from exc
+
+    # Explicit API callers bypass argparse, so reject non-text values before
+    # calling ``.strip()`` below.  In particular, a numeric provider/protocol
+    # used to leak AttributeError instead of the stable config exception.
+    if base_url is not None:
+        base_url = interactive_text(base_url, "BASE_URL")
+    if model is not None:
+        model = interactive_text(model, "MODEL")
+    if provider is not None:
+        provider = interactive_text(provider, "PROVIDER")
+    if protocol is not None:
+        protocol = interactive_text(protocol, "PROTOCOL")
+    if auth_token is not None:
+        auth_token = interactive_text(auth_token, "AUTH_TOKEN")
+
     old_base = saved.get("base_url") or os.getenv("NUMPILOT_LLM_BASE_URL", "")
     old_model = saved.get("model") or os.getenv("NUMPILOT_LLM_MODEL", "")
     old_provider = saved.get("provider") or os.getenv(
@@ -546,12 +745,20 @@ def configure_llm_interactive(
 
     if base_url is None:
         suffix = f" [{old_base}]" if old_base else ""
-        base_url = input_fn(f"LLM Base URL{suffix}: ").strip() or old_base
+        base_url = interactive_text(
+            input_fn(f"LLM Base URL{suffix}: "), "BASE_URL"
+        ) or old_base
     if model is None:
         suffix = f" [{old_model}]" if old_model else ""
-        model = input_fn(f"LLM Model{suffix}: ").strip() or old_model
-    provider = (provider or old_provider or DEFAULT_PROVIDER_LABEL).strip()
-    protocol = (protocol or old_protocol or OPENAI_CHAT_COMPLETIONS_PROTOCOL).strip()
+        model = interactive_text(
+            input_fn(f"LLM Model{suffix}: "), "MODEL"
+        ) or old_model
+    provider = interactive_text(
+        provider or old_provider or DEFAULT_PROVIDER_LABEL, "PROVIDER"
+    )
+    protocol = interactive_text(
+        protocol or old_protocol or OPENAI_CHAT_COMPLETIONS_PROTOCOL, "PROTOCOL"
+    )
     aliases = (
         old_aliases
         if response_model_aliases is None and (model or "").strip() == old_model
@@ -561,7 +768,9 @@ def configure_llm_interactive(
 
     if auth_token is None:
         keep_hint = "（留空则保留现有值）" if saved.get("auth_token") else ""
-        auth_token = secret_fn(f"LLM Auth Token{keep_hint}: ").strip()
+        auth_token = interactive_text(
+            secret_fn(f"LLM Auth Token{keep_hint}: "), "AUTH_TOKEN"
+        )
         if not auth_token:
             auth_token = saved.get("auth_token", "")
 

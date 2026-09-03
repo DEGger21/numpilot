@@ -35,6 +35,7 @@ def write_activation_script(
     venv_dir: Path,
     cann_env_file: Path,
     asnumpy_cache: Path,
+    asnumpy_component: Optional[Path] = None,
     cannbot_cache: Path,
     receipt_path: Path,
     cannbot_checkout: Optional[Path] = None,
@@ -63,6 +64,13 @@ def write_activation_script(
             "CANN environment must be the set_env.sh of a complete toolkit root"
         )
     asnumpy_base = _absolute(asnumpy_cache, "AsNumpy cache")
+    if asnumpy_component is None:
+        from numpilot.paths import asnumpy_component_dir
+
+        asnumpy_component = asnumpy_component_dir()
+    asnumpy_component_path = _absolute(
+        asnumpy_component, "AsNumpy internal component"
+    )
     cannbot_base = _absolute(cannbot_cache, "CANNBot cache")
     cannbot_exact = (
         _absolute(cannbot_checkout, "CANNBot checkout")
@@ -98,6 +106,7 @@ def write_activation_script(
         _shell_export("NUMPILOT_CACHE_HOME", app_cache),
         _shell_export("NUMPILOT_BOOTSTRAP_RECEIPT", receipt),
         _shell_export("NUMPILOT_ASNUMPY_CACHE", asnumpy_base),
+        _shell_export("NUMPILOT_ASNUMPY_COMPONENT_DIR", asnumpy_component_path),
         _shell_export("NUMPILOT_CANNBOT_CACHE", cannbot_base),
         _shell_export("NUMPILOT_CANNBOT_SKILLS", cannbot_exact),
     ))
@@ -234,6 +243,7 @@ def main(argv=None) -> int:
 
     from numpilot.paths import (
         asnumpy_cache_base,
+        asnumpy_component_dir,
         cannbot_cache_base,
         default_bootstrap_receipt,
     )
@@ -246,6 +256,7 @@ def main(argv=None) -> int:
     parser.add_argument("--venv", required=True)
     parser.add_argument("--cann-env", required=True)
     parser.add_argument("--asnumpy-cache")
+    parser.add_argument("--asnumpy-component")
     parser.add_argument("--cannbot-cache")
     parser.add_argument("--cannbot-checkout")
     parser.add_argument("--receipt")
@@ -261,6 +272,11 @@ def main(argv=None) -> int:
             Path(args.asnumpy_cache)
             if args.asnumpy_cache
             else asnumpy_cache_base()
+        ),
+        asnumpy_component=(
+            Path(args.asnumpy_component)
+            if args.asnumpy_component
+            else asnumpy_component_dir()
         ),
         cannbot_cache=(
             Path(args.cannbot_cache)

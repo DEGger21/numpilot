@@ -21,6 +21,7 @@ from numpilot.agents.decision import DecisionAgent
 from numpilot.agents.migration import MigrationAgent
 from numpilot.agents.verification import VerificationAgent
 from numpilot.backends.base import select_backend
+from numpilot.cli_ui import compact_diagnostic
 from numpilot.coverage import is_custom
 from numpilot.engines.llm import LlmError
 from numpilot.env_check import Env
@@ -144,7 +145,8 @@ def _startup_check(backend, interactive):
     tb.add_column()
     for it in rep.items:
         c = _COLOR.get(it.status, "white")
-        tb.add_row(f"[{c}]{_MARK.get(it.status, '?')} {it.name}[/]", f"[dim]{it.detail}[/]")
+        detail = compact_diagnostic(it.name, it.detail)
+        tb.add_row(f"[{c}]{_MARK.get(it.status, '?')} {it.name}[/]", f"[dim]{detail}[/]")
     border = "red" if rep.errors else ("yellow" if rep.warnings else "green")
     console.print(Panel(tb, title="环境自检", border_style=border))
 

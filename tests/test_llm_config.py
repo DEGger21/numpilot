@@ -95,6 +95,58 @@ def test_init_template_never_overwrites_existing_config(isolated_config):
     assert isolated_config.read_bytes() == before
 
 
+def test_config_read_and_write_reject_symlinked_parent(isolated_config, tmp_path):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    linked = isolated_config.parent.parent / "linked-config"
+    linked.symlink_to(outside, target_is_directory=True)
+    target = linked / "llm.json"
+
+    with pytest.raises(LlmConfigError, match="符号链接"):
+        save_llm_config(
+            "https://gateway.example/v1", "secret", "model", path=str(target)
+        )
+    with pytest.raises(LlmConfigError, match="符号链接"):
+        load_llm_config(path=str(target))
+    assert not (outside / "llm.json").exists()
+
+
+def test_config_rejects_dotdot_path_that_crosses_symlink(isolated_config, tmp_path):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    linked = isolated_config.parent.parent / "linked-config"
+    linked.symlink_to(outside, target_is_directory=True)
+    target = linked / ".." / "escaped" / "llm.json"
+
+    # Normalizing this spelling would erase ``linked``; filesystem resolution
+    # follows it first, so the config boundary must reject the path before any
+    # mkdir/write operation can occur.
+    with pytest.raises(LlmConfigError, match="符号链接"):
+        save_llm_config(
+            "https://gateway.example/v1", "secret", "model", path=str(target)
+        )
+    assert not (outside / "escaped" / "llm.json").exists()
+
+
+def test_config_read_rejects_world_or_group_accessible_parent(isolated_config):
+    isolated_config.parent.mkdir(parents=True)
+    isolated_config.parent.chmod(0o755)
+    isolated_config.write_text(
+        json.dumps(
+            {
+                "base_url": "https://gateway.example/v1",
+                "auth_token": "secret",
+                "model": "model",
+            }
+        ),
+        encoding="utf-8",
+    )
+    isolated_config.chmod(0o600)
+
+    with pytest.raises(LlmConfigError, match="目录权限过宽"):
+        load_llm_config(path=str(isolated_config))
+
+
 def test_environment_overrides_file_field_by_field(isolated_config, monkeypatch):
     save_llm_config("https://file.example/v1", "file-token", "file-model")
     monkeypatch.setenv("NUMPILOT_LLM_BASE_URL", "https://env.example/v1")
@@ -107,6 +159,34 @@ def test_environment_overrides_file_field_by_field(isolated_config, monkeypatch)
     assert os.environ["NUMPILOT_LLM_BASE_URL"] == "https://env.example/v1"
     assert os.environ["NUMPILOT_LLM_AUTH_TOKEN"] == "file-token"
     assert os.environ["NUMPILOT_LLM_MODEL"] == "file-model"
+
+
+def test_load_rolls_back_environment_when_saved_validation_fails(
+    isolated_config, monkeypatch
+):
+    isolated_config.parent.mkdir(parents=True)
+    isolated_config.parent.chmod(0o700)
+    isolated_config.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "base_url": "https://gateway.example/v1",
+                "auth_token": "should-not-linger",
+                "model": "org/model",
+                "provider": "invalid provider!",
+                "protocol": OPENAI_CHAT_COMPLETIONS_PROTOCOL,
+                "response_model_aliases": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    isolated_config.chmod(0o600)
+
+    with pytest.raises(LlmConfigError):
+        load_llm_config()
+
+    for key in _LLM_ENV[:4] + (_LLM_ENV[5], _LLM_ENV[6]):
+        assert key not in os.environ
 
 
 def test_environment_model_override_does_not_inherit_saved_alias_policy(
@@ -180,10 +260,57 @@ def test_malformed_config_fails_without_leaking_content(isolated_config, content
     assert content not in str(caught.value)
 
 
+@pytest.mark.parametrize(
+    "field, value",
+    (
+        ("base_url", None),
+        ("auth_token", 123),
+        ("model", object()),
+        ("provider", ["gateway"]),
+    ),
+)
+def test_save_rejects_non_string_credentials_and_labels(
+    isolated_config, field, value
+):
+    arguments = {
+        "base_url": "https://gateway.example/v1",
+        "auth_token": "secret",
+        "model": "org/model",
+        "provider": "gateway",
+    }
+    arguments[field] = value
+
+    with pytest.raises(LlmConfigError):
+        save_llm_config(**arguments)
+    assert not isolated_config.exists()
+
+
+def test_read_rejects_oversized_saved_config_without_unbounded_load(isolated_config):
+    isolated_config.parent.mkdir(parents=True)
+    isolated_config.parent.chmod(0o700)
+    isolated_config.write_bytes(b"{" + b"x" * (1024 * 1024) + b"}")
+    isolated_config.chmod(0o600)
+
+    with pytest.raises(LlmConfigError, match="过大"):
+        load_llm_config()
+
+
+def test_save_rejects_oversized_base_url_before_writing(isolated_config):
+    oversized = "https://gateway.example/" + "x" * 4096
+
+    with pytest.raises(LlmConfigError, match="BASE_URL"):
+        save_llm_config(oversized, "secret", "org/model")
+
+    assert not isolated_config.exists()
+
+
 def test_manually_edited_model_identity_rejects_boundary_whitespace(
     isolated_config
 ):
     isolated_config.parent.mkdir(parents=True)
+    # Keep the manually-authored fixture inside the private-directory
+    # contract so this test reaches model-field validation.
+    isolated_config.parent.chmod(0o700)
     isolated_config.write_text(
         json.dumps({
             "schema_version": 2,
@@ -240,6 +367,23 @@ def test_interactive_update_keeps_hidden_existing_token(isolated_config, monkeyp
     assert saved["base_url"] == "https://new.example/v1"
 
 
+@pytest.mark.parametrize("field", ("provider", "protocol"))
+def test_interactive_rejects_non_string_labels_without_attribute_error(
+    isolated_config, field
+):
+    arguments = {
+        "base_url": "https://gateway.example/v1",
+        "model": "org/model",
+        "auth_token": "secret",
+        field: 123,
+    }
+
+    with pytest.raises(LlmConfigError, match="字符串"):
+        configure_llm_interactive(path=str(isolated_config), **arguments)
+
+    assert not isolated_config.exists()
+
+
 def test_atomic_save_failure_preserves_previous_config(isolated_config, monkeypatch):
     save_llm_config("https://old.example/v1", "old-token", "old-model")
     before = isolated_config.read_bytes()
@@ -263,6 +407,8 @@ def test_atomic_save_failure_preserves_previous_config(isolated_config, monkeypa
         ("https://gateway.example/v1?token=value", "token"),
         ("https://gateway.example/v1", "token with space"),
         ("https://gateway.example/v1", "token\x01control"),
+        ("https://gateway.example/v1", "token\u202eformat"),
+        ("https://gateway.example/v1\u202e", "token"),
     ),
 )
 def test_local_readiness_rejects_transport_values_before_saving(
@@ -514,6 +660,75 @@ def test_cli_init_rejects_inline_configuration(isolated_config, capsys):
     assert not isolated_config.exists()
 
 
+@pytest.mark.parametrize(
+    "arguments_prefix",
+    (
+        ("--llm-config",),
+        (),
+    ),
+)
+def test_cli_accepts_explicit_config_path_before_or_after_subcommand(
+    isolated_config, monkeypatch, capsys, arguments_prefix
+):
+    explicit = isolated_config.parent / "competition-runtime" / "llm.json"
+    secret = "explicit-config-secret"
+    save_llm_config(
+        "https://gateway.example/v1",
+        secret,
+        "glm-explicit",
+        path=str(explicit),
+    )
+    # The root option form is ``--llm-config FILE configure-llm --check``;
+    # the child form is ``configure-llm --check --llm-config FILE``.
+    if arguments_prefix:
+        arguments = [*arguments_prefix, str(explicit), "configure-llm", "--check"]
+    else:
+        arguments = [
+            "configure-llm",
+            "--check",
+            "--llm-config",
+            str(explicit),
+        ]
+
+    try:
+        rc = cli.main(arguments)
+
+        captured = capsys.readouterr()
+        assert rc == 0
+        assert str(explicit) in captured.out
+        assert secret not in captured.out + captured.err
+        assert os.environ["NUMPILOT_LLM_MODEL"] == "glm-explicit"
+    finally:
+        # ``main`` is also a library entry point in the test suite.  Clear the
+        # one-shot override so a later in-process command cannot inherit it.
+        os.environ.pop("NUMPILOT_LLM_CONFIG_FILE", None)
+
+
+def test_cli_llm_config_override_is_scoped_to_one_in_process_invocation(
+    isolated_config, monkeypatch, capsys
+):
+    explicit = isolated_config.parent / "one-shot" / "llm.json"
+    save_llm_config(
+        "https://gateway.example/v1",
+        "one-shot-secret",
+        "glm-one-shot",
+        path=str(explicit),
+    )
+    inherited = str(isolated_config.parent / "inherited.json")
+    monkeypatch.setenv("NUMPILOT_LLM_CONFIG_FILE", inherited)
+
+    rc = cli.main([
+        "--llm-config",
+        str(explicit),
+        "configure-llm",
+        "--check",
+    ])
+
+    capsys.readouterr()
+    assert rc == 0
+    assert os.environ["NUMPILOT_LLM_CONFIG_FILE"] == inherited
+
+
 def test_llm_cli_delegates_configuration_loading_to_migrate_handler(
     isolated_config, monkeypatch
 ):
@@ -534,6 +749,35 @@ def test_config_path_does_not_depend_on_current_directory(isolated_config, tmp_p
     elsewhere.mkdir()
     monkeypatch.chdir(elsewhere)
     assert llm_config_path() == expected
+
+
+@pytest.mark.parametrize(
+    "bad_path",
+    ("", "bad\npath", "bad\rpath", "bad\x00path", "bad\u202epath"),
+)
+def test_explicit_config_path_rejects_control_or_empty_values(
+    isolated_config, bad_path
+):
+    with pytest.raises(LlmConfigError, match="配置路径"):
+        llm_config_path(bad_path)
+
+
+@pytest.mark.parametrize(
+    "bad_home",
+    (
+        "bad\nconfig",
+        "bad\x1bconfig",
+        "bad\u202econfig",
+        "x" * 5000,
+    ),
+)
+def test_environment_config_home_is_validated_before_path_use(
+    isolated_config, monkeypatch, bad_home
+):
+    monkeypatch.setenv("NUMPILOT_CONFIG_HOME", bad_home)
+
+    with pytest.raises(LlmConfigError, match="配置路径"):
+        llm_config_path()
 
 
 def test_run_demo_does_not_source_configuration():

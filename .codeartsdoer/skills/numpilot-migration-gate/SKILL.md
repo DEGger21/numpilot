@@ -33,7 +33,7 @@ repository or evidence bundle.
 
 ### 1. Read and inspect without execution
 
-Read `README.md`, `docs/numpilot-technical-review.md`, `docs/codearts-integration.md`, and the relevant
+Read `README.md`, `docs/COMPETITION-READINESS.md`, `docs/codearts-integration.md`, and the relevant
 capability/provenance records. Ask `numpilot-analyzer` for a read-only review, then have the deterministic
 execution plane publish a write-once receipt:
 
