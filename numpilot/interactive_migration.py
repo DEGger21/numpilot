@@ -73,7 +73,7 @@ MAX_REPORT_BYTES = 256 * 1024
 # A few gateway/model combinations spend part of the completion budget on
 # hidden reasoning and may return an empty visible message at a low limit.
 # Keep the interpretation concise, but leave enough room for a stable human
-# explanation in a real recording.  An empty visible response gets one
+# explanation in an interactive session.  An empty visible response gets one
 # bounded retry below; non-empty contract violations never get retried.
 DEFAULT_MAX_TOKENS = 1800
 

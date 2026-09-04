@@ -24,7 +24,7 @@
 
 This is intentionally a *demo* lane, not a replacement for ``complete-gaps``.
 It makes one real configured-model request with a compact contract so a local
-recording can show genuine model output without asking a gateway to generate a
+session can show genuine model output without asking a gateway to generate a
 full multi-file Ascend C project.  The result is always marked
 ``generated_unverified`` and is never compiled, installed, activated, or used
 as evidence of numerical or performance correctness.
@@ -256,7 +256,7 @@ def _license_acceptance(cli_value: bool) -> tuple[bool, str]:
 
     A cached checkout proves provenance, not that the caller accepted its
     terms.  Keep acceptance as a separate, per-invocation decision.  The
-    environment form exists for non-interactive recordings; it is deliberately
+    environment form exists for non-interactive automation; it is deliberately
     strict so a typo cannot silently opt the caller in.
     """
 

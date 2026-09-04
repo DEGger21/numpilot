@@ -1,6 +1,6 @@
 # NumPilot × 华为云码道（CodeArts）集成建议
 
-> 调研日期：2026-07-18。以下能力以华为云官方在线文档为准；产品仍在快速迭代，比赛演示前应再次核对套餐、区域和客户端版本。
+> 以下能力以华为云官方在线文档为准；接入前应核对当前套餐、区域和客户端版本。
 
 ## 结论
 
@@ -17,7 +17,7 @@ NumPilot CLI + contracts + capability registry
   └─ 缺口时 official-first 解析 → 候选/资格化/激活门 → AsNumpy / CANN / Ascend NPU
 ```
 
-这样比赛中的“多智能体”来自真实 CodeArts AgentTeam 和项目级自定义智能体，NumPilot 则承担必须可重复、可测试、可审计的领域逻辑。
+这样，多智能体协作来自真实 CodeArts AgentTeam 和项目级自定义智能体，NumPilot 则承担必须可重复、可测试、可审计的领域逻辑。
 
 ## 模型来源与入口门禁
 
@@ -58,7 +58,7 @@ migrate=draft/stopped、verify=not_run、benchmark=not_run，报告回执哈希�
 CodeArts 候选尚无适配器可物化该回执，应停在 `draft` 并展示边界，不得手工伪造 configured-model
 报告。
 
-需要注意：官方文档分别说明了 AgentTeam 的动态 Teammate 机制和项目级自定义智能体，但没有明确承诺 AgentTeam 会自动把 `.codeartsdoer/agents/` 中的角色装配成固定队伍。因此比赛账号应提前做一次产品实测。若不能自动装配，就把它们作为两种互补入口展示：AgentTeam 用于动态并行与任务图，自定义 `numpilot-orchestrator` 用 `task` 调用项目子智能体并执行严格领域流程；不要在 PPT 中把尚未验证的自动装配写成现有能力。
+需要注意：官方文档分别说明了 AgentTeam 的动态 Teammate 机制和项目级自定义智能体，但没有明确承诺 AgentTeam 会自动把 `.codeartsdoer/agents/` 中的角色装配成固定队伍。因此目标账号应先做一次产品实测。若不能自动装配，可将它们作为两种互补入口：AgentTeam 用于动态并行与任务图，自定义 `numpilot-orchestrator` 用 `task` 调用项目子智能体并执行严格领域流程；不要把尚未验证的自动装配写成现有能力。
 
 ## 为什么匹配
 
@@ -82,7 +82,7 @@ verify/benchmark 标为 `not_run`。
 
 ## CodeArts 能力如何使用
 
-| CodeArts 能力 | NumPilot 用法 | 比赛证据 |
+| CodeArts 能力 | NumPilot 用法 | 可审计记录 |
 |---|---|---|
 | AgentTeam | Leader 分解迁移任务，分析/算子/审计并行协作 | Task List、成员事件流、失败后重调度记录 |
 | 项目级自定义智能体 | 固化角色、工具权限和门禁 | 仓库中的 `.codeartsdoer/agents/*.md` |

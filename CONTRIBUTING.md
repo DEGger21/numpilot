@@ -11,7 +11,7 @@ python -m venv .venv
 python -m pip install -e '.[dev]'
 env -u PYTHONPATH python -m pytest -q -p no:cacheprovider \
   tests/test_install_script.py tests/test_release_tree.py \
-  tests/test_release_artifact_manifest.py tests/test_notebook_quickstart.py
+  tests/test_release_artifact_manifest.py tests/test_bootstrap.py
 ```
 
 完整测试与 `python -m build` 是固定、干净发布环境中的门禁。先清理 CANN 注入的 `PYTHONPATH` 及
@@ -35,7 +35,7 @@ env -u PYTHONPATH python -m pytest -q -p no:cacheprovider \
 - 两个长期分支均禁止 force push、历史改写和删除；
 - Tag 与发布制品只能来自已经通过发布门禁的 `main` 提交。
 
-完整保护规则、服务端验收项与发布流程见 [分支治理与比赛提交约定](docs/SUBMISSION.md)。
+完整保护规则、服务端验收项与发布流程见 [分支治理与发布约定](docs/SUBMISSION.md)。
 
 ## 提交要求
 

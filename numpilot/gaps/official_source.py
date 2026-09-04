@@ -1,3 +1,24 @@
+# This file is part of the NumPilot project at Harbin Institute of Technology (HIT).
+#
+# Copyright (c) 2026 AISS Group, Harbin Institute of Technology (HIT).
+# SPDX-License-Identifier: Apache-2.0
+#
+# Authors (accounts):
+# - Su Tonghua <@sutonghua>
+# - Li Xing <@li-xingHIT>
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Read-only resolution of version-pinned Huawei ops-nn source candidates.
 
 This module deliberately stops before checkout, build, adapter generation, or
@@ -100,7 +121,7 @@ class OpsNnSourcePin:
 
 
 # The initial production slice is intentionally small.  Adding another CANN
-# release requires recording and reviewing its immutable tag target and tree.
+# release requires capturing and reviewing its immutable tag target and tree.
 DEFAULT_OPS_NN_SOURCE_PINS: Mapping[str, OpsNnSourcePin] = {
     "9.0.0": OpsNnSourcePin(
         ref="refs/tags/v9.0.0",

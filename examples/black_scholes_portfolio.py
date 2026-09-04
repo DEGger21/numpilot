@@ -18,7 +18,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Black--Scholes-style portfolio repricing workload for a migration recording.
+"""Black--Scholes-style portfolio repricing workload.
 
 The file is intentionally an ordinary, single-file NumPy program.  It prices
 ``N`` independent European call contracts with a smooth normal-CDF
@@ -27,8 +27,8 @@ operation below it is a straight-line, float32 tensor graph that can be moved
 to AsNumpy without changing the scientific story.
 
 The 4,000,000-contract default is large enough to make device residency
-visible while staying practical for a recording machine.  ``result`` is the
-final output consumed by ``numpilot run`` and ``benchmark-script``.
+visible while staying practical on the validated runtime profile.  ``result``
+is the final output consumed by ``numpilot run`` and ``benchmark-script``.
 """
 
 import numpy as np
@@ -52,7 +52,7 @@ zero = np.full((4_000_000,), 0.0, dtype=np.float32)
 
 # Black--Scholes d1/d2 terms.  The tanh-based CDF avoids a dependency on a
 # special-function extension while remaining a useful portfolio-pricing
-# approximation for this migration demonstration.
+# approximation for this migration example.
 variance = np.multiply(volatility, volatility)
 sqrt_time = np.sqrt(time_to_expiry)
 sigma_sqrt_time = np.multiply(volatility, sqrt_time)

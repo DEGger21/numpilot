@@ -1,3 +1,24 @@
+# This file is part of the NumPilot project at Harbin Institute of Technology (HIT).
+#
+# Copyright (c) 2026 AISS Group, Harbin Institute of Technology (HIT).
+# SPDX-License-Identifier: Apache-2.0
+#
+# Authors (accounts):
+# - Su Tonghua <@sutonghua>
+# - Li Xing <@li-xingHIT>
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Open-source friendly LLM configuration managed by NumPilot itself.
 
 The repository never contains a real authentication token.  Interactive users
@@ -260,7 +281,7 @@ def llm_config_path(path: Optional[str] = None) -> Path:
     """Resolve the private per-user JSON path, with test/automation overrides."""
     if path is not None:
         # Explicit paths are useful for CI and for a separately provisioned
-        # competition runtime, but they still cross a command/configuration
+        # managed runtime, but they still cross a command/configuration
         # boundary.  Reject control characters early so a malformed path
         # cannot produce confusing diagnostics or terminal/log injection.
         return _validated_config_path(path)

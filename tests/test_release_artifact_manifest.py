@@ -58,34 +58,7 @@ VALID_SVG = (
 )
 
 
-def _pptx(planned_label: str) -> bytes:
-    output = io.BytesIO()
-    slide = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
-       xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
-  <p:cSld><p:spTree><p:sp><p:txBody><a:p><a:r><a:t>ADAPTER_CANDIDATE CANDIDATE_READY ops-nn CANNBot {planned_label}</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld>
-</p:sld>
-""".encode()
-    members = {
-        "[Content_Types].xml": (
-            b'<?xml version="1.0"?><Types '
-            b'xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>'
-        ),
-        "ppt/presentation.xml": (
-            b'<?xml version="1.0"?><p:presentation '
-            b'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"/>'
-        ),
-        "ppt/slides/slide1.xml": slide,
-    }
-    with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        for member, payload in members.items():
-            archive.writestr(member, payload)
-    return output.getvalue()
-
-
 REVIEWED_PAYLOADS = {
-    "docs/numpilot-en.pptx": _pptx("planned"),
-    "docs/numpilot-zh.pptx": _pptx("规划"),
     "docs/numpilot-en-v6.svg": VALID_SVG,
     "docs/numpilot-zh-v6.svg": VALID_SVG,
     "docs/assets/architecture/numpilot-architecture-en.svg": VALID_SVG,
@@ -101,12 +74,11 @@ REVIEWED_PAYLOADS = {
 PACKAGE_MEMBERS = (
     f"{NAME}/__init__.py",
     f"{NAME}/__main__.py",
-    # Public orchestration/readiness modules are part of the release surface.
+    # Public orchestration modules are part of the release surface.
     # Keep synthetic wheel/sdist fixtures aligned with the production
     # manifest's required-member contract so these tests continue to exercise
     # the intended validation (rather than failing at fixture admission).
     f"{NAME}/cli_ui.py",
-    f"{NAME}/competition_readiness.py",
     f"{NAME}/add_one_gap.py",
     f"{NAME}/demo_llm_operator_generation.py",
     f"{NAME}/interactive_migration.py",
@@ -214,22 +186,11 @@ def _sdist(
         f"{root}/docs/installation.zh-CN.md": b"install zh\n",
         **{f"{root}/{member}": payload for member, payload in REVIEWED_PAYLOADS.items()},
         f"{root}/docs/assets/brand/README.md": b"brand inventory\n",
-        f"{root}/docs/FRESH-NOTEBOOK-QUICKSTART.md": b"notebook guide\n",
-        f"{root}/docs/COMPETITION-READINESS.md": b"readiness guide\n",
-        f"{root}/docs/NumPilot-Demo-v1-Quickstart.ipynb": b"{}\n",
         f"{root}/examples/custom_operator_add_one.py": b"pass\n",
         f"{root}/examples/add_one_migration_demo.py": b"pass\n",
-        f"{root}/examples/competition_power_log_exp.py": b"pass\n",
-        f"{root}/evidence/MANIFEST.sha256": b"",
-        f"{root}/evidence/competition-ordinary-20260828/qualified-analysis.json": b"{}\n",
-        f"{root}/evidence/competition-ordinary-20260828/script-benchmark-report.json": b"{}\n",
-        f"{root}/evidence/competition-ordinary-20260828/script-verification-report.json": b"{}\n",
-        f"{root}/evidence/competition-poisson-stage-20260828/qualified-analysis.json": b"{}\n",
-        f"{root}/evidence/competition-poisson-stage-20260828/script-benchmark-report.json": b"{}\n",
-        f"{root}/evidence/competition-poisson-stage-20260828/script-verification-report.json": b"{}\n",
+        f"{root}/examples/black_scholes_portfolio.py": b"pass\n",
         **{f"{root}/{member}": b"fixture\n" for member in SOURCE_SKILL_MEMBERS},
         f"{root}/tools/check_release_tree.py": b"# tool\n",
-        f"{root}/tools/demo_llm_operator_generation.py": b"# tool\n",
         f"{root}/tools/release_artifact_manifest.py": b"# tool\n",
     }
     if extra is not None:
@@ -394,7 +355,6 @@ def test_verify_detects_changed_artifact(tmp_path):
 @pytest.mark.parametrize(
     ("relative, payload, message"),
     [
-        ("docs/numpilot-en.pptx", b"not a presentation", "invalid PPTX"),
         (
             "docs/assets/architecture/numpilot-architecture-en.svg",
             b'<svg xmlns="http://www.w3.org/2000/svg"/>',
@@ -421,13 +381,14 @@ def test_sdist_rejects_invalid_reviewed_assets(tmp_path, relative, payload, mess
             "wheel",
             f"{NAME}-{VERSION}.data/data/share/numpilot/codearts/ProjectSkillStatus.txt",
         ),
-        ("sdist", f"{NAME}-{VERSION}/examples/competition_power_log_exp.py"),
+        ("sdist", f"{NAME}-{VERSION}/examples/add_one_migration_demo.py"),
         (
             "sdist",
             f"{NAME}-{VERSION}/.codeartsdoer/skills/numpilot-migration-gate/SKILL.md",
         ),
         ("sdist", f"{NAME}-{VERSION}/skill/SKILL.md"),
         ("sdist", f"{NAME}-{VERSION}/examples/custom_operator_add_one.py"),
+        ("sdist", f"{NAME}-{VERSION}/examples/black_scholes_portfolio.py"),
     ],
 )
 def test_artifact_rejects_missing_runtime_or_release_member(tmp_path, kind, missing):

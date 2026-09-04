@@ -1,3 +1,24 @@
+# This file is part of the NumPilot project at Harbin Institute of Technology (HIT).
+#
+# Copyright (c) 2026 AISS Group, Harbin Institute of Technology (HIT).
+# SPDX-License-Identifier: Apache-2.0
+#
+# Authors (accounts):
+# - Su Tonghua <@sutonghua>
+# - Li Xing <@li-xingHIT>
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """真实 asnumpy(NPU)后端适配器。需已 build/install asnumpy。"""
 from dataclasses import dataclass
 import hashlib
@@ -130,7 +151,7 @@ _OPS_NN_MATMUL_WHEEL_SHA256 = (
     "c08b8a3b0ca034926f42d1594aab42cd8c793faeebee5376d611f62d8638f953"
 )
 
-# Competition P0 wheel.  This is deliberately a narrow source/binary audit,
+# Historical P0 qualification wheel. This is deliberately a narrow source/binary audit,
 # not a declaration that every API in the locally built wheel is strict NPU.
 P0_ASNUMPY_VERSION = "0.1.dev106+g21368abf9.d20260821"
 P0_ASNUMPY_AUDIT_ID = (

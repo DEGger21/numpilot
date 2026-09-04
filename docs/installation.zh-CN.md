@@ -12,8 +12,9 @@
 
 > [!WARNING]
 > 当前 strict 画像绑定 Linux/AArch64、Ascend 910B4、CANN 9.0.0、CPython 3.10.20，以及精确的
-> AsNumpy 源码、安装文件和回执哈希。包与安装器接受 Python 3.10+，但不同 SoC、CANN、Python
-> ABI、wrapper、原生库或回执在独立资格化前必须返回 `CAPABILITY_AUDIT_REQUIRED`。
+> AsNumpy 源码、安装文件和回执哈希。核心包接受 Python 3.10+，但随仓组件安装器要求 AArch64 上的
+> CPython 3.10；不同 SoC、CANN、Python ABI、wrapper、原生库或回执在独立资格化前必须返回
+> `CAPABILITY_AUDIT_REQUIRED`。
 
 ## 1. CPU/shim 开发环境
 
@@ -31,7 +32,7 @@ python -m pip install -e '.[dev]'
 python -m numpilot --version
 python -m numpilot doctor --backend shim
 env -u PYTHONPATH python -m pytest -q -p no:cacheprovider \
-  tests/test_install_script.py tests/test_notebook_quickstart.py
+  tests/test_install_script.py tests/test_bootstrap.py
 ```
 
 包元数据要求 Python 3.10+，基础依赖为 `numpy>=1.26`、`loguru>=0.7`、`rich>=13`。
@@ -45,7 +46,7 @@ Python 环境。任意 Python 3.10+ 主机不能自动视为完整测试资格�
 
 - 兼容的 Ascend 驱动、固件、CANN Toolkit 与 OPP；
 - `npu-smi info` 可见的 NPU；
-- Python 3.10+、`venv`/`pip`；
+- 随仓组件要求 CPython 3.10，并具备 `venv`/`pip`；
 - 当前用户独占的 venv、运行回执空间和持久化状态目录。
 
 固定 wheel 安装不需要 Git、CMake、Make/Ninja、GCC/G++、Python 开发头文件或系统
@@ -64,7 +65,8 @@ sudo apt-get install -y \
 固定组件模式开始前检查：
 
 ```bash
-python3 --version
+uname -m
+python3 -c 'import platform; print(platform.python_implementation(), platform.python_version())'
 npu-smi info
 test -f /usr/local/Ascend/cann-9.0.0/set_env.sh
 ```
@@ -75,18 +77,30 @@ test -f /usr/local/Ascend/cann-9.0.0/set_env.sh
 请把 CANN 路径替换为实际准备审计的精确安装。选择 `latest` 可能通过基础冒烟，但不会自动让新版
 CANN 进入当前 strict 画像。
 
-## 3. 固定 AsNumpy 内部组件（发布/比赛模式）
+## 3. 固定 AsNumpy 内部组件（发布模式）
 
-正式发布或比赛交付时，直接使用仓库随附的 `components/asnumpy/`（或同一 release 的不可变附件）。
+正式发布时，直接使用仓库随附的 `components/asnumpy/`（或同一 release 的不可变附件）。
 其中的 manifest 已绑定 wheel、LICENSE、SBOM、METADATA/RECORD 和安装后 native 哈希。不要使用
 PyPI `latest`、版本范围或浮动 Git 分支；组件缺失或哈希不匹配就是发布阻断，安装器不得退回下载源码。
 
 ```bash
-python -m numpilot bootstrap --apply \
-  --asnumpy-component components/asnumpy \
-  --receipt /secure/runtime/bootstrap-receipt.json
+mkdir -p "$HOME/.local/venvs"
+chmod 700 "$HOME/.local/venvs"
+
+./install.sh --allow-network \
+  --python "$(command -v python3)" \
+  --cann-env /usr/local/Ascend/cann-9.0.0/set_env.sh \
+  --venv "$HOME/.local/venvs/numpilot" \
+  --persistent-root "$HOME/.local/share/numpilot"
+
+. "$HOME/.local/share/numpilot/activate-numpilot.sh"
 python -m numpilot bootstrap --verify --json
+python -m numpilot doctor --backend npu
 ```
+
+安装器会在创建 venv 或调用 pip 之前校验组件 manifest、wheel、LICENSE/SBOM、CPython ABI 和机器
+架构，并按 manifest 中记录的精确版本解析 NumPy 与 Loguru。如果所需解释器不是默认 `python3`，
+请使用 `--python /absolute/path/to/python3.10`。
 
 release manifest 还必须绑定 wheel 的 `METADATA`/`RECORD`、安装后的
 `asnumpy/__init__.py` 与 native `_core` 哈希、Python/架构标签，以及已审计的 CANN/SoC 画像。
@@ -114,6 +128,7 @@ git clone --branch main --depth 1 https://gitcode.com/li-xingHIT/numpilot.git
 cd numpilot
 
 ./install.sh --allow-network \
+  --python /absolute/path/to/python3.10 \
   --asnumpy-source /absolute/path/to/pinned/asnumpy \
   --cann-env /usr/local/Ascend/cann-9.0.0/set_env.sh \
   --venv /absolute/user-owned/numpilot-venv \
@@ -130,6 +145,7 @@ AsNumpy 源码。它不会运行 `sudo`、修改 shell 启动文件、保存模�
 ```bash
 # 使用 origin/commit/tree 精确匹配且干净的 AsNumpy checkout。
 ./install.sh --allow-network \
+  --python /absolute/path/to/python3.10 \
   --asnumpy-source /absolute/path/to/pinned/asnumpy \
   --cann-env /absolute/path/to/CANN/set_env.sh \
   --venv /absolute/user-owned/numpilot-venv \
@@ -137,6 +153,7 @@ AsNumpy 源码。它不会运行 `sudo`、修改 shell 启动文件、保存模�
 
 # 固定组件模式下显式选择 Python 包索引；不要把凭据写进 URL。
 ./install.sh --allow-network \
+  --python /absolute/path/to/python3.10 \
   --pip-index-url https://mirror.example.invalid/simple \
   --asnumpy-component "$PWD/components/asnumpy" \
   --cann-env /absolute/path/to/CANN/set_env.sh \
@@ -215,6 +232,7 @@ checkout 中运行 `git show 1ef6372a538f39b0b7ed34666a3e1f465fb4936a:LICENSE` �
 
 ```bash
 ./install.sh --allow-network \
+  --python /absolute/path/to/python3.10 \
   --with-cannbot --accept-cannbot-license \
   --cann-env /absolute/path/to/CANN/set_env.sh \
   --venv /absolute/user-owned/numpilot-venv \

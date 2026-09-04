@@ -48,7 +48,7 @@ cache base，NumPilot 再追加固定 commit。`NUMPILOT_CANNBOT_SKILLS` 是经�
 覆盖，优先于 CANNBot cache base；`NUMPILOT_BOOTSTRAP_RECEIPT` 是精确文件覆盖。不要把
 私有配置或运行状态指回 Git 工作树。
 
-如果模型配置位于单独的比赛/运行时根目录，可只指定运行时根，不必把凭据复制到仓库：
+如果模型配置位于单独的持久运行根目录，可只指定运行时根，不必把凭据复制到仓库：
 
 ```bash
 export NUMPILOT_RUNTIME_ROOT=/absolute/persistent/numpilot-runtime
@@ -79,8 +79,8 @@ toolkit 根及其 `devlib`，同时保留 driver、NNAL/ATB、无关 `devlib` �
 3. **冷备份/发布附件**：运行根的只读归档，带归档级 SHA-256、条目数和恢复说明。
 
 虚拟环境、上游源码克隆和普通 build 目录通常可重建，但在固定 release manifest、上游 commit、
-补丁、构建命令与必要制品之前不要删除。评委需要复核的原始 evidence 应作为 release 附件或
-比赛交付包发布，不应把数百 MB 的工作盘直接提交到源码 Git。
+补丁、构建命令与必要制品之前不要删除。需要独立复核的原始 evidence 应作为 release 附件发布，
+不应把数百 MB 的工作盘直接提交到源码 Git。
 
 ## 兼容与迁移
 

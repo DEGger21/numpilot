@@ -1,6 +1,6 @@
 # 第三方软件与材料
 
-NumPilot 自有源码按顶层 Apache-2.0 发布。依赖和证据材料仍受各自许可证约束；顶层许可证
+NumPilot 自有源码按顶层 Apache-2.0 发布。依赖和随附材料仍受各自许可证约束；顶层许可证
 不会替代这些条款。
 
 | 项目 | 用途 | 许可证 / 说明 |
@@ -15,17 +15,16 @@ NumPilot 自有源码按顶层 Apache-2.0 发布。依赖和证据材料仍受�
 | Huawei CANN / CANNBot Skills | NPU 工具链、模板与算子开发参考 | CANN Open Software License Agreement Version 2.0；需遵守其用途和分发限制 |
 | Huawei ops-nn | official-first 缺口解析与定向算子来源；不随 NumPilot 默认安装或分发 | CANN Open Software License Agreement Version 2.0；下载、使用、修改或分发前需显式接受并遵守用途和分发限制 |
 
-## 外部 AI 模型与比赛平台记录
+## 外部 AI 模型与平台服务
 
 NumPilot 不在源码或 wheel 中捆绑大语言模型、模型权重、API Token 或私有网关。普通脚本迁移
 使用的是用户在运行时通过 `llm.json` 配置的 OpenAI Chat Completions-compatible 服务；模型名称、
-服务商、版本、调用时间和适用许可证应在最终比赛材料中按实际服务补录。仓库当前的
-`glm-5.3` 配置仅存在于开发机外部运行时，不是可提交的模型来源证明。
+服务商、版本、调用时间和适用许可证应由部署者按实际服务记录。仓库不保存开发环境中的
+私有模型配置，也不把配置文件视为模型来源证明。
 
-CodeArts 代码智能体及其内置模型属于比赛指定平台。仓库中的 `.codeartsdoer/` Agent/Skill
-文件只是可加载的工作流上下文，不能替代 CodeArts 账号中的真实任务记录。提交前应附上
-脱敏的代码生成、研发知识问答、单元测试生成、Codebase 索引和规范驱动开发记录，并注明
-平台/模型的实际来源与使用条款；当前仓库没有把这些记录伪装成已完成证据。
+CodeArts 代码智能体及其内置模型属于外部平台。仓库中的 `.codeartsdoer/` Agent/Skill 文件只是
+可加载的工作流上下文，不能替代对应账号中的真实任务记录，也不授予外部服务或模型的使用权。
+部署者应遵守所选平台、模型和 API 的实际使用条款。
 
 项目不会把 CANN、ops-nn 或完整 CANNBot 仓库复制进 Python 分发包。AsNumpy 在冻结 release 中
 作为显式标记的内部运行时组件交付：源代码树中的附件位于 `components/asnumpy/`，构建出的
@@ -41,7 +40,7 @@ official-first resolver 只读检查用户显式提供的 CANN 根目录和本�
 bootstrap、import、analyze 或 migrate 隐式拉取 CANN/ops-nn 源码。NumPilot 仓内仅保存自有的
 resolver、来源/哈希收据和一份 AsNumpy 集成参考 patch，不重新分发 ops-nn 或 CANNBot 生成的
 算子源码；AsNumpy wheel 是否可公开再分发仍须由发布负责人按上游条款确认。用户仍应核对各自许可证与
-部署要求。发布二进制、wheel、OPP 或比赛交付包时，还应生成对应版本的完整 SBOM 和逐文件
+部署要求。发布二进制、wheel 或 OPP 时，还应生成对应版本的完整 SBOM 和逐文件
 许可证清单。
 
 ## 名称、Logo 与商标

@@ -21,7 +21,7 @@ tools:
 人工授权点、五态决策、产物哈希和最终验收，并优先把只读分析、受控算子工程和独立证据审计
 交给对应子智能体。
 
-## 入口与模型来源门禁（优先于比赛主路径）
+## 入口与模型来源门禁
 
 开始任何配置读取、网络探测或模型调用前，先让用户选择 `terminal_manual`、`codearts_agent`
 或 `hybrid`，并把选择写入新的私有 run handoff。若用户要求 CodeArts 侧边栏模型或明确说
@@ -34,7 +34,7 @@ tools:
 通用的 CodeArts/manual 草稿到 ordinary `script-migration-report.json` 适配器；无已登记适配器时
 必须停在 `migrate=draft/stopped`，把 `verify`/`benchmark` 记为 `not_run`，不得手工伪造报告。
 
-## 比赛主路径
+## Ordinary 产品主路径
 
 1. 先读取 capability registry、当前技术评审和运行时身份，不从函数名存在推断真 NPU 支持。
 2. 让 `numpilot-analyzer` 只读检查整个 ordinary 文件；由执行面运行
@@ -47,7 +47,7 @@ tools:
    - `GAP_REQUIRED`：进入 official-first 缺口恢复；
    - `CAPABILITY_AUDIT_REQUIRED`：先审计版本、哈希、来源或资格，不生成同名替代算子；
    - `BLOCKED`：记录稳定原因和最小解除条件后停止。
-4. 对选择了 configured terminal 子运行的 `DIRECT`，比赛产物必须由比赛环境真实配置的 GLM
+4. 对选择了 configured terminal 子运行的 `DIRECT`，configured-model 候选必须由本次明确授权且通过配置检查的真实 GLM
    生成（精确模型名仍以配置和回执为准）。先执行 `configure-llm --check`，需要证明本次 endpoint
    可达时再显式执行 `configure-llm --probe`；随后使用 ordinary 默认入口：
 
@@ -56,8 +56,8 @@ tools:
    ```
 
    迁移报告必须证明真实远程调用、exact configured/requested model identity、响应身份、回执和
-   source/migrated SHA-256 均一致。本地 AST 只可审核模型结果，不能作为生成器、失败回退或比赛
-   产物来源；不得为比赛案例使用 `--engine ast`、`--mode contract` 或 `--mode auto`。在
+   source/migrated SHA-256 均一致。本地 AST 只可审核模型结果，不能作为生成器、失败回退或
+   configured-model 产物来源；ordinary 默认路径不得使用 `--engine ast`、`--mode contract` 或 `--mode auto`。在
    CodeArts-agent/manual draft 分支不要执行上述配置命令；先交接候选及哈希，若没有受支持的
    ordinary-report adapter 就停在 draft，不得伪造 configured report。
 5. `migrate` 不执行用户代码。只有 configured report 或已登记 adapter 物化的 hash-bound report
@@ -112,6 +112,6 @@ identity/remote receipt（仅 configured lane）或独立 CodeArts/user author/l
 CodeArts 账号已成功加载 AgentTeam、智能体或 Skill，必须把实际产品加载/调用记录单独验收。
 
 `build_inputs + forward`、shim 和 `bench-cpu`/`bench-npu` 仅属于显式
-`--mode contract` 的高级兼容/框架回归通道，不得替代上述 ordinary 比赛主链。
+`--mode contract` 的高级兼容/框架回归通道，不得替代上述 ordinary 默认主链。
 
 优先使用项目技能 `numpilot-migration-gate` 执行标准流程。

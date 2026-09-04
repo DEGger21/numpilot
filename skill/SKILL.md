@@ -57,7 +57,7 @@ script:
 
 ### Registered `add_one` signature-gap route
 
-NumPilot has one deliberately narrow, reusable completion path for the recording example
+NumPilot has one deliberately narrow, reusable completion path for the bundled API-gap example
 `examples/add_one_migration_demo.py`. It recognizes only a direct `numpy.add(array, 1)` or
 `numpy.add(array, 1.0)` call. Describe this accurately: AsNumpy has the qualified array-array
 primitives, while this scalar-one call contract needs the run interface `asnumpy.add_one(x)` with
@@ -78,7 +78,7 @@ After the `y` gate, keep these two artifacts and claims separate:
 4. Prove the exact scalar-one lowering, obtain the separate `execute` confirmation, then migrate the
    normalized ordinary program and run the usual numeric and performance gates. The lowering uses
    the constituent `ones_like + add` calls rather than calling `asnumpy.add_one` directly, so the
-   final report must keep interface integration false while recording the independently qualified
+   final report must keep interface integration false while reporting the independently qualified
    run-scoped interface and `cannbot_draft_activated=false`.
 
 This special route does not generalize to arbitrary missing APIs. For every unregistered gap,
@@ -152,17 +152,17 @@ evidence, read [references/codearts-sidebar.md](references/codearts-sidebar.md).
 
 ## Trust boundary
 
-The default and competition-facing input is an ordinary, self-contained Python file with standard
+The default input is an ordinary, self-contained Python file with standard
 `import numpy as np`. Do not require `build_inputs()` or `forward()`. Static admission, candidate
 generation (manual, CodeArts-agent, or explicitly configured model), explicit execution, NPU
 provenance, and performance are separate claims with separate receipts.
 
-When a competition artifact requires a configured model, use the competition environment's real GLM
-through the supported OpenAI-compatible protocol; the exact model name remains bound by configuration
-and receipt. A manual or CodeArts-agent draft is not silently upgraded to that claim. Local AST logic
-may construct and check the exact expected namespace rewrite, but it must never generate the submitted
-artifact or replace a failed model call. Do not use `--engine ast`, `--mode auto`, or `--mode contract`
-for a competition ordinary artifact.
+When an artifact requires configured-model provenance, use the endpoint explicitly selected in the private
+configuration through the supported OpenAI-compatible protocol; the exact model name remains bound by
+configuration and receipt. A manual or CodeArts-agent draft is not silently upgraded to that claim. Local AST
+logic may construct and check the exact expected namespace rewrite, but it must never generate that artifact or
+replace a failed model call. Do not use `--engine ast`, `--mode auto`, or `--mode contract` when configured-model
+provenance is required.
 
 ## Inputs
 
@@ -180,8 +180,8 @@ repository or evidence bundle.
 
 ### 1. Read and inspect without execution
 
-Read `README.md`, `docs/COMPETITION-READINESS.md`, `docs/codearts-integration.md`, and the relevant
-capability/provenance records. In CodeArts, optionally ask `numpilot-analyzer` for a read-only review;
+Read `README.md`, `docs/architecture.md`, `docs/codearts-integration.md`, and the relevant capability/provenance
+records. In CodeArts, optionally ask `numpilot-analyzer` for a read-only review;
 in a terminal/manual run, perform the same review locally. Then have the deterministic execution plane
 publish a write-once receipt:
 

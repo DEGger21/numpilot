@@ -20,11 +20,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Fail-closed audit for the NumPilot competition release tree.
+"""Fail-closed audit for the NumPilot public release tree.
 
 The audit is read-only and uses only the Python standard library.  It checks
 the Git candidate set rather than the raw working directory, so ignored local
-venvs and build caches cannot be mistaken for submission contents.
+venvs and build caches cannot be mistaken for release contents.
 """
 
 from __future__ import annotations
@@ -59,12 +59,8 @@ REQUIRED_FILES = {
     "README.zh-CN.md",
     "SECURITY.md",
     "THIRD_PARTY_NOTICES.md",
-    "docs/COMPETITION-ONE-PAGER.md",
-    "docs/COMPETITION-READINESS.md",
     "docs/README.md",
-    "docs/RELEASE-CHECKLIST-DEMO-V1.md",
     "docs/SUBMISSION.md",
-    "docs/TERMINAL-COMPLETE-MIGRATION-DEMO.zh-CN.md",
     "docs/numpilot-asnumpy-custom-operator-flow.drawio",
     "docs/numpilot-asnumpy-custom-operator-flow.png",
     "docs/architecture.md",
@@ -80,9 +76,7 @@ REQUIRED_FILES = {
     "docs/installation.md",
     "docs/installation.zh-CN.md",
     "docs/numpilot-en-v6.svg",
-    "docs/numpilot-en.pptx",
     "docs/numpilot-zh-v6.svg",
-    "docs/numpilot-zh.pptx",
     "docs/numpilot-architecture.drawio",
     ".codeartsdoer/skills/numpilot-migration-gate/SKILL.md",
     ".codeartsdoer/skills/numpilot-migration-gate/agents/openai.yaml",
@@ -93,17 +87,14 @@ REQUIRED_FILES = {
     "skill/agents/openai.yaml",
     "skill/references/codearts-sidebar.md",
     "skill/references/terminal-contract.md",
-    "evidence/MANIFEST.sha256",
-    "evidence/README.md",
     "examples/add_one_migration_demo.py",
     "examples/custom_operator_add_one.py",
     "examples/poisson_source_smooth_l1_map.py",
-    "examples/recording_migration_demo.py",
+    "examples/black_scholes_portfolio.py",
     "install.sh",
     "numpilot/__init__.py",
     "numpilot/add_one_gap.py",
     "numpilot/cli_ui.py",
-    "numpilot/competition_readiness.py",
     "numpilot/demo_llm_operator_generation.py",
     "numpilot/interactive_migration.py",
     "numpilot/interactive_report.py",
@@ -116,7 +107,6 @@ REQUIRED_FILES = {
     "run_demo.sh",
     "tools/audit_script_benchmark_receipt.py",
     "tools/check_release_tree.py",
-    "tools/demo_llm_operator_generation.py",
     "tools/release_artifact_manifest.py",
     "tools/render_demo_summary.py",
     "tools/render_migration_report.py",
@@ -153,11 +143,6 @@ FORBIDDEN_SUFFIXES = {
     ".orig",
     ".pyc",
     ".tmp",
-}
-
-PUBLIC_EVIDENCE_CASES = {
-    "competition-ordinary-20260828",
-    "competition-poisson-stage-20260828",
 }
 
 TEXT_SUFFIXES = {".ipynb", ".json", ".md", ".py", ".sh", ".toml", ".txt", ".yaml", ".yml"}
@@ -224,7 +209,7 @@ def _forbidden_path_reason(relative: str) -> str | None:
     if relative in FORBIDDEN_EXACT:
         return "forbidden release filename"
     if any(relative.startswith(prefix) for prefix in FORBIDDEN_PREFIXES):
-        return "historical evidence must stay outside the submission branch"
+        return "historical evidence must stay outside the release branch"
     if any(fragment in path.name for fragment in FORBIDDEN_BASENAME_FRAGMENTS):
         return "internal handoff/WIP document"
     if path.suffix.lower() in FORBIDDEN_SUFFIXES:
@@ -234,54 +219,6 @@ def _forbidden_path_reason(relative: str) -> str | None:
     if any(part in {"build", "dist"} or part.endswith(".egg-info") for part in path.parts):
         return "build output directory"
     return None
-
-
-def _validate_evidence_manifest(root: Path, errors: list[str]) -> None:
-    evidence = root / "evidence"
-    manifest = evidence / "MANIFEST.sha256"
-    if not manifest.is_file():
-        errors.append("missing evidence/MANIFEST.sha256")
-        return
-
-    actual_children = {path.name for path in evidence.iterdir()}
-    expected_children = {"README.md", "MANIFEST.sha256", *PUBLIC_EVIDENCE_CASES}
-    if actual_children != expected_children:
-        errors.append(
-            "public evidence root mismatch: "
-            f"expected {sorted(expected_children)}, got {sorted(actual_children)}"
-        )
-
-    entries: list[tuple[str, str]] = []
-    try:
-        manifest_lines = manifest.read_text(encoding="utf-8").splitlines()
-    except (OSError, UnicodeError) as error:
-        errors.append(f"cannot read evidence/MANIFEST.sha256: {error}")
-        return
-    for line_number, line in enumerate(manifest_lines, start=1):
-        try:
-            digest, relative = line.split("  ", 1)
-        except ValueError:
-            errors.append(f"invalid evidence manifest line {line_number}")
-            continue
-        entries.append((digest, relative))
-
-    relatives = [relative for _, relative in entries]
-    expected = sorted(
-        str(path.relative_to(root))
-        for path in evidence.rglob("*")
-        if path.is_file() and path != manifest
-    )
-    if relatives != expected:
-        errors.append("evidence manifest is incomplete, duplicated, or not sorted")
-        return
-    for digest, relative in entries:
-        target = root / relative
-        if not re.fullmatch(r"[0-9a-f]{64}", digest):
-            errors.append(f"invalid SHA-256 in evidence manifest: {relative}")
-        elif not target.is_file():
-            errors.append(f"evidence manifest target is missing: {relative}")
-        elif _sha256(target) != digest:
-            errors.append(f"evidence hash mismatch: {relative}")
 
 
 def _strict_json_pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -1035,105 +972,6 @@ def _validate_versions(root: Path, errors: list[str]) -> str | None:
     return version
 
 
-def _validate_pptx(root: Path, errors: list[str]) -> None:
-    for relative, planned_label in (
-        ("docs/numpilot-en.pptx", "planned"),
-        ("docs/numpilot-zh.pptx", "规划"),
-    ):
-        path = root / relative
-        if not path.is_file():
-            continue
-        try:
-            with ZipFile(path) as archive:
-                bad = archive.testzip()
-                names = set(archive.namelist())
-                payloads = {
-                    member: archive.read(member)
-                    for member in {
-                        "[Content_Types].xml",
-                        "ppt/presentation.xml",
-                        "ppt/slides/slide1.xml",
-                    }
-                    if member in names
-                }
-                notes_payload = (
-                    archive.read("ppt/notesSlides/notesSlide1.xml")
-                    if "ppt/notesSlides/notesSlide1.xml" in names
-                    else None
-                )
-        except (BadZipFile, KeyError, NotImplementedError, OSError, RuntimeError):
-            errors.append(f"invalid PPTX container or slide XML: {relative}")
-            continue
-        if bad is not None:
-            errors.append(f"corrupt PPTX member in {relative}: {bad}")
-        for required in {
-            "[Content_Types].xml",
-            "ppt/presentation.xml",
-            "ppt/slides/slide1.xml",
-        }:
-            if required not in names:
-                errors.append(f"{relative} is missing {required}")
-        if len(payloads) != 3:
-            continue
-        try:
-            content_types = ET.fromstring(payloads["[Content_Types].xml"])
-            presentation = ET.fromstring(payloads["ppt/presentation.xml"])
-            slide_element = ET.fromstring(payloads["ppt/slides/slide1.xml"])
-        except ET.ParseError:
-            errors.append(f"invalid PPTX XML payload: {relative}")
-            continue
-        expected_roots = (
-            (
-                content_types,
-                "{http://schemas.openxmlformats.org/package/2006/content-types}Types",
-            ),
-            (
-                presentation,
-                "{http://schemas.openxmlformats.org/presentationml/2006/main}presentation",
-            ),
-            (
-                slide_element,
-                "{http://schemas.openxmlformats.org/presentationml/2006/main}sld",
-            ),
-        )
-        if any(element.tag != expected for element, expected in expected_roots):
-            errors.append(f"unexpected PPTX XML root element: {relative}")
-            continue
-        slide = " ".join(
-            node.text or ""
-            for node in slide_element.iter(
-                "{http://schemas.openxmlformats.org/drawingml/2006/main}t"
-            )
-        )
-        notes = ""
-        if notes_payload is not None:
-            try:
-                notes_element = ET.fromstring(notes_payload)
-            except ET.ParseError:
-                errors.append(f"invalid PPTX notes XML: {relative}")
-                continue
-            notes = " ".join(
-                node.text or ""
-                for node in notes_element.iter(
-                    "{http://schemas.openxmlformats.org/drawingml/2006/main}t"
-                )
-            )
-        architecture_text = slide + " " + notes
-        if "ADAPTER_CANDIDATE" not in slide or planned_label not in slide:
-            errors.append(f"{relative} does not expose the current/planned architecture boundary")
-        for required_boundary in (
-            "CANDIDATE_READY",
-            "ops-nn",
-            "CANNBot",
-        ):
-            if required_boundary not in architecture_text:
-                errors.append(
-                    f"{relative} omits route-specific boundary: {required_boundary}"
-                )
-        if "Closed-Loop Migration" in slide or "闭环迁移" in slide:
-            errors.append(f"{relative} still presents the target loop as the current title")
-
-
 def _validate_architecture_svg(root: Path, errors: list[str]) -> None:
     for relative in (
         "docs/assets/architecture/numpilot-architecture-en.svg",
@@ -1223,15 +1061,14 @@ def audit_release_tree(
         except (OSError, UnicodeError) as error:
             errors.append(f"cannot read {relative}: {error}")
             continue
-        if "<img" not in readme or "development--snapshot" not in readme:
+        if "<img" not in readme or re.search(
+            r"status-(?:alpha|beta|stable)", readme
+        ) is None:
             errors.append(
-                f"{relative} must retain rendered badges and an honest development-stage label"
+                f"{relative} must retain rendered badges and an honest release-stage label"
             )
-        if "docs/assets/architecture/" not in readme or "docs/numpilot-" not in readme:
-            errors.append(f"{relative} must link the reviewed SVG and PPT architecture assets")
-        if "release/competition-submission" in readme:
-            warnings.append(f"{relative} is bound to a retired release branch")
-
+        if "docs/assets/architecture/" not in readme:
+            errors.append(f"{relative} must link the product architecture assets")
     manifest_path = root / "MANIFEST.in"
     if manifest_path.is_file():
         try:
@@ -1249,7 +1086,6 @@ def audit_release_tree(
                     errors.append(f"MANIFEST.in still packages historical material: {stale}")
 
     _scan_public_text(root, files, errors)
-    _validate_evidence_manifest(root, errors)
     asnumpy_component = _validate_asnumpy_component(
         root,
         files,
@@ -1258,7 +1094,6 @@ def audit_release_tree(
         require_artifact=require_asnumpy_component,
     )
     version = _validate_versions(root, errors)
-    _validate_pptx(root, errors)
     _validate_architecture_svg(root, errors)
 
     status = _run_git(root, "status", "--porcelain", "--untracked-files=all")
@@ -1274,7 +1109,6 @@ def audit_release_tree(
         "version": version,
         "file_count": len(files),
         "total_bytes": sum((root / path).stat().st_size for path in files if not (root / path).is_symlink()),
-        "public_evidence_cases": sorted(PUBLIC_EVIDENCE_CASES),
         "asnumpy_component": asnumpy_component,
         "errors": errors,
         "warnings": warnings,

@@ -1,7 +1,7 @@
 # Persistent terminal contract
 
 Read this reference when operating or changing NumPilot's human terminal. The interactive experience
-is framework behavior, not a recording-only wrapper.
+is framework behavior, not an event-specific wrapper.
 
 ## Start and commands
 
@@ -78,7 +78,7 @@ python -m numpilot --llm-config /absolute/private/llm.json \
   --cannbot-gap-draft --accept-cannbot-license --show-cannbot-skill full
 ```
 
-Do not use `--yes` or `--execute-source` in a human recording; let the operator type `y` and then
+Do not use `--yes` or `--execute-source` in a human-operated session; let the operator type `y` and then
 `execute` at their distinct prompts. In automation, `--yes` does not imply source execution;
 `--execute-source` is additionally required. Low-level manual workflows can omit `llm.json`, but they
 do not claim the product configured-model experience.

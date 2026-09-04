@@ -1,4 +1,25 @@
 #!/usr/bin/env bash
+# This file is part of the NumPilot project at Harbin Institute of Technology (HIT).
+#
+# Copyright (c) 2026 AISS Group, Harbin Institute of Technology (HIT).
+# SPDX-License-Identifier: Apache-2.0
+#
+# Authors (accounts):
+# - Su Tonghua <@sutonghua>
+# - Li Xing <@li-xingHIT>
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 set -euo pipefail
 
 usage() {
@@ -12,6 +33,8 @@ Required:
   --allow-network                 Allow pip and the explicit bootstrap to use the network.
 
 Options:
+  --python PATH                  Python executable used for preflight and venv creation
+                                 (default: python3 from PATH).
   --venv PATH                    Virtual environment path (default: <repo>/.venv).
   --persistent-root PATH         Freeze state/config/cache under PATH and write
                                  PATH/activate-numpilot.sh for later shells.
@@ -39,6 +62,7 @@ fail() {
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
 VENV_DIR="$SCRIPT_DIR/.venv"
+PYTHON_COMMAND="python3"
 RECEIPT_PATH=""
 RECEIPT_PATH_EXPLICIT=false
 PIP_INDEX_URL_OVERRIDE=""
@@ -51,6 +75,11 @@ ACTIVATION_PATH=""
 ALLOW_NETWORK=false
 WITH_CANNBOT=false
 ACCEPT_CANNBOT_LICENSE=false
+COMPONENT_PYTHON_IMPLEMENTATION=""
+COMPONENT_PYTHON_MAJOR_MINOR=""
+COMPONENT_MACHINE=""
+COMPONENT_NUMPY_VERSION=""
+COMPONENT_LOGURU_VERSION=""
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -61,6 +90,11 @@ while [ "$#" -gt 0 ]; do
         --venv)
             [ "$#" -ge 2 ] || fail "--venv requires a path"
             VENV_DIR=$2
+            shift 2
+            ;;
+        --python)
+            [ "$#" -ge 2 ] || fail "--python requires a path"
+            PYTHON_COMMAND=$2
             shift 2
             ;;
         --persistent-root)
@@ -122,11 +156,144 @@ done
 if [ "$WITH_CANNBOT" = true ] && [ "$ACCEPT_CANNBOT_LICENSE" != true ]; then
     fail "--with-cannbot requires --accept-cannbot-license after reviewing the license"
 fi
+if [ -n "$CANNBOT_SOURCE" ] && [ ! -d "$CANNBOT_SOURCE" ]; then
+    fail "--cannbot-source must name an existing pinned checkout: $CANNBOT_SOURCE"
+fi
 if [ -n "$ASNUMPY_SOURCE" ] && [ -n "$ASNUMPY_COMPONENT" ]; then
     fail "choose exactly one of --asnumpy-component or maintainer-only --asnumpy-source"
 fi
 
-command -v python3 >/dev/null 2>&1 || fail "python3 is required"
+case "$PYTHON_COMMAND" in
+    ""|*$'\n'*|*$'\r'*) fail "--python path is empty or contains unsafe characters" ;;
+esac
+PYTHON_REQUEST=$PYTHON_COMMAND
+if ! PYTHON_COMMAND=$(command -v -- "$PYTHON_REQUEST"); then
+    fail "Python executable does not exist or is not on PATH: $PYTHON_REQUEST"
+fi
+[ -f "$PYTHON_COMMAND" ] && [ -x "$PYTHON_COMMAND" ] \
+    || fail "Python executable is not a regular executable file: $PYTHON_REQUEST"
+unset PYTHON_REQUEST
+
+if [ -z "$ASNUMPY_SOURCE" ] && [ -z "$ASNUMPY_COMPONENT" ]; then
+    ASNUMPY_COMPONENT="$SCRIPT_DIR/components/asnumpy"
+fi
+
+# Load the frozen component through the same strict, local-only parser used by
+# bootstrap.  This happens before CANN discovery, venv creation, or pip, so an
+# incompatible CPython ABI/architecture cannot trigger dependency resolution.
+# The component contract deliberately binds CPython major.minor; the stricter
+# audited runtime profile (including its patch version) remains a runtime
+# identity/qualification gate rather than being silently added here.
+if [ -n "$ASNUMPY_COMPONENT" ]; then
+    if ! COMPONENT_RUNTIME_OUTPUT=$(
+        "$PYTHON_COMMAND" -I -B - \
+            "$SCRIPT_DIR/numpilot/asnumpy_component.py" \
+            "$ASNUMPY_COMPONENT" <<'PY'
+import importlib.util
+from pathlib import Path
+import platform
+import re
+import sys
+
+
+def fail(message):
+    raise RuntimeError(message)
+
+
+try:
+    module_path = Path(sys.argv[1])
+    component_path = Path(sys.argv[2])
+    spec = importlib.util.spec_from_file_location(
+        "_numpilot_installer_asnumpy_component",
+        module_path,
+    )
+    if spec is None or spec.loader is None:
+        fail("cannot load the trusted AsNumpy component parser")
+    component_module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = component_module
+    spec.loader.exec_module(component_module)
+
+    component = component_module.load_component_manifest(component_path)
+    if component.artifact_required is not True:
+        fail("ordinary installation requires a frozen AsNumpy component")
+    if component.artifact_status != "bundled-and-verified":
+        fail("frozen AsNumpy component is not bundled-and-verified")
+    component_module.resolve_component_wheel(component)
+    component_module.verify_component_attachments(component)
+
+    runtime = component.runtime
+    implementation = runtime["python_implementation"]
+    major_minor = runtime["python_major_minor"]
+    machine = runtime["machine"]
+    numpy_version = runtime["numpy_version"]
+    loguru_version = runtime["loguru_version"]
+
+    if implementation != "CPython":
+        fail("frozen AsNumpy component must declare CPython")
+    if re.fullmatch(r"[0-9]+\.[0-9]+", major_minor) is None:
+        fail("frozen AsNumpy component Python major.minor is invalid")
+    if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.+-]{0,127}", machine) is None:
+        fail("frozen AsNumpy component machine is invalid")
+    version_pattern = r"[A-Za-z0-9][A-Za-z0-9.+!_-]{0,127}"
+    if re.fullmatch(version_pattern, numpy_version) is None:
+        fail("frozen AsNumpy component NumPy version is invalid")
+    if re.fullmatch(version_pattern, loguru_version) is None:
+        fail("frozen AsNumpy component Loguru version is invalid")
+
+    observed_implementation = platform.python_implementation()
+    observed_major_minor = "%d.%d" % sys.version_info[:2]
+    observed_machine = platform.machine()
+    if observed_implementation != implementation:
+        fail(
+            "frozen AsNumpy component requires %s, selected interpreter is %s"
+            % (implementation, observed_implementation)
+        )
+    if observed_major_minor != major_minor:
+        fail(
+            "frozen AsNumpy component requires Python %s, selected interpreter is Python %s"
+            % (major_minor, observed_major_minor)
+        )
+    if observed_machine != machine:
+        fail(
+            "frozen AsNumpy component requires machine %s, selected interpreter reports %s"
+            % (machine, observed_machine)
+        )
+
+    print(
+        "\t".join(
+            (
+                implementation,
+                major_minor,
+                machine,
+                numpy_version,
+                loguru_version,
+            )
+        )
+    )
+except Exception as exc:
+    print("[NumPilot component preflight] %s" % exc, file=sys.stderr)
+    raise SystemExit(1)
+PY
+    ); then
+        fail "frozen AsNumpy component preflight failed"
+    fi
+    IFS=$'\t' read -r \
+        COMPONENT_PYTHON_IMPLEMENTATION \
+        COMPONENT_PYTHON_MAJOR_MINOR \
+        COMPONENT_MACHINE \
+        COMPONENT_NUMPY_VERSION \
+        COMPONENT_LOGURU_VERSION \
+        COMPONENT_RUNTIME_EXTRA <<< "$COMPONENT_RUNTIME_OUTPUT"
+    if [ -z "$COMPONENT_PYTHON_IMPLEMENTATION" ] \
+        || [ -z "$COMPONENT_PYTHON_MAJOR_MINOR" ] \
+        || [ -z "$COMPONENT_MACHINE" ] \
+        || [ -z "$COMPONENT_NUMPY_VERSION" ] \
+        || [ -z "$COMPONENT_LOGURU_VERSION" ] \
+        || [ -n "$COMPONENT_RUNTIME_EXTRA" ]; then
+        fail "frozen AsNumpy component preflight returned an invalid runtime lock"
+    fi
+    unset COMPONENT_RUNTIME_OUTPUT COMPONENT_RUNTIME_EXTRA
+fi
 
 # A frozen component installs an already-built wheel and does not need a
 # compiler toolchain. Keep these checks on explicit source/CANNBot paths so a
@@ -137,7 +304,7 @@ fi
 if [ -n "$ASNUMPY_SOURCE" ]; then
     command -v g++ >/dev/null 2>&1 || fail "g++ >= 11.2 is required for source builds"
 
-    python3 - <<'PY' || fail "Python >= 3.10 with development headers is required for source builds"
+    "$PYTHON_COMMAND" -I - <<'PY' || fail "Python >= 3.10 with development headers is required for source builds"
 import pathlib
 import sys
 import sysconfig
@@ -151,7 +318,7 @@ PY
 fi
 
 if [ -n "$PERSISTENT_ROOT" ]; then
-    if ! PERSISTENT_ROOT=$(python3 - "$PERSISTENT_ROOT" <<'PY'
+    if ! PERSISTENT_ROOT=$("$PYTHON_COMMAND" -I - "$PERSISTENT_ROOT" <<'PY'
 import os
 from pathlib import Path
 import sys
@@ -293,7 +460,7 @@ if [ -n "$ASNUMPY_SOURCE" ]; then
         "system spdlog CMake package is missing (Ubuntu package: libspdlog-dev); NumPilot will not run sudo"
 fi
 
-if ! VENV_DIR=$(python3 - "$VENV_DIR" "$SCRIPT_DIR" <<'PY'
+if ! VENV_DIR=$("$PYTHON_COMMAND" -I - "$VENV_DIR" "$SCRIPT_DIR" <<'PY'
 import os
 from pathlib import Path
 import stat
@@ -366,11 +533,11 @@ if [ -e "$VENV_DIR" ] && [ ! -x "$VENV_DIR/bin/python" ]; then
     fail "refusing to overwrite a non-venv path: $VENV_DIR"
 fi
 if [ ! -x "$VENV_DIR/bin/python" ]; then
-    python3 -m venv "$VENV_DIR"
+    "$PYTHON_COMMAND" -I -m venv "$VENV_DIR"
 fi
 
 VENV_PYTHON="$VENV_DIR/bin/python"
-"$VENV_PYTHON" - "$VENV_DIR" <<'PY' || fail "--venv must name a genuine isolated virtual environment"
+"$VENV_PYTHON" -I - "$VENV_DIR" <<'PY' || fail "--venv must name a genuine isolated virtual environment"
 from pathlib import Path
 import sys
 
@@ -384,6 +551,27 @@ if (
 ):
     raise SystemExit(1)
 PY
+
+if [ -n "$ASNUMPY_COMPONENT" ]; then
+    "$VENV_PYTHON" -I - \
+        "$COMPONENT_PYTHON_IMPLEMENTATION" \
+        "$COMPONENT_PYTHON_MAJOR_MINOR" \
+        "$COMPONENT_MACHINE" <<'PY' \
+        || fail "--venv interpreter does not satisfy the frozen AsNumpy component runtime"
+import platform
+import sys
+
+expected_implementation, expected_major_minor, expected_machine = sys.argv[1:]
+observed_major_minor = "%d.%d" % sys.version_info[:2]
+if platform.python_implementation() != expected_implementation:
+    raise SystemExit(1)
+if observed_major_minor != expected_major_minor:
+    raise SystemExit(1)
+if platform.machine() != expected_machine:
+    raise SystemExit(1)
+PY
+fi
+
 PIP_ARGS=(install --disable-pip-version-check)
 if [ -n "$PIP_INDEX_URL_OVERRIDE" ]; then
     PIP_ARGS+=(--index-url "$PIP_INDEX_URL_OVERRIDE")
@@ -392,18 +580,17 @@ fi
 # heavier build extras (cmake/scikit-build/pybind11/build) are installed only
 # for an explicit maintainer source build.
 if [ -n "$ASNUMPY_SOURCE" ]; then
-    "$VENV_PYTHON" -m pip "${PIP_ARGS[@]}" -e "$SCRIPT_DIR[bootstrap]"
+    "$VENV_PYTHON" -I -m pip "${PIP_ARGS[@]}" -e "$SCRIPT_DIR[bootstrap]"
 else
-    "$VENV_PYTHON" -m pip "${PIP_ARGS[@]}" -e "$SCRIPT_DIR"
+    "$VENV_PYTHON" -I -m pip "${PIP_ARGS[@]}" -e "$SCRIPT_DIR" \
+        "numpy==$COMPONENT_NUMPY_VERSION" \
+        "loguru==$COMPONENT_LOGURU_VERSION"
 fi
 
 # Console tools installed into the project venv (especially cmake) must win over
 # older system copies during bootstrap preflight and the subsequent source build.
 export PATH="$VENV_DIR/bin:$PATH"
 
-if [ -z "$ASNUMPY_COMPONENT" ]; then
-    ASNUMPY_COMPONENT="$SCRIPT_DIR/components/asnumpy"
-fi
 BOOTSTRAP_ARGS=(--asnumpy-component "$ASNUMPY_COMPONENT")
 if [ -n "$ASNUMPY_SOURCE" ]; then
     # Source builds remain a maintainer-only escape hatch.  The normal
@@ -418,14 +605,14 @@ if [ "$WITH_CANNBOT" = true ]; then
 fi
 
 if [ -z "$RECEIPT_PATH" ]; then
-    RECEIPT_PATH=$("$VENV_PYTHON" -m numpilot paths --get bootstrap_receipt)
+    RECEIPT_PATH=$("$VENV_PYTHON" -I -m numpilot paths --get bootstrap_receipt)
 fi
 
 # Runtime provenance consumes this receipt later, so validate its location with
 # the same private-owner boundary before any bootstrap command runs.  The
 # default XDG state directory is created and normalized to 0700; an explicit
 # custom parent must already exist and satisfy the policy.
-if ! RECEIPT_PATH=$("$VENV_PYTHON" - "$RECEIPT_PATH" "$RECEIPT_PATH_EXPLICIT" <<'PY'
+if ! RECEIPT_PATH=$("$VENV_PYTHON" -I - "$RECEIPT_PATH" "$RECEIPT_PATH_EXPLICIT" <<'PY'
 import os
 from pathlib import Path
 import stat
@@ -509,7 +696,7 @@ fi
 export NUMPILOT_BOOTSTRAP_RECEIPT=$RECEIPT_PATH
 if [ -z "$ACTIVATION_PATH" ]; then
     ACTIVATION_PATH=$(
-        "$VENV_PYTHON" -m numpilot paths --get state
+        "$VENV_PYTHON" -I -m numpilot paths --get state
     )/activate-numpilot.sh
 fi
 ACTIVATION_ARGS=(
@@ -525,15 +712,15 @@ fi
 if [ -n "$CANNBOT_SOURCE" ]; then
     ACTIVATION_ARGS+=(--cannbot-checkout "$CANNBOT_SOURCE")
 fi
-"$VENV_PYTHON" -m numpilot.activation "${ACTIVATION_ARGS[@]}"
+"$VENV_PYTHON" -I -m numpilot.activation "${ACTIVATION_ARGS[@]}"
 # Use the exact same credential-free environment that later shells receive.
 # shellcheck disable=SC1090
 . "$ACTIVATION_PATH"
 hash -r
 
-"$VENV_PYTHON" -m numpilot bootstrap --plan "${BOOTSTRAP_ARGS[@]}"
+"$VENV_PYTHON" -I -m numpilot bootstrap --plan "${BOOTSTRAP_ARGS[@]}"
 APPLY_ARGS=(--apply "${BOOTSTRAP_ARGS[@]}" --receipt "$RECEIPT_PATH")
-"$VENV_PYTHON" -m numpilot bootstrap "${APPLY_ARGS[@]}"
+"$VENV_PYTHON" -I -m numpilot bootstrap "${APPLY_ARGS[@]}"
 
 VERIFY_ARGS=(--verify)
 if [ "$WITH_CANNBOT" = true ]; then
@@ -542,8 +729,8 @@ if [ "$WITH_CANNBOT" = true ]; then
         VERIFY_ARGS+=(--cannbot-cache "$CANNBOT_SOURCE")
     fi
 fi
-"$VENV_PYTHON" -m numpilot bootstrap "${VERIFY_ARGS[@]}"
-"$VENV_PYTHON" -m numpilot doctor --backend npu
+"$VENV_PYTHON" -I -m numpilot bootstrap "${VERIFY_ARGS[@]}"
+"$VENV_PYTHON" -I -m numpilot doctor --backend npu
 
 echo "[NumPilot install] ready"
 printf '[NumPilot install] activate: source %q\n' "$ACTIVATION_PATH"

@@ -7,13 +7,8 @@ include THIRD_PARTY_NOTICES.md
 include install.sh
 include run_demo.sh
 
-recursive-include docs *.md *.drawio *.pptx *.ipynb *.svg *.png
+recursive-include docs *.md *.drawio *.svg *.png
 recursive-include examples *.py
-
-include evidence/README.md
-include evidence/MANIFEST.sha256
-recursive-include evidence/competition-ordinary-20260828 *
-recursive-include evidence/competition-poisson-stage-20260828 *
 
 include integrations/asnumpy/README.md
 include integrations/asnumpy/0001-move-private-native-results.patch
@@ -33,7 +28,6 @@ include tools/check_release_tree.py
 include tools/release_artifact_manifest.py
 include tools/render_demo_summary.py
 include tools/render_migration_report.py
-include tools/demo_llm_operator_generation.py
 
 recursive-include .codeartsdoer/agents *.md
 include .codeartsdoer/skills/ProjectSkillStatus.txt

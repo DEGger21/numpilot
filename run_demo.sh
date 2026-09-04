@@ -1,7 +1,28 @@
 #!/usr/bin/env bash
-# NumPilot competition demo:
+# This file is part of the NumPilot project at Harbin Institute of Technology (HIT).
+#
+# Copyright (c) 2026 AISS Group, Harbin Institute of Technology (HIT).
+# SPDX-License-Identifier: Apache-2.0
+#
+# Authors (accounts):
+# - Su Tonghua <@sutonghua>
+# - Li Xing <@li-xingHIT>
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# NumPilot example workflow:
 # ordinary NumPy -> static five-state gate -> configured model -> numerical gate
-# -> strict-NPU resident benchmark.  The submitted artifact is never AST-made.
+# -> strict-NPU resident benchmark. The configured-model artifact is never AST-made.
 set -Eeuo pipefail
 
 FILE="examples/poisson_source_smooth_l1_map.py"
@@ -22,7 +43,7 @@ Options:
   --llm-config FILE
                   use this private LLM JSON config for every NumPilot stage
   --core N        pin both CPU and NPU workers to logical CPU N
-  --quick         2 warmups + 7 samples (live presentation)
+  --quick         2 warmups + 7 samples (short validation run)
   --full          3 warmups + 30 samples (stronger evidence)
   --llm           accepted for compatibility; the configured model is always used
   -h, --help      show this help
@@ -183,7 +204,7 @@ if [ "$OUT_EXPLICIT" -eq 1 ] || [ -n "$OUT_OVERRIDE" ]; then
   esac
 else
   DEMO_HOME="$("$PY" -m numpilot paths --get demo)"
-  RUN_ROOT="$DEMO_HOME/competition-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  RUN_ROOT="$DEMO_HOME/run-$(date -u +%Y%m%dT%H%M%SZ)-$$"
 fi
 reject_symlink_components "$RUN_ROOT" "run directory" || exit 2
 MIGRATION_OUT="$RUN_ROOT/migration"

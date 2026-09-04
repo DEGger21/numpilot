@@ -152,8 +152,6 @@ def test_empty_argv_renders_product_home_only_on_tty(monkeypatch):
     # Rich may wrap long command cells on a normal 80-column terminal.
     assert "numpilot run <script.py>" in rendered
     assert "--benchmark" in rendered
-    assert "numpilot competition-readiness" in rendered
-    assert "--strict" in rendered
 
 
 def test_empty_argv_keeps_argparse_error_when_redirected(monkeypatch):
@@ -173,7 +171,6 @@ def test_empty_argv_no_color_keeps_plain_product_home(monkeypatch):
     assert output.getvalue().startswith("NumPilot v")
     assert "numpilot migrate <script.py>" in output.getvalue()
     assert "numpilot run <script.py> --benchmark" in output.getvalue()
-    assert "numpilot competition-readiness --strict" in output.getvalue()
     assert "\x1b" not in output.getvalue()
 
 
@@ -218,26 +215,6 @@ def test_no_color_keeps_bare_paths_plain(monkeypatch):
     assert cli.main(["paths"]) == 0
     assert output.getvalue().startswith("NumPilot 路径（本命令不会创建目录）:")
     assert "\x1b" not in output.getvalue()
-
-
-def test_readiness_uses_a_tty_summary_without_polluting_json(monkeypatch, tmp_path):
-    _enable_rich_terminal(monkeypatch)
-    # A deliberately tiny checkout is enough to exercise the presentation
-    # layer; the audit itself remains read-only and will report blockers.
-    (tmp_path / "numpilot").mkdir()
-    (tmp_path / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
-    output = TtyBuffer()
-    monkeypatch.setattr(sys, "stdout", output)
-
-    assert cli.main([
-        "competition-readiness", "--repo-root", str(tmp_path)
-    ]) == 0
-    rendered = _ANSI.sub("", output.getvalue())
-    assert "NumPilot 比赛就绪度" in rendered
-    assert "关键未完成" in rendered
-    assert "建议下一步（前 3 项）" in rendered
-    assert "未发现视频文件或明确视频链接" in rendered
-    assert "C01" in rendered
 
 
 def test_compact_diagnostic_rejects_impossible_width_and_preserves_counts():

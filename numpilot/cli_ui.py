@@ -46,15 +46,6 @@ _STATUS_STYLE = {
     "error": ("✗", "red"),
 }
 
-_READINESS_STYLE = {
-    "pass": ("✓", "green"),
-    "partial": ("~", "yellow"),
-    "warn": ("!", "yellow"),
-    "blocked": ("✗", "red"),
-    "info": ("i", "cyan"),
-}
-
-
 def _terminal_safe(value):
     """Return one printable line suitable for a human terminal.
 
@@ -418,7 +409,6 @@ def render_home(version, *, stream=None):
         print("  分析程序  numpilot analyze <script.py>", file=output)
         print("  开始迁移  numpilot migrate <script.py>", file=output)
         print("  一键演示  numpilot run <script.py> --benchmark", file=output)
-        print("  比赛自检  numpilot competition-readiness --strict", file=output)
         print("  查看路径  numpilot paths", file=output)
         print("", file=output)
         print("运行 numpilot --help 查看完整命令。", file=output)
@@ -452,11 +442,6 @@ def render_home(version, *, stream=None):
             "一键演示",
             "numpilot run <script.py> --benchmark",
             "分析→模型迁移→数值验证→可选性能门",
-        ),
-        (
-            "比赛自检",
-            "numpilot competition-readiness --strict",
-            "核对 CodeArts、华为云、视频与发布材料",
         ),
         (
             "查看路径",
@@ -547,99 +532,6 @@ def render_doctor(report, *, stream=None):
         summary = Text("环境检查通过 · 可以进入 NumPilot 工作流", style="bold green")
         border = "green"
     console.print(Panel.fit(summary, border_style=border))
-    return True
-
-
-def render_readiness(report, *, stream=None):
-    """Render the competition audit without changing its JSON/plain contract."""
-
-    output = sys.stdout if stream is None else stream
-    if not is_interactive(output):
-        return False
-    console = _console(output)
-    status = str(report.overall_status)
-    _, status_style = _READINESS_STYLE.get(status, ("?", "white"))
-    console.print(
-        Panel.fit(
-            Text.assemble(
-                ("NumPilot 比赛就绪度", "bold cyan"),
-                "\n",
-                (status.upper(), "bold " + status_style),
-                (
-                    "  · 截止 %s · 剩余 %s 天"
-                    % (report.deadline["date"], report.deadline["days_remaining"]),
-                    "dim",
-                ),
-            ),
-            border_style=status_style,
-        )
-    )
-
-    if console.width < 80:
-        for item in report.checks:
-            marker, style = _READINESS_STYLE.get(item.status, ("?", "white"))
-            console.print(
-                Text.assemble(
-                    (marker + " ", "bold " + style),
-                    (item.check_id + " ", "bold"),
-                    item.title,
-                    (" · " + item.status, style),
-                )
-            )
-    else:
-        table = Table(box=box.ROUNDED, header_style="bold", expand=True)
-        table.add_column("状态", width=6, no_wrap=True)
-        table.add_column("ID", style="bold", width=6, no_wrap=True)
-        table.add_column("维度", width=12, no_wrap=True)
-        table.add_column("检查项")
-        table.add_column("结论", width=10, no_wrap=True)
-        labels = {
-            "completeness": "完整性",
-            "innovation": "创新性",
-            "authenticity": "真实性",
-        }
-        for item in report.checks:
-            marker, style = _READINESS_STYLE.get(item.status, ("?", "white"))
-            table.add_row(
-                Text(marker, style="bold " + style),
-                item.check_id,
-                labels.get(item.dimension, item.dimension),
-                item.title,
-                Text(item.status, style=style),
-            )
-        console.print(table)
-
-    if report.blockers:
-        console.print(
-            Panel.fit(
-                Text(
-                    "关键未完成 %d 项；运行 --json 查看完整证据与动作。"
-                    % len(report.blockers),
-                    style="bold red",
-                ),
-                border_style="red",
-            )
-        )
-        actions = [
-            compact_diagnostic("next_action", action, max_chars=180)
-            for action in tuple(report.next_actions)[:3]
-            if action
-        ]
-        if actions:
-            console.print(
-                Panel(
-                    Text("\n".join("→ " + action for action in actions)),
-                    title="建议下一步（前 3 项）",
-                    border_style="yellow",
-                )
-            )
-    else:
-        console.print(
-            Panel.fit(
-                Text("关键材料已通过本地合同检查。", style="bold green"),
-                border_style="green",
-            )
-        )
     return True
 
 

@@ -50,8 +50,8 @@ python -m numpilot analyze SOURCE --json --out ANALYSIS.json
   `CAPABILITY_AUDIT_REQUIRED`，不得建议生成同名算子；
 - 未建模动态语义、危险表面或无法安全迁移的路径是 `BLOCKED`。
 
-不要生成迁移代码或未经验证的算子代码。不要把 AST 机械改写建议写成比赛迁移产物；terminal
-configured 子路径的比赛 ordinary 代码才可由明确授权的真实 GLM 生成，CodeArts-agent 草稿须另
+不要生成迁移代码或未经验证的算子代码。不要把 AST 机械改写建议写成 configured-model 迁移产物；terminal
+configured 子路径的 ordinary 代码才可由明确授权的真实 GLM 生成，CodeArts-agent 草稿须另
 行标记并保留 agent receipt，本地 AST 只负责事后等价审计。若 registry 与
 实际 AsNumpy wheel、CANN、SoC 或文件哈希漂移，将其列为审计阻断项而不是 direct capability。
 

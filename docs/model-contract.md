@@ -45,7 +45,7 @@ NumPilot 的生成路径使用用户自己配置的 OpenAI-compatible endpoint�
 }
 ```
 
-对于仓库外的比赛运行根，可设置
+对于仓库外的持久运行根，可设置
 `NUMPILOT_RUNTIME_ROOT=/absolute/persistent/numpilot-runtime`；单次命令也可用
 `python -m numpilot --llm-config /absolute/persistent/numpilot-runtime/.numpilot-config/llm.json configure-llm --check`
 显式选择私有文件（`--llm-config` 放在子命令后也可）。该选项只传递路径，不会输出 Token。

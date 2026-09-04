@@ -1,22 +1,22 @@
-# 分支治理与比赛提交约定
+# 分支治理与发布约定
 
-NumPilot 的治理规范只允许两个长期分支：`main` 和 `develop`。目标是让 `main` 保持可发布、可演示
-并可用于比赛交付；`develop` 用于日常开发与集成。远端不得保留长期 feature、release 或个人分支，
+NumPilot 的治理规范只允许两个长期分支：`main` 和 `develop`。目标是让 `main` 始终保持可发布；
+`develop` 用于日常开发与集成。远端不得保留长期 feature、release 或个人分支，
 但这些服务端状态在有权限的管理员验收前不能视为已经生效。运行中间产物始终留在仓库外状态目录。
 
 ## 分支职责
 
-### `main`：可发布与比赛交付
+### `main`：可发布
 
 `main` 只接收已经在 `develop` 完成集成验证的内容，包括：
 
 - NumPilot 产品源码、公开 CLI、安装器与 CodeArts 角色/Skill；
 - ordinary 主链、当前示例和可复现测试；
-- 面向评委与用户的当前文档、架构源文件和演示 PPT；
+- 面向用户的当前文档与架构源文件；
 - 经过筛选、带 SHA-256 清单且宣传边界明确的当前证据；
 - 发布、审计、摘要渲染等通用工具。
 
-任何时候检出 `main`，都应能通过发布树检查和完整测试。比赛 ZIP、wheel、sdist、RC 与正式
+任何时候检出 `main`，都应能通过发布树检查和完整测试。源码归档、wheel、sdist、RC 与正式
 tag 必须从 `main` 的干净提交生成，不得从开发工作树或其他分支临时打包。
 
 ### `develop`：日常开发与集成
@@ -58,8 +58,8 @@ git push origin change/<short-topic>
 `origin:change/<short-topic> → upstream:develop` Pull Request。合入或放弃后删除 fork 中的短期
 分支；中央仓库继续只保留 `main` 与 `develop`。
 
-运行产物必须写到 `python -m numpilot paths` 所示的仓库外目录。公开证据只能从一次完整、
-可审计的运行中筛选；加入后需要重新生成并校验 `evidence/MANIFEST.sha256`。
+运行产物必须写到 `python -m numpilot paths` 所示的仓库外目录。发布附件中的证据只能从一次
+完整、可审计的运行中筛选，并由对应 release manifest 绑定。
 
 ## 提升到 `main`
 
@@ -114,7 +114,7 @@ git ls-remote --heads origin
 日常开发可以继续使用 `0.3.0a1.dev0`。准备最终 RC 时：
 
 1. 在 `develop` 的干净提交上重跑目标 NPU configured-model 主链；
-2. 替换仍带 `git_dirty=true` 的开发态证据；
+2. 替换仍带 `git_dirty=true` 的运行回执；
 3. 冻结 `pyproject.toml`、`numpilot.__version__`、CHANGELOG 与 SECURITY；
 4. 冻结 AsNumpy 内部组件：选择一份实际可取得的 CPython/架构 wheel，记录字节、metadata、
    安装后 native 哈希，并禁止发布安装路径访问浮动上游源码；具体合同见
@@ -126,5 +126,5 @@ git ls-remote --heads origin
    绑定进去；
 9. 仅在同一个已验证的 `main` commit 上创建 annotated tag，并正常推送分支与 tag。
 
-完整门禁见 [比赛 RC 发布清单](RELEASE-CHECKLIST-DEMO-V1.md)。直接压缩日常工作目录不是有效
-提交方式；比赛 ZIP 应来自已验证 tag 的 `git archive`、wheel/sdist 或干净 checkout。
+直接压缩日常工作目录不是有效发布方式；源码归档应来自已验证 tag 的 `git archive`、
+wheel/sdist 或干净 checkout。

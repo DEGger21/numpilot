@@ -24,7 +24,7 @@
         <mxCell id="title" value="AsNumpy 缺失 NumPy API：自定义算子补全" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=38;fontStyle=1;fontColor=#1F2937;" vertex="1" parent="1">
           <mxGeometry x="60" y="18" width="1200" height="55" as="geometry"/>
         </mxCell>
-        <mxCell id="subtitle" value="固定坐标静态图：箭头按主线绘制，适合录屏与汇报" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=20;fontColor=#475569;" vertex="1" parent="1">
+        <mxCell id="subtitle" value="固定坐标产品流程图：箭头按执行主线绘制" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=20;fontColor=#475569;" vertex="1" parent="1">
           <mxGeometry x="60" y="72" width="1100" height="32" as="geometry"/>
         </mxCell>
         <mxCell id="lane-1-title" value="1. 识别缺口并优先查官方算子" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=25;fontStyle=1;fontColor=#1F2937;" vertex="1" parent="1">

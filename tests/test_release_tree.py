@@ -25,18 +25,15 @@ import json
 from pathlib import Path
 import subprocess
 import sys
-import zipfile
 
 from tools.check_release_tree import (
     ASNUMPY_COMPONENT_MANIFEST,
     ASNUMPY_COMPONENT_README,
-    PUBLIC_EVIDENCE_CASES,
     PRIVATE_PATH_RE,
     REQUIRED_FILES,
     _validate_asnumpy_component,
     _scan_public_text,
     _forbidden_path_reason,
-    _validate_pptx,
     audit_release_tree,
 )
 
@@ -50,7 +47,6 @@ def test_release_tree_audit_passes_current_candidate_without_clean_requirement()
     assert report["ok"], report["errors"]
     assert report["schema"] == "numpilot.release_tree_audit.v1"
     assert report["version"] == "0.3.0a1.dev0"
-    assert report["public_evidence_cases"] == sorted(PUBLIC_EVIDENCE_CASES)
     assert report["file_count"] > 200
 
 
@@ -201,7 +197,7 @@ def test_release_tree_cli_emits_machine_readable_report():
 def test_release_tree_cli_reports_missing_required_file_as_json(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
-    (repo / "README.md").write_text("development snapshot\n", encoding="utf-8")
+    (repo / "README.md").write_text("missing release label\n", encoding="utf-8")
     subprocess.run(["git", "init", "-q", repo], check=True)
     subprocess.run(["git", "-C", repo, "add", "README.md"], check=True)
 
@@ -231,20 +227,3 @@ def test_release_tree_cli_reports_missing_required_file_as_json(tmp_path):
     assert "numpilot/demo_llm_operator_generation.py" in REQUIRED_FILES
     assert "numpilot/migration_skill.py" in REQUIRED_FILES
     assert "numpilot/workflow.py" in REQUIRED_FILES
-
-
-def test_release_tree_rejects_parseable_zip_with_invalid_pptx_xml(tmp_path):
-    docs = tmp_path / "docs"
-    docs.mkdir()
-    presentation = docs / "numpilot-en.pptx"
-    with zipfile.ZipFile(presentation, "w") as archive:
-        archive.writestr("[Content_Types].xml", "not xml")
-        archive.writestr("ppt/presentation.xml", "also not xml")
-        archive.writestr(
-            "ppt/slides/slide1.xml", "not xml ADAPTER_CANDIDATE planned"
-        )
-
-    errors: list[str] = []
-    _validate_pptx(tmp_path, errors)
-
-    assert errors == ["invalid PPTX XML payload: docs/numpilot-en.pptx"]

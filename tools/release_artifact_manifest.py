@@ -39,7 +39,6 @@ import argparse
 import ast
 import datetime as dt
 import hashlib
-import io
 import json
 import os
 import platform
@@ -76,8 +75,6 @@ FORBIDDEN_PATH_PARTS = {
 }
 FORBIDDEN_SUFFIXES = {".db", ".log", ".npy", ".npz", ".orig", ".pyc", ".pyo", ".tmp"}
 REVIEWED_ASSETS = (
-    "docs/numpilot-en.pptx",
-    "docs/numpilot-zh.pptx",
     "docs/numpilot-en-v6.svg",
     "docs/numpilot-zh-v6.svg",
     "docs/assets/architecture/numpilot-architecture-en.svg",
@@ -304,73 +301,6 @@ def _payload_by_suffix(payloads: Mapping[str, bytes], suffix: str) -> bytes:
     return matches[0]
 
 
-def _validate_pptx_payload(payload: bytes, suffix: str) -> None:
-    required = {
-        "[Content_Types].xml": (
-            "{http://schemas.openxmlformats.org/package/2006/content-types}Types"
-        ),
-        "ppt/presentation.xml": (
-            "{http://schemas.openxmlformats.org/presentationml/2006/main}presentation"
-        ),
-        "ppt/slides/slide1.xml": (
-            "{http://schemas.openxmlformats.org/presentationml/2006/main}sld"
-        ),
-    }
-    try:
-        with zipfile.ZipFile(io.BytesIO(payload)) as archive:
-            bad = archive.testzip()
-            _require(bad is None, f"corrupt PPTX member in {suffix}: {bad}")
-            names = set(archive.namelist())
-            missing = sorted(set(required) - names)
-            _require(not missing, f"{suffix} is missing PPTX members: {', '.join(missing)}")
-            elements = {
-                member: ET.fromstring(archive.read(member)) for member in required
-            }
-            notes = (
-                ET.fromstring(archive.read("ppt/notesSlides/notesSlide1.xml"))
-                if "ppt/notesSlides/notesSlide1.xml" in names
-                else None
-            )
-    except (
-        NotImplementedError,
-        OSError,
-        RuntimeError,
-        zipfile.BadZipFile,
-        ET.ParseError,
-    ) as error:
-        raise ReleaseManifestError(f"invalid PPTX asset {suffix}: {error}") from error
-    for member, expected_root in required.items():
-        _require(
-            elements[member].tag == expected_root,
-            f"unexpected XML root in {suffix}:{member}",
-        )
-    slide = " ".join(
-        node.text or ""
-        for node in elements["ppt/slides/slide1.xml"].iter(
-            "{http://schemas.openxmlformats.org/drawingml/2006/main}t"
-        )
-    )
-    note_text = ""
-    if notes is not None:
-        note_text = " ".join(
-            node.text or ""
-            for node in notes.iter(
-                "{http://schemas.openxmlformats.org/drawingml/2006/main}t"
-            )
-        )
-    architecture_text = slide + " " + note_text
-    planned = "规划" if suffix.endswith("-zh.pptx") else "planned"
-    _require(
-        "ADAPTER_CANDIDATE" in slide and planned in slide,
-        f"{suffix} omits the reviewed current/planned capability boundary",
-    )
-    for boundary in ("CANDIDATE_READY", "ops-nn", "CANNBot"):
-        _require(
-            boundary in architecture_text,
-            f"{suffix} omits route-specific boundary: {boundary}",
-        )
-
-
 def _validate_svg_payload(payload: bytes, suffix: str) -> None:
     try:
         element = ET.fromstring(payload)
@@ -427,9 +357,7 @@ def _validate_png_payload(payload: bytes, suffix: str) -> None:
 def _validate_reviewed_assets(payloads: Mapping[str, bytes]) -> None:
     for suffix in REVIEWED_ASSETS:
         payload = _payload_by_suffix(payloads, suffix)
-        if suffix.endswith(".pptx"):
-            _validate_pptx_payload(payload, suffix)
-        elif suffix.endswith(".svg"):
+        if suffix.endswith(".svg"):
             _validate_svg_payload(payload, suffix)
         else:
             _validate_png_payload(payload, suffix)
@@ -448,7 +376,6 @@ def _check_required_members(
         f"{package}/__init__.py",
         f"{package}/__main__.py",
         f"{package}/cli_ui.py",
-        f"{package}/competition_readiness.py",
         f"{package}/add_one_gap.py",
         f"{package}/demo_llm_operator_generation.py",
         f"{package}/interactive_migration.py",
@@ -543,8 +470,6 @@ def _check_required_members(
             "run_demo.sh",
             "docs/installation.md",
             "docs/installation.zh-CN.md",
-            "docs/numpilot-en.pptx",
-            "docs/numpilot-zh.pptx",
             "docs/numpilot-en-v6.svg",
             "docs/numpilot-zh-v6.svg",
             "docs/assets/architecture/numpilot-architecture-en.svg",
@@ -555,19 +480,9 @@ def _check_required_members(
             "docs/assets/brand/codearts-icon.png",
             "docs/assets/brand/numpilot-wordmark.png",
             "docs/assets/brand/README.md",
-            "docs/FRESH-NOTEBOOK-QUICKSTART.md",
-            "docs/COMPETITION-READINESS.md",
-            "docs/NumPilot-Demo-v1-Quickstart.ipynb",
             "examples/custom_operator_add_one.py",
             "examples/add_one_migration_demo.py",
-            "examples/competition_power_log_exp.py",
-            "evidence/competition-ordinary-20260828/qualified-analysis.json",
-            "evidence/competition-ordinary-20260828/script-benchmark-report.json",
-            "evidence/competition-ordinary-20260828/script-verification-report.json",
-            "evidence/competition-poisson-stage-20260828/qualified-analysis.json",
-            "evidence/competition-poisson-stage-20260828/script-benchmark-report.json",
-            "evidence/competition-poisson-stage-20260828/script-verification-report.json",
-            "evidence/MANIFEST.sha256",
+            "examples/black_scholes_portfolio.py",
             ".codeartsdoer/agents/numpilot-analyzer.md",
             ".codeartsdoer/agents/numpilot-evidence-auditor.md",
             ".codeartsdoer/agents/numpilot-operator-engineer.md",
@@ -589,7 +504,6 @@ def _check_required_members(
             ".codeartsdoer/skills/asnumpy-custom-op-integration/references/official-aclnn-existing-module.md",
             ".codeartsdoer/skills/asnumpy-custom-op-integration/references/qualification-and-debug.md",
             "tools/check_release_tree.py",
-            "tools/demo_llm_operator_generation.py",
             "tools/release_artifact_manifest.py",
         ]
         required = [f"{source_root}/{member}" for member in source_required]

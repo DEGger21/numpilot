@@ -95,7 +95,6 @@ from numpilot.cli_ui import (                                 # noqa: E402
     render_doctor,
     render_home,
     render_paths,
-    render_readiness as render_readiness_tty,
     terminal_status,
 )
 from numpilot.coverage import is_custom                       # noqa: E402
@@ -829,7 +828,7 @@ def _workflow_log_tail(path, *, lines=8):
 
 
 def _cmd_run(args):
-    """Run the competition-facing ordinary chain with one user command."""
+    """Run the product-facing ordinary chain with one user command."""
 
     from numpilot.workflow import WorkflowError, run_ordinary_workflow
 
@@ -939,7 +938,7 @@ def _cmd_run(args):
 # Interactive ordinary-script entry point
 # ---------------------------------------------------------------------------
 #
-# The shell recording wrapper deliberately stays thin: it validates the
+# The shell workflow wrapper deliberately stays thin: it validates the
 # repository Skill, activates the user's private runtime, and then delegates
 # here.  Keeping the conversation and receipt choreography in the framework
 # means an arbitrary source path gets the same stages as a future CodeArts or
@@ -1243,7 +1242,7 @@ def _interactive_render_analysis(snapshot, qualified_payload, scan, classificati
                 % (api, lines, status, provenance)
             )
     # OperatorSpec is a declarative source contract.  Parse it as AST data so
-    # the recording explicitly connects an observed custom gap to the operator
+    # the workflow explicitly connects an observed custom gap to the operator
     # shape that CANNBot will be asked to draft, without importing the source.
     try:
         static_specs = collect_static_operator_specs(ast.parse(snapshot.text, filename=snapshot.path))
@@ -1413,7 +1412,7 @@ def _interactive_cannbot_route(snapshot, gap_request, args, session_root):
     """Run the framework's official-first gap route after confirmation.
 
     Ordinary missing APIs use ``resolve-gaps → complete-gaps``.  The tiny
-    explicit ``add_one`` OperatorSpec used in recordings is routed through the
+    explicit ``add_one`` OperatorSpec used in the example is routed through the
     existing framework-owned demo provider, because a full 17-file Ascend C
     project would obscure the same official Skill/readiness boundary.  Both
     paths remain draft-only and are reported separately from migration.
@@ -1439,7 +1438,7 @@ def _interactive_cannbot_route(snapshot, gap_request, args, session_root):
             "actual_remote_call": False,
             "claim_boundary": {"interface_available": False, "activated": False},
         }
-    # The tiny OperatorSpec recording fixture is a first-class framework
+    # The tiny OperatorSpec example fixture is a first-class framework
     # route too.  Its canonical GapSpec is discovered by ``resolve-gaps``
     # itself, rather than by the ordinary NumPy-call hand-off, so it must be
     # admitted before the generic ``gap_request is None`` guard.  Detect it
@@ -1549,7 +1548,7 @@ def _interactive_cannbot_route(snapshot, gap_request, args, session_root):
     )
 
     # The explicit add_one fixture uses the compact, receipt-bound provider so
-    # a real recording remains feasible.  It is still launched by this core
+    # an interactive run remains practical.  It is still launched by this core
     # command and all outputs stay in the same private session tree.
     if is_add_one:
         skill_root = str(
@@ -1886,7 +1885,7 @@ def _interactive_final_summary(result, *, session_root, interpretation, gap_resu
             tone="warning",
         )
     # Verification is intentionally independent from the performance gate.  A
-    # no-benchmark recording should still tell the developer what data size was
+    # A no-benchmark run should still tell the developer what data size was
     # actually checked, while making it explicit that shape/dtype/bytes and any
     # speedup conclusion require a valid benchmark receipt.
     if not scale_rendered:
@@ -3102,46 +3101,6 @@ def _cmd_check_suite(args):
         "通过仅表示静态候选合格，真机仍须精确 wheel provenance 与数值门禁。"
     )
     return 0 if report["status"] == "pass" else 1
-
-
-def _cmd_competition_readiness(args):
-    """Run the local, read-only competition submission checklist."""
-
-    from numpilot.competition_readiness import (
-        assess_competition_readiness,
-        render_readiness,
-        write_readiness_report,
-    )
-
-    written_report = None
-    try:
-        report = assess_competition_readiness(
-            args.repo_root,
-            llm_config=getattr(args, "llm_config", None),
-        )
-        # ``None`` means no publication; an explicitly empty path is still a
-        # caller error and must cross the writer's validation boundary.  Keep
-        # the returned normalized Path for display so a hostile PathLike is
-        # never converted a second time after successful publication.
-        if args.out is not None:
-            written_report = write_readiness_report(report, args.out)
-    except (OSError, ValueError, TypeError) as exc:
-        print("[比赛就绪度] 失败: %s" % exc, file=sys.stderr)
-        return 2
-
-    if args.json:
-        print(json.dumps(report.to_dict(), ensure_ascii=False, indent=2, sort_keys=True))
-    else:
-        if not render_readiness_tty(report):
-            print(render_readiness(report))
-        if written_report is not None:
-            print("\n[比赛就绪度] report=%s" % written_report)
-    # ``--strict`` is a release gate for mandatory (critical) requirements;
-    # advisory non-critical partial/warn findings remain inspectable without
-    # making CI fail once all mandatory evidence is complete.
-    if args.strict and report.blockers:
-        return 1
-    return 0
 
 
 def _load_llm_or_report():
@@ -5934,7 +5893,7 @@ def main(argv=None):
         "--build-asnumpy",
         action="store_true",
         help=(
-            "维护者构建下一版 AsNumpy（开发态显式开关，可能联网获取固定源码；"
+            "维护者构建下一版 AsNumpy（显式维护者开关，可能联网获取固定源码；"
             "用户安装请使用不联网的 --asnumpy-component）"
         ),
     )
@@ -6047,7 +6006,7 @@ def main(argv=None):
         "--backend",
         choices=["npu", "shim"],
         default="npu",
-        help="目标后端；比赛演示建议 npu，shim 仅用于数值诊断（不产生 NPU 结论）",
+        help="目标后端；严格验证使用 npu，shim 仅用于数值诊断（不产生 NPU 结论）",
     )
     run_parser.add_argument(
         "--fallback-policy",
@@ -6497,32 +6456,6 @@ def main(argv=None):
         "--json",
         action="store_true",
         help="只向标准输出写机器可读 JSON；不混入人类摘要",
-    )
-
-    readiness = sub.add_parser(
-        "competition-readiness",
-        aliases=("readiness",),
-        help="只读审计比赛材料、CodeArts/华为云证据与发布缺口",
-    )
-    readiness.add_argument(
-        "--repo-root",
-        default=".",
-        help="待审计仓库根目录（默认当前目录）",
-    )
-    readiness.add_argument(
-        "--json",
-        action="store_true",
-        help="输出完整机器可读 JSON（不混入摘要文本）",
-    )
-    readiness.add_argument(
-        "--out",
-        default=None,
-        help="可选：写入一次性脱敏 JSON 报告，不覆盖已有文件",
-    )
-    readiness.add_argument(
-        "--strict",
-        action="store_true",
-        help="发现关键缺口时以退出码 1 结束；默认仅报告，不阻断 shell",
     )
 
     check_llm_parser = sub.add_parser(
@@ -7078,7 +7011,6 @@ def main(argv=None):
         recovery_status_parser,
         recovery_materialize,
         recovery_adapter,
-        readiness,
     ]
     for _command_parser in _llm_config_parsers:
         _command_parser.add_argument(
@@ -7128,8 +7060,6 @@ def main(argv=None):
             return _cmd_paths(args)
         if args.cmd == "check-suite":
             return _cmd_check_suite(args)
-        if args.cmd in {"competition-readiness", "readiness"}:
-            return _cmd_competition_readiness(args)
         if args.cmd == "complete-gaps":
             return _cmd_complete_gaps(args)
         if args.cmd == "repair-draft":

@@ -419,7 +419,6 @@ def test_add_one_draft_launches_installed_package_helper(monkeypatch, tmp_path):
     helper = commands[1]
     assert helper[1:3] == ["-m", "numpilot.demo_llm_operator_generation"]
     assert "--skill-bundle-sha256" in helper
-    assert all("tools/demo_llm_operator_generation.py" not in item for item in helper)
 
 
 def test_generic_unintegrated_gap_stops_before_workflow(monkeypatch, tmp_path):

@@ -1,8 +1,29 @@
+# This file is part of the NumPilot project at Harbin Institute of Technology (HIT).
+#
+# Copyright (c) 2026 AISS Group, Harbin Institute of Technology (HIT).
+# SPDX-License-Identifier: Apache-2.0
+#
+# Authors (accounts):
+# - Su Tonghua <@sutonghua>
+# - Li Xing <@li-xingHIT>
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Resolve NumPilot's user-owned configuration, cache, and run paths.
 
 Generated artifacts must not depend on the current working directory.  This
 module follows the XDG base-directory convention on Unix-like systems while
-keeping explicit environment overrides for CI, containers, and competition
+keeping explicit environment overrides for CI, containers, and managed runtime
 evaluation machines.
 """
 from pathlib import Path
@@ -30,7 +51,7 @@ def persistent_home(
 
     values = _environment(environment)
     # ``NUMPILOT_RUNTIME_ROOT`` is an intentionally descriptive alias for
-    # NUMPILOT_HOME.  It makes a separately provisioned competition runtime
+    # NUMPILOT_HOME.  It makes a separately provisioned managed runtime
     # self-documenting while preserving the historical variable's precedence.
     value = values.get("NUMPILOT_HOME") or values.get("NUMPILOT_RUNTIME_ROOT")
     return _expanded(value) if value else None

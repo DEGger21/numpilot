@@ -36,13 +36,13 @@ CodeArts-agent，或用户明确要求不使用 `llm.json`/内置模型时，本
 
 - `analyze` 是否绑定当前 source path/SHA-256、callsite、runtime identity，并严格输出五态之一；
   状态转移是否与 `DIRECT`、fallback 用户同意/拒绝、gap、audit 或 blocked 语义一致；
-- configured terminal 子运行中，`migrated.py` 是否来自比赛环境真实 configured GLM 调用；remote
+- configured terminal 子运行中，`migrated.py` 是否来自本次明确授权的真实 configured GLM 调用；remote
   receipt 中 configured/requested/response identity、provider 审计标签、HTTP 成功事实、响应哈希、
   source/migrated SHA-256 和 migration report 是否闭合；CodeArts-agent/user-authored 候选则核对
   独立 author/lane receipt 和 source/artifact 哈希，不能冒充 configured receipt；模型失败时是否
   fail closed；
 - AST 是否只用于审核模型产物。出现 AST 生成、AST fallback、`--engine ast`、`--mode auto` 或
-  `--mode contract` 时，该产物不得作为比赛 ordinary configured-model 迁移证据；
+  `--mode contract` 时，该产物不得作为 ordinary configured-model 迁移证据；
 - migration report 是否如实保持 `execution_performed=false` 和
   `numerical_verification=not_run`，并使用 write-once 目录；
 - `verify-script` 是否由当前 source、同目录 report/migrated 和明确命名输出运行，且输入哈希、
@@ -79,4 +79,4 @@ ordinary 产品内 `benchmark-script`（短别名 `bench-script`）只支持显�
 作为 CodeArts 集成证据。
 
 legacy contract 只在被明确要求时独立审计，且必须标成高级兼容/框架回归证据，不能混入
-ordinary 比赛主链。
+ordinary 默认主链。

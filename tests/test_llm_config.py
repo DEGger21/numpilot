@@ -1,3 +1,24 @@
+# This file is part of the NumPilot project at Harbin Institute of Technology (HIT).
+#
+# Copyright (c) 2026 AISS Group, Harbin Institute of Technology (HIT).
+# SPDX-License-Identifier: Apache-2.0
+#
+# Authors (accounts):
+# - Su Tonghua <@sutonghua>
+# - Li Xing <@li-xingHIT>
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import hashlib
 import io
 import json
@@ -670,7 +691,7 @@ def test_cli_init_rejects_inline_configuration(isolated_config, capsys):
 def test_cli_accepts_explicit_config_path_before_or_after_subcommand(
     isolated_config, monkeypatch, capsys, arguments_prefix
 ):
-    explicit = isolated_config.parent / "competition-runtime" / "llm.json"
+    explicit = isolated_config.parent / "external-runtime" / "llm.json"
     secret = "explicit-config-secret"
     save_llm_config(
         "https://gateway.example/v1",

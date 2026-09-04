@@ -27,5 +27,5 @@ git apply --unidiff-zero \
 审计。NumPilot 只接受 capability manifest 中版本、来源和运行文件哈希完全匹配的 AsNumpy；
 自行构建但身份不同的 wheel 会失败关闭。
 
-这份补丁是集成参考，不是当前比赛 speedup 的独立证明。性能结论只能引用
-[公开 benchmark 回执](../../evidence/README.md)明确绑定的 runtime。
+这份补丁是集成参考，不是性能提升的独立证明。性能结论必须由目标运行产生的 benchmark 回执
+绑定精确源码、组件、硬件和计时口径。

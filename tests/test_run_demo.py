@@ -1,3 +1,24 @@
+# This file is part of the NumPilot project at Harbin Institute of Technology (HIT).
+#
+# Copyright (c) 2026 AISS Group, Harbin Institute of Technology (HIT).
+# SPDX-License-Identifier: Apache-2.0
+#
+# Authors (accounts):
+# - Su Tonghua <@sutonghua>
+# - Li Xing <@li-xingHIT>
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import io
 import json
 import os
@@ -26,7 +47,7 @@ def test_summary_numeric_formatters_fail_closed_on_overflow():
 SCRIPT = Path(__file__).parents[1] / "run_demo.sh"
 
 
-def test_competition_demo_is_executable_and_valid_bash():
+def test_example_workflow_is_executable_and_valid_bash():
     assert SCRIPT.stat().st_mode & stat.S_IXUSR
     result = subprocess.run(
         ["bash", "-n", str(SCRIPT)],
@@ -37,7 +58,7 @@ def test_competition_demo_is_executable_and_valid_bash():
     assert result.returncode == 0, result.stderr
 
 
-def test_competition_demo_rejects_unknown_arguments():
+def test_example_workflow_rejects_unknown_arguments():
     result = subprocess.run(
         [str(SCRIPT), "--unknown"],
         check=False,
@@ -49,7 +70,7 @@ def test_competition_demo_rejects_unknown_arguments():
     assert "未知参数" in result.stderr
 
 
-def test_competition_demo_requires_llm_config_path():
+def test_example_workflow_requires_llm_config_path():
     result = subprocess.run(
         [str(SCRIPT), "--llm-config"],
         check=False,
@@ -61,7 +82,7 @@ def test_competition_demo_requires_llm_config_path():
     assert "--llm-config" in result.stderr
 
 
-def test_competition_demo_rejects_explicit_empty_output_path():
+def test_example_workflow_rejects_explicit_empty_output_path():
     result = subprocess.run(
         [str(SCRIPT), "--out", ""],
         check=False,
@@ -73,7 +94,7 @@ def test_competition_demo_rejects_explicit_empty_output_path():
     assert "--out 目录不能为空" in result.stderr
 
 
-def test_competition_demo_rejects_reusing_existing_run_directory(tmp_path):
+def test_example_workflow_rejects_reusing_existing_run_directory(tmp_path):
     run_root = tmp_path / "already-used"
     run_root.mkdir()
     (run_root / "workflow-report.json").write_text("{}\n", encoding="utf-8")
@@ -96,7 +117,7 @@ def test_competition_demo_rejects_reusing_existing_run_directory(tmp_path):
     assert (run_root / "workflow-report.json").read_text(encoding="utf-8") == "{}\n"
 
 
-def test_competition_demo_rejects_symlinked_output_ancestor(tmp_path):
+def test_example_workflow_rejects_symlinked_output_ancestor(tmp_path):
     outside = tmp_path / "outside"
     outside.mkdir()
     linked = tmp_path / "linked"
@@ -115,7 +136,7 @@ def test_competition_demo_rejects_symlinked_output_ancestor(tmp_path):
     assert not (outside / "new-run").exists()
 
 
-def test_competition_demo_rejects_dotdot_symlinked_output_ancestor(tmp_path):
+def test_example_workflow_rejects_dotdot_symlinked_output_ancestor(tmp_path):
     outside = tmp_path / "outside"
     outside.mkdir()
     linked = tmp_path / "linked"
@@ -136,7 +157,7 @@ def test_competition_demo_rejects_dotdot_symlinked_output_ancestor(tmp_path):
     assert not (outside / "new-run").exists()
 
 
-def test_competition_demo_resolves_relative_output_from_invocation_dir(tmp_path):
+def test_example_workflow_resolves_relative_output_from_invocation_dir(tmp_path):
     fake_python = tmp_path / "python"
     log = tmp_path / "calls.log"
     fake_python.write_text(
@@ -166,7 +187,7 @@ def test_competition_demo_resolves_relative_output_from_invocation_dir(tmp_path)
     assert (tmp_path / "relative-run").is_dir()
 
 
-def test_competition_demo_accepts_equals_form_for_llm_config(tmp_path):
+def test_example_workflow_accepts_equals_form_for_llm_config(tmp_path):
     log = tmp_path / "calls.log"
     fake_python = tmp_path / "python"
     fake_python.write_text(
@@ -200,7 +221,7 @@ def test_competition_demo_accepts_equals_form_for_llm_config(tmp_path):
     )
 
 
-def test_competition_demo_exports_explicit_llm_config_path(monkeypatch, tmp_path):
+def test_example_workflow_exports_explicit_llm_config_path(monkeypatch, tmp_path):
     log = tmp_path / "calls.log"
     fake_python = tmp_path / "python"
     fake_python.write_text(
@@ -237,7 +258,7 @@ def test_competition_demo_exports_explicit_llm_config_path(monkeypatch, tmp_path
     )
 
 
-def test_competition_demo_resolves_relative_llm_config_from_invocation_dir(
+def test_example_workflow_resolves_relative_llm_config_from_invocation_dir(
     tmp_path,
 ):
     log = tmp_path / "calls.log"
@@ -274,7 +295,7 @@ def test_competition_demo_resolves_relative_llm_config_from_invocation_dir(
     )
 
 
-def test_competition_demo_resolves_explicit_source_from_invocation_dir(tmp_path):
+def test_example_workflow_resolves_explicit_source_from_invocation_dir(tmp_path):
     log = tmp_path / "calls.log"
     fake_python = tmp_path / "python"
     fake_python.write_text(
@@ -314,7 +335,7 @@ def test_competition_demo_resolves_explicit_source_from_invocation_dir(tmp_path)
     assert f"benchmark-script {source} --migration-report" in calls
 
 
-def test_competition_demo_expands_leading_tilde_paths_without_eval(tmp_path):
+def test_example_workflow_expands_leading_tilde_paths_without_eval(tmp_path):
     log = tmp_path / "calls.log"
     fake_python = tmp_path / "python"
     fake_python.write_text(
@@ -357,7 +378,7 @@ def test_competition_demo_expands_leading_tilde_paths_without_eval(tmp_path):
     assert not (Path(SCRIPT.parent) / "~").exists()
 
 
-def test_competition_demo_runs_one_ordinary_glm_chain(monkeypatch, tmp_path):
+def test_example_workflow_runs_one_ordinary_glm_chain(monkeypatch, tmp_path):
     log = tmp_path / "calls.log"
     fake_python = tmp_path / "python"
     fake_python.write_text(
@@ -405,7 +426,7 @@ def test_competition_demo_runs_one_ordinary_glm_chain(monkeypatch, tmp_path):
     assert "\x1b" not in result.stdout + result.stderr
 
 
-def test_competition_demo_failure_reports_stage_and_preserves_run_path(tmp_path):
+def test_example_workflow_failure_reports_stage_and_preserves_run_path(tmp_path):
     fake_python = tmp_path / "python"
     fake_python.write_text(
         "#!/usr/bin/env bash\n"
@@ -444,7 +465,7 @@ def test_competition_demo_failure_reports_stage_and_preserves_run_path(tmp_path)
     assert "\x1b" not in result.stdout + result.stderr
 
 
-def test_competition_demo_config_failure_keeps_exit_code_and_run_path(tmp_path):
+def test_example_workflow_config_failure_keeps_exit_code_and_run_path(tmp_path):
     fake_python = tmp_path / "python"
     fake_python.write_text(
         "#!/usr/bin/env bash\n"

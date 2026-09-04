@@ -1,8 +1,0 @@
-ef62b11ffa74e3753ec1996cfd5b764bd39980118d6f76972b560723b113b56b  ./README.md
-d8ffc5ebbc89da4148c4eb367ed4d2177bc40a9011735c76ca309419615c3ebb  ./bootstrap-receipt.json
-df14c09351df244b70bad20ae584dbdb5dd0ecbed29de7b2f15d1a918c13dd5e  ./migration/migrated.py
-3dfe8abbafb8f73ed4be5591d95c33b788c4beef9c95a1141a3eb54f4d63d78e  ./migration/script-migration-report.json
-1b7c3994fbace485a34c8dad7966242a7cfd0ea986fe70db5198a0b3b5532e97  ./qualified-analysis.json
-a531df11dfc0646cf64265073f7b52be2fc4534ec20a4b8cf3560beb5065d9e1  ./script-benchmark-report.json
-52cbb3b5bc6a8a9a577047a7aea483a99fa6172c546212ff35be2045b55f5a29  ./script-verification-report.json
-dd12feda38d7677a879a00b56c26f34570537a0dc66741553a8ae7479f751808  ./source.py
