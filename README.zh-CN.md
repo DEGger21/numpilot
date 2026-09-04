@@ -79,7 +79,7 @@ v6 架构图使用实线表示当前原语，使用虚线表示目标自动化�
 |---|---|---|
 | 1. 未分类工作负载 | 解析完整程序，提取 NumPy 调用点、签名和有界数据流 | 入口不预先标注 API 已支持或缺失 |
 | 2. 能力检查 | 依据精确的 AsNumpy/CANN/SoC 画像逐调用点匹配，并独立记录判定 | 采用最严格的逐调用结果，生成失败关闭的整份工作负载结论 |
-| 3. 全文件迁移 | 全部调用合格后，用户配置模型才改写完整文件；NumPilot 随后执行精确响应与 AST 检查 | 只产生迁移候选，不自动信任模型结果 |
+| 3. 全文件迁移 | 全部调用合格后，配置模型路线可使用已实现的哈希绑定响应/AST 适配器；手动或 CodeArts 候选只有被已登记适配器接受才继续 | 产生适配器接受的迁移候选，否则明确停在 `draft/stopped` |
 | 4. 缺口补全 | API 缺失时优先查找可复用的华为官方算子；默认只有官方路径明确无匹配后才生成；显式 `OperatorSpec` 可用 `--allow-custom-operator-generation` 开启“官方等价未证明”的 draft-only 试验 | 两条路线统一汇入 AsNumpy 公共 API 接入边界 |
 | 5. 资格化与回流 | 接入候选依次通过制品、构建、单测、数值、公共 API 和真实 NPU 门禁，然后重新扫描原工作负载 | 只有重扫后全部调用合格，才能返回迁移与验证主链 |
 
@@ -97,8 +97,9 @@ v6 架构图使用实线表示当前原语，使用虚线表示目标自动化�
   → 全文件 AST + 有界数据流分析
   → 逐调用点、运行时绑定的能力判定
   → 失败关闭的整份工作负载结论
-  → 用户配置模型生成候选改写
-  → 模型回执 + 精确 AST 门禁
+  → 配置模型候选 → 哈希绑定响应 + 精确 AST 门禁
+    或手动/CodeArts 候选 → 已登记适配器门禁（否则 draft/stopped）
+  → 适配器接受的迁移候选
   → 独立数值验证
   → 可选、画像绑定的 strict-NPU 基准测试
   → 不可覆盖的证据回执
@@ -109,8 +110,8 @@ v6 架构图使用实线表示当前原语，使用虚线表示目标自动化�
 ```text
 已识别 API 缺口
   → A. 复用已安装 ACLNN 候选，或审计固定版本的 ops-nn 源码候选
-  → B. 两层官方查询均明确无匹配后，由固定 CANNBot Skills + 用户配置模型
-       生成自定义算子草稿
+  → B. 两层官方查询均明确无匹配后，由固定 CANNBot Skills + 已授权的边界模型
+       （CodeArts 交互模型或配置模型）生成自定义算子草稿
   → 通过 AsNumpy 公共 API 边界完成接入
   → 资格化 → 激活能力 → 重扫原始工作负载
   → 仅当所有调用点合格后才重新进入迁移
@@ -133,12 +134,104 @@ installed-ACLNN MatMul 定向切片可到 `ADAPTER_CANDIDATE`；固定 `ops-nn` 
 | 普通 NumPy 静态分析 | 已实现 | 全文件静态分析，不执行源码、不调用模型 |
 | 五态能力判定 | 已实现 | 绑定当前 AsNumpy/CANN/SoC 身份与审计证据 |
 | 配置模型迁移 | 已实现 | OpenAI Chat Completions-compatible；模型身份、响应、AST、哈希任一异常即失败关闭 |
+| 手动/CodeArts 候选交接 | 默认仅草稿 | 只有已登记、哈希绑定的适配器接受后才继续；否则保持 `draft/stopped`，验证与 benchmark 为 `not_run` |
 | 数值验证 | 已实现 | 原脚本与迁移脚本分别由 `python -I` worker 执行；这不是 OS 沙箱 |
 | strict-NPU resident 基准 | 已实现但范围受限 | 要求精确合格画像，不代表通用能力或冷启动 E2E |
 | 官方算子发现 | 已实现 | 先检查已安装 ACLNN，再检查固定本地 `ops-nn` 只读源码证据；发现本身不负责构建或接入 |
-| 自定义算子草稿 | 部分实现 | 默认要求两层明确无匹配；显式 custom `OperatorSpec` 可记录 `official_equivalence=not_proven` 后进入 draft-only；输出工程仍未验证 |
-| 通用缺口补全 | 部分实现 | 官方二进制通用链到 `CANDIDATE_READY`；仅已审计 MatMul 到 `ADAPTER_CANDIDATE`；资格化与激活仍在规划 |
+| 自定义算子草稿 | 部分实现 | CANNBot 约束真实边界模型，但生成的 Ascend C 在独立构建和资格化前始终未验证 |
+| 缺口补全 | 已登记例外 | 精确 scalar-one 调用可使用经真 NPU 资格化、仅本次运行有效的 AsNumpy 组合接口；CANNBot 草稿仍未激活，所有通用缺口继续失败关闭 |
 | CodeArts 协作 | 可选集成 | 仓库包含角色/Skill；真实控制面仍需在目标账号验证 |
+
+## 两种主要使用方法：终端工具与 AI/CodeArts
+
+NumPilot 把“提出候选”和“决定证据是否成立”分开。根据团队习惯可选择以下任一入口；一次
+运行先声明入口，切换入口需新建私有 run 目录并重新授权：
+
+<p align="center">
+  <a href="docs/assets/architecture/numpilot-two-routes.zh-CN.png">
+    <img src="docs/assets/architecture/numpilot-two-routes.zh-CN.png" alt="NumPilot 的两种使用路线：终端手动模式与 Agent Skill 模式" width="100%">
+  </a>
+</p>
+
+<p align="center"><sub>本图仅为概念示意，不构成性能或正确率证据。两条路线共用 NumPilot 的确定性门禁，但候选产出方式不同。</sub></p>
+
+1. **终端 configured lane（传统工具用法）**：填写私有 `llm.json`，启动 `numpilot`，像普通
+   开发工具一样在持久会话中操作。`check llm` 发出一次很小的真实连通性请求；`migrate` 询问
+   源码绝对路径、解读程序、等待 `y`，并在实际执行源码前另行要求精确输入 `execute`；随后由
+   框架完成缺口路由、迁移、数值检查、性能证据和最终报告。无需模型的低层手动命令仍然保留。
+2. **CodeArts agent lane（自然交互）**：让 CodeArts 侧边栏先读取仓库与根目录的
+   [`skill/SKILL.md`](skill/SKILL.md)（CodeArts 标准镜像在
+   `.codeartsdoer/skills/numpilot-migration-gate/SKILL.md`），再由交互模型自然拆解并独立完成
+   迁移、缺口补全或算子草稿。该 lane 不读取 `llm.json`、不调用 NumPilot 内置模型；候选须
+   标记 `agent_authored_draft`，随后交给 NumPilot 做哈希/结构门禁；只有已登记适配器能物化受
+   支持的 hash-bound migration report 时，才运行数值和（证据充分时）真机 gate，否则停在
+   `draft` 且后续阶段为 `not_run`。
+   若需要分工协作，也可以把这两种方式组合成 **hybrid**：CodeArts 负责对话、计划和草稿，
+   终端/CLI 负责可重复的 `analyze`、哈希门禁，以及仅对适配器接受的 report 运行的
+   `verify-script`/`benchmark-script`。组合时仍须保留 CodeArts task/event 与候选哈希；若确需
+   配置模型，必须显式切换、授权并使用新的 run 目录，不能混合两种模型回执。
+
+CodeArts agent lane 的硬门禁适用于任何明确的“不用 `llm.json`/内置模型”要求：不得运行
+`configure-llm`、传入 `--provider llm`、探测 endpoint 或因失败偷偷回退。未有适配器绑定完整
+模型/响应/源码/产物证据前，手动或 agent 草稿不能宣称 configured-model、strict-NPU 或性能
+结果。具体交互模板见[CodeArts 集成建议](docs/codearts-integration.md)和
+[CodeArts Skill reference](skill/references/codearts-sidebar.md)。CodeArts 标准镜像仍在
+`.codeartsdoer/skills/numpilot-migration-gate/`。
+当前 `verify-script`/`benchmark-script` 仍要求受支持的 hash-bound migration report；如果
+手动或 CodeArts 候选尚无适配器可物化该回执，应停留在 draft 并如实报告，不能手工伪造报告。
+仅读取 Skill 或生成 handoff 的初始回执必须保持 `candidate_status=not_generated`、
+`agent_authored_draft=false`；只有交互模型实际写出候选后，才另发带来源哈希的
+`codearts_agent_receipt` 并使用草稿标签。
+
+代理地址不是 NumPilot 的固定配置；如现场网络需要，用户可在当前终端会话自行设置
+`HTTP_PROXY`/`HTTPS_PROXY`（以及对应小写变量），脚本只显示脱敏的“已配置”状态，不把地址、
+凭据或 endpoint 写入仓库或回执。
+
+### 交互式终端
+
+主要录屏入口现在是持久产品终端，不再是一键演示脚本。激活已安装运行环境并在仓库外填写私有
+`llm.json` 后，只需启动：
+
+```bash
+numpilot
+```
+
+进入带 Logo 的会话后依次输入 `check llm` 和 `migrate`。前者会向配置模型发出一次很小的真实
+请求，并确认是否收到了可用内容；后者会询问待迁移 Python 程序的**绝对路径**，展示确定性的
+NumPy API/调用点及 AsNumpy 缺口分析，再打印模型给出的有界 `interpreted_unverified` 解读并等待
+`y`。只有输入 `y` 才开始生成与 NPU 资格化；在框架实际执行原始/规范化用户源码前，还必须在
+紧邻执行点单独输入 `execute`。结束画面会列出全部产物、迁移后源码，以及
+`migration-report.json` 和 `migration-report.md`。
+
+最小真实缺口演示使用 `examples/add_one_migration_demo.py` 的绝对路径。NumPilot 只识别其中精确的
+`numpy.add(array, 1)` 签名，并说明需要补充本次运行接口 `asnumpy.add_one(x)`。框架先做官方优先
+解析，然后完整展示真实配置模型请求所读取的固定 CANNBot Skill，在模型生成有界 Ascend C
+`Adds` 片段时持续显示心跳。该片段始终是 `generated_unverified`：未编译、未激活。与此同时，
+NumPilot 会用已合格的 `asnumpy.ones_like` 与 `asnumpy.add` 构成一个仅本次运行可见的
+`asnumpy.add_one`，通过隔离的真 NPU 资格化后才准入，再完成 lowering、全程序迁移、数值验证、
+性能和会话报告。上游 AsNumpy 与共享 OPP 均未修改。
+
+其他缺失 API 如果没有自己的已登记接入与资格化路径，一律失败关闭；仅有看起来合理的 CANNBot
+草稿不能继续迁移。只有 `performance_valid=true` 才显示本次精确规模和 resident 口径的加速比，
+单个测量点不能外推成通用优势阈值。
+
+自动化调用可使用同一个框架入口，但必须显式授权：
+
+```bash
+python -m numpilot --llm-config /absolute/private/llm.json \
+  interactive-migrate --source /absolute/path/to/source.py --yes --execute-source \
+  --cannbot-gap-draft --accept-cannbot-license --show-cannbot-skill full
+```
+
+`--yes` 只确认自动化迁移流程；`--execute-source` 才单独授权执行已展示并绑定哈希的用户源码。
+
+如果现场网络需要代理，由用户在启动前设置环境变量。NumPilot 与 Skill 不包含固定代理地址；
+`check llm` 只要求所选模型能够返回有效内容。
+
+如需 AI/CodeArts 模式，不要启动 configured lane，而是直接告诉交互模型：“阅读 NumPilot Skill，
+使用 agent 模式，不用 `llm.json` 里的内置模型进行迁移。”此时 AI 必须自己承担解读、补全、算子/
+接入和迁移候选生成，不得读取或探测 `llm.json`；NumPilot 的确定性门禁仍然是证据来源。没有登记
+适配器接受 agent 产物时，如实停在 `migrate=draft/stopped`，验证和 benchmark 保持 `not_run`。
 
 ## 快速开始
 
@@ -211,7 +304,11 @@ NumPilot 基础依赖安装。`--asnumpy-source` 仅供维护者显式构建下�
 
 当前源码树没有已核实的公开包发行版本，因此不要把 `pip install numpilot` 写成安装入口。
 
-## 配置模型
+## 配置模型（终端 configured 子路径，可选）
+
+以下命令只适用于终端手动 lane 或 hybrid 中明确授权的 configured-model 子运行；CodeArts
+agent lane 明确不用 `llm.json` 时不要执行它们。终端手动 lane 也可以完全不配置模型，直接
+提供候选并运行确定性 gate。
 
 ```bash
 python -m numpilot configure-llm --init
@@ -232,7 +329,7 @@ python -m numpilot configure-llm --probe   # 一次真实请求，可能产生�
 > 所有 configured-model 生成或修复请求都可能产生费用。`migrate` 会发送完整输入源码；
 > gap/operator 路径会发送有界缺口合同、静态提取的语义函数、适用的草稿或诊断，以及选定的
 > CANNBot Skill 上下文；AsNumpy adapter 路径会发送按目标投影的源码/头文件上下文、Skill 上下文、
-> overlay 与适用的诊断。CANNBot 提供固定版本的工作流上下文，草稿仍由用户配置的远端模型生成。
+> overlay 与适用的诊断。CANNBot 提供固定版本的工作流上下文；草稿由当前入口明确选择并授权的边界模型（CodeArts 交互模型或用户配置的远端模型）生成。
 > `verify-script`、`benchmark-script` 与 `run_demo.sh` 会以当前用户权限执行原脚本和候选；
 > `python -I` **不是** OS 沙箱。只能发送有权披露的材料、执行可信程序；不可信输入须放入独立容器
 > 或虚拟机。
@@ -250,8 +347,8 @@ python -m numpilot --llm-config "$RUNTIME_ROOT/.numpilot-config/llm.json" \
   competition-readiness --json
 ```
 
-需要在现场展示一键主链时，可使用 `run`；`--benchmark` 仍仅发布满足严格门禁的设备驻留性能，
-不是冷启动或端到端延迟：
+需要低层非交互主链时，可使用 `run`；人工录屏仍推荐持久 `numpilot` 终端。`--benchmark` 仅发布
+满足严格门禁的设备驻留性能，不是冷启动或端到端延迟：
 
 ```bash
 python -m numpilot --llm-config "$RUNTIME_ROOT/.numpilot-config/llm.json" \
@@ -355,6 +452,8 @@ git diff --check
 
 - [安装与验收](docs/installation.zh-CN.md)
 - [当前架构与实现边界](docs/architecture.md)
+- [CodeArts 三种入口与模型来源门禁](docs/codearts-integration.md)
+- [NumPilot Skill（根目录入口）](skill/SKILL.md) · [CodeArts 镜像](.codeartsdoer/skills/numpilot-migration-gate/SKILL.md)
 - [文档中心](docs/README.md)
 - [脚本数值验证合同](docs/script-verification.md)
 - [strict-NPU 基准合同](docs/script-benchmark.md)

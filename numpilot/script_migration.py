@@ -1,3 +1,24 @@
+# This file is part of the NumPilot project at Harbin Institute of Technology (HIT).
+#
+# Copyright (c) 2026 AISS Group, Harbin Institute of Technology (HIT).
+# SPDX-License-Identifier: Apache-2.0
+#
+# Authors (accounts):
+# - Su Tonghua <@sutonghua>
+# - Li Xing <@li-xingHIT>
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Simple, whole-file NumPy to AsNumpy migration.
 
 This is the user-facing migration lane for ordinary ``import numpy as np``
@@ -263,6 +284,91 @@ def _attribute_path(node: ast.AST) -> Optional[Tuple[str, ...]]:
 
 def _unique(items: Iterable[str]) -> Tuple[str, ...]:
     return tuple(dict.fromkeys(items))
+
+
+def _postponed_annotation_import_ids(tree: ast.Module) -> frozenset[int]:
+    """Return valid leading ``from __future__ import annotations`` nodes.
+
+    Ordinary-script mode intentionally accepts no other future feature.  An
+    invalid, mixed, or late future import therefore does not make annotations
+    inert for admission purposes.
+    """
+
+    statements = list(tree.body)
+    index = 0
+    if (
+        statements
+        and isinstance(statements[0], ast.Expr)
+        and isinstance(statements[0].value, ast.Constant)
+        and isinstance(statements[0].value.value, str)
+    ):
+        index = 1
+    accepted: list[int] = []
+    while index < len(statements):
+        statement = statements[index]
+        if not (
+            isinstance(statement, ast.ImportFrom)
+            and statement.module == "__future__"
+        ):
+            break
+        if (
+            statement.level != 0
+            or len(statement.names) != 1
+            or statement.names[0].name != "annotations"
+            or statement.names[0].asname is not None
+        ):
+            return frozenset()
+        accepted.append(id(statement))
+        index += 1
+    return frozenset(accepted)
+
+
+def _annotation_node_ids(tree: ast.Module) -> frozenset[int]:
+    """Return annotation-expression nodes, excluding their owning statements."""
+
+    roots: list[ast.AST] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.AnnAssign):
+            roots.append(node.annotation)
+        elif isinstance(node, ast.arg) and node.annotation is not None:
+            roots.append(node.annotation)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if node.returns is not None:
+                roots.append(node.returns)
+    return frozenset(id(item) for root in roots for item in ast.walk(root))
+
+
+def _runtime_annotation_issues(tree: ast.Module) -> Tuple[str, ...]:
+    """Reject annotations that could evaluate user expressions at runtime.
+
+    A literal annotation is intrinsically inert.  Any annotation is inert when
+    a syntactically valid leading future-annotations import postpones its
+    evaluation.  Every other expression is outside the execution contract.
+    """
+
+    if _postponed_annotation_import_ids(tree):
+        return ()
+    issues: List[str] = []
+    annotations: list[tuple[ast.AST, int]] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.AnnAssign):
+            annotations.append((node.annotation, getattr(node, "lineno", 0)))
+        elif isinstance(node, ast.arg) and node.annotation is not None:
+            annotations.append((node.annotation, getattr(node, "lineno", 0)))
+        elif (
+            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.returns is not None
+        ):
+            annotations.append((node.returns, getattr(node, "lineno", 0)))
+    for annotation, line in annotations:
+        if isinstance(annotation, ast.Constant):
+            continue
+        issues.append(
+            "runtime-evaluated annotation is outside ordinary-script mode at "
+            "line %d; use a literal string annotation or "
+            "`from __future__ import annotations`" % line
+        )
+    return _unique(issues)
 
 
 @dataclass(frozen=True)
@@ -669,10 +775,16 @@ def _build_script_rewrite_plan(
 ) -> _ScriptRewritePlan:
     """Run one fail-closed, module-level straight-line ndarray proof."""
 
+    ignored_annotation_ids = (
+        _annotation_node_ids(tree)
+        if _postponed_annotation_import_ids(tree)
+        else frozenset()
+    )
     numpy_pi = tuple(sorted(
         _RewriteLocation.from_node(node)
         for node in ast.walk(tree)
         if allow_numpy_pi
+        and id(node) not in ignored_annotation_ids
         and isinstance(node, ast.Attribute)
         and _attribute_path(node) == ("np", "pi")
     ))
@@ -680,6 +792,7 @@ def _build_script_rewrite_plan(
         _RewriteLocation.from_node(node)
         for node in ast.walk(tree)
         if allow_terminal_item and _is_zero_argument_item_call(node)
+        and id(node) not in ignored_annotation_ids
     ))
     array_names = set()
     divisions: List[_RewriteLocation] = []
@@ -699,22 +812,26 @@ def _build_script_rewrite_plan(
             and isinstance(statement.value.value, str)
         ):
             continue
-        if isinstance(statement, ast.Assign):
-            if len(statement.targets) != 1 or not isinstance(
-                statement.targets[0], ast.Name
-            ):
+        if isinstance(statement, (ast.Assign, ast.AnnAssign)):
+            if isinstance(statement, ast.Assign):
+                targets = statement.targets
+                value = statement.value
+            else:
+                targets = [statement.target]
+                value = statement.value
+            if len(targets) != 1 or not isinstance(targets[0], ast.Name):
                 straight_line = False
                 continue
-            target = statement.targets[0].id
+            target = targets[0].id
             if target == "print":
                 builtin_print = False
             authorized_division = _is_authorized_array_division(
-                statement.value, array_names
-            )
+                value, array_names
+            ) if value is not None else False
             if authorized_division:
-                divisions.append(_RewriteLocation.from_node(statement.value))
-            if authorized_division or _is_static_array_call(
-                statement.value, array_names
+                divisions.append(_RewriteLocation.from_node(value))
+            if authorized_division or (
+                value is not None and _is_static_array_call(value, array_names)
             ):
                 array_names.add(target)
             else:
@@ -739,6 +856,8 @@ def _build_script_rewrite_plan(
 def _python_surface_issues(
     tree: ast.AST,
     rewrite_plan: _ScriptRewritePlan,
+    *,
+    ignored_node_ids: frozenset[int] = frozenset(),
 ) -> Tuple[str, ...]:
     """Reject unqualified ndarray dunders/methods before invoking the LLM."""
 
@@ -746,6 +865,8 @@ def _python_surface_issues(
     allowed_divisions = set(rewrite_plan.divisions)
     allowed_terminal_items = set(rewrite_plan.terminal_items)
     for node in ast.walk(tree):
+        if id(node) in ignored_node_ids:
+            continue
         line = getattr(node, "lineno", 0)
         if isinstance(node, ast.BinOp):
             if (
@@ -829,7 +950,16 @@ def scan_numpy_script(
         ),
         allow_terminal_item=overlay.enabled,
     )
-    issues: List[str] = list(_python_surface_issues(tree, rewrite_plan))
+    postponed_import_ids = _postponed_annotation_import_ids(tree)
+    ignored_annotation_ids = (
+        _annotation_node_ids(tree) if postponed_import_ids else frozenset()
+    )
+    issues: List[str] = list(_python_surface_issues(
+        tree,
+        rewrite_plan,
+        ignored_node_ids=ignored_annotation_ids,
+    ))
+    issues.extend(_runtime_annotation_issues(tree))
     exact_numpy_imports = 0
     top_level_ids = {id(node) for node in tree.body}
     for node in ast.walk(tree):
@@ -853,7 +983,7 @@ def scan_numpy_script(
                     )
                 )
         elif isinstance(node, ast.ImportFrom):
-            if node.module == "__future__" and id(node) in top_level_ids:
+            if id(node) in postponed_import_ids and id(node) in top_level_ids:
                 continue
             issues.append(
                 "non-NumPy/from import is outside simple script mode at line %d"
@@ -867,6 +997,8 @@ def scan_numpy_script(
         )
 
     for node in ast.walk(tree):
+        if id(node) in ignored_annotation_ids:
+            continue
         if isinstance(node, ast.Name) and node.id == "np" and not isinstance(
             node.ctx, ast.Load
         ):
@@ -945,6 +1077,8 @@ def scan_numpy_script(
     authorized_calls = set(overlay.authorized_calls)
     outer_attribute_ids = set()
     for node in ast.walk(tree):
+        if id(node) in ignored_annotation_ids:
+            continue
         if not isinstance(node, ast.Attribute):
             continue
         parent = parents.get(id(node))
@@ -1023,6 +1157,8 @@ def scan_numpy_script(
         ))
 
     for node in ast.walk(tree):
+        if id(node) in ignored_annotation_ids:
+            continue
         if not (
             isinstance(node, ast.Name)
             and node.id == "np"
@@ -1041,6 +1177,7 @@ def scan_numpy_script(
         isinstance(node, ast.Name)
         and node.id == "np"
         and isinstance(node.ctx, ast.Load)
+        and id(node) not in ignored_annotation_ids
         for node in ast.walk(tree)
     )
     return ScriptScanResult(

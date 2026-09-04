@@ -1,3 +1,24 @@
+# This file is part of the NumPilot project at Harbin Institute of Technology (HIT).
+#
+# Copyright (c) 2026 AISS Group, Harbin Institute of Technology (HIT).
+# SPDX-License-Identifier: Apache-2.0
+#
+# Authors (accounts):
+# - Su Tonghua <@sutonghua>
+# - Li Xing <@li-xingHIT>
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Inert, call-profile-aware analysis for ordinary NumPy scripts.
 
 This module is the admission gate in front of model-backed migration.  It
@@ -26,7 +47,12 @@ from numpilot.capability_profile import (
     build_runtime_route_manifest,
     qualify_call,
 )
-from numpilot.script_migration import _asnumpy_call_contract_issue
+from numpilot.script_migration import (
+    _annotation_node_ids,
+    _asnumpy_call_contract_issue,
+    _postponed_annotation_import_ids,
+    _runtime_annotation_issues,
+)
 
 
 QUALIFIED_ANALYSIS_SCHEMA_VERSION = 1
@@ -427,6 +453,14 @@ class _StaticAnalyzer:
         self.rewrites: List[str] = []
         self.imports: List[str] = []
         self.numpy_import_count = 0
+        self.postponed_annotation_import_ids = (
+            _postponed_annotation_import_ids(tree)
+        )
+        self.ignored_annotation_node_ids = (
+            _annotation_node_ids(tree)
+            if self.postponed_annotation_import_ids
+            else frozenset()
+        )
         self.parents: Dict[int, ast.AST] = {}
         for parent in ast.walk(tree):
             for child in ast.iter_child_nodes(parent):
@@ -434,6 +468,7 @@ class _StaticAnalyzer:
 
     def analyze(self) -> None:
         self._scan_structure()
+        self.issues.extend(_runtime_annotation_issues(self.tree))
         if self.numpy_import_count != 1:
             self.issues.append(
                 "source requires exactly one `import numpy as np` binding"
@@ -443,6 +478,8 @@ class _StaticAnalyzer:
 
     def _scan_structure(self) -> None:
         for node in ast.walk(self.tree):
+            if id(node) in self.ignored_annotation_node_ids:
+                continue
             if isinstance(node, ast.Import):
                 for alias in node.names:
                     rendered = "import %s%s" % (
@@ -463,10 +500,11 @@ class _StaticAnalyzer:
                     ", ".join(alias.name for alias in node.names),
                 )
                 self.imports.append(rendered)
-                self.issues.append(
-                    "unmodelled third-party/import-from surface `%s` at line %d"
-                    % (node.module or "", node.lineno)
-                )
+                if id(node) not in self.postponed_annotation_import_ids:
+                    self.issues.append(
+                        "unmodelled third-party/import-from surface `%s` at line %d"
+                        % (node.module or "", node.lineno)
+                    )
             elif isinstance(node, _CONTROL_FLOW):
                 self.issues.append(
                     "control-flow structure %s is outside straight-line qualification at line %d"

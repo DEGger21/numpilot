@@ -49,7 +49,7 @@ CLI 不提供任意布尔 policy 开关，只允许在首次 `ingest-official` �
 | Profile | 允许的后续副作用 | 典型用途 |
 |---|---|---|
 | `receipt-only` | 无 | 只导入和审计已有收据；默认值 |
-| `candidate-generation` | subprocess、network、configured model | official binary candidate；仅 reviewed MatMul 切片可到未验证 `ADAPTER_CANDIDATE`，ops-nn/CANNBot 各停在源码证据/未验证草稿 |
+| `candidate-generation` | subprocess、network、已选且获授权的边界模型（configured 或 CodeArts-agent） | official binary candidate；仅 reviewed MatMul 切片可到未验证 `ADAPTER_CANDIDATE`，ops-nn/CANNBot 各停在源码证据/未验证草稿；CodeArts-agent/no-llm 不读取 `llm.json` |
 | `full-local-recovery` | 上述全部，再加 system write、AsNumPy import、build、execution、activation | 仅授权未来完整本地恢复链；当前后续 producer 未接线 |
 
 profile 创建后不可升级或改写。授权只表示 producer 可以执行某类动作，不等于动作已经发生；
@@ -182,7 +182,7 @@ adapter。仍待实现：
 1. `official_source` 和 `remote_llm` 的 Recovery candidate materializer；
 2. 其他 API/route 的 reviewed AsNumPy adapter planner 与 receipt adapter；
 3. 隔离 integration transaction、构建、六门 qualification、激活与回滚；
-4. overlay-aware capability rescan、最终 configured-model migration 和 final verification；
+4. overlay-aware capability rescan、按已选 lane 的最终 migration 和 final verification（CodeArts-agent/no-llm 不调用 configured model）；
 5. ordinary strict-NPU provenance 与独立性能证据。
 
 当前 `candidate-generation` 的自动 producer 只到 `ADAPTER_CANDIDATE`。下列 integration/

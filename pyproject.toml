@@ -68,6 +68,24 @@ include = ["numpilot*"]
 "share/numpilot/skills/numpilot-migration-gate" = [
   ".codeartsdoer/skills/numpilot-migration-gate/SKILL.md",
 ]
+"share/numpilot/skills/numpilot-migration-gate/agents" = [
+  ".codeartsdoer/skills/numpilot-migration-gate/agents/openai.yaml",
+]
+"share/numpilot/skills/numpilot-migration-gate/references" = [
+  ".codeartsdoer/skills/numpilot-migration-gate/references/codearts-sidebar.md",
+  ".codeartsdoer/skills/numpilot-migration-gate/references/terminal-contract.md",
+]
+"share/numpilot/skill" = [
+  "skill/SKILL.md",
+  "skill/README.md",
+]
+"share/numpilot/skill/agents" = [
+  "skill/agents/openai.yaml",
+]
+"share/numpilot/skill/references" = [
+  "skill/references/codearts-sidebar.md",
+  "skill/references/terminal-contract.md",
+]
 "share/numpilot/skills/asnumpy-custom-op-integration" = [
   ".codeartsdoer/skills/asnumpy-custom-op-integration/SKILL.md",
 ]

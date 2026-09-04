@@ -17,6 +17,14 @@ tools:
 只做分析，不修改、不 import、不执行用户源码，也不调用大模型。普通入口是整个纯 NumPy 文件，
 不要求 `build_inputs()` 或 `forward()`。如果需要 CLI 权威回执，请把建议命令交给主智能体执行：
 
+## 入口与配置边界
+
+主智能体必须先声明 `terminal_manual`、`codearts_agent` 或 `hybrid` lane。若是 CodeArts-agent
+或用户明确说“不用 `llm.json`/内置模型”，本智能体不得读取、glob、grep 或以其他方式探查
+`llm.json`、运行时配置目录、模型 endpoint，也不得建议 `configure-llm`、`--provider llm` 或
+probe；只读取仓库、Skill 和公开 capability/provenance 文件。此 lane 的网络/模型调用数为零。
+入口未声明时只报告需要选择 lane，不要自行推断 configured model。
+
 ```bash
 python -m numpilot analyze SOURCE --json --out ANALYSIS.json
 ```
@@ -42,8 +50,9 @@ python -m numpilot analyze SOURCE --json --out ANALYSIS.json
   `CAPABILITY_AUDIT_REQUIRED`，不得建议生成同名算子；
 - 未建模动态语义、危险表面或无法安全迁移的路径是 `BLOCKED`。
 
-不要生成迁移代码或未经验证的算子代码。不要把 AST 机械改写建议写成比赛迁移产物；比赛
-ordinary 代码必须由比赛环境 configured GLM 真实生成，本地 AST 只负责事后等价审计。若 registry 与
+不要生成迁移代码或未经验证的算子代码。不要把 AST 机械改写建议写成比赛迁移产物；terminal
+configured 子路径的比赛 ordinary 代码才可由明确授权的真实 GLM 生成，CodeArts-agent 草稿须另
+行标记并保留 agent receipt，本地 AST 只负责事后等价审计。若 registry 与
 实际 AsNumpy wheel、CANN、SoC 或文件哈希漂移，将其列为审计阻断项而不是 direct capability。
 
 历史 `build_inputs + forward` 分析仅在主智能体明确指定 `--mode contract` 高级兼容任务时使用，

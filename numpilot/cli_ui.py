@@ -1,3 +1,24 @@
+# This file is part of the NumPilot project at Harbin Institute of Technology (HIT).
+#
+# Copyright (c) 2026 AISS Group, Harbin Institute of Technology (HIT).
+# SPDX-License-Identifier: Apache-2.0
+#
+# Authors (accounts):
+# - Su Tonghua <@sutonghua>
+# - Li Xing <@li-xingHIT>
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """TTY-aware presentation helpers for NumPilot's human CLI.
 
 Dynamic output is deliberately limited to real terminals.  Redirected output,
@@ -178,6 +199,125 @@ def _console(stream):
     )
 
 
+_FLOW_TONE_STYLES = {
+    "title": ("bold cyan", "bold cyan"),
+    "phase": ("bold cyan", None),
+    "model": ("bold magenta", None),
+    "operator": ("bold bright_magenta", None),
+    "success": ("bold green", None),
+    "warning": ("bold yellow", None),
+    "error": ("bold red", "red"),
+    "progress": ("bold yellow", "dim"),
+    "artifact": ("bold bright_blue", "dim bright_blue"),
+    "metric": ("bold magenta", None),
+    "info": ("bold cyan", None),
+    "prompt": ("bold cyan", "bold cyan"),
+    "code": ("cyan", "dim cyan"),
+}
+
+
+def _flow_label_tone(label):
+    """Classify one framework-owned leading label without reading its body."""
+
+    name = label.strip("[] ")
+    if name in {"✓", "PASS"}:
+        return "success"
+    if name in {"✗", "FAIL"}:
+        return "error"
+    if name in {"?", "!"}:
+        return "warning"
+    if name.startswith("阶段"):
+        return "phase"
+    if name.startswith("算子接入"):
+        return "operator"
+    if name.startswith(("CANNBot", "模型", "LLM")):
+        return "model"
+    if name in {
+        "确认",
+        "缺口",
+        "扫描提示",
+        "解析边界",
+        "模型输入边界",
+        "解读边界",
+        "口径",
+        "迁移门禁",
+    }:
+        return "warning"
+    if name == "进行中":
+        return "progress"
+    if name in {"性能", "规模"}:
+        return "metric"
+    if name in {
+        "会话目录",
+        "会话回执",
+        "缺口回执",
+        "框架命令",
+        "迁移后代码",
+        "完整报告",
+        "机器回执",
+    }:
+        return "artifact"
+    return "info"
+
+
+def _styled_flow_text(message, tone=None):
+    """Build safe Rich text for one human flow message.
+
+    Only framework-owned leading labels receive semantic color.  The body is
+    never parsed as Rich markup, and raw terminal controls are removed before
+    rendering so source/model-derived values cannot inject ANSI or OSC data.
+    """
+
+    rendered = Text()
+    lines = str(message).split("\n")
+    for index, raw_line in enumerate(lines):
+        if raw_line:
+            safe_line = _terminal_safe(raw_line)
+            if safe_line.startswith("──") and safe_line.endswith("──"):
+                rendered.append(safe_line, style="bold cyan")
+            else:
+                match = re.match(r"^(\[[^\]]{1,64}\])(.*)$", safe_line)
+                selected = tone
+                if match is not None:
+                    selected = selected or _flow_label_tone(match.group(1))
+                    label_style, body_style = _FLOW_TONE_STYLES.get(
+                        selected, ("bold cyan", None)
+                    )
+                    rendered.append(match.group(1), style=label_style)
+                    rendered.append(match.group(2), style=body_style)
+                else:
+                    label_style, body_style = _FLOW_TONE_STYLES.get(
+                        selected, (None, None)
+                    )
+                    rendered.append(safe_line, style=body_style or label_style)
+        if index < len(lines) - 1:
+            rendered.append("\n")
+    return rendered
+
+
+def flow_print(message="", *, stream=None, tone=None, end="\n", flush=False):
+    """Print one colorized human-flow line while preserving plain contracts.
+
+    Color is emitted only to a real interactive terminal.  Redirected output,
+    ``NO_COLOR``, ``TERM=dumb``, and ``NUMPILOT_PLAIN=1`` remain byte-stable
+    plain text, which keeps automation, tests, and persisted receipts clean.
+    """
+
+    output = sys.stdout if stream is None else stream
+    if not is_interactive(output):
+        print(message, file=output, end=end, flush=flush)
+        return False
+    console = _console(output)
+    console.print(
+        _styled_flow_text(message, tone=tone),
+        end=end,
+        soft_wrap=True,
+    )
+    if flush:
+        output.flush()
+    return True
+
+
 @contextmanager
 def terminal_status(message, *, enabled=True):
     """Show a durable spinner/result pair on stderr only for a real TTY."""
@@ -189,16 +329,17 @@ def terminal_status(message, *, enabled=True):
         return
 
     console = _console(stream)
+    safe_message = _terminal_safe(message)
     started = time.monotonic()
     try:
-        with console.status(Text(message, style="bold cyan"), spinner="dots"):
+        with console.status(Text(safe_message, style="bold cyan"), spinner="dots"):
             yield outcome
     except BaseException:
         elapsed = time.monotonic() - started
         console.print(
             Text.assemble(
                 ("✗ ", "bold red"),
-                (message, "red"),
+                (safe_message, "red"),
                 (f"  {elapsed:.1f}s", "dim"),
             )
         )
@@ -209,7 +350,10 @@ def terminal_status(message, *, enabled=True):
         console.print(
             Text.assemble(
                 (marker + " ", "bold " + style),
-                (message, style if outcome.value != "ok" else "white"),
+                (
+                    safe_message,
+                    style if outcome.value != "ok" else "white",
+                ),
                 (f"  {elapsed:.1f}s", "dim"),
             )
         )
@@ -235,7 +379,7 @@ def _render_doctor_compact(console, report):
         console.print(
             Text.assemble(
                 (marker + " ", "bold " + style),
-                (str(item.name), "bold"),
+                (_terminal_safe(item.name), "bold"),
                 "\n  ",
                 (compact_diagnostic(item.name, item.detail), "dim"),
             )
@@ -249,13 +393,13 @@ def _render_paths_compact(console, paths, groups):
         if group != active_group:
             if active_group is not None:
                 console.print()
-            console.print(Text(group, style="bold cyan"))
+            console.print(Text(_terminal_safe(group), style="bold cyan"))
             active_group = group
         console.print(
             Text.assemble(
-                ("  " + str(name), "bold"),
+                ("  " + _terminal_safe(name), "bold"),
                 "\n    ",
-                (str(path or "—"), "dim"),
+                (_terminal_safe(path or "—"), "dim"),
             )
         )
 
@@ -359,14 +503,17 @@ def render_doctor(report, *, stream=None):
     if console.width < 64:
         console.print(
             Panel.fit(
-                Text(f"环境自检 · backend={report.backend}", style="bold cyan"),
+                Text(
+                    "环境自检 · backend=" + _terminal_safe(report.backend),
+                    style="bold cyan",
+                ),
                 border_style="cyan",
             )
         )
         _render_doctor_compact(console, report)
     else:
         table = Table(
-            title=f"环境自检 · backend={report.backend}",
+            title="环境自检 · backend=" + _terminal_safe(report.backend),
             box=box.ROUNDED,
             header_style="bold",
             title_style="bold cyan",
@@ -379,7 +526,7 @@ def render_doctor(report, *, stream=None):
             marker, style = _STATUS_STYLE.get(item.status, ("?", "white"))
             table.add_row(
                 Text(marker, style=f"bold {style}"),
-                Text(str(item.name)),
+                Text(_terminal_safe(item.name)),
                 Text(compact_diagnostic(item.name, item.detail), style="dim"),
             )
         console.print(table)
@@ -543,8 +690,8 @@ def render_paths(paths, *, stream=None):
     for name, path in paths.items():
         table.add_row(
             groups.get(name, "其他"),
-            Text(str(name)),
-            Text(str(path or "—"), style="dim"),
+            Text(_terminal_safe(name)),
+            Text(_terminal_safe(path or "—"), style="dim"),
         )
     console.print(table)
     return True

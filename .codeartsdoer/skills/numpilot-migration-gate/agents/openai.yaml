@@ -1,0 +1,6 @@
+interface:
+  display_name: "NumPilot 迁移门禁"
+  short_description: "交互式 NumPy 到 AsNumpy/NPU 迁移与缺口补全"
+  default_prompt: "Use $numpilot-migration-gate to migrate this NumPy program; first select the configured-terminal or agent/no-llm model source, then preserve every evidence gate and report."
+policy:
+  allow_implicit_invocation: true

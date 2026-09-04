@@ -255,7 +255,13 @@ CANNBot Skills and `cann/ops-nn` are different dependencies. The installer does 
 `ops-nn`; the current official-source resolver accepts only an explicitly provided, version-matched local
 checkout and currently pins the CANN 9.0.0 source mapping.
 
-## 7. Configure and probe the model
+## 7. Configure and probe the model (optional terminal configured sub-run)
+
+This section applies to the terminal/manual lane or to a hybrid run that explicitly authorizes a
+configured-model sub-run. In the CodeArts-agent lane, let the sidebar read the repository and NumPilot
+Skill and have its interactive model handle boundary work; do not read `llm.json`, run `configure-llm`/
+`--provider llm`, or probe an endpoint. A terminal/manual run may omit model configuration and use only
+the deterministic gates.
 
 ```bash
 python -m numpilot configure-llm --init
@@ -277,8 +283,9 @@ proxy URL, or raw response body.
 > Gap/operator generation and repair send a bounded gap contract, the statically extracted semantic function,
 > selected pinned CANNBot Skill content, and applicable current files or diagnostics. AsNumpy adapter generation
 > and repair send only the source/header context selected by the local target projection, the repository-owned
-> integration Skill, overlays, and applicable diagnostics. CANNBot provides workflow context; the configured
-> remote model—not CANNBot itself—generates the unverified draft. Review these payload classes before using a
+> integration Skill, overlays, and applicable diagnostics. CANNBot provides workflow context; the explicitly
+> selected and authorized boundary model (CodeArts agent or configured remote model)—not CANNBot itself—generates
+> the unverified draft. Review these payload classes before using a
 > non-local endpoint.
 >
 > `verify-script`, `benchmark-script`, and the demo execute the original source and generated candidate with your
@@ -302,7 +309,8 @@ network transport begins.
 ## 8. First run
 
 Use the complete `analyze → migrate → verify-script` example in the [English README](../README.md#run-the-ordinary-flow)
-for your own trusted script. `./run_demo.sh --quick` runs the repository's staged example and adds a scoped
+for your own trusted script. CodeArts/terminal/hybrid entry modes and model-source gates are documented in the
+[CodeArts integration guide](codearts-integration.md). `./run_demo.sh --quick` runs the repository's staged example and adds a scoped
 benchmark. If the model config lives in a separate runtime directory, pass
 `--llm-config /absolute/persistent/numpilot-runtime/.numpilot-config/llm.json`; each run is written to a new
 repository-external directory shown by `python -m numpilot paths --json`.

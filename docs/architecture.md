@@ -9,7 +9,7 @@
 [中文 PPT](numpilot-zh.pptx) · [English PPT](numpilot-en.pptx)。单页图以实线标识已实现路径、以
 虚线标识规划路径。缺口输出因路由而异：官方二进制通用链到 `CANDIDATE_READY`，仅已审计的
 installed-ACLNN MatMul 定向切片到 `ADAPTER_CANDIDATE`，ops-nn 当前输出源码证据，固定 CANNBot
-Skills 与 configured model 当前输出未验证算子草稿。
+Skills 与显式选择的边界模型（configured model 或 CodeArts agent）当前输出未验证算子草稿。
 
 README 中的 v6 SVG 是完整展示版，文字已转为轮廓并内嵌了位图 Logo；文本化的边界图单独用于机器审计。
 PPT 保留原稿几何与视觉风格，公开发布前仍需用 PowerPoint/WPS 人工检查字体替换、文本溢出和线型。
@@ -25,11 +25,13 @@ wheel 摘要、无隐式获取规则和升级/回滚合同见
 路径仍只能由维护者显式选择，不能混入用户安装流程。
 
 NumPilot 当前默认解决一个直接问题：用户提交带 `import numpy as np` 的普通纯 NumPy 文件，
-系统不执行源码，先检查实际 AsNumpy capability，再由用户配置模型生成受精确 AST/回执约束的迁移
-文件。用户不需要为了迁移而增加 `build_inputs()` 或 `forward()`。
+系统不执行源码，先检查实际 AsNumpy capability。configured-model 路线可通过已实现的哈希绑定
+响应与精确 AST 适配器生成迁移文件；终端手写或 CodeArts 交互模型候选只有被已登记适配器接受
+才可继续，否则明确停在 `draft/stopped`。用户不需要为了迁移而增加 `build_inputs()` 或
+`forward()`。
 
 AST/runtime evidence 是事实层：定位绑定、枚举调用点并判断当前接口、签名和 provenance；模型
-不是 capability 探测器。当前 ordinary 实现仍让 configured model 返回完整文件，再由 exact AST
+不是 capability 探测器。当前 ordinary configured 子路径仍让 configured model 返回完整文件，再由 exact AST
 证明它只实施授权 plan。目标架构会把可证明的纯 namespace/局部机械改写下沉为 AST 快路径，
 把模型集中用于 API 组合、复杂语义，以及本项目的核心创新——缺口算子生成和 AsNumPy 工程接入。
 两条路径最终使用同一证据与验证门，不能因生成者不同而降低标准。
@@ -61,15 +63,19 @@ flowchart TB
     SCAN[惰性 AST 扫描]
     CAP[版本/哈希绑定 capability]
     DECIDE[五类确定结果]
-    MODEL[Configured model 精确迁移]
+    MODEL[按已选 lane 提出候选；configured model 仅经授权]
+    ADMIT{configured response<br/>或已登记 adapter?}
     AUDIT[AST / 注释 / 回执 / hash 门]
+    DRAFT[manual / CodeArts draft-stopped]
     ARTIFACT[migrated.py + migration report]
     VERIFY[显式 verify-script<br/>双进程数值对拍]
     VRECEIPT[write-once verification receipt]
     BENCH[可选 benchmark-script<br/>单核 CPU / strict-NPU resident 门]
     BRECEIPT[write-once benchmark receipt]
     SRC --> SCAN --> CAP --> DECIDE
-    DECIDE -->|DIRECT / accepted fallback| MODEL --> AUDIT --> ARTIFACT
+    DECIDE -->|DIRECT / accepted fallback| MODEL --> ADMIT
+    ADMIT -->|是| AUDIT --> ARTIFACT
+    ADMIT -->|否| DRAFT
     DECIDE -->|GAP_REQUIRED| GAP[official-first route-specific evidence]
     DECIDE -->|audit required / blocked| STOP[fail closed]
     ARTIFACT --> VERIFY --> VRECEIPT
@@ -93,16 +99,19 @@ flowchart TB
   核对全部已审计 Python wrapper hash；不会仅凭 commit 文本放行。
 - receipt 是当前用户边界内的本地 lineage/漂移门，不是签名供应链证明；不承诺对抗同一
   用户或 root 主动改写 receipt 与安装文件。
-- ordinary script 扫描和迁移阶段不执行用户源码，但 `migrate` 会把完整源码发送给用户配置的远端
-  模型。gap/operator 生成与修复会发送有界缺口合同、静态语义函数、选定 CANNBot Skill 上下文及
-  适用的草稿/诊断；AsNumpy adapter 路径会发送按目标投影的源码/头文件、Skill 上下文、overlay 与
-  诊断。CANNBot 提供工作流上下文，真正生成草稿的仍是 configured remote model。`verify-script`、
+- ordinary script 扫描和迁移阶段不执行用户源码；terminal/manual lane 的 `migrate` 只在用户明确
+  授权后把完整源码发送给配置的远端模型。CodeArts-agent/hybrid 可由交互模型在隔离目录提出
+  草稿，不能因此偷偷读取 `llm.json`。gap/operator 生成与修复会发送有界缺口合同、静态语义函数、
+  选定 CANNBot Skill 上下文及适用的草稿/诊断；AsNumpy adapter 路径会发送按目标投影的源码/头文件、
+  Skill 上下文、overlay 与诊断。CANNBot 提供工作流上下文，真正生成草稿的是显式选择并授权的
+  边界模型（CodeArts agent 或 configured remote model）。`verify-script`、
   `benchmark-script` 与演示会以当前用户权限执行原脚本和候选；`python -I` 不是 OS 沙箱，不可信
   输入必须使用独立容器或虚拟机。
 - `verify-script` 已提供 hash-bound 的通用基础数值验证，但固定
   `strict_npu_verified=false`、`performance_valid=false`、`os_sandbox=false`。
-- `benchmark-script` 已提供首版 ordinary strict-NPU resident 性能门：它只接受真实
-  configured-model strict artifact，以 marker 划分一次输入准备和重复直线计算区，在两个独立
+- `benchmark-script` 已提供首版 ordinary strict-NPU resident 性能门：当前只接受有完整 provenance
+  的 strict artifact（configured-model 产物可直接满足；未绑定的 manual/CodeArts draft 不得升级），
+  以 marker 划分一次输入准备和重复直线计算区，在两个独立
   单核 worker 中验证 BLAS 线程、runtime/profile、实际调用次数、逐样本同步与数值，再发布原始
   样本和 combined receipt。该命令不宣称任意 Python、kernel-only 或冷启动端到端能力。
 - legacy contract 工具不能反向成为普通脚本的输入格式要求，也不能替代上述 artifact 证据。
@@ -194,8 +203,10 @@ python -m numpilot bootstrap --verify --with-cannbot --accept-cannbot-license
    路径；运行时不扫描 cwd，receipt 或
    wrapper/native/module/interpreter/package 身份任一漂移都 fail closed；
 10. NumPilot 不得通过 pip 安装钩子、`import`、`doctor`、`migrate` 或
-   `complete-gaps` 隐式下载依赖。ordinary `migrate` 调用已配置模型是用户请求的模型动作，
-   不是依赖安装；它必须保留远端回执，且只在调用进程临时使用用户配置的代理。
+   `complete-gaps` 隐式下载依赖。terminal/manual configured 子运行中的 ordinary `migrate` 调用
+   已配置模型是用户请求的模型动作，不是依赖安装；它必须保留远端回执，且只在调用进程临时使用
+   用户配置的代理。CodeArts-agent/no-llm lane 不读取配置、不探测 endpoint，也不调用这些
+   configured provider。
 11. release 模式还要把内部 AsNumpy wheel 的字节、METADATA/RECORD、安装后 Python/native
     模块哈希写入同一 release manifest；任一缺失或漂移都返回阻断，不能切回 `--build-asnumpy`
     或自动下载源码。
@@ -207,14 +218,16 @@ flowchart LR
   S[纯 NumPy 源文件] --> A[惰性全文件 AST 扫描]
   A --> C[实际 AsNumpy capability 分类]
   C --> D{确定结果}
-  D -->|DIRECT| G[Configured model 精确 namespace 改写]
+  D -->|DIRECT| G[按已选 lane 提出候选；配置模型仅在授权后改写]
   D -->|FALLBACK_CONSENT| Q{用户选择}
   Q -->|接受| G
   Q -->|拒绝已审计 fallback| P[GAP_REQUIRED]
   D -->|API 确实缺失| P
   D -->|callable + UNKNOWN 或身份漂移| U[CAPABILITY_AUDIT_REQUIRED]
   D -->|动态或未建模表面| B[BLOCKED]
-  G --> V[回执 + AST + 注释 + hash 二次门]
+  G --> H{configured response<br/>或已登记 adapter?}
+  H -->|是| V[回执 + AST + 注释 + hash 二次门]
+  H -->|否| T[manual / CodeArts draft-stopped]
   V --> O[migrated.py + report]
   O --> E[用户显式 verify-script]
   E --> N[双进程 named-output 数值回执<br/>不升级 NPU provenance/performance]
@@ -227,7 +240,7 @@ flowchart LR
 
 | 结果 | 条件 | 下一步 |
 |---|---|---|
-| `DIRECT` | 所有使用均在当前 runtime/audit 的 strict 或受限 qualified 范围 | 调用已配置模型，随后做精确本地审计 |
+| `DIRECT` | 所有使用均在当前 runtime/audit 的 strict 或受限 qualified 范围 | 按已选 lane 提出候选；configured terminal 子运行经授权后调用模型，随后做精确本地审计 |
 | `FALLBACK_CONSENT` | 已审计为 CPU、conditional CPU 或 host-assisted | 等待用户接受、拒绝或终止；非交互环境不默认接受 |
 | `GAP_REQUIRED` | API 确实缺失，或用户拒绝已审计 fallback | 生成 source/callsite/SoC/CANN 绑定的 GapSpec |
 | `CAPABILITY_AUDIT_REQUIRED` | callable 但 provenance 为 `UNKNOWN`，或 runtime/version/hash/path 尚未审计 | 先资格化或源码审计，不生成同名替代算子 |
@@ -237,10 +250,11 @@ flowchart LR
 未审计 Python 数组运算符、ndarray method 和 nested namespace 失败关闭。函数、类或控制流的
 存在本身不构成支持承诺；只有整个文件的具体执行表面通过扫描才可继续。
 
-模型输出必须来自通过 `openai-chat-completions` 合同验证的精确 configured model，只允许
+configured-model 输出必须来自通过 `openai-chat-completions` 合同验证的精确模型，只允许
 source-bound 改写计划。响应 model 默认精确匹配，alias 必须显式 allowlist；完整 AST、注释、
 模型身份、内容 hash 和远程回执任一不一致都拒绝发布；本地 transformer 只是比较 oracle，不能
-作为模型失败时的迁移产物。
+作为模型失败时的迁移产物。Manual/CodeArts-agent 候选须使用独立的 author/lane handoff；明确
+“不用 `llm.json`”时不得读取配置、探测 endpoint 或静默回退到 configured lane。
 
 普通脚本 run 是 write-once：`migrated.py`、`gap-request.json` 和
 `script-migration-report.json` 不得与历史 run 混用。迁移报告固定如实写明是否执行、是否完成
@@ -264,7 +278,7 @@ steady device-resident suffix；prefix、最终 D2H 和暖运行组件和另列�
 当前已经存在的原语包括：
 
 - source-bound GapSpec 和 generation request；
-- CANNBot bundle 校验、configured-model draft generation、诊断驱动 repair 和离线 seal；
+- CANNBot bundle 校验、已选边界模型 draft generation、诊断驱动 repair 和离线 seal；
 - AsNumpy adapter generation/repair；
 - 六门 qualification evidence schema、capability overlay 与 runtime guard。
 - source/target/runtime/policy 不可变绑定、逐 gap reducer、write-once SHA-256 状态链，以及
@@ -307,7 +321,7 @@ SSE 事件聚合取得内容，请求固定 thinking disabled 和 reasoning mini
 的未验证 overlay 推进到 `ADAPTER_CANDIDATE`。后续仍未自动执行：
 
 ```text
-integrate → qualify → activate → rescan → final configured-model migration → verify
+integrate → qualify → activate → rescan → final lane-selected migration → verify
 ```
 
 `candidate-generation` profile 的已实现链路严格终止于 `ADAPTER_CANDIDATE`，它只允许
@@ -328,13 +342,13 @@ GapSpec，resolver 命中 installed ACLNN 并固定 ops-nn v9.0.0 来源，AsNum
 ```text
 GapSpec
   → 已安装 CANN ACLNN 只读候选查询
-    ├─ 候选：语义审计 → configured model 返回逐目标 exact edits
+    ├─ 候选：语义审计 → 已选边界模型返回逐目标 exact edits
     │         → 本地精确重建未验证 AsNumpy adapter candidate
     ├─ clean no_match：继续查询本地固定 ops-nn
     └─ incompatible / ambiguous / error：失败关闭
   → 固定 CANN 版本的本地 ops-nn Git object 只读查询
     ├─ 候选 / 歧义：当前只发布源码发现证据；物化、构建与 adapter 接线尚未实现
-    ├─ clean no_match：才进入 CANNBot Skill + configured model 新 kernel generation
+    ├─ clean no_match：才进入 CANNBot Skill + 已授权边界模型新 kernel generation
     └─ incompatible / ambiguous / error：失败关闭
   → 仅 full-local-recovery 可授权未来 integrate / 六门 qualification / activate / rescan
 ```
@@ -362,9 +376,11 @@ readiness 探测。
 并把 `custom_operator_generation_allowed` 与
 `custom_generation_proof.official_equivalence=not_proven` 写入官方解析收据；
 `catalog_unreviewed_api` 仍保持 `ambiguous`，不会被伪装成 clean `no_match`。已发现的官方
-候选、非 OperatorSpec 缺口、身份漂移和错误状态不能被该开关覆盖。即使该路由获准，仍须
-配置模型、代理、固定 CANNBot Skill 和后续六门资格化；产物永远先是
-`generated_unverified`，恢复/激活流程不会把它当作已验证能力。
+候选、非 OperatorSpec 缺口、身份漂移和错误状态不能被该开关覆盖。即使该路由获准，仍须由
+已明确授权的边界模型（terminal configured 或 CodeArts agent）生成，读取固定 CANNBot Skill
+并完成后续六门资格化；CodeArts-agent lane 不读取 `llm.json`，产物永远先是
+`generated_unverified`，恢复/激活流程不会把它当作已验证能力。代理仅是现场可选环境设置，
+不是仓库固定配置。
 
 `recover-gaps ingest-official` 对 schema-2 gap migration report、其 sibling
 `gap-request.json` 和上述 official resolution 做严格 bounded JSON 解析与全交叉绑定，再以每阶段
@@ -478,7 +494,9 @@ adapter 与 qualification/overlay 仍是可独立调用的安全原语，不是�
 
 只有 missing API 或用户拒绝的 audited fallback 可以生成 gap。callable + `UNKNOWN` 必须进入
 capability/source audit；旧 fallback runtime 不能被 overlay 直接重命名为 NPU 实现。完成独立
-接入和激活后，还必须重新扫描原文件，再由 configured model 生成最终迁移文件。该自动恢复编排属于下一阶段。
+接入和激活后，还必须重新扫描原文件，再由已选 lane 的边界模型（或用户手动）生成最终迁移
+文件。CodeArts-agent 明确要求不读 `llm.json` 时不得调用 configured model；该自动恢复编排
+属于下一阶段。
 
 ## 5. 显式 legacy contract 通道
 
@@ -532,7 +550,8 @@ ordinary `benchmark-script` 的强 NPU evidence 必须绑定：
 它们不得重新迁移普通 artifact 后冒充同一证据。
 
 当前比赛默认例子是 `examples/poisson_source_smooth_l1_map.py`；根目录 `run_demo.sh` 编排
-五态分析、真实 configured model、数值门和产品 benchmark。公开发布内容只保留
+五态分析、真实 configured model、数值门和产品 benchmark。CodeArts-agent/hybrid 入口应由侧边栏
+提供草稿并保留独立 handoff，不读取 `llm.json`。公开发布内容只保留
 [Poisson 应用阶段](../evidence/competition-poisson-stage-20260828/README.md)与
 [逐元素优势区间](../evidence/competition-ordinary-20260828/README.md)两份当前证据。
 

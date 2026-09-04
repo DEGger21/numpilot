@@ -243,7 +243,12 @@ python -m numpilot setup-skills \
 CANNBot Skills 与 `cann/ops-nn` 是不同依赖。安装器不会自动获取 `ops-nn`；当前 official-source
 resolver 只接受用户显式提供、与版本匹配的本地 checkout，且现有源码映射只固定 CANN 9.0.0。
 
-## 7. 配置并探测模型
+## 7. 配置并探测模型（终端 configured 子路径，可选）
+
+本节只适用于 terminal/manual lane，或 hybrid 中明确授权的 configured-model 子运行。若使用
+CodeArts-agent lane，让侧边栏先读仓库与 NumPilot Skill，由交互模型完成边界任务；该 lane 不读
+`llm.json`、不运行 `configure-llm`/`--provider llm`，也不探测模型 endpoint。终端手动 lane 可以
+完全不配置模型，直接交给确定性 gate。
 
 ```bash
 python -m numpilot configure-llm --init
@@ -265,7 +270,7 @@ python -m numpilot configure-llm --probe
 > gap/operator 生成与修复会发送有界缺口合同、静态提取的语义函数、选定的固定 CANNBot Skill
 > 内容，以及适用的当前文件或诊断。AsNumpy adapter 生成与修复只发送本地目标投影选中的源码/头文件
 > 上下文、仓库自带的 integration Skill、overlay 与适用的诊断。CANNBot 提供工作流上下文；生成
-> 未验证草稿的是用户配置的远端模型，而不是 CANNBot 本身。使用非本地 endpoint 前应审查这些
+> 未验证草稿的是已选择并授权的边界模型（CodeArts 交互模型或用户配置的远端模型），而不是 CANNBot 本身。使用非本地 endpoint 前应审查这些
 > payload 类别。
 >
 > `verify-script`、`benchmark-script` 与演示会以当前用户权限执行原脚本和生成候选；`python -I`
@@ -288,6 +293,7 @@ python -m numpilot configure-llm --probe
 ## 8. 首次运行
 
 针对自己的可信脚本，请使用[中文 README 的完整 `analyze → migrate → verify-script` 示例](../README.zh-CN.md#运行-ordinary-主链)。
+CodeArts/终端/hybrid 三种入口及模型来源硬门禁见[CodeArts 集成建议](codearts-integration.md)。
 `./run_demo.sh --quick` 运行仓库内置的分阶段示例，并额外执行范围绑定基准。若模型配置位于独立
 运行时目录，可显式传入 `--llm-config /absolute/persistent/numpilot-runtime/.numpilot-config/llm.json`；
 每次运行都会写入 `python -m numpilot paths --json` 所示的新仓库外目录。

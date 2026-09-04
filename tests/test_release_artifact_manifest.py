@@ -1,3 +1,24 @@
+# This file is part of the NumPilot project at Harbin Institute of Technology (HIT).
+#
+# Copyright (c) 2026 AISS Group, Harbin Institute of Technology (HIT).
+# SPDX-License-Identifier: Apache-2.0
+#
+# Authors (accounts):
+# - Su Tonghua <@sutonghua>
+# - Li Xing <@li-xingHIT>
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import base64
 import io
 import json
@@ -69,6 +90,7 @@ REVIEWED_PAYLOADS = {
     "docs/numpilot-zh-v6.svg": VALID_SVG,
     "docs/assets/architecture/numpilot-architecture-en.svg": VALID_SVG,
     "docs/assets/architecture/numpilot-architecture-zh.svg": VALID_SVG,
+    "docs/assets/architecture/numpilot-two-routes.zh-CN.png": VALID_PNG,
     "docs/assets/brand/asnumpy-mark.png": VALID_PNG,
     "docs/assets/brand/ascend-wordmark.png": VALID_PNG,
     "docs/assets/brand/cann-wordmark.png": VALID_PNG,
@@ -85,6 +107,14 @@ PACKAGE_MEMBERS = (
     # the intended validation (rather than failing at fixture admission).
     f"{NAME}/cli_ui.py",
     f"{NAME}/competition_readiness.py",
+    f"{NAME}/add_one_gap.py",
+    f"{NAME}/demo_llm_operator_generation.py",
+    f"{NAME}/interactive_migration.py",
+    f"{NAME}/interactive_report.py",
+    f"{NAME}/llm_check.py",
+    f"{NAME}/migration_skill.py",
+    f"{NAME}/repl.py",
+    f"{NAME}/runtime_extensions.py",
     f"{NAME}/_script_benchmark_worker.py",
     f"{NAME}/_script_verification_worker.py",
     f"{NAME}/script_benchmark.py",
@@ -104,6 +134,14 @@ INSTALLED_SKILL_MEMBERS = (
     "share/numpilot/codearts/agents/numpilot-operator-engineer.md",
     "share/numpilot/codearts/agents/numpilot-orchestrator.md",
     "share/numpilot/skills/numpilot-migration-gate/SKILL.md",
+    "share/numpilot/skills/numpilot-migration-gate/agents/openai.yaml",
+    "share/numpilot/skills/numpilot-migration-gate/references/codearts-sidebar.md",
+    "share/numpilot/skills/numpilot-migration-gate/references/terminal-contract.md",
+    "share/numpilot/skill/README.md",
+    "share/numpilot/skill/SKILL.md",
+    "share/numpilot/skill/agents/openai.yaml",
+    "share/numpilot/skill/references/codearts-sidebar.md",
+    "share/numpilot/skill/references/terminal-contract.md",
     "share/numpilot/skills/asnumpy-custom-op-integration/SKILL.md",
     "share/numpilot/skills/asnumpy-custom-op-integration/agents/openai.yaml",
     "share/numpilot/skills/asnumpy-custom-op-integration/references/legacy-case-lessons.md",
@@ -117,7 +155,7 @@ SOURCE_SKILL_MEMBERS = (
     *tuple(
         member.replace("share/numpilot/codearts/", ".codeartsdoer/").replace(
             "share/numpilot/skills/", ".codeartsdoer/skills/"
-        )
+        ).replace("share/numpilot/skill/", "skill/")
         for member in INSTALLED_SKILL_MEMBERS
         if not member.endswith("ProjectSkillStatus.txt")
     ),
@@ -179,6 +217,8 @@ def _sdist(
         f"{root}/docs/FRESH-NOTEBOOK-QUICKSTART.md": b"notebook guide\n",
         f"{root}/docs/COMPETITION-READINESS.md": b"readiness guide\n",
         f"{root}/docs/NumPilot-Demo-v1-Quickstart.ipynb": b"{}\n",
+        f"{root}/examples/custom_operator_add_one.py": b"pass\n",
+        f"{root}/examples/add_one_migration_demo.py": b"pass\n",
         f"{root}/examples/competition_power_log_exp.py": b"pass\n",
         f"{root}/evidence/MANIFEST.sha256": b"",
         f"{root}/evidence/competition-ordinary-20260828/qualified-analysis.json": b"{}\n",
@@ -189,6 +229,7 @@ def _sdist(
         f"{root}/evidence/competition-poisson-stage-20260828/script-verification-report.json": b"{}\n",
         **{f"{root}/{member}": b"fixture\n" for member in SOURCE_SKILL_MEMBERS},
         f"{root}/tools/check_release_tree.py": b"# tool\n",
+        f"{root}/tools/demo_llm_operator_generation.py": b"# tool\n",
         f"{root}/tools/release_artifact_manifest.py": b"# tool\n",
     }
     if extra is not None:
@@ -281,6 +322,7 @@ def test_require_clean_rejects_dirty_source(tmp_path):
     [
         f"{NAME}-{VERSION}/todo.md",
         f"{NAME}-{VERSION}/NumPilot20260615-v1.pdf",
+        f"{NAME}-{VERSION}/TEMP-RECORDING-COMMANDS.zh-CN.md",
         f"{NAME}-{VERSION}/.numpilot-config/llm.json",
     ],
 )
@@ -384,6 +426,8 @@ def test_sdist_rejects_invalid_reviewed_assets(tmp_path, relative, payload, mess
             "sdist",
             f"{NAME}-{VERSION}/.codeartsdoer/skills/numpilot-migration-gate/SKILL.md",
         ),
+        ("sdist", f"{NAME}-{VERSION}/skill/SKILL.md"),
+        ("sdist", f"{NAME}-{VERSION}/examples/custom_operator_add_one.py"),
     ],
 )
 def test_artifact_rejects_missing_runtime_or_release_member(tmp_path, kind, missing):
@@ -490,6 +534,7 @@ def test_sdist_manifest_excludes_historical_internal_material():
     )
     assert "exclude todo.md" in manifest.splitlines()
     assert "exclude NumPilot20260615-v1.pdf" in manifest.splitlines()
+    assert "exclude TEMP-RECORDING-COMMANDS.zh-CN.md" in manifest.splitlines()
     assert "prune tools" in manifest.splitlines()
     assert "include tools/check_release_tree.py" in manifest.splitlines()
     assert "include tools/release_artifact_manifest.py" in manifest.splitlines()

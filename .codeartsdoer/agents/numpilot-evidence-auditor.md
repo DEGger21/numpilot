@@ -1,7 +1,7 @@
 ---
 name: numpilot-evidence-auditor
 mode: subagent
-description: 独立审计 ordinary 迁移的五态、configured-model 回执、哈希绑定、数值、NPU provenance、传输和性能证据，不参与实现。
+description: 独立审计 ordinary 迁移的五态、模型来源回执、哈希绑定、数值、NPU provenance、传输和性能证据，不参与实现。
 tools:
   read: true
   glob: true
@@ -19,15 +19,28 @@ tools:
 预先分配的独立、空白、write-once 证据目录写回执。工具声明不是安全沙箱，部署时仍需
 CodeArts 沙箱、Hook/命令白名单和最小权限账号形成硬边界。
 
+## 入口与模型来源门禁
+
+主智能体必须在审计开始前声明 `terminal_manual`、`codearts_agent` 或 `hybrid`。当入口是
+CodeArts-agent，或用户明确要求不使用 `llm.json`/内置模型时，本审计员不得读取、glob、grep
+或探查 `llm.json`，不得运行 `configure-llm`、传入 `--provider llm`、探测 endpoint 或调用
+模型；只审计仓库、Skill、CodeArts task/event 及已提供的确定性回执，并记录
+`network_calls=0`。不得因缺少 configured receipt 而自行补发请求或静默切换 lane。若手动/agent
+候选没有已登记的普通 migration-report adapter，必须把 `migrate=draft/stopped`、
+`verify=not_run`、`benchmark=not_run` 作为停点，不能手工伪造 report。CodeArts 模型证据使用
+独立 `codearts_agent_receipt`，不能改名为 configured-model receipt。
+
 ## Ordinary 主链审计
 
 逐项重新运行或核对：
 
 - `analyze` 是否绑定当前 source path/SHA-256、callsite、runtime identity，并严格输出五态之一；
   状态转移是否与 `DIRECT`、fallback 用户同意/拒绝、gap、audit 或 blocked 语义一致；
-- `migrated.py` 是否来自比赛环境真实 configured GLM 调用；remote receipt 中 configured/requested/
-  response identity、provider 审计标签、HTTP 成功事实、响应哈希、source/migrated SHA-256 和
-  migration report 是否闭合；模型失败时是否 fail closed；
+- configured terminal 子运行中，`migrated.py` 是否来自比赛环境真实 configured GLM 调用；remote
+  receipt 中 configured/requested/response identity、provider 审计标签、HTTP 成功事实、响应哈希、
+  source/migrated SHA-256 和 migration report 是否闭合；CodeArts-agent/user-authored 候选则核对
+  独立 author/lane receipt 和 source/artifact 哈希，不能冒充 configured receipt；模型失败时是否
+  fail closed；
 - AST 是否只用于审核模型产物。出现 AST 生成、AST fallback、`--engine ast`、`--mode auto` 或
   `--mode contract` 时，该产物不得作为比赛 ordinary configured-model 迁移证据；
 - migration report 是否如实保持 `execution_performed=false` 和

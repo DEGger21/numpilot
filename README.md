@@ -82,7 +82,7 @@ text summary below preserves the same meaning when SVG rendering or path-based t
 |---|---|---|
 | 1. Unclassified workload | Parses the complete program, extracts NumPy callsites, signatures, and bounded data flow | No API is labelled supported or missing at intake |
 | 2. Capability check | Matches every callsite against the exact AsNumpy/CANN/SoC profile and records an independent decision | The strictest per-call result becomes the fail-closed workload result |
-| 3. Whole-file migration | If every call is eligible, the configured model rewrites the complete file and NumPilot applies exact AST and response checks | A migration candidate, never an automatically trusted result |
+| 3. Whole-file migration | If every call is eligible, the configured-model lane can use the implemented hash-bound response/AST adapter; manual or CodeArts candidates continue only when a registered adapter accepts them | An adapter-accepted migration candidate, or an explicit `draft/stopped` result |
 | 4. Gap completion | If an API is missing, NumPilot looks for reusable Huawei official operators first; by default only clean official misses may draft; an explicit `OperatorSpec` can opt into a draft-only route with `--allow-custom-operator-generation` while recording that official equivalence is unproven | Both routes converge on the same AsNumpy API integration boundary |
 | 5. Qualification and feedback | Integration candidates pass artifact, build, unit, numerical, public-API, and real-NPU gates, then the original workload is rescanned | Only a fully eligible rescan may return to migration and verification |
 
@@ -100,8 +100,9 @@ unclassified NumPy source
   → whole-file AST + bounded data-flow analysis
   → per-call, runtime-bound capability decisions
   → fail-closed whole-workload result
-  → configured-model candidate rewrite
-  → model receipt + exact AST gate
+  → configured-model candidate → hash-bound response + exact AST gate
+    or manual/CodeArts candidate → registered adapter gate (otherwise draft/stopped)
+  → adapter-accepted migration candidate
   → independent numerical verification
   → optional profile-bound strict-NPU benchmark
   → write-once evidence receipts
@@ -112,8 +113,8 @@ The API-gap route shown in the lower half of the diagram is:
 ```text
 classified API gap
   → A. reuse an installed ACLNN candidate or audit a pinned ops-nn source candidate
-  → B. after two clean misses, use pinned CANNBot Skills + the configured model
-       to draft a custom operator
+  → B. after two clean misses, use pinned CANNBot Skills + an authorized boundary model
+       (CodeArts agent or configured model) to draft a custom operator
   → integrate through the AsNumpy public API boundary
   → qualify → activate capability → rescan the original workload
   → migrate only after every callsite is eligible
@@ -137,12 +138,117 @@ and rollback are still target paths rather than an end-to-end implemented loop.
 | Ordinary NumPy analysis | Implemented | Static whole-file analysis; it does not execute source or call a model |
 | Five-state capability decision | Implemented | Bound to the installed AsNumpy/CANN/SoC identity and audit evidence |
 | Configured-model rewrite | Implemented | OpenAI Chat Completions-compatible endpoint; exact model/response/AST/hash checks fail closed |
+| Manual/CodeArts candidate handoff | Draft-only by default | Continues only through a registered hash-bound adapter; otherwise remains `draft/stopped` with verification and benchmark `not_run` |
 | Numerical verification | Implemented | Original and migrated programs run in separate `python -I` workers; this is not an OS sandbox |
 | Strict-NPU resident benchmark | Implemented, scoped | Requires an exact qualified profile; it is not a universal or cold-E2E claim |
 | Official operator discovery | Implemented | Checks installed ACLNN, then pinned local `ops-nn` read-only source evidence; discovery does not build or integrate |
-| Custom-operator drafting | Partial | Normally requires two clean misses; an explicit custom `OperatorSpec` may opt into `official_equivalence=not_proven` draft-only; CANNBot Skills constrain the configured model and the resulting project remains unverified |
-| Generic gap completion | Partial | Official binary reaches `CANDIDATE_READY`; only reviewed MatMul reaches `ADAPTER_CANDIDATE`; qualification and activation remain planned |
+| Custom-operator drafting | Partial | CANNBot constrains a real boundary model, but generated Ascend C remains unverified until independently built and qualified |
+| Gap completion | Registered exception | Exact scalar-one calls can use a real-NPU-qualified, run-scoped AsNumpy composition while the CANNBot draft remains unactivated; every generic gap still fails closed |
 | CodeArts collaboration | Optional integration | Repository roles/skills exist; the actual control plane must be verified in the target account |
+
+## Two primary ways to use NumPilot: terminal or AI/CodeArts
+
+NumPilot separates candidate authoring from deterministic evidence. Choose one entry mode for each
+run; switching modes requires a fresh private run directory and renewed authorization:
+
+<p align="center">
+  <a href="docs/assets/architecture/numpilot-two-routes.zh-CN.png">
+    <img src="docs/assets/architecture/numpilot-two-routes.zh-CN.png" alt="NumPilot's two usage routes: terminal/manual mode and Agent Skill mode" width="100%">
+  </a>
+</p>
+
+<p align="center"><sub>Conceptual illustration only—not performance or correctness evidence. Both routes share NumPilot's deterministic gates but differ in how candidates are authored.</sub></p>
+
+1. **Terminal/configured lane (traditional tool use):** fill the private `llm.json`, start
+   `numpilot`, and use its persistent shell like an ordinary development tool. `check llm` performs a
+   small real connectivity request; `migrate` asks for an absolute source path, explains the program,
+   waits for `y`, and asks separately for exact `execute` consent immediately before source execution.
+   It then owns gap routing, migration, numeric checks, performance evidence, and the final report.
+   Low-level manual commands remain available without a model.
+2. **CodeArts-agent lane (natural interaction):** ask the CodeArts sidebar to read the repository and
+   the root [`skill/SKILL.md`](skill/SKILL.md) (mirrored at
+   `.codeartsdoer/skills/numpilot-migration-gate/SKILL.md`), then let its interactive model decompose
+   and independently complete migration, gap completion, or operator drafting. This lane does not
+   read `llm.json` or call NumPilot's built-in model. Label the isolated candidate
+   `agent_authored_draft`, then hand it to NumPilot for hash/structure checks. Numerical and
+   real-device gates run only when a registered adapter materializes the supported hash-bound
+   migration report; otherwise stop at `draft` with later stages `not_run`.
+   If your team wants a split workflow, these two methods can be combined as a **hybrid**: CodeArts
+   owns conversation, planning, and drafting/review, while the terminal/CLI owns repeatable `analyze`
+   and hash gates, plus `verify-script`/`benchmark-script` only for an adapter-accepted report. Preserve
+   the CodeArts task/event reference and candidate label. If the combined run needs a configured model,
+   switch and authorize explicitly in a new run directory; never mix receipts from the two sources.
+
+The CodeArts-agent hard gate applies whenever the user says to use the sidebar model or “do not use
+`llm.json`/the built-in model”: do not run `configure-llm`, pass `--provider llm`, probe an endpoint, or
+silently fall back after a failure. Until an adapter binds complete model/response/source/artifact
+evidence, manual or agent drafts cannot claim configured-model provenance, strict-NPU execution, or
+performance. See the [CodeArts integration guide](docs/codearts-integration.md) and the
+[NumPilot Skill](skill/SKILL.md) (the CodeArts mirror is
+`.codeartsdoer/skills/numpilot-migration-gate/SKILL.md`).
+The current `verify-script`/`benchmark-script` commands still require a supported hash-bound migration
+report; if no adapter can materialize one for a manual or CodeArts candidate, stop at `draft` and report
+that boundary rather than hand-editing a report.
+The initial receipt created by Skill loading or a handoff must remain
+`candidate_status=not_generated` with `agent_authored_draft=false`; only after the interactive model
+actually writes a candidate should a separate hash-bound `codearts_agent_receipt` use the draft label.
+
+Proxy settings are an optional environment detail, not a NumPilot requirement. If the site needs one,
+set `HTTP_PROXY`/`HTTPS_PROXY` (and lowercase equivalents) in the current session; the repository and
+receipts never hard-code proxy addresses, credentials, or private endpoints.
+
+### Interactive terminal
+
+The primary recording path is now the persistent product shell, not a one-click demo script. After
+activating the installed runtime and privately configuring `llm.json`, start it with one command:
+
+```bash
+numpilot
+```
+
+Then type `check llm`, followed by `migrate`. The first command sends a small real request and reports
+whether the configured model returned usable content. The second asks for an **absolute Python source
+path**, prints the deterministic API/callsite and AsNumpy-gap analysis, displays the model's bounded
+`interpreted_unverified` explanation, and waits for `y`. Only `y` starts generation and NPU
+qualification. Immediately before the framework executes the original and normalized user scripts, it
+requires a separate exact `execute` confirmation. The final screen links every artifact, the migrated
+source, and both `migration-report.json` and `migration-report.md`.
+
+For the smallest real gap demonstration, enter the absolute path to
+`examples/add_one_migration_demo.py`. NumPilot recognizes only its exact
+`numpy.add(array, 1)` signature and explains the missing run contract `asnumpy.add_one(x)`. It performs
+official-first resolution, displays the full pinned CANNBot Skill used by the real configured-model
+request, and shows a heartbeat while the model generates a bounded Ascend C `Adds` fragment. That
+fragment remains `generated_unverified`: it is not compiled or activated. Separately, NumPilot builds a
+run-scoped `asnumpy.add_one` composition from qualified `asnumpy.ones_like` plus `asnumpy.add`, admits it
+only after isolated real-NPU qualification, lowers the program, and continues through migration, numeric
+verification, performance, and the session report. Upstream AsNumpy and the shared OPP are unchanged.
+
+Every other missing API still fails closed unless its own registered integration and qualification path
+publishes an available interface. A plausible CANNBot draft is not enough to continue. Performance is
+shown only when `performance_valid=true`, for the exact measured size and resident timing boundary; one
+measurement does not establish a general crossover threshold.
+
+An automated caller can use the same framework boundary with explicit consent:
+
+```bash
+python -m numpilot --llm-config /absolute/private/llm.json \
+  interactive-migrate --source /absolute/path/to/source.py --yes --execute-source \
+  --cannbot-gap-draft --accept-cannbot-license --show-cannbot-skill full
+```
+
+`--yes` confirms the automated migration flow; only `--execute-source` separately authorizes execution
+of the displayed, hash-bound user scripts.
+
+Proxy variables, when needed, are supplied by the current site before launch. NumPilot and its Skill do
+not contain a fixed proxy address; `check llm` only requires that the selected model return a valid reply.
+
+For AI/CodeArts mode, give the interactive model this option-gate instruction instead of launching the
+configured lane: “Read the NumPilot Skill, use agent mode, and do not use the model from `llm.json`.” The
+AI must then perform interpretation, completion, operator/integration authoring, and migration generation
+itself, without reading or probing `llm.json`; deterministic NumPilot gates remain authoritative. If no
+registered adapter accepts the agent artifact, stop at `migrate=draft/stopped` with verification and
+benchmark `not_run`.
 
 ## Quick start
 
@@ -223,7 +329,12 @@ troubleshooting, and safe cleanup are in the
 Do not use `pip install numpilot` for this snapshot: there is no verified public package release for the current
 source tree.
 
-## Configure the model
+## Configure the model (optional terminal configured sub-run)
+
+These commands apply to the terminal/manual lane or to a hybrid run that explicitly switches to a
+configured model. They are not part of the CodeArts-agent lane; when the user says not to use
+`llm.json`, do not read this file, run `configure-llm`, or probe an endpoint. A terminal/manual run may
+also omit model configuration and provide a candidate for deterministic gates.
 
 ```bash
 python -m numpilot configure-llm --init
@@ -246,8 +357,9 @@ proxy URLs, and raw model response bodies must never be committed. See the
 > Every configured-model generation or repair request may incur cost. `migrate` sends the complete input source;
 > gap/operator paths send the bounded gap contract, statically extracted semantic function, applicable draft or
 > diagnostics, and selected CANNBot Skill context; AsNumpy adapter paths send target-projected source/header
-> context, Skill context, overlays, and applicable diagnostics. CANNBot supplies pinned workflow context—the
-> configured remote model generates the draft. `verify-script`, `benchmark-script`, and `run_demo.sh` execute the
+> context, Skill context, overlays, and applicable diagnostics. CANNBot supplies pinned workflow context; the
+> explicitly selected boundary model (CodeArts agent or configured remote model) generates the draft.
+> `verify-script`, `benchmark-script`, and `run_demo.sh` execute the
 > original program and candidate with the current user's permissions. `python -I` is **not** an OS sandbox. Send
 > only material you may disclose, run only trusted programs, and isolate untrusted input in a container or VM.
 
@@ -265,8 +377,9 @@ python -m numpilot --llm-config "$RUNTIME_ROOT/.numpilot-config/llm.json" \
   competition-readiness --json
 ```
 
-For a live one-command ordinary path, use `run`; `--benchmark` only publishes a strict device-resident
-performance result, not cold-start or end-to-end latency:
+For a low-level non-interactive ordinary path, use `run`; the recommended human recording remains the
+persistent `numpilot` shell. `--benchmark` only publishes a strict device-resident performance result,
+not cold-start or end-to-end latency:
 
 ```bash
 python -m numpilot --llm-config "$RUNTIME_ROOT/.numpilot-config/llm.json" \
@@ -373,6 +486,8 @@ not directly to `main`.
 
 - [Installation and verification](docs/installation.md)
 - [Current architecture and implementation boundaries](docs/architecture.md)
+- [CodeArts entry modes and model-source gates](docs/codearts-integration.md)
+- [NumPilot Skill (root entry)](skill/SKILL.md) · [CodeArts mirror](.codeartsdoer/skills/numpilot-migration-gate/SKILL.md)
 - [Documentation index](docs/README.md)
 - [Numerical verification contract](docs/script-verification.md)
 - [Strict-NPU benchmark contract](docs/script-benchmark.md)

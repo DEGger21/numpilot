@@ -1,296 +1,205 @@
-# NumPilot 完整程序迁移：终端录屏操作手册
+# NumPilot 完整程序迁移：交互终端录屏手册
 
-本文只描述**命令行/终端形式**的完整迁移录屏，不包含其他交互入口的操作步骤。你可以从头到尾
-照着执行一次，保留真实墙钟时间，不需要把视频剪成固定 7 分钟。
+本文描述 NumPilot 固化在框架内的交互迁移流程。录屏入口是持久产品终端，不是一次性演示脚本：
+以后换成其他普通 NumPy 程序，仍然使用相同指令、阶段、失败边界和最终报告。
 
-## 0. 本次演示用的程序
+## 两种使用方式
 
-使用仓库中的 `examples/recording_migration_demo.py`。它是一个普通的 Black--Scholes 风格组合
-定价程序：为相互独立的 European call 合约准备 `spot`、`strike`、到期时间、波动率和无风险利率，
-再计算 `d1/d2`、平滑正态 CDF 近似、折现执行价和最终报价，输出变量 `result`。这是用于演示迁移
-链路的数值程序，不是生产交易定价器。
+1. **终端 configured lane**：用户在仓库外填写私有 `llm.json`，然后像普通开发工具一样使用
+   `numpilot`。配置模型负责源码解读、迁移候选和满足门禁时的算子草稿；NumPilot 负责静态
+   分析、哈希绑定、真机资格化、数值对拍、性能测试和报告。
+2. **AI/CodeArts-agent lane**：直接让正在与用户交流的 AI 阅读仓库与
+   [`skill/SKILL.md`](../skill/SKILL.md)，并明确“不用 `llm.json` 里的内置模型”。此时交互 AI
+   自己承担源码解读、缺口补全、算子/接入和迁移候选生成，NumPilot 只执行可接受该产物的确定性
+   门禁。两种模型来源不能在同一个 run 目录中静默混用。
 
-程序有两个刻意的边界：
+本文后续录屏步骤使用第一种。代理仅是具体网络环境可能需要的外部设置；NumPilot、Skill 和公开
+回执均不固定代理地址，只检查所选模型是否能返回有效内容。
 
-- 输入准备在 `# NUMPILOT_DEVICE_INPUTS_END` 之前，只执行一次；
-- marker 之后只保留 NumPy 命名空间的逐元素计算，作为公平的设备驻留计算区；没有 Python 循环、
-  随机数或文件 I/O。
+## 本次最小缺口程序
 
-默认规模是 **4,000,000 个独立合约**，最终 `result` 为一维 `float32` 数组，包含 4,000,000 个
-元素（16,000,000 bytes，约 15.26 MiB）。这个规模是录屏可操作性和 resident 评测可见性的折中；
-是否有 NPU 优势必须以本次 benchmark 回执为准，不能把一次结果外推成所有输入规模或端到端加速。
+使用仓库中的 `examples/add_one_migration_demo.py`。它是普通 NumPy 程序，核心调用是：
 
-如果该文件尚未出现在你的 checkout，请先确认当前工作树包含本手册对应的示例文件；不要在录屏
-中临时改写案例源码，否则 source hash 和迁移回执会失去闭合。
+```python
+shifted = np.add(base, 1.0)
+```
 
-## 1. 录屏前一次性准备
+NumPilot 只把这个精确的直接调用识别为已登记的 scalar-one 签名缺口。终端应说明：当前合格的
+AsNumpy 原语采用 array-array 合同，本次需要的是 `asnumpy.add_one(x)`；其范围为 `float32`、shape
+保持不变、语义为 `y = x + 1`。这不是对所有 scalar ufunc 的泛化支持。
 
-以下准备不计入“本次迁移运行”的主计时，默认你已经完成安装；它们只用于确认现场状态。
+示例默认使用 9,000,000 个 `float32` 元素，并在这个简单缺口后串联已经支持的
+`power/log/multiply/exp/divide/tanh` 计算，把计算区放在 `# NUMPILOT_DEVICE_INPUTS_END` 之后。
+这样缺口仍然只有 `add_one`，同时能让真机 resident benchmark 覆盖一段有代表性的计算。最终性能
+数字必须来自本次机器和本次报告，不能预先写死。
+
+## 录屏前准备
+
+先完成安装、CANN/AsNumpy/NPU 运行环境激活，并在仓库外准备权限受限的 `llm.json`。不要在录屏
+中打印该文件、Token、私有 endpoint 或环境变量全集。
+
+可在正式录制前单独检查：
 
 ```bash
 cd /absolute/path/to/numpilot
-export RUNTIME_ROOT=/absolute/path/to/numpilot-runtime
-source "$RUNTIME_ROOT/activate-numpilot.sh"
-
-# 只读确认固定 AsNumpy 组件和发布附件；不联网、不改源码。
-python tools/check_release_tree.py --require-asnumpy-component --json
-python -m numpilot bootstrap --verify
+source /absolute/path/to/numpilot-runtime/activate-numpilot.sh
 python -m numpilot doctor --backend npu
-
-# 确认私有模型配置可用；不要打印文件内容或 Token。
-python -m numpilot --llm-config \
-  "$RUNTIME_ROOT/.numpilot-config/llm.json" configure-llm --check
-
-# 录到案例结构和固定源文件哈希；不修改文件。
-sed -n '1,180p' examples/recording_migration_demo.py
-sha256sum examples/recording_migration_demo.py
 ```
 
-现场必须具备：匹配的 Ascend 驱动/固件、CANN、OPP、可见 NPU、固定 AsNumpy wheel 和可用的
-`llm.json`。模型配置、代理、运行回执和视频原始文件都放在仓库外的私有目录。
+如果现场网络必须经过代理，请在当前 shell 中按该环境的实际要求设置；不要把地址提交到仓库。
+模型配置与网络是否真正可用，由下面的 `check llm` 现场验证。
 
-## 2. 从头到尾计时的标准命令
+## 录屏指令
 
-这里的“迁移主链耗时”从第一次执行框架命令开始，到 `numpilot run` 完成为止；随后的人类可读
-报告是只读后处理，会单独计时。这样报告能够引用已经落盘的主链计时，同时不会把报告渲染时间
-混入模型迁移和 NPU benchmark。先创建一个**私有父目录**；不要预先创建 `RUN_DIR`，因为
-`numpilot run --out` 要求输出目录不存在。
+启动持久终端：
 
 ```bash
-set -u
-cd /absolute/path/to/numpilot
-SOURCE="$PWD/examples/recording_migration_demo.py"
-RUNTIME_ROOT=/absolute/path/to/numpilot-runtime
-CAPTURE_ROOT="$(mktemp -d /tmp/numpilot-terminal-demo.XXXXXX)"
-chmod 700 "$CAPTURE_ROOT"
-RUN_DIR="$CAPTURE_ROOT/run"
-TIMING_FILE="$CAPTURE_ROOT/timing.json"
-
-START_UTC="$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)"
-START_NS="$(date +%s%N)"
-
-# 这是本次录屏的第一个框架动作；保持终端输出可见。
-python -m numpilot bootstrap --verify
-BOOTSTRAP_RC=$?
-
-if [ "$BOOTSTRAP_RC" -eq 0 ]; then
-  python -m numpilot doctor --backend npu
-  DOCTOR_RC=$?
-else
-  DOCTOR_RC=99
-fi
-
-if [ "$BOOTSTRAP_RC" -eq 0 ] && [ "$DOCTOR_RC" -eq 0 ]; then
-  python -m numpilot \
-    --llm-config "$RUNTIME_ROOT/.numpilot-config/llm.json" \
-    run "$SOURCE" \
-    --backend npu \
-    --output result \
-    --benchmark \
-    --warmup 3 \
-    --samples 20 \
-    --out "$RUN_DIR"
-  RUN_RC=$?
-else
-  RUN_RC=99
-fi
-
-END_NS="$(date +%s%N)"
-END_UTC="$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)"
-ELAPSED_MS=$(( (END_NS - START_NS) / 1000000 ))
-
-# timing.json 只写到私有父目录；不要把它提交到 Git。
-printf '{"started_at_utc":"%s","finished_at_utc":"%s","elapsed_ms":%s,"bootstrap_rc":%s,"doctor_rc":%s,"run_rc":%s}\n' \
-  "$START_UTC" "$END_UTC" "$ELAPSED_MS" "$BOOTSTRAP_RC" "$DOCTOR_RC" "$RUN_RC" \
-  > "$TIMING_FILE"
-
-printf '\n[总计时] %s ms (%s s)\n' "$ELAPSED_MS" "$(( ELAPSED_MS / 1000 ))"
-printf '[开始 UTC] %s\n' "$START_UTC"
-printf '[结束 UTC] %s\n' "$END_UTC"
-printf '[运行目录] %s\n' "$RUN_DIR"
-printf '[退出码] bootstrap=%s doctor=%s run=%s\n' "$BOOTSTRAP_RC" "$DOCTOR_RC" "$RUN_RC"
-
-# 报告是只读后处理，单独计时；它不会改变迁移回执。
-REPORT_START_NS="$(date +%s%N)"
-if [ -d "$RUN_DIR" ]; then
-  python tools/render_migration_report.py "$RUN_DIR"
-  REPORT_RC=$?
-else
-  REPORT_RC=99
-  printf '[报告] RUN_DIR 不存在，无法渲染\n' >&2
-fi
-REPORT_END_NS="$(date +%s%N)"
-REPORT_ELAPSED_MS=$(( (REPORT_END_NS - REPORT_START_NS) / 1000000 ))
-printf '[报告计时] %s ms (%s s)\n' "$REPORT_ELAPSED_MS" "$(( REPORT_ELAPSED_MS / 1000 ))"
-printf '[报告退出码] %s\n' "$REPORT_RC"
+numpilot
 ```
 
-说明：`bootstrap --verify` 和 `doctor` 也放进主计时，是为了得到一次完整“框架启动到 `run`
-结束”的墙钟时间；模型等待、终端确认和失败退出都算在内。报告渲染有单独的 `[报告计时]`。
-`run` 内部还会给出每个阶段自己的耗时；主链墙钟、报告后处理和阶段耗时三种数字都要保留，
-不要把它们相加后当成 NPU kernel 时间。
-
-终端没有聊天输入框；本次“发给框架的迁移指令”就是上面的 `numpilot run ...` 命令。模型、
-系统约束和服务地址由私有 `llm.json` 提供，命令行不再另写一段自然语言 prompt，也不要在录屏
-中回显 Token 或完整请求体。
-
-## 3. 录屏中应该看到什么
-
-### 3.1 启动和环境门禁
-
-终端先显示固定组件复验、CANN/NPU/AsNumpy 状态。这里应能说明：本次使用的是本地锁定 wheel，
-没有现场拉取或编译 AsNumpy 源码。
-
-### 3.2 `run` 的四个阶段
-
-`run` 是当前普通脚本的一键入口，顺序固定为：
+启动后应先看到 NumPilot Logo、版本和简短帮助。然后在 `numpilot ›` 提示符中依次输入：
 
 ```text
-01-analyze    全文件静态分析，得到五态和逐调用理由
-02-migrate    使用 llm.json 中配置的真实模型生成迁移候选和 AST/哈希回执
-03-verify     原始 NumPy 与迁移后 AsNumpy 程序的独立进程数值对拍
-04-benchmark  strict-NPU resident 性能门（启用 --benchmark 时）
+check llm
+migrate
+/absolute/path/to/numpilot/examples/add_one_migration_demo.py
+y
+execute
+exit
 ```
 
-每一步都在新建的私有 `RUN_DIR` 中写回执。默认输出会显示阶段状态和耗时；如果模型、运行时、
-数值或性能门失败，流程会停止，不能手工把失败改成成功。
+其中源码路径必须替换为本机真实绝对路径。不要把 `y` 或 `execute` 提前管道输入；分别等终端展示
+模型解读/流程确认，以及待执行源码路径与哈希后再手动输入，画面更真实，也保留了两个独立授权门。
 
-成功时终端摘要的形状大致如下（秒数、路径和模型名以现场实际输出为准，不要把下面数字当作
-预先录好的结果）：
+## 画面与阶段
+
+### 1. `check llm`
+
+该命令向 `llm.json` 选择的模型发送一次很小、有界的真实请求。成功只表示本次检查收到了可用
+回复，不表示模型已经能正确完成迁移。画面只显示脱敏的配置/model 标识和 pass/fail，不展开请求
+正文、回复正文、Token、endpoint 或代理地址。
+
+失败时先修正私有配置或现场网络，再重新输入 `check llm`；交互会话不应因此退出。
+
+### 2. 源码快照与只读分析
+
+输入 `migrate` 后，框架询问 Python 文件的绝对路径，读取稳定 UTF-8 快照并显示：
+
+- 绝对路径、SHA-256、字节数、行数；
+- 检测到的 NumPy API 与调用行；
+- 当前 AsNumpy 的五态/能力结论；
+- 缺少的精确调用合同与需要的接口语义。
+
+这一阶段不导入、不执行源码，也不调用模型来覆盖静态分析结果。
+
+### 3. 模型解读与 `y` 门
+
+框架通过私有 `llm.json` 发起有界源码解读请求，显示模型等待状态和标记为
+`interpreted_unverified` 的解读。它帮助开发者理解程序，但不是迁移代码，也不证明执行、精度或
+性能。
+
+随后终端询问是否继续。存在 CANNBot 缺口时，问题还应明确：本次 `y` 授权后续生成与 NPU
+资格化，并接受本次固定 CANNBot/CANN 许可证；它不授权执行用户源码。框架展示待执行的原始与
+规范化源码路径及哈希后，会在紧邻执行点要求单独输入精确的 `execute`。任一门输入其他字符或
+EOF 都写入 declined 回执，并让相应迁移、验证和 benchmark 保持 `not_run`。
+
+### 4. CANNBot-Skill 生成 Ascend C 草稿
+
+对本例的 `add_one` 缺口，框架按以下顺序在终端展示完整过程：
+
+1. 查询已安装 CANN 和固定 `ops-nn` 证据；只有可审计的 clean miss 才进入自定义生成。
+2. 校验固定 CANNBot checkout、commit、许可证和必需文件哈希。
+3. 完整打印本次真实模型请求实际嵌入的公开 CANNBot Skill 文件。
+4. 模型处理期间周期显示累计等待时间，证明流程仍在运行；超时仍按失败处理。
+5. 保存一个有界的 Ascend C `Adds` 片段及模型/请求/响应/产物哈希回执。
+
+该文件的状态必须显示为 `generated_unverified`。它只是模型生成的 Ascend C 设计草稿，**未编译、
+未安装、未激活，也没有被迁移程序执行**。完整展示 CANNBot 流程不能把这些事实升级。
+
+### 5. 独立的 run-scoped 组合接口资格化
+
+框架随后处理一条不同的证据链：用当前已合格的 `asnumpy.ones_like` 和 `asnumpy.add` 物化仅本次
+运行可见的 `asnumpy.add_one(x)` 组合接口，并在隔离真 NPU 进程中验证多个 `float32` 输入、数值
+结果、运行时身份、构成 API 调用次数和禁止 fallback 条件。
+
+只有该资格化回执通过，终端才能说“本次运行新增 `asnumpy.add_one` 接口”。必须同时说明：
+
+- `interface_provenance=composite_npu`；
+- `scope=run`，上游 AsNumpy 和共享 OPP 未修改；
+- `cannbot_draft_activated=false`，上一步的自定义 Ascend C 草稿未参与执行。
+
+资格化失败时流程在这里停止，不能继续全程序迁移。
+
+### 6. 全程序迁移、精度和性能
+
+接口资格化后，框架先证明精确 scalar-one lowering，再迁移 normalized ordinary program，并固定
+执行：
 
 ```text
-── NumPilot 一键普通脚本流水线 ──
-[源码] .../examples/recording_migration_demo.py
-[运行目录] /tmp/.../run
-[策略] backend=npu · engine=llm · fallback=reject · benchmark=True
-[✓] 01-analyze · status=passed · <实际秒数>s
-[✓] 02-migrate · status=passed · <实际秒数>s
-[✓] 03-verify · status=passed · <实际秒数>s
-[✓] 04-benchmark · status=passed · <实际秒数>s
-[事实] model_generated=True · numerically_verified=True · strict_npu_performance_verified=True
-[下一步] complete
-[回执] .../workflow-report.json
+01-analyze → 02-migrate → 03-verify → 04-benchmark
 ```
 
-若现场没有匹配的运行时身份，`01-analyze` 会显示 `CAPABILITY_AUDIT_REQUIRED` 并关闭后续链路；
-这是预期的失败关闭行为，不要把它剪掉或改写成 `DIRECT`。
+- `02-migrate` 的 AsNumpy 候选必须来自本次配置模型并通过模型/响应/源码/产物哈希和 AST 门；
+- `03-verify` 在两个隔离进程中执行哈希绑定的原始语义与迁移程序，对指定输出做 shape、dtype、
+  NaN/Inf 和容差比较；
+- `04-benchmark` 只有 strict-NPU runtime、同步、调用计数、禁止 fallback、数值与样本门全部通过时
+  才发布 `performance_valid=true` 和 speedup。
 
-### 3.3 迁移完成后的文件
+resident benchmark 测的是 marker 后的稳定设备驻留计算，不是冷启动端到端，也不包含所有传输或
+模型等待时间。若任何性能门失败，终端必须显示 unavailable/not_run，而不是编造加速数字。
 
-成功时重点查看：
+### 7. 最终报告
 
-```text
-$RUN_DIR/
-├── qualified-analysis.json
-├── migration/
-│   ├── migrated.py
-│   └── script-migration-report.json
-├── script-verification-report.json
-├── script-benchmark-report.json
-└── workflow-report.json
-```
+结束画面从实际回执汇总：
 
-`workflow-report.json` 是阶段索引；真正的模型、AST、数值和性能事实以各阶段 JSON 为准。
+- 原始源码和 normalized/migrated 源码路径及哈希；
+- CANNBot Skill、Ascend C 草稿、组合接口物化/资格化、lowering 的回执；
+- 迁移、数值验证和性能状态；
+- 输出 shape、dtype、元素数、字节数；
+- 仅在有效时显示的本次规模 speedup；
+- 所有生成文件的路径；
+- 最终 `migration-report.json` 与 `migration-report.md` 的绝对路径。
 
-要在视频里展示模型确实产出了迁移候选，可只查看候选源码、差异和哈希（不要把完整 JSON 或
-模型原始响应全部刷屏）：
+报告如果只有一个有效规模，只能说“在该规模和该计时边界下观察到该加速比”，不能给出“超过
+某规模必然更快”的阈值。
+
+## 通用程序的失败关闭规则
+
+同一个 `migrate` 交互适用于其他普通 NumPy 文件，但 `add_one` 的窄适配器不会套用到别的 API：
+
+- 无缺口：正常进入 ordinary migration/verify/benchmark；
+- 已登记且完整资格化的缺口：按该适配器合同继续；
+- 通用 CANNBot 草稿只有 `generated_unverified`：停止，`interface_available=false`；
+- 官方候选、构建、资格化、激活或重扫任一证据缺失：停止；
+- 模型、NPU、数值或性能门失败：保留失败回执，不升级成成功。
+
+## 自动化复验入口
+
+人工录屏应使用持久终端。CI 或本地重复测试可以显式传参调用同一框架：
 
 ```bash
-sed -n '1,220p' "$RUN_DIR/migration/migrated.py"
-diff -u "$SOURCE" "$RUN_DIR/migration/migrated.py" | sed -n '1,220p' || true
-sha256sum "$SOURCE" "$RUN_DIR/migration/migrated.py"
+python -m numpilot --llm-config /absolute/private/llm.json \
+  interactive-migrate \
+  --source /absolute/path/to/source.py \
+  --yes \
+  --execute-source \
+  --cannbot-gap-draft \
+  --accept-cannbot-license \
+  --show-cannbot-skill full
 ```
 
-## 4. 生成人类可读的迁移报告
+自动化的 `--yes`、`--execute-source` 和 `--accept-cannbot-license` 分别授权流程、执行已展示且
+绑定哈希的用户源码、以及本次 CANNBot/CANN OSL 使用；`--non-interactive` 本身不是授权。
 
-框架的机器回执不会自动把“数据规模”和“是否有 NPU 优势”写成一段适合答辩的文字。标准计时
-脚本已经调用仓库内“只读读取回执、不修改回执”的汇总器；若你分开执行命令，可在迁移主链结束后运行：
+## AI/CodeArts-agent 入口
 
-```bash
-python tools/render_migration_report.py "$RUN_DIR"
-```
+如果不希望使用内置配置模型，可以直接把下面这句话发给 CodeArts 侧边栏或其他交互 AI：
 
-它会生成：
+> 阅读 NumPilot 仓库与 `$numpilot-migration-gate`，使用 agent 模式，不用 `llm.json` 里的内置
+> 模型进行迁移。由你与我交互完成源码解读、缺口补全、算子生成、接入和迁移候选，再执行框架
+> 支持的确定性门禁并报告所有产物与边界。
 
-```text
-$RUN_DIR/migration-report.md
-```
-
-也可以直接在终端预览：
-
-```bash
-python tools/render_migration_report.py "$RUN_DIR" --stdout
-```
-
-报告至少包含：
-
-- 本次总状态、源文件和迁移产物 SHA-256、配置模型；
-- 各阶段状态和框架内部墙钟耗时；
-- 五态分析结果和迁移调用数；
-- 数值一致性、最大误差、输出 shape/dtype/元素数/字节数；
-- CPU/NPU resident 中位数、median speedup、保守 speedup、warmup/samples/core；
-- AsNumpy/CANN/SoC 运行时身份；
-- 明确的口径限制：resident headline 不含冷启动、输入准备和最终 D2H，不是端到端总耗时。
-
-报告中的“优势”只能按下面规则解释：
-
-```text
-performance_valid = true 且 median_speedup > 1
-  → 在报告列出的实际元素规模上观察到 resident NPU 优势
-否则
-  → 不发布 NPU 加速比，只保留失败原因
-```
-
-例如本案例若报告显示 `4,000,000 个元素`、`median_speedup=2.4×`，可以说：
-
-> 在本次固定运行画像、单核 CPU 对照和 steady device-resident 口径下，4,000,000 个
-> `float32` 元素的计算区间观测到约 2.4× 加速。
-
-不能说“4,000,000 以下或以上都更快”，因为单次运行没有测出阈值。若要找阈值，必须复制同一份
-已审查程序到仓库外，按 1M/4M/9M 等规模分别重新迁移、验证和 benchmark；每个规模都要有独立
-source hash、migration report 和 benchmark receipt，不能改写本次报告。
-
-## 5. 视频录制顺序（按真实时间，不设 7 分钟硬限制）
-
-1. 录到案例文件和一句话说明：它是 Black--Scholes 风格的独立合约组合定价程序，默认 4M
-   `float32` 输出元素。
-2. 录到 `bootstrap --verify`、`doctor --backend npu` 的门禁结果。
-3. 在终端执行上面的计时脚本；保留 `run` 的真实阶段输出和每阶段耗时。
-4. 录到模型迁移候选的文件名、Diff 摘要、模型身份和 source/migrated hash；不要显示 Token、私有 endpoint 或完整模型响应。
-5. 录到 `verify` 数值对拍通过，以及 `benchmark` 的 `performance_valid`、元素数、warmup、samples 和 speedup。
-6. 运行（或在计时脚本中保留）`render_migration_report.py`，打开 `migration-report.md`，朗读
-   “实际规模、resident 口径和限制”。
-7. 最后展示 `[总计时]`、`[报告计时]`、退出码和回执目录；说明这些回执是本次运行的证据，不是
-   任意机器的通用承诺。
-
-视频结束后，从头回放一次，确认命令退出码、报告数字和画面一致。原始视频、私有 `CAPTURE_ROOT`、
-模型配置和完整回执留在仓库外；公开提交包只放脱敏成片、封面和 SHA-256 清单。
-
-## 6. 失败时怎么处理
-
-- `bootstrap` 或 `doctor` 失败：停止录制，保留终端输出，先修复 CANN/驱动/组件，不进入迁移。
-- `01-analyze` 不是 `DIRECT`：按报告处理 `GAP_REQUIRED`、`CAPABILITY_AUDIT_REQUIRED` 或
-  `BLOCKED`，不要强行调用模型。
-- `02-migrate` 失败：保留失败回执；不要把 AST 机械替换或手工代码当作模型迁移结果。
-- `03-verify` 失败：不能发布迁移正确性；新尝试必须使用全新的 `CAPTURE_ROOT`/`RUN_DIR`。
-- `04-benchmark` 失败：可以保留迁移和数值结果，但报告必须写“未发布 NPU 加速比”。
-
-任何重跑都不能复用旧的 `RUN_DIR`，也不能覆盖旧的 `migration-report.md`。失败本身是录屏中
-有价值的失败关闭证据。
-
-## 7. 录屏结束后的最小检查
-
-```bash
-# 仍在仓库根目录
-git diff --check
-python tools/check_release_tree.py --require-asnumpy-component --json
-
-# 标准脚本已经生成报告；只有报告缺失时才补生成，避免覆盖已有证据。
-if [ ! -s "$RUN_DIR/migration-report.md" ]; then
-  python tools/render_migration_report.py "$RUN_DIR"
-fi
-sha256sum "$RUN_DIR/migration-report.md"
-```
-
-最终答辩材料应同时交代：实际总耗时、阶段耗时、输入元素规模、dtype/shape、resident 与端到端
-计时的区别、是否有真实 NPU provenance，以及哪些结论尚未在其他规模或第二环境复现。
+这句话是硬选项门：AI 在读取、`stat` 或探测 `llm.json` 之前就必须切换到 agent 模式，不运行
+`check llm`、`configure-llm` 或 configured-model generation。交互模型自己写出的产物标为
+`agent_authored_draft`；当前若没有已登记适配器接受它，应停在 `migrate=draft/stopped`、
+`verify=not_run`、`benchmark=not_run`，不能手工伪造 configured-model 回执。

@@ -1,3 +1,24 @@
+# This file is part of the NumPilot project at Harbin Institute of Technology (HIT).
+#
+# Copyright (c) 2026 AISS Group, Harbin Institute of Technology (HIT).
+# SPDX-License-Identifier: Apache-2.0
+#
+# Authors (accounts):
+# - Su Tonghua <@sutonghua>
+# - Li Xing <@li-xingHIT>
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """CLI: python -m numpilot <migrate|bootstrap|complete-gaps|doctor|...> ...
 
 演示三步:
@@ -15,8 +36,11 @@ import re
 import shlex
 import shutil
 import stat
+import subprocess
 import sys
 import tempfile
+import threading
+import time
 import unicodedata
 import uuid
 
@@ -67,6 +91,7 @@ from numpilot.asnumpy_skill import (                         # noqa: E402
 from numpilot.bench import run_cpu_baseline, run_npu_compare  # noqa: E402
 from numpilot.capabilities import load_analysis_profile_set    # noqa: E402
 from numpilot.cli_ui import (                                 # noqa: E402
+    flow_print,
     render_doctor,
     render_home,
     render_paths,
@@ -910,6 +935,1923 @@ def _cmd_run(args):
     return 0 if result["status"] == "passed" else (1 if result["status"] == "blocked" else 2)
 
 
+# ---------------------------------------------------------------------------
+# Interactive ordinary-script entry point
+# ---------------------------------------------------------------------------
+#
+# The shell recording wrapper deliberately stays thin: it validates the
+# repository Skill, activates the user's private runtime, and then delegates
+# here.  Keeping the conversation and receipt choreography in the framework
+# means an arbitrary source path gets the same stages as a future CodeArts or
+# API caller, rather than a second, demo-only implementation in bash.
+
+
+def _interactive_private_json(path, payload, *, replace=False):
+    """Write one bounded private JSON file without exposing model text."""
+
+    target = Path(path)
+    if not target.is_absolute() or target.is_symlink() or target.exists() and not replace:
+        raise ValueError("interactive receipt path is not write-once")
+    parent_existed = target.parent.exists()
+    target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if target.parent.is_symlink() or not target.parent.is_dir():
+        raise ValueError("interactive receipt parent is invalid")
+    if os.name == "posix":
+        if parent_existed and stat.S_IMODE(target.parent.stat().st_mode) & 0o077:
+            raise ValueError("interactive receipt parent must be private")
+        if not parent_existed:
+            os.chmod(target.parent, 0o700)
+    encoded = (json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    if len(encoded) > 512 * 1024:
+        raise ValueError("interactive receipt is oversized")
+    fd = -1
+    temporary = ""
+    try:
+        fd, temporary = tempfile.mkstemp(
+            prefix="." + target.name + "-", suffix=".tmp", dir=str(target.parent)
+        )
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "wb") as handle:
+            fd = -1
+            handle.write(encoded)
+            handle.flush()
+            os.fsync(handle.fileno())
+        if replace:
+            os.replace(temporary, target)
+        else:
+            os.link(temporary, target)
+            os.unlink(temporary)
+        temporary = ""
+        return target
+    finally:
+        if fd >= 0:
+            os.close(fd)
+        if temporary:
+            try:
+                os.unlink(temporary)
+            except OSError:
+                pass
+
+
+def _interactive_read_json(path, *, maximum=8 * 1024 * 1024):
+    """Read a framework receipt defensively for a human summary."""
+
+    candidate = Path(path)
+    try:
+        if candidate.is_symlink() or not candidate.is_file():
+            return None
+        payload = candidate.read_bytes()
+        if len(payload) > maximum:
+            return None
+        value = json.loads(payload.decode("utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError, RecursionError, ValueError):
+        return None
+    return value if isinstance(value, Mapping) else None
+
+
+def _interactive_heartbeat(stop, label, *, interval=5.0):
+    """Return a daemon thread which makes a long remote/stage wait visible."""
+
+    started = time.monotonic()
+
+    def beat():
+        while not stop.wait(interval):
+            elapsed = int(time.monotonic() - started)
+            flow_print(
+                "[进行中] %s · 已等待 %ss（仍在等待真实回执，未假定成功）"
+                % (label, elapsed),
+                tone="progress",
+                flush=True,
+            )
+
+    thread = threading.Thread(target=beat, name="numpilot-interactive-heartbeat", daemon=True)
+    thread.start()
+    return thread
+
+
+def _interactive_display_text(value, *, limit=512):
+    """Bound source-derived text before it reaches a human terminal."""
+
+    try:
+        text = str(value)
+    except Exception:
+        text = "?"
+    safe = []
+    for character in text[: max(1, int(limit))]:
+        if character in {"\n", "\t"} or (
+            character.isprintable()
+            and not unicodedata.category(character).startswith("C")
+        ):
+            safe.append(character)
+        else:
+            safe.append("�")
+    return "".join(safe)
+
+
+def _interactive_source_arg(args):
+    """Resolve a positional/option source path, prompting only on a TTY."""
+
+    positional = getattr(args, "file", None)
+    option = getattr(args, "source_option", None)
+    if positional and option:
+        raise ValueError("source path must be provided once")
+    value = positional or option
+    if value:
+        return value
+    if not sys.stdin.isatty():
+        raise ValueError("非交互环境必须显式提供 SOURCE 或 --source")
+    try:
+        flow_print(
+            "请输入待迁移 Python 代码的绝对路径：",
+            tone="prompt",
+            end="",
+            flush=True,
+        )
+        value = input().strip()
+    except (EOFError, KeyboardInterrupt) as exc:
+        raise ValueError("未提供待迁移源码路径") from exc
+    if not value:
+        raise ValueError("未提供待迁移源码路径")
+    return value
+
+
+def _interactive_runtime_analysis(snapshot, args):
+    """Run the same inert qualification/scanner used by ordinary workflow."""
+
+    from numpilot.backends.npu import NpuBackend
+    from numpilot.qualified_analysis import analyze_qualified_script
+    from numpilot.script_migration import classify_script, scan_numpy_script
+
+    backend_name = getattr(args, "backend", "npu") or "npu"
+    backend, _profiles = _qualified_runtime_inputs(args, backend_name)
+    runtime_identity = None
+    try:
+        provider = getattr(backend, "runtime_identity", None)
+        runtime_identity = provider() if callable(provider) else None
+    except Exception:
+        runtime_identity = {"status": "audit_required", "identity_sha256": None}
+    try:
+        qualified = analyze_qualified_script(
+            snapshot.text,
+            snapshot.path,
+            runtime_identity=runtime_identity,
+        )
+        qualified_payload = qualified.to_dict()
+    except Exception as exc:
+        # Keep the local scanner useful even when a platform identity probe is
+        # unavailable.  The ordinary workflow will still enforce its own
+        # qualification gate before execution.
+        qualified = None
+        qualified_payload = {
+            "analysis_mode": "STATIC_AST_ONLY",
+            "source_path": snapshot.path,
+            "source_sha256": snapshot.sha256,
+            "decision": "CAPABILITY_AUDIT_REQUIRED",
+            "runtime_identity_status": "audit_required",
+            "runtime_identity_sha256": None,
+            "issues": ["qualified analysis unavailable: %s" % type(exc).__name__],
+            "calls": [],
+            "imports": [],
+            "required_rewrites": [],
+            "next_action": "complete the capability/runtime audit before migration",
+            "actual_remote_call": False,
+            "execution_performed": False,
+        }
+    qualified_payload["qualified_apis"] = sorted({
+        str(item.get("canonical_key"))
+        for item in qualified_payload.get("calls", [])
+        if isinstance(item, Mapping) and item.get("canonical_key")
+    })
+
+    scan = scan_numpy_script(
+        snapshot.text,
+        snapshot.path,
+        qualified_analysis=qualified,
+    )
+    classification = classify_script(
+        scan,
+        backend,
+        qualified_analysis=qualified,
+    )
+    return qualified_payload, scan, classification
+
+
+def _interactive_static_source_admission(
+    snapshot, qualified_payload, scan, registered_add_one
+):
+    """Admit only a clean scan or the exact, safely lowered add-one gap."""
+
+    from numpilot.add_one_gap import (
+        AddOneGapError,
+        validate_add_one_source_admission,
+    )
+
+    raw_qualified_issues = qualified_payload.get("issues", ())
+    qualified_issues = (
+        tuple(str(item) for item in raw_qualified_issues)
+        if isinstance(raw_qualified_issues, (list, tuple))
+        else ("qualified analysis returned malformed issues",)
+    )
+    raw_scan_issues = getattr(scan, "issues", ())
+    scan_issues = (
+        tuple(str(item) for item in raw_scan_issues)
+        if isinstance(raw_scan_issues, (list, tuple))
+        else ("ordinary scanner returned malformed issues",)
+    )
+    scanner_ok = getattr(scan, "ok", False) is True
+    if not qualified_issues and scanner_ok and not scan_issues:
+        return {
+            "ok": True,
+            "route": "ordinary_scanner",
+            "issues": [],
+        }
+    if (
+        not qualified_issues
+        and not scanner_ok
+        and scan_issues
+        and registered_add_one
+    ):
+        try:
+            validate_add_one_source_admission(
+                source_path=snapshot.path,
+                source=snapshot.text,
+                calls=registered_add_one,
+                scanner_issues=scan_issues,
+            )
+        except AddOneGapError as exc:
+            admission_issue = str(exc)
+        else:
+            return {
+                "ok": True,
+                "route": "registered_add_one_exact_lowering",
+                "issues": [],
+                "waived_scanner_issues": list(scan_issues),
+            }
+    else:
+        admission_issue = "static scanner did not pass"
+    return {
+        "ok": False,
+        "route": "blocked",
+        "issues": list(dict.fromkeys(
+            qualified_issues + scan_issues + (admission_issue,)
+        )),
+    }
+
+
+def _interactive_render_analysis(snapshot, qualified_payload, scan, classification):
+    """Render bounded source/API facts, including concrete missing operators."""
+
+    import ast
+
+    from numpilot.operator_specs import collect_static_operator_specs
+    from numpilot.add_one_gap import add_one_gap_summary, detect_add_one_calls
+
+    flow_print("\n── NumPilot 迁移前分析（只读，不执行源码）──", tone="title")
+    flow_print(
+        "[源码] %s · sha256=%s · %d bytes · %d lines"
+        % (_interactive_display_text(snapshot.path), snapshot.sha256, snapshot.bytes, snapshot.lines),
+        tone="artifact",
+    )
+    flow_print(
+        "[扫描] imports=%d · NumPy 调用/引用=%d · scanner_ok=%s"
+        % (
+            len(qualified_payload.get("imports", [])),
+            len(getattr(scan, "uses", ()) or ()),
+            "yes" if getattr(scan, "ok", False) else "no",
+        )
+    )
+    flow_print(
+        "[资格] decision=%s · runtime=%s · identity=%s"
+        % (
+            _interactive_display_text(qualified_payload.get("decision", "unknown")),
+            _interactive_display_text(qualified_payload.get("runtime_identity_status", "unknown")),
+            _interactive_display_text(qualified_payload.get("runtime_identity_sha256") or "unavailable"),
+        )
+    )
+    decisions = tuple(getattr(classification, "decisions", ()) or ())
+    if not decisions:
+        flow_print("[API] 未识别到可迁移的 np.* 调用点；后续会由框架门禁给出具体结论。")
+    else:
+        for decision in decisions:
+            callsites = tuple(getattr(decision, "callsites", ()) or ())
+            lines = ",".join(str(getattr(item, "lineno", "?")) for item in callsites) or "?"
+            status = _interactive_display_text(getattr(decision, "status", "unknown"))
+            api = _interactive_display_text(getattr(decision, "qualified_api", "numpy.?"))
+            provenance = _interactive_display_text(getattr(decision, "provenance", "unknown"))
+            flow_print(
+                "[API] %-28s line=%-8s status=%-24s provenance=%s"
+                % (api, lines, status, provenance)
+            )
+    # OperatorSpec is a declarative source contract.  Parse it as AST data so
+    # the recording explicitly connects an observed custom gap to the operator
+    # shape that CANNBot will be asked to draft, without importing the source.
+    try:
+        static_specs = collect_static_operator_specs(ast.parse(snapshot.text, filename=snapshot.path))
+    except (SyntaxError, TypeError, ValueError):
+        static_specs = None
+    if static_specs is not None:
+        for oracle, spec in sorted(static_specs.specs.items()):
+            signature = ", ".join(
+                "%s positional + %s keyword"
+                % (
+                    item.get("positional_args", "?"),
+                    ",".join(str(key) for key in item.get("keyword_args", ())) or "none",
+                )
+                for item in spec.signature_variants
+            )
+            flow_print(
+                "[自定义缺口] operator.%s -> %s · oracle=%s · route=%s"
+                % (
+                    _interactive_display_text(spec.name),
+                    _interactive_display_text(spec.target_api),
+                    _interactive_display_text(oracle),
+                    _interactive_display_text(spec.route),
+                )
+            )
+            flow_print(
+                "  待补算子契约：dtype=%s · shape=%s · signature=%s · 官方等价性=待证明；"
+                "仅允许生成 draft，不会自动激活。"
+                % (
+                    _interactive_display_text(", ".join(spec.dtype_rules)),
+                    _interactive_display_text(", ".join(spec.shape_rules)),
+                    _interactive_display_text(signature),
+                )
+            )
+        for oracle, reason in sorted(static_specs.errors.items()):
+            flow_print(
+                "[自定义缺口] operator.%s 声明无效：%s"
+                % (_interactive_display_text(oracle), _interactive_display_text(reason)),
+                tone="error",
+            )
+    registered_add_one = detect_add_one_calls(snapshot.text)
+    registered_lines = {item.lineno for item in registered_add_one}
+    gaps = []
+    for decision in decisions:
+        available = getattr(decision, "available", None)
+        kind = getattr(decision, "kind", "")
+        if kind == "call" and available is False:
+            qualified_api = str(getattr(decision, "qualified_api", ""))
+            callsites = tuple(getattr(decision, "callsites", ()) or ())
+            if (
+                qualified_api == "numpy.add"
+                and callsites
+                and all(getattr(item, "lineno", None) in registered_lines for item in callsites)
+            ):
+                continue
+            gaps.append(decision)
+    if not gaps:
+        # A qualified-analysis GAP_REQUIRED call can be present even when the
+        # legacy scanner did not classify it as an ordinary-script decision.
+        for call in qualified_payload.get("calls", []):
+            if isinstance(call, Mapping) and call.get("decision") == "GAP_REQUIRED":
+                source_api = str(call.get("source_api") or call.get("canonical_key") or "")
+                if source_api == "numpy.add" and call.get("line") in registered_lines:
+                    continue
+                gaps.append(call)
+    if registered_add_one:
+        registered = add_one_gap_summary(registered_add_one)
+        gaps.append(registered)
+        lines = ",".join(str(item.lineno) for item in registered_add_one)
+        flow_print(
+            "[缺口] numpy.add(array, 1.0) @ line %s：当前 AsNumpy 的 add 仅接收两个已证明数组；"
+            "缺少 asnumpy.add_one(x)。" % lines,
+            tone="warning",
+        )
+        flow_print(
+            "      待补语义：float32 contiguous，输出 y=x+1.0、shape 不变；"
+            "候选 Ascend C 实现使用逐元素 Adds。",
+            tone="warning",
+        )
+        flow_print(
+            "      功能优先接入：CANNBot 先生成未验证草稿；NumPilot 再以"
+            " asnumpy.ones_like + asnumpy.add 做独立真机资格验证。",
+            tone="warning",
+        )
+    ordinary_gaps = [
+        item
+        for item in gaps
+        if not (isinstance(item, Mapping) and item.get("kind") == "registered_signature_gap")
+    ]
+    if ordinary_gaps:
+        flow_print(
+            "[缺口] 另发现 %d 个尚无已注册接入路径的 API：" % len(ordinary_gaps),
+            tone="warning",
+        )
+        for item in ordinary_gaps:
+            if isinstance(item, Mapping):
+                api = _interactive_display_text(item.get("source_api", "numpy.?"))
+                line = item.get("line", "?")
+                facts = item.get("facts") if isinstance(item.get("facts"), Mapping) else {}
+                reason = _interactive_display_text(item.get("reason_code", "API_UNAVAILABLE"))
+                sig = "%s positional + %s keyword" % (
+                    facts.get("positional_args", "?"),
+                    ",".join(str(x) for x in facts.get("keyword_args", ())) or "none",
+                )
+            else:
+                api = _interactive_display_text(getattr(item, "qualified_api", "numpy.?"))
+                line = getattr((getattr(item, "callsites", ()) or (None,))[0], "lineno", "?")
+                reason = _interactive_display_text(getattr(item, "reason_code", "API_UNAVAILABLE"))
+                sig = "%s positional + %s keyword" % (
+                    getattr((getattr(item, "callsites", ()) or (None,))[0], "positional_args", "?"),
+                    ",".join(str(x) for x in getattr((getattr(item, "callsites", ()) or (None,))[0], "keyword_args", ())) or "none",
+                )
+            api_name = _interactive_display_text(api.removeprefix("numpy."))
+            flow_print(
+                "    - %s @ line %s：AsNumpy 缺少 asnumpy.%s（%s）"
+                % (api, line, api_name, reason),
+                tone="warning",
+            )
+            flow_print(
+                "      待补算子：asnumpy.%s；先绑定语义/签名（%s），再走官方算子解析；"
+                "无官方匹配才允许 CANNBot draft。" % (api_name, sig),
+                tone="warning",
+            )
+    elif not registered_add_one:
+        flow_print("[缺口] 当前静态扫描未发现缺口；不会凭空生成算子。", tone="success")
+    issues = tuple(getattr(scan, "issues", ()) or ())
+    if issues:
+        flow_print(
+            "[扫描提示] %s"
+            % _interactive_display_text("；".join(str(item) for item in issues[:4])),
+            tone="warning",
+        )
+        if len(issues) > 4:
+            flow_print(
+                "              … 其余 %d 项写入预检回执" % (len(issues) - 4),
+                tone="warning",
+            )
+    return gaps
+
+
+def _interactive_gap_request(snapshot, classification, args, session_root):
+    """Persist a canonical ordinary-script gap request, if one is possible."""
+
+    from numpilot.script_migration import build_gap_request
+
+    unsupported = tuple(getattr(classification, "unsupported", ()) or ())
+    if not unsupported:
+        return None, ()
+    try:
+        payload = build_gap_request(
+            classification,
+            unsupported,
+            target_soc=args.target_soc,
+            cann_version=args.cann_version,
+        )
+    except Exception as exc:
+        flow_print(
+            "[缺口回执] 无法生成规范 GapSpec：%s" % type(exc).__name__,
+            tone="error",
+        )
+        return None, unsupported
+    path = _interactive_private_json(session_root / "gap-request.json", payload)
+    flow_print("[缺口回执] 已绑定源哈希/调用点/目标环境：%s" % path, tone="artifact")
+    return path, unsupported
+
+
+def _interactive_cannbot_route(snapshot, gap_request, args, session_root):
+    """Run the framework's official-first gap route after confirmation.
+
+    Ordinary missing APIs use ``resolve-gaps → complete-gaps``.  The tiny
+    explicit ``add_one`` OperatorSpec used in recordings is routed through the
+    existing framework-owned demo provider, because a full 17-file Ascend C
+    project would obscure the same official Skill/readiness boundary.  Both
+    paths remain draft-only and are reported separately from migration.
+    """
+
+    if not getattr(args, "cannbot_gap_draft", False):
+        flow_print(
+            "[CANNBot] 未启用；如确认后需要补算子，请加 --cannbot-gap-draft。",
+            tone="warning",
+        )
+        return {
+            "status": "not_requested",
+            "actual_remote_call": False,
+            "claim_boundary": {"interface_available": False, "activated": False},
+        }
+    if not getattr(args, "accept_cannbot_license", False):
+        flow_print(
+            "[CANNBot] 未收到本次许可证确认；停止，未读取 CANNBot Skill、未调用模型。",
+            tone="warning",
+        )
+        return {
+            "status": "license_required",
+            "actual_remote_call": False,
+            "claim_boundary": {"interface_available": False, "activated": False},
+        }
+    # The tiny OperatorSpec recording fixture is a first-class framework
+    # route too.  Its canonical GapSpec is discovered by ``resolve-gaps``
+    # itself, rather than by the ordinary NumPy-call hand-off, so it must be
+    # admitted before the generic ``gap_request is None`` guard.  Detect it
+    # from literal decorator syntax, not a substring in a comment/string.
+    is_add_one = False
+    try:
+        import ast
+
+        from numpilot.operator_specs import collect_static_operator_specs
+
+        static_specs = collect_static_operator_specs(
+            ast.parse(snapshot.text, filename=snapshot.path)
+        )
+        is_add_one = any(spec.name == "add_one" for spec in static_specs.specs.values())
+    except (SyntaxError, TypeError, ValueError):
+        is_add_one = False
+    if gap_request is None and not is_add_one:
+        flow_print(
+            "[CANNBot] 当前源没有可绑定的普通脚本 GapSpec，跳过算子生成。",
+            tone="warning",
+        )
+        return {
+            "status": "no_gap",
+            "actual_remote_call": False,
+            "claim_boundary": {"interface_available": False, "activated": False},
+        }
+
+    cann_version = str(args.cann_version or "").strip()
+    cann_root = str(getattr(args, "cann_root", "") or os.getenv("ASCEND_HOME_PATH", ""))
+    if cann_version.lower() in {"", "unknown", "auto"} and cann_root:
+        match = re.search(r"/cann-([^/]+)$", cann_root.rstrip("/"))
+        if match:
+            cann_version = match.group(1)
+    if cann_version.lower() in {"", "unknown", "auto"}:
+        flow_print(
+            "[CANNBot] CANN 版本未知；停止在官方解析门禁，未调用模型。",
+            tone="error",
+        )
+        return {
+            "status": "cann_version_required",
+            "actual_remote_call": False,
+            "claim_boundary": {"interface_available": False, "activated": False},
+        }
+
+    target_soc = str(args.target_soc or "unknown")
+    if target_soc.lower() in {"", "unknown", "auto"}:
+        target_soc = os.getenv("ASCEND_SOC_VERSION", "Ascend910B4")
+    resolution = session_root / "official-resolution.json"
+    flow_print("\n── CANNBot-Skill 算子补全流程（框架内 draft-only）──", tone="title")
+    flow_print(
+        "[CANNBot 1/3] 官方解析：检查已安装 CANN/ops-nn；不联网、不调用模型",
+        tone="phase",
+    )
+    command = [
+        sys.executable, "-m", "numpilot", "resolve-gaps", snapshot.path,
+        "--out", str(resolution), "--target-soc", target_soc,
+        "--cann-version", cann_version, "--allow-custom-operator-generation",
+    ]
+    if not is_add_one:
+        command[5:5] = ["--gap-request", str(gap_request)]
+    if cann_root:
+        command.extend(["--cann-root", cann_root])
+    ops_root = os.getenv("NUMPILOT_OPS_NN_ROOT", "")
+    if ops_root:
+        command.extend(["--ops-nn-root", ops_root, "--accept-cann-osl"])
+    flow_print("[框架命令] %s" % shlex.join(command), tone="artifact")
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=str(Path(__file__).resolve().parents[1]),
+            env=os.environ.copy(),
+            stdin=subprocess.DEVNULL,
+            check=False,
+            timeout=min(float(getattr(args, "timeout", 3600.0)), 3600.0),
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        flow_print("[CANNBot 1/3] 失败：%s" % type(exc).__name__, tone="error")
+        return {
+            "status": "resolution_failed",
+            "actual_remote_call": False,
+            "claim_boundary": {"interface_available": False, "activated": False},
+        }
+    if completed.returncode != 0 or not resolution.is_file():
+        flow_print("[CANNBot] 官方解析未通过；fail-closed，不进入模型阶段。", tone="error")
+        return {
+            "status": "resolution_failed",
+            "actual_remote_call": False,
+            "claim_boundary": {"interface_available": False, "activated": False},
+        }
+    resolution_payload = _interactive_read_json(resolution)
+    if not isinstance(resolution_payload, Mapping) or not resolution_payload.get(
+        "model_kernel_generation_allowed"
+    ):
+        flow_print(
+            "[CANNBot] 官方候选尚未明确 clean no_match；不调用模型。",
+            tone="warning",
+        )
+        return {
+            "status": "official_match_or_ambiguous",
+            "actual_remote_call": False,
+            "claim_boundary": {"interface_available": False, "activated": False},
+        }
+    flow_print(
+        "[CANNBot 2/3] 官方门禁通过：status=%s · resolution=%s"
+        % (resolution_payload.get("status", "?"), resolution),
+        tone="success",
+    )
+
+    # The explicit add_one fixture uses the compact, receipt-bound provider so
+    # a real recording remains feasible.  It is still launched by this core
+    # command and all outputs stay in the same private session tree.
+    if is_add_one:
+        skill_root = str(
+            getattr(args, "cannbot_skill_root", "")
+            or os.getenv("NUMPILOT_CANNBOT_SKILLS", "")
+            or ""
+        )
+        if not skill_root or skill_root == "auto":
+            try:
+                skill_root = str(_load_cannbot_api().default_skill_checkout())
+            except Exception:
+                skill_root = ""
+        if not skill_root:
+            flow_print(
+                "[CANNBot 2/3] 找不到固定 Skill checkout；不调用模型。",
+                tone="error",
+            )
+            return {
+                "status": "skill_required",
+                "actual_remote_call": False,
+                "claim_boundary": {"interface_available": False, "activated": False},
+            }
+        try:
+            from numpilot.migration_skill import load_migration_skill
+
+            requested_skill = getattr(args, "skill_path", None)
+            requested_skill_path = (
+                Path(requested_skill).expanduser().absolute()
+                if requested_skill
+                else None
+            )
+            migration_skill = load_migration_skill(
+                requested_skill_path.parent
+                if requested_skill_path is not None
+                else None
+            )
+            if (
+                requested_skill_path is not None
+                and requested_skill_path != migration_skill.skill_path.absolute()
+            ):
+                raise ValueError(
+                    "--skill-path must name SKILL.md in a complete Skill bundle"
+                )
+        except (OSError, RuntimeError, ValueError) as exc:
+            flow_print(
+                "[CANNBot 2/3] NumPilot Skill 发布包不可用：%s；不调用模型。"
+                % type(exc).__name__,
+                tone="error",
+            )
+            return {
+                "status": "numpilot_skill_required",
+                "actual_remote_call": False,
+                "claim_boundary": {"interface_available": False, "activated": False},
+            }
+        output = session_root / "cannbot-output"
+        command = [
+            sys.executable,
+            "-m", "numpilot.demo_llm_operator_generation",
+            "--out", str(output),
+            "--llm-config", str(getattr(args, "llm_config", None) or os.getenv("NUMPILOT_LLM_CONFIG_FILE", "")),
+            "--skill-path", str(migration_skill.skill_path),
+            "--skill-sha256", migration_skill.files_sha256["SKILL.md"],
+            "--skill-bundle-sha256", migration_skill.bundle_sha256,
+            "--gap-source", snapshot.path,
+            "--official-resolution", str(resolution),
+            "--cannbot-skill-root", skill_root,
+            "--show-cannbot-skill", getattr(args, "show_cannbot_skill", "full"),
+            "--accept-cannbot-license",
+            "--max-tokens", str(getattr(args, "cannbot_max_tokens", 4096)),
+            "--timeout", str(int(float(getattr(args, "cannbot_timeout", 300)))),
+        ]
+        # Do not display an empty --llm-config value; the child can use its
+        # already-loaded environment in that case.
+        if not command[command.index("--llm-config") + 1]:
+            index = command.index("--llm-config")
+            del command[index:index + 2]
+        flow_print(
+            "[CANNBot 3/3] 读取已校验官方上下文并调用真实配置模型；显示心跳/完整公开上下文",
+            tone="phase",
+        )
+        flow_print("[框架命令] %s" % shlex.join(command), tone="artifact")
+        try:
+            completed = subprocess.run(
+                command,
+                cwd=str(Path(__file__).resolve().parents[1]),
+                env=os.environ.copy(),
+                stdin=subprocess.DEVNULL,
+                check=False,
+                timeout=min(float(getattr(args, "cannbot_timeout", 300)), 3600.0),
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            flow_print("[CANNBot 3/3] 失败：%s" % type(exc).__name__, tone="error")
+            return {
+                "status": "generation_failed",
+                "actual_remote_call": True,
+                "claim_boundary": {"interface_available": False, "activated": False},
+            }
+        report = output / "operator-generation-report.json"
+        report_payload = _interactive_read_json(report)
+        status = report_payload.get("status") if isinstance(report_payload, Mapping) else "failed"
+        flow_print(
+            "[CANNBot] 生成阶段结束：status=%s · report=%s" % (status, report),
+            tone="warning" if status == "generated_unverified" else "error",
+        )
+        return {
+            "status": status,
+            "actual_remote_call": bool(
+                isinstance(report_payload, Mapping)
+                and report_payload.get("actual_remote_call") is True
+            ),
+            "report": str(report) if report.is_file() else None,
+            "generated_file": (
+                str(report.parent / str(report_payload.get("generated_file")))
+                if isinstance(report_payload, Mapping)
+                and isinstance(report_payload.get("generated_file"), str)
+                else None
+            ),
+            "claim_boundary": {
+                "generated": status == "generated_unverified",
+                "compiled": False,
+                "numerically_verified": False,
+                "activated": False,
+                "interface_available": False,
+            },
+        }
+
+    # Generic ordinary-script gaps use the canonical complete-gaps pipeline.
+    output = session_root / "operator-gaps"
+    command = [
+        sys.executable, "-m", "numpilot", "complete-gaps", snapshot.path,
+        "--gap-request", str(gap_request), "--out", str(output),
+        "--target-soc", target_soc, "--cann-version", cann_version,
+        "--provider", "llm", "--max-attempts", "1",
+        "--llm-timeout", str(
+            max(10, min(int(float(getattr(args, "cannbot_timeout", 300))), 3600))
+        ),
+        "--official-resolution-report", str(resolution),
+        "--allow-custom-operator-generation",
+        "--show-cannbot-skill", getattr(args, "show_cannbot_skill", "full"),
+    ]
+    if getattr(args, "llm_config", None):
+        # The Python interpreter options must precede ``-m``; NumPilot's
+        # global option belongs after the module name (or after the
+        # subcommand).  Append it here so ``python -m numpilot`` remains a
+        # valid argv on every supported Python version.
+        command.extend(["--llm-config", str(args.llm_config)])
+    if getattr(args, "cannbot_skill_root", None):
+        command.extend(["--skill-root", str(args.cannbot_skill_root)])
+    flow_print(
+        "[CANNBot 3/3] 进入 complete-gaps：分阶段读取 Skill、真实模型生成；阶段心跳会持续显示",
+        tone="phase",
+    )
+    flow_print("[框架命令] %s" % shlex.join(command), tone="artifact")
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=str(Path(__file__).resolve().parents[1]),
+            env=os.environ.copy(),
+            stdin=subprocess.DEVNULL,
+            check=False,
+            timeout=min(float(getattr(args, "cannbot_timeout", 300)), 3600.0),
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        flow_print("[CANNBot 3/3] 失败：%s" % type(exc).__name__, tone="error")
+        return {
+            "status": "generation_failed",
+            "actual_remote_call": True,
+            "claim_boundary": {"interface_available": False, "activated": False},
+        }
+    report = output / "gap-report.json"
+    flow_print(
+        "[CANNBot] complete-gaps rc=%s · report=%s" % (completed.returncode, report),
+        tone="success" if completed.returncode == 0 else "error",
+    )
+    report_payload = _interactive_read_json(report)
+    actual_remote = False
+    if isinstance(report_payload, Mapping):
+        count = report_payload.get("current_run_actual_remote_call_count")
+        if isinstance(count, int) and not isinstance(count, bool) and count > 0:
+            actual_remote = True
+        drafts = report_payload.get("drafts")
+        if isinstance(drafts, list):
+            actual_remote = actual_remote or any(
+                isinstance(item, Mapping)
+                and item.get("current_run_actual_remote_call") is True
+                for item in drafts
+            )
+    report_status = (
+        str(report_payload.get("status", "failed"))
+        if isinstance(report_payload, Mapping)
+        else "failed"
+    )
+    claim_boundary = (
+        dict(report_payload.get("claim_boundary"))
+        if isinstance(report_payload, Mapping)
+        and isinstance(report_payload.get("claim_boundary"), Mapping)
+        else {"interface_available": False, "activated": False}
+    )
+    # A successful process only proves that a receipt was published.  It does
+    # not upgrade a generated draft into an integrated interface.
+    claim_boundary["interface_available"] = claim_boundary.get("interface_available") is True
+    return {
+        "status": report_status if completed.returncode == 0 else "failed",
+        "actual_remote_call": actual_remote,
+        "report": str(report) if report.is_file() else None,
+        "claim_boundary": claim_boundary,
+    }
+
+
+def _interactive_final_summary(result, *, session_root, interpretation, gap_result):
+    """Render final facts from workflow/verification/benchmark receipts only."""
+
+    def _number(value):
+        """Convert receipt numbers without allowing a malformed receipt to abort."""
+
+        try:
+            if isinstance(value, bool):
+                return None
+            converted = float(value)
+            return converted if converted == converted else None
+        except (TypeError, ValueError, OverflowError):
+            return None
+
+    run_dir = Path(result.get("workflow_report", "")).parent if result.get("workflow_report") else None
+    flow_print("\n── NumPilot 迁移结果（以框架回执为准）──", tone="title")
+    workflow_status = result.get("status", "unknown")
+    flow_print(
+        "[状态] workflow=%s · stages=%s/%s" % (
+            workflow_status,
+            result.get("completed_stage_count", 0), result.get("stage_count", 0),
+        ),
+        tone=(
+            "success" if workflow_status == "passed"
+            else "error" if workflow_status in {"failed", "blocked", "timeout"}
+            else "warning"
+        ),
+    )
+    for stage in result.get("stages", ()):
+        if not isinstance(stage, Mapping):
+            flow_print("[?] invalid-stage · receipt entry is not an object", tone="warning")
+            continue
+        stage_status = stage.get("status")
+        marker = {"passed": "✓", "failed": "✗", "blocked": "!", "timeout": "!"}.get(
+            stage_status, "?"
+        )
+        elapsed = _number(stage.get("elapsed_seconds", 0.0))
+        flow_print(
+            "[%s] %s · %s · %s"
+            % (marker, stage.get("name", "stage"), stage_status or "unknown",
+               "%.2fs" % elapsed if elapsed is not None else "elapsed=?"),
+            tone=(
+                "success" if stage_status == "passed"
+                else "error" if stage_status == "failed"
+                else "warning"
+            ),
+        )
+    migrated = run_dir / "migration" / "migrated.py" if run_dir else None
+    if migrated is not None and migrated.is_file() and not migrated.is_symlink():
+        flow_print("[迁移后代码] %s" % migrated, tone="artifact")
+    else:
+        flow_print("[迁移后代码] 尚未生成（迁移阶段未通过）", tone="warning")
+    verification = _interactive_read_json(run_dir / "script-verification-report.json") if run_dir else None
+    if isinstance(verification, Mapping):
+        verification_status = verification.get("status", "unknown")
+        flow_print(
+            "[运行验证] status=%s · numerical_consistency=%s" % (
+                verification_status,
+                verification_status == "passed",
+            ),
+            tone="success" if verification_status == "passed" else "error",
+        )
+        comparisons = verification.get("comparisons")
+        if isinstance(comparisons, Mapping):
+            for name, value in list(comparisons.items())[:8]:
+                if isinstance(value, Mapping):
+                    flow_print(
+                        "    %s: elements=%s max_abs_diff=%s max_rel_diff=%s"
+                        % (name, value.get("n_elements", "?"), value.get("max_abs_diff", "?"), value.get("max_rel_diff", "?")),
+                        tone="metric",
+                    )
+    else:
+        flow_print("[运行验证] not_run（没有可接受的 migration report）", tone="warning")
+    benchmark = _interactive_read_json(run_dir / "script-benchmark-report.json") if run_dir else None
+    performance = benchmark.get("performance") if isinstance(benchmark, Mapping) else None
+    scale_rendered = False
+
+    if isinstance(performance, Mapping) and performance.get("performance_valid") is True:
+        speed = performance.get("median_speedup")
+        conservative = performance.get("conservative_cpu_p10_over_npu_p90")
+        ci = performance.get("median_speedup_bootstrap_95ci")
+        cpu_ms = _number(performance.get("cpu_median_ms"))
+        npu_ms = _number(performance.get("npu_median_ms"))
+        speed_num = _number(speed)
+        conservative_num = _number(conservative)
+        if None in {cpu_ms, npu_ms, speed_num, conservative_num}:
+            flow_print(
+                "[性能] performance_valid=true 但数值字段不完整；不输出加速比。",
+                tone="warning",
+            )
+        else:
+            flow_print(
+                "[性能] resident CPU median=%.3f ms · NPU median=%.3f ms · speedup=%.2fx · conservative=%.2fx · CI=%s"
+                % (cpu_ms, npu_ms, speed_num, conservative_num, ci),
+                tone="metric",
+            )
+        workers = benchmark.get("workers") if isinstance(benchmark, Mapping) else {}
+        npu_worker = workers.get("npu") if isinstance(workers, Mapping) else None
+        npu_outputs = npu_worker.get("outputs", []) if isinstance(npu_worker, Mapping) else []
+        output = npu_outputs[0] if isinstance(npu_outputs, list) and npu_outputs else {}
+        elements = output.get("elements") if isinstance(output, Mapping) else None
+        data_bytes = output.get("data_bytes") if isinstance(output, Mapping) else None
+        shape = output.get("shape") if isinstance(output, Mapping) else None
+        dtype = output.get("dtype") if isinstance(output, Mapping) else None
+        data_bytes_num = _number(data_bytes)
+        mib = data_bytes_num / (1024 * 1024) if data_bytes_num is not None else None
+        flow_print(
+            "[规模] shape=%s · dtype=%s · elements=%s · data=%s bytes%s"
+            % (shape, dtype, elements, data_bytes, " (%.2f MiB)" % mib if mib is not None else ""),
+            tone="metric",
+        )
+        scale_rendered = True
+        if speed_num is None:
+            flow_print("[口径] 性能数值不完整；不判断当前规模是否有加速优势。", tone="warning")
+        elif speed_num >= 1.0:
+            flow_print(
+                "[口径] 当前规模/当前设备的 steady device-resident marker 区间体现优势；不外推冷启动或端到端。",
+                tone="success",
+            )
+        else:
+            flow_print("[口径] 当前规模未体现优势；不外推到其他规模或端到端。", tone="warning")
+    else:
+        flow_print(
+            "[性能] performance_valid=false · 未形成可宣称的加速比（benchmark 未运行或门禁未通过）",
+            tone="warning",
+        )
+    # Verification is intentionally independent from the performance gate.  A
+    # no-benchmark recording should still tell the developer what data size was
+    # actually checked, while making it explicit that shape/dtype/bytes and any
+    # speedup conclusion require a valid benchmark receipt.
+    if not scale_rendered:
+        fallback_elements = None
+        if isinstance(benchmark, Mapping):
+            workers = benchmark.get("workers")
+            npu_worker = workers.get("npu") if isinstance(workers, Mapping) else None
+            npu_outputs = npu_worker.get("outputs", []) if isinstance(npu_worker, Mapping) else []
+            if isinstance(npu_outputs, list) and npu_outputs and isinstance(npu_outputs[0], Mapping):
+                fallback_elements = npu_outputs[0].get("elements")
+        if fallback_elements is None and isinstance(verification, Mapping):
+            comparisons = verification.get("comparisons")
+            if isinstance(comparisons, Mapping):
+                for value in comparisons.values():
+                    if isinstance(value, Mapping) and value.get("n_elements") is not None:
+                        fallback_elements = value.get("n_elements")
+                        break
+        if fallback_elements is not None:
+            flow_print(
+                "[规模] elements=%s · shape/dtype/bytes=unavailable（benchmark 未运行或门禁未通过）"
+                % _interactive_display_text(fallback_elements),
+                tone="warning",
+            )
+        else:
+            flow_print("[规模] unavailable（benchmark 未运行或回执未提供规模字段）", tone="warning")
+    if isinstance(gap_result, Mapping) and gap_result.get("status") not in {None, "not_requested", "no_gap"}:
+        gap_status = gap_result.get("status")
+        flow_print(
+            "[算子补全] status=%s · actual_remote_call=%s · report=%s" % (
+                gap_status, gap_result.get("actual_remote_call"), gap_result.get("report", "—")
+            ),
+            tone=(
+                "success" if gap_status == "qualified_composite_interface"
+                else "warning" if gap_status == "generated_unverified"
+                else "error"
+            ),
+        )
+    flow_print(
+        "[解读边界] 模型解读 status=%s · unverified=true · receipt=%s" % (
+            interpretation.status, interpretation.report_path or "—"
+        ),
+        tone="warning",
+    )
+
+
+def _interactive_new_session_root(args):
+    """Create the single private output tree for one interactive session."""
+
+    configured = getattr(args, "out", None)
+    if configured:
+        target = Path(configured).expanduser()
+        if not target.is_absolute():
+            raise ValueError("--out 必须是全新的绝对目录")
+        target = target.absolute()
+    else:
+        target = (default_demo_dir() / ("interactive-" + uuid.uuid4().hex)).absolute()
+    if os.path.lexists(target):
+        raise ValueError("会话输出目录已存在；请使用全新的绝对目录")
+    target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if target.parent.is_symlink() or not target.parent.is_dir():
+        raise ValueError("会话输出目录的父目录不可用")
+    target.mkdir(mode=0o700)
+    os.chmod(target, 0o700)
+    return target
+
+
+def _interactive_report_interpretation(interpretation):
+    if interpretation is None:
+        return {}
+    return {
+        "status": getattr(interpretation, "status", "unknown"),
+        "report": getattr(interpretation, "report_path", None),
+        "configured_model": getattr(interpretation, "model", None),
+        "provider": getattr(interpretation, "provider", None),
+        "actual_remote_call": getattr(interpretation, "actual_remote_call", False) is True,
+        "unverified": True,
+    }
+
+
+def _interactive_publish_reports(
+    *,
+    session_root,
+    snapshot,
+    status,
+    api_analysis=None,
+    interpretation=None,
+    gap_result=None,
+    workflow=None,
+):
+    """Publish the final JSON/Markdown navigation reports and show their paths."""
+
+    from numpilot.interactive_report import build_session_report, write_session_reports
+
+    report = build_session_report(
+        session_root=Path(session_root),
+        source={
+            "path": snapshot.path,
+            "sha256": snapshot.sha256,
+            "bytes": snapshot.bytes,
+            "lines": snapshot.lines,
+        },
+        status=status,
+        api_analysis=api_analysis or {},
+        interpretation=_interactive_report_interpretation(interpretation),
+        gap_result=gap_result or {},
+        workflow=workflow,
+    )
+    json_path, markdown_path = write_session_reports(Path(session_root), report)
+    flow_print("[完整报告] Markdown：%s" % markdown_path, tone="artifact")
+    flow_print("[机器回执] JSON：%s" % json_path, tone="artifact")
+    return json_path, markdown_path
+
+
+def _interactive_confirm_add_one_source_execution(
+    snapshot, normalized_snapshot, args, session_root
+):
+    """Obtain a confirmation dedicated to executing two hash-bound scripts."""
+
+    outputs = tuple(getattr(args, "outputs", None) or ("result",))
+    flow_print(
+        "\n[源码执行确认] 下一步将分别在隔离子进程中执行原始用户源码与"
+        " add_one 规范化源码，并只比较输出 %s。" % ",".join(outputs),
+        tone="warning",
+    )
+    flow_print(
+        "                 原始=%s · sha256=%s"
+        % (_interactive_display_text(snapshot.path), snapshot.sha256),
+        tone="artifact",
+    )
+    flow_print(
+        "                 规范化=%s · sha256=%s"
+        % (
+            _interactive_display_text(normalized_snapshot.path),
+            normalized_snapshot.sha256,
+        ),
+        tone="artifact",
+    )
+    flow_print(
+        "                 子进程隔离不是 OS 安全沙箱；源码自身的文件、网络或"
+        "其他副作用仍可能发生。",
+        tone="warning",
+    )
+    if getattr(args, "execute_source", False) is True:
+        confirmed = True
+        method = "cli_execute_source"
+        flow_print(
+            "[源码执行确认] --execute-source 已明确授权现在执行上述两个哈希绑定脚本。",
+            tone="warning",
+        )
+    elif sys.stdin.isatty():
+        try:
+            flow_print(
+                "仅输入 execute 明确授权执行，其他输入取消 [execute/N]：",
+                tone="prompt",
+                end="",
+                flush=True,
+            )
+            answer = input().strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            answer = ""
+        confirmed = answer == "execute"
+        method = "tty_exact_phrase"
+    else:
+        confirmed = False
+        method = "non_tty_without_execute_source"
+        flow_print(
+            "[源码执行确认] 通用 --yes 不授权执行源码；非交互环境还必须显式提供"
+            " --execute-source。不会执行用户源码。",
+            stream=sys.stderr,
+            tone="error",
+        )
+    _interactive_private_json(
+        Path(session_root) / "source-execution-confirmation.json",
+        {
+            "status": "accepted" if confirmed else "declined",
+            "method": method,
+            "source_path": snapshot.path,
+            "source_sha256": snapshot.sha256,
+            "normalized_source_path": normalized_snapshot.path,
+            "normalized_source_sha256": normalized_snapshot.sha256,
+            "outputs": list(outputs),
+            "subprocess_isolation": True,
+            "os_sandbox": False,
+        },
+    )
+    return confirmed
+
+
+def _interactive_complete_registered_add_one(snapshot, calls, args, session_root):
+    """Generate a CANNBot draft, then qualify a separate run-scoped interface."""
+
+    from numpilot.add_one_gap import (
+        AddOneLoweringVerificationError,
+        lower_add_one_calls,
+        materialize_add_one_operator_spec,
+        verify_add_one_lowering,
+    )
+    from numpilot.interactive_migration import (
+        InteractiveMigrationError,
+        read_source_snapshot,
+    )
+    from numpilot.runtime_extensions import (
+        RuntimeExtensionError,
+        activate_qualified_add_one_extension,
+        materialize_add_one_extension,
+        qualify_add_one_extension,
+    )
+
+    flow_print(
+        "\n[算子接入 1/5] 固化 add_one 语义、调用点与原始源码哈希",
+        tone="operator",
+    )
+    try:
+        operator_spec, relation = materialize_add_one_operator_spec(
+            original_source_path=snapshot.path,
+            original_source=snapshot.text,
+            calls=calls,
+            out_dir=session_root / "add-one-contract",
+            target_soc=args.target_soc,
+            cann_version=args.cann_version,
+        )
+        operator_snapshot = read_source_snapshot(operator_spec)
+    except Exception as exc:
+        flow_print("[算子接入] 契约固化失败：%s" % type(exc).__name__, tone="error")
+        return {
+            "status": "operator_contract_failed",
+            "route": "registered_add_one_composite_npu",
+            "actual_remote_call": False,
+            "claim_boundary": {"interface_available": False, "activated": False},
+        }, None
+
+    flow_print(
+        "[算子接入 2/5] 官方优先解析 → 读取完整 CANNBot Skill → 配置模型生成",
+        tone="operator",
+    )
+    generated = _interactive_cannbot_route(
+        operator_snapshot, None, args, session_root
+    )
+    base = {
+        "route": "registered_add_one_composite_npu",
+        "interface": "asnumpy.add_one",
+        "operator_spec": str(operator_spec),
+        "relation_report": str(relation),
+        "report": generated.get("report"),
+        "generated_file": generated.get("generated_file"),
+        "actual_remote_call": generated.get("actual_remote_call") is True,
+        "upstream_modified": False,
+        "cannbot_draft_activated": False,
+    }
+    if generated.get("status") != "generated_unverified":
+        flow_print(
+            "[算子接入] CANNBot 未形成合格的未验证草稿；后续接入和迁移停止。",
+            tone="error",
+        )
+        base.update(
+            status=generated.get("status", "generation_failed"),
+            claim_boundary={"interface_available": False, "activated": False},
+        )
+        return base, None
+
+    report_path = generated.get("report")
+    draft_path = generated.get("generated_file")
+    flow_print(
+        "[算子接入 3/5] 草稿已生成：%s\n"
+        "                 边界：generated_unverified；未编译、未测试、未激活。"
+        % (draft_path or "unavailable"),
+        tone="warning",
+    )
+    try:
+        extension = materialize_add_one_extension(
+            report_path,
+            draft_path,
+            session_root / "runtime-extension",
+        )
+        flow_print(
+            "[算子接入 4/5] 资格验证 run-scoped composite："
+            "asnumpy.ones_like → asnumpy.add（真实 NPU 子进程）",
+            tone="operator",
+        )
+        stop = threading.Event()
+        heartbeat = _interactive_heartbeat(stop, "add_one 真实 NPU 资格验证", interval=5.0)
+        try:
+            qualification = qualify_add_one_extension(
+                extension,
+                session_root / "runtime-extension-qualification",
+                python_executable=getattr(args, "python", None),
+                timeout_seconds=min(float(getattr(args, "timeout", 3600.0)), 3600.0),
+            )
+        finally:
+            stop.set()
+            heartbeat.join(timeout=1.0)
+    except (RuntimeExtensionError, OSError, ValueError, TypeError) as exc:
+        flow_print(
+            "[算子接入] 组合接口资格验证失败：%s" % type(exc).__name__,
+            tone="error",
+        )
+        base.update(
+            status="qualification_failed",
+            extension_manifest=(extension.manifest_path if "extension" in locals() else None),
+            claim_boundary={"generated": True, "interface_available": False, "activated": False},
+        )
+        return base, None
+    base.update(
+        extension_manifest=extension.manifest_path,
+        qualification_report=qualification.report_path,
+    )
+    if not qualification.interface_available:
+        flow_print("[算子接入] NPU 资格回执未开放接口；后续迁移停止。", tone="error")
+        base.update(
+            status=qualification.status,
+            claim_boundary={"generated": True, "interface_available": False, "activated": False},
+        )
+        return base, None
+
+    try:
+        import asnumpy
+
+        activate_qualified_add_one_extension(qualification.report_path, asnumpy)
+    except (RuntimeExtensionError, ImportError) as exc:
+        flow_print("[算子接入] run-scoped 激活失败：%s" % type(exc).__name__, tone="error")
+        base.update(
+            status="activation_failed",
+            claim_boundary={"generated": True, "qualified": True, "interface_available": False, "activated": False},
+        )
+        return base, None
+    flow_print(
+        "[算子接入 5/5] 本次 NumPilot 运行上下文新增 asnumpy.add_one(x)："
+        "float32 y=x+1.0；scope=run，provenance=composite_npu。",
+        tone="success",
+    )
+    flow_print(
+        "                 上游 AsNumpy 未修改；CANNBot Ascend C 草稿仍未编译、未激活。",
+        tone="warning",
+    )
+    try:
+        normalized, lowering = lower_add_one_calls(
+            source_path=snapshot.path,
+            source=snapshot.text,
+            calls=calls,
+            out_dir=session_root / "add-one-lowering",
+        )
+    except Exception as exc:
+        flow_print("[算子接入] 源码 lowering 失败：%s" % type(exc).__name__, tone="error")
+        base.update(
+            status="lowering_failed",
+            claim_boundary={"generated": True, "qualified": True, "activated": True, "interface_available": True},
+        )
+        return base, None
+    try:
+        normalized_snapshot = read_source_snapshot(normalized)
+        execution_confirmed = _interactive_confirm_add_one_source_execution(
+            snapshot,
+            normalized_snapshot,
+            args,
+            session_root,
+        )
+    except (InteractiveMigrationError, OSError, ValueError) as exc:
+        flow_print(
+            "[源码执行确认] 回执失败：%s；不会执行用户源码。"
+            % type(exc).__name__,
+            tone="error",
+        )
+        base.update(
+            status="source_execution_confirmation_failed",
+            lowered_source=str(normalized),
+            lowering_report=str(lowering),
+            claim_boundary={
+                "generated": True,
+                "qualified": True,
+                "activated": True,
+                "interface_available": True,
+                "integration_verified": False,
+            },
+        )
+        return base, None
+    if not execution_confirmed:
+        flow_print(
+            "[源码执行确认] 已取消；原始与规范化源码均未执行。",
+            tone="warning",
+        )
+        base.update(
+            status="source_execution_declined",
+            lowered_source=str(normalized),
+            lowering_report=str(lowering),
+            claim_boundary={
+                "generated": True,
+                "qualified": True,
+                "activated": True,
+                "interface_available": True,
+                "integration_verified": False,
+            },
+        )
+        return base, None
+    flow_print(
+        "[源码等价门] 已获得紧邻执行确认；现在对两个哈希绑定脚本做独立输出对拍",
+        tone="phase",
+    )
+    try:
+        lowering_verification = verify_add_one_lowering(
+            snapshot.path,
+            normalized,
+            lowering,
+            args.outputs or ("result",),
+            session_root / "add-one-lowering" / "add-one-lowering-verification.json",
+            user_confirmed=execution_confirmed,
+            python_executable=getattr(args, "python", None),
+            timeout_seconds=min(float(getattr(args, "timeout", 3600.0)), 3600.0),
+        )
+    except AddOneLoweringVerificationError as exc:
+        receipt = exc.receipt.path if exc.receipt is not None else None
+        flow_print(
+            "[源码等价门] 失败：%s · receipt=%s" % (exc.code, receipt or "unavailable"),
+            tone="error",
+        )
+        base.update(
+            status="lowering_verification_failed",
+            lowered_source=str(normalized),
+            lowering_report=str(lowering),
+            lowering_verification_report=receipt,
+            claim_boundary={
+                "generated": True,
+                "qualified": True,
+                "activated": True,
+                "interface_available": True,
+                "integration_verified": False,
+            },
+        )
+        return base, None
+    flow_print(
+        "[源码等价门] constituent lowering passed · outputs=%s · receipt=%s"
+        % (",".join(args.outputs or ("result",)), lowering_verification.path),
+        tone="success",
+    )
+    flow_print(
+        "                 已验证 numpy.ones_like + numpy.add 的等价 lowering；"
+        "迁移程序未直接调用 asnumpy.add_one，接口集成未验证。",
+        tone="warning",
+    )
+    base.update(
+        status="qualified_composite_interface",
+        provenance="composite_npu",
+        scope="run",
+        lowered_source=str(normalized),
+        lowering_report=str(lowering),
+        lowering_verification_report=lowering_verification.path,
+        claim_boundary={
+            "generated": True,
+            "compiled": False,
+            "unit_tested": False,
+            "numerically_verified": True,
+            "integration_verified": False,
+            "qualified": True,
+            "activated": True,
+            "rescanned": False,
+            "interface_available": True,
+        },
+    )
+    return base, normalized_snapshot
+
+
+def _cmd_interactive_migrate(args):
+    """Run the reusable terminal analysis→gap→migration→evidence workflow."""
+
+    from numpilot.interactive_migration import (
+        InteractiveMigrationError,
+        failure_report_payload,
+        interpret_source_with_configured_model,
+        read_source_snapshot,
+        write_interpretation_report,
+    )
+    from numpilot.workflow import WorkflowError, run_ordinary_workflow
+
+    try:
+        source_arg = _interactive_source_arg(args)
+        snapshot = read_source_snapshot(source_arg)
+        session_root = _interactive_new_session_root(args)
+    except (ValueError, InteractiveMigrationError, OSError) as exc:
+        flow_print("[交互入口] %s" % exc, stream=sys.stderr, tone="error")
+        return 2
+
+    flow_print("\n── NumPilot 交互迁移入口 ──", tone="title")
+    flow_print("[会话目录] %s" % session_root, tone="artifact")
+    flow_print(
+        "[阶段 1/5] 已读取稳定源码；完整源文件只在本机静态分析/后续门禁中使用。",
+        tone="phase",
+    )
+    qualified_payload = {}
+    gaps = []
+    analysis_summary = {}
+    static_admission = {"ok": False, "route": "not_run", "issues": []}
+    try:
+        qualified_payload, scan, classification = _interactive_runtime_analysis(snapshot, args)
+        from numpilot.add_one_gap import detect_add_one_calls
+
+        registered_add_one = detect_add_one_calls(snapshot.text)
+        static_admission = _interactive_static_source_admission(
+            snapshot,
+            qualified_payload,
+            scan,
+            registered_add_one,
+        )
+        gaps = _interactive_render_analysis(snapshot, qualified_payload, scan, classification)
+        analysis_summary = {
+            "decision": qualified_payload.get("decision"),
+            "runtime_identity_status": qualified_payload.get("runtime_identity_status"),
+            "qualified_apis": list(qualified_payload.get("qualified_apis", ())),
+            "numpy_use_count": len(getattr(scan, "uses", ()) or ()),
+            "gap_count": len(gaps),
+            "registered_add_one_calls": [item.to_dict() for item in registered_add_one],
+            "static_source_admission": static_admission,
+        }
+        _interactive_private_json(
+            session_root / "preflight-analysis.json",
+            {"source": {"path": snapshot.path, "sha256": snapshot.sha256, "bytes": snapshot.bytes, "lines": snapshot.lines},
+             "qualified": qualified_payload,
+             "scanner": {"ok": bool(getattr(scan, "ok", False)), "issues": list(getattr(scan, "issues", ()) or ())},
+             "static_source_admission": static_admission,
+             "gap_count": len(gaps),
+             "registered_add_one_calls": [item.to_dict() for item in registered_add_one]},
+        )
+    except Exception as exc:
+        flow_print(
+            "[分析] 失败关闭：%s" % type(exc).__name__,
+            stream=sys.stderr,
+            tone="error",
+        )
+        try:
+            _interactive_publish_reports(
+                session_root=session_root,
+                snapshot=snapshot,
+                status="analysis_failed",
+                api_analysis=analysis_summary,
+            )
+        except Exception:
+            pass
+        flow_print("[会话回执] %s" % session_root, stream=sys.stderr, tone="artifact")
+        return 2
+
+    if static_admission.get("ok") is not True:
+        reasons = tuple(static_admission.get("issues") or ())
+        flow_print(
+            "[静态准入] 未通过；不会读取模型配置、生成算子或执行用户源码。%s"
+            % (
+                " 原因：" + _interactive_display_text("；".join(reasons[:3]))
+                if reasons
+                else ""
+            ),
+            stream=sys.stderr,
+            tone="error",
+        )
+        try:
+            _interactive_publish_reports(
+                session_root=session_root,
+                snapshot=snapshot,
+                status="static_admission_failed",
+                api_analysis=analysis_summary,
+            )
+        except Exception:
+            pass
+        flow_print("[会话回执] %s" % session_root, stream=sys.stderr, tone="artifact")
+        return 2
+
+    # Build a canonical ordinary-script request before the remote call.  This
+    # is local-only and lets the model see bounded, deterministic facts.
+    target_soc = str(getattr(args, "target_soc", None) or "").strip()
+    if target_soc.lower() in {"", "unknown", "auto"}:
+        target_soc = os.getenv("ASCEND_SOC_VERSION", "Ascend910B4")
+    cann_version = str(getattr(args, "cann_version", None) or "").strip()
+    cann_root = str(getattr(args, "cann_root", "") or os.getenv("ASCEND_HOME_PATH", ""))
+    if cann_version.lower() in {"", "unknown", "auto"} and cann_root:
+        match = re.search(r"/cann-([^/]+)$", cann_root.rstrip("/"))
+        if match:
+            cann_version = match.group(1)
+    if cann_version.lower() in {"", "unknown", "auto"}:
+        cann_version = os.getenv("CANN_VERSION", "unknown")
+    args.target_soc, args.cann_version = target_soc, cann_version
+    gap_request, _unsupported = _interactive_gap_request(snapshot, classification, args, session_root)
+
+    # Reject an ambiguous non-interactive invocation before reading the private
+    # model configuration or making any remote request.  The shell wrapper
+    # performs the same gate, but keeping it in the framework entry point makes
+    # direct ``python -m numpilot interactive-migrate`` calls equally safe.
+    if getattr(args, "non_interactive", False) and not getattr(args, "yes", False):
+        flow_print(
+            "[确认] --non-interactive 必须与 --yes 一起使用；未读取模型配置、未创建 workflow。",
+            stream=sys.stderr,
+            tone="error",
+        )
+        try:
+            _interactive_publish_reports(
+                session_root=session_root,
+                snapshot=snapshot,
+                status="confirmation_required",
+                api_analysis=analysis_summary,
+            )
+        except Exception:
+            pass
+        flow_print("[会话回执] %s" % session_root, stream=sys.stderr, tone="artifact")
+        return 2
+    if not getattr(args, "yes", False) and not sys.stdin.isatty():
+        flow_print(
+            "[确认] 非交互环境必须显式 --yes；未读取模型配置、未创建 workflow。",
+            stream=sys.stderr,
+            tone="error",
+        )
+        try:
+            _interactive_publish_reports(
+                session_root=session_root,
+                snapshot=snapshot,
+                status="confirmation_required",
+                api_analysis=analysis_summary,
+            )
+        except Exception:
+            pass
+        flow_print("[会话回执] %s" % session_root, stream=sys.stderr, tone="artifact")
+        return 2
+
+    interpretation = None
+    try:
+        status = _load_llm_or_report()
+        if status is None:
+            try:
+                _interactive_publish_reports(
+                    session_root=session_root,
+                    snapshot=snapshot,
+                    status="llm_not_configured",
+                    api_analysis=analysis_summary,
+                )
+            except Exception:
+                pass
+            flow_print("[会话回执] %s" % session_root, stream=sys.stderr, tone="artifact")
+            return 4
+        flow_print(
+            "\n[阶段 2/5] 模型正在阅读源码并整理迁移前解读（仅终端/manual lane，未执行源码）",
+            tone="phase",
+        )
+        stop = threading.Event()
+        heartbeat = _interactive_heartbeat(stop, "配置模型解读源码", interval=5.0)
+        try:
+            interpretation = interpret_source_with_configured_model(
+                snapshot,
+                config_path=getattr(args, "llm_config", None) or os.getenv("NUMPILOT_LLM_CONFIG_FILE"),
+                static_analysis=qualified_payload,
+                max_tokens=int(getattr(args, "interpret_max_tokens", 1800)),
+            )
+        finally:
+            stop.set()
+            heartbeat.join(timeout=1.0)
+        interpretation_path = write_interpretation_report(
+            session_root / "interpretation-report.json", interpretation
+        )
+        interpretation = interpretation.__class__(**{
+            **interpretation.__dict__, "report_path": str(interpretation_path)
+        })
+    except InteractiveMigrationError as exc:
+        flow_print(
+            "[模型解读] 失败：%s；未进入迁移/执行阶段。" % exc,
+            stream=sys.stderr,
+            tone="error",
+        )
+        failure_path = None
+        try:
+            failure_path = _interactive_private_json(
+                session_root / "interpretation-failure.json",
+                failure_report_payload(snapshot, exc),
+            )
+        except Exception:
+            pass
+        flow_print(
+            "[模型回执] actual_remote_call=%s · failure_receipt=%s"
+            % (exc.actual_remote_call, failure_path or "unavailable"),
+            stream=sys.stderr,
+            tone="error",
+        )
+        try:
+            _interactive_publish_reports(
+                session_root=session_root,
+                snapshot=snapshot,
+                status="interpretation_failed",
+                api_analysis=analysis_summary,
+            )
+        except Exception:
+            pass
+        flow_print("[会话回执] %s" % session_root, stream=sys.stderr, tone="artifact")
+        return 4
+    flow_print(
+        "\n[模型解读 · 未验证建议] model=%s provider=%s elapsed=%sms" % (
+            interpretation.model, interpretation.provider, interpretation.elapsed_ms
+        ),
+        tone="warning",
+    )
+    print(interpretation.display_text)
+    if interpretation.source_truncated_for_prompt:
+        flow_print("[模型输入边界] 完整源码 hash 已绑定；模型提示仅发送了首尾片段。", tone="warning")
+    flow_print(
+        "[模型回执] actual_remote_call=%s · receipt metadata 已写入私有目录（正文不落盘）"
+        % interpretation.actual_remote_call,
+        tone="model",
+    )
+
+    has_gap = bool(gaps)
+    if getattr(args, "yes", False):
+        answer = "y"
+        flow_print("\n[确认] --yes/--non-interactive：开始迁移。", tone="warning")
+    elif getattr(args, "non_interactive", False):
+        flow_print(
+            "[确认] --non-interactive 必须与 --yes 一起使用；未创建 workflow 运行目录。",
+            stream=sys.stderr,
+            tone="error",
+        )
+        return 2
+    elif not sys.stdin.isatty():
+        flow_print(
+            "[确认] 非交互环境必须显式 --yes；未创建 workflow 运行目录。",
+            stream=sys.stderr,
+            tone="error",
+        )
+        return 2
+    else:
+        try:
+            if has_gap and getattr(args, "cannbot_gap_draft", False):
+                prompt = (
+                    "\n是否开始迁移？输入 y 同时确认本次 CANNBot/CANN OSL 使用，"
+                    "其他键取消 [y/N]："
+                )
+            else:
+                prompt = "\n是否开始迁移？输入 y 开始，其他键取消 [y/N]："
+            flow_print(prompt, tone="prompt", end="", flush=True)
+            answer = input().strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            answer = ""
+    if answer not in {"y", "yes"}:
+        _interactive_private_json(
+            session_root / "confirmation.json",
+            {"status": "declined", "source_path": snapshot.path, "source_sha256": snapshot.sha256,
+             "interpretation_report": interpretation.report_path, "workflow_created": False},
+        )
+        flow_print("[确认] 已取消；未创建 workflow 运行目录、未执行源码、未开始迁移。", tone="warning")
+        try:
+            _interactive_publish_reports(
+                session_root=session_root,
+                snapshot=snapshot,
+                status="declined",
+                api_analysis=analysis_summary,
+                interpretation=interpretation,
+            )
+        except Exception:
+            pass
+        flow_print("[会话回执] %s" % session_root, tone="artifact")
+        return 0
+
+    # In the human terminal the same explicit `y` authorizes the disclosed
+    # per-invocation license.  Automated `--yes` remains separate and must also
+    # supply --accept-cannbot-license so scripts cannot opt in accidentally.
+    if (
+        has_gap
+        and getattr(args, "cannbot_gap_draft", False)
+        and not getattr(args, "yes", False)
+        and sys.stdin.isatty()
+    ):
+        args.accept_cannbot_license = True
+    if (
+        has_gap
+        and getattr(args, "cannbot_gap_draft", False)
+        and not getattr(args, "accept_cannbot_license", False)
+    ):
+        flow_print(
+            "[确认] 自动化缺口补全还需要 --accept-cannbot-license；未调用 CANNBot。",
+            stream=sys.stderr,
+            tone="error",
+        )
+        gap_result = {
+            "status": "license_required",
+            "actual_remote_call": False,
+            "claim_boundary": {"interface_available": False, "activated": False},
+        }
+        _interactive_publish_reports(
+            session_root=session_root,
+            snapshot=snapshot,
+            status="license_required",
+            api_analysis=analysis_summary,
+            interpretation=interpretation,
+            gap_result=gap_result,
+        )
+        return 2
+    _interactive_private_json(
+        session_root / "confirmation.json",
+        {"status": "accepted", "source_path": snapshot.path, "source_sha256": snapshot.sha256,
+         "interpretation_report": interpretation.report_path, "workflow_authorized": True,
+         "workflow_created": False},
+    )
+
+    flow_print("\n[阶段 3/5] 已确认 y；进入框架迁移主链。", tone="phase")
+    registered_gap = [
+        item
+        for item in gaps
+        if isinstance(item, Mapping) and item.get("kind") == "registered_signature_gap"
+    ]
+    ordinary_gaps = [item for item in gaps if item not in registered_gap]
+    workflow_snapshot = snapshot
+    gap_result = {
+        "status": "no_gap",
+        "actual_remote_call": False,
+        "claim_boundary": {"interface_available": False, "activated": False},
+    }
+
+    if ordinary_gaps:
+        gap_result = _interactive_cannbot_route(snapshot, gap_request, args, session_root)
+        boundary = gap_result.get("claim_boundary")
+        interface_available = isinstance(boundary, Mapping) and boundary.get("interface_available") is True
+        if not interface_available:
+            flow_print(
+                "[迁移门禁] 缺口仅形成草稿或尚未完成接入/重扫；"
+                "不会继续迁移并假装接口已存在。",
+                tone="error",
+            )
+            _interactive_publish_reports(
+                session_root=session_root,
+                snapshot=snapshot,
+                status="gap_not_integrated",
+                api_analysis=analysis_summary,
+                interpretation=interpretation,
+                gap_result=gap_result,
+            )
+            flow_print("[会话回执] %s" % session_root, tone="artifact")
+            return 1
+    elif registered_gap:
+        if not getattr(args, "cannbot_gap_draft", False):
+            gap_result = {
+                "status": "cannbot_not_enabled",
+                "route": "registered_add_one_composite_npu",
+                "actual_remote_call": False,
+                "claim_boundary": {"interface_available": False, "activated": False},
+            }
+            flow_print(
+                "[迁移门禁] add_one 缺口需要 CANNBot 路由；当前未启用，停止。",
+                tone="error",
+            )
+            _interactive_publish_reports(
+                session_root=session_root,
+                snapshot=snapshot,
+                status="gap_not_integrated",
+                api_analysis=analysis_summary,
+                interpretation=interpretation,
+                gap_result=gap_result,
+            )
+            return 1
+        gap_result, workflow_snapshot = _interactive_complete_registered_add_one(
+            snapshot,
+            registered_add_one,
+            args,
+            session_root,
+        )
+        boundary = gap_result.get("claim_boundary")
+        if workflow_snapshot is None or not (
+            isinstance(boundary, Mapping) and boundary.get("interface_available") is True
+        ):
+            flow_print(
+                "[迁移门禁] add_one 接口没有通过真机资格门禁；整体迁移停止。",
+                tone="error",
+            )
+            _interactive_publish_reports(
+                session_root=session_root,
+                snapshot=snapshot,
+                status="gap_not_integrated",
+                api_analysis=analysis_summary,
+                interpretation=interpretation,
+                gap_result=gap_result,
+            )
+            flow_print("[会话回执] %s" % session_root, tone="artifact")
+            return 1
+
+    try:
+        workflow_out = session_root / "workflow"
+        _interactive_private_json(
+            session_root / "workflow-start.json",
+            {
+                "status": "authorized",
+                "original_source_path": snapshot.path,
+                "original_source_sha256": snapshot.sha256,
+                "workflow_source_path": workflow_snapshot.path,
+                "workflow_source_sha256": workflow_snapshot.sha256,
+                "workflow_output": str(workflow_out),
+            },
+        )
+        flow_print(
+            "\n[阶段 4/5] 分析 → configured-model 迁移 → 独立运行验证"
+            + (" → strict-NPU benchmark" if args.benchmark else ""),
+            tone="phase",
+        )
+        stop = threading.Event()
+        heartbeat = _interactive_heartbeat(stop, "NumPilot 迁移/验证流水线", interval=8.0)
+        try:
+            result = run_ordinary_workflow(
+                workflow_snapshot.path,
+                workflow_out,
+                backend=args.backend,
+                fallback_policy=args.fallback_policy,
+                target_soc=args.target_soc,
+                cann_version=args.cann_version,
+                outputs=args.outputs or ("result",),
+                benchmark=bool(args.benchmark),
+                warmup=args.warmup,
+                samples=args.samples,
+                core=args.core,
+                skip_env_check=bool(args.skip_env_check),
+                timeout_seconds=args.timeout,
+                python_executable=args.python,
+            )
+        finally:
+            stop.set()
+            heartbeat.join(timeout=1.0)
+    except WorkflowError as exc:
+        flow_print(
+            "[迁移流水线] %s: %s" % (exc.code, exc),
+            stream=sys.stderr,
+            tone="error",
+        )
+        try:
+            _interactive_publish_reports(
+                session_root=session_root,
+                snapshot=snapshot,
+                status="workflow_failed",
+                api_analysis=analysis_summary,
+                interpretation=interpretation,
+                gap_result=gap_result,
+            )
+        except Exception:
+            pass
+        flow_print("[会话回执] %s" % session_root, stream=sys.stderr, tone="artifact")
+        return 2
+    boundary = gap_result.get("claim_boundary")
+    if isinstance(boundary, dict) and result.get("stages"):
+        boundary["rescanned"] = any(
+            isinstance(stage, Mapping)
+            and stage.get("name") == "01-analyze"
+            and stage.get("status") == "passed"
+            for stage in result.get("stages", ())
+        )
+    flow_print("\n[阶段 5/5] 读取真实回执并汇总（不根据模型口述编造结果）", tone="phase")
+    _interactive_final_summary(result, session_root=session_root, interpretation=interpretation, gap_result=gap_result)
+    try:
+        _interactive_publish_reports(
+            session_root=session_root,
+            snapshot=snapshot,
+            status=str(result.get("status", "unknown")),
+            api_analysis=analysis_summary,
+            interpretation=interpretation,
+            gap_result=gap_result,
+            workflow=result,
+        )
+    except Exception as exc:
+        flow_print(
+            "[完整报告] 发布失败：%s" % type(exc).__name__,
+            stream=sys.stderr,
+            tone="error",
+        )
+        flow_print("[会话回执] %s" % session_root, stream=sys.stderr, tone="artifact")
+        return 2
+    flow_print("[会话回执] %s" % session_root, tone="artifact")
+    if result.get("status") == "passed":
+        return 0
+    return 1 if result.get("status") == "blocked" else 2
+
+
 def _cmd_doctor(args):
     backend_name = _resolve_backend_name(args)
     machine = bool(getattr(args, "json", False))
@@ -1727,6 +3669,14 @@ def _cmd_configure_llm(args):
     return 0
 
 
+def _cmd_check_llm(args):
+    """Send one bounded message through the configured production transport."""
+
+    from numpilot.llm_check import run_llm_check_command
+
+    return run_llm_check_command(config_path=getattr(args, "llm_config", None))
+
+
 def _cmd_setup_skills(args):
     """Fetch or verify the pinned official CANNBot registry-invoke skill."""
 
@@ -1955,24 +3905,29 @@ def _cmd_resolve_gaps(args):
         report.validate_preparation(preparation)
         write_official_resolution_report(report, args.out)
     except (GapCompletionError, OfficialResolutionError) as exc:
-        print("[官方算子解析] 失败: %s" % exc, file=sys.stderr)
-        print(
+        flow_print("[官方算子解析] 失败: %s" % exc, stream=sys.stderr, tone="error")
+        flow_print(
             "[模型调用] actual_remote_call=no · 未读取 Skill、未构建、未安装、未激活",
-            file=sys.stderr,
+            stream=sys.stderr,
+            tone="warning",
         )
         return 2
 
-    print(
+    flow_print(
         "[官方算子解析] status=%s decisions=%d model_kernel_allowed=%s"
         % (
             report.status,
             len(report.decisions),
             "yes" if report.model_kernel_generation_allowed else "no",
-        )
+        ),
+        tone="error" if report.status == "blocked" else "success",
     )
-    print("[官方算子解析] receipt=%s id=%s" % (args.out, report.resolution_id))
+    flow_print(
+        "[官方算子解析] receipt=%s id=%s" % (args.out, report.resolution_id),
+        tone="artifact",
+    )
     for decision in report.decisions:
-        print(
+        flow_print(
             "[官方路由] %s -> %s · installed=%s · ops-nn=%s"
             % (
                 decision.qualified_api,
@@ -1982,11 +3937,13 @@ def _cmd_resolve_gaps(args):
                     decision.ops_nn_source.get("status", "?")
                     if decision.ops_nn_source is not None else "not_read"
                 ),
-            )
+            ),
+            tone="info",
         )
-    print(
+    flow_print(
         "[解析边界] discovery_only=yes semantic_qualified=no build=no "
-        "system_opp_write=no activation=no network=no model_call=no"
+        "system_opp_write=no activation=no network=no model_call=no",
+        tone="warning",
     )
     return 1 if report.status == "blocked" else 0
 
@@ -2228,6 +4185,29 @@ def _cmd_complete_gaps(args):
             "files=%s · bundle_sha256=%s"
             % (bundle.commit, len(bundle.files), bundle.bundle_sha256)
         )
+        display = getattr(args, "show_cannbot_skill", "none")
+        if display in {"summary", "full"}:
+            selected = tuple(cannbot.CANNBOT_GENERATION_SKILL_FILES)
+            print(
+                "[CANNBot Skill] 本次请求实际嵌入的官方生成上下文：%d 个文件 · %d bytes"
+                % (
+                    len(selected),
+                    len(bundle.prompt_context(selected).encode("utf-8")),
+                )
+            )
+            for relative in selected:
+                print(
+                    "[CANNBot Skill] file=%s sha256=%s"
+                    % (relative, bundle.file_sha256.get(relative, "?"))
+                )
+            if display == "full":
+                print("[CANNBot Skill] ===== embedded official context begin =====")
+                print(bundle.prompt_context(selected), end="")
+                if not bundle.prompt_context(selected).endswith("\n"):
+                    print()
+                print("[CANNBot Skill] ===== embedded official context end =====")
+            else:
+                print("[CANNBot Skill] 正文展示为 summary；可用 --show-cannbot-skill full 展开。")
         try:
             _write_generation_preflight(
                 args.out,
@@ -2262,6 +4242,15 @@ def _cmd_complete_gaps(args):
         asnumpy_reference=args.asnumpy_reference,
         skill_bundle=bundle,
     )
+    progress_stop = threading.Event() if provider is not None else None
+    progress_thread = None
+    if progress_stop is not None:
+        progress_thread = _interactive_heartbeat(
+            progress_stop,
+            "CANNBot/配置模型分阶段生成算子文件",
+            interval=5.0,
+        )
+    result = None
     try:
         result = pipeline.run(
             args.file,
@@ -2273,72 +4262,6 @@ def _cmd_complete_gaps(args):
             preparation=preparation,
             continue_on_error=getattr(args, "continue_on_error", False),
         )
-        if provider is not None and result.drafts:
-            report_path = os.path.join(result.out_dir, "gap-report.json")
-            if os.path.islink(report_path) or not os.path.isfile(report_path):
-                raise GapCompletionError("gap report is not a regular file")
-            with open(report_path, "rb") as handle:
-                report_payload = handle.read(8 * 1024 * 1024 + 1)
-            if len(report_payload) > 8 * 1024 * 1024:
-                raise GapCompletionError("gap report exceeds the size limit")
-            report = json.loads(report_payload.decode("utf-8"))
-            actions = {
-                draft.gap_id: provider.action_for(draft)
-                for draft in result.drafts
-            }
-            report_drafts = report.get("drafts")
-            if not isinstance(report_drafts, list):
-                raise GapCompletionError("gap report draft list is invalid")
-            seen = set()
-            for draft_data in report_drafts:
-                if not isinstance(draft_data, dict):
-                    raise GapCompletionError("gap report draft entry is invalid")
-                gap_id = draft_data.get("gap_id")
-                if gap_id not in actions:
-                    raise GapCompletionError("gap report draft identity mismatch")
-                action = actions[gap_id]
-                draft_data["current_run_action"] = action
-                draft_data["current_run_actual_remote_call"] = (
-                    action == "fresh_remote"
-                )
-                seen.add(gap_id)
-            if seen != set(actions):
-                raise GapCompletionError("gap report is missing a generated draft")
-            report["current_run_actions"] = dict(sorted(actions.items()))
-            report["current_run_actual_remote_call_count"] = sum(
-                action == "fresh_remote" for action in actions.values()
-            )
-            payload = (
-                json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True)
-                + "\n"
-            ).encode("utf-8")
-            fd = -1
-            temp_name = ""
-            try:
-                fd, temp_name = tempfile.mkstemp(
-                    prefix=".gap-report-", suffix=".tmp", dir=result.out_dir
-                )
-                os.fchmod(fd, 0o600)
-                with os.fdopen(fd, "wb") as handle:
-                    fd = -1
-                    handle.write(payload)
-                    handle.flush()
-                    os.fsync(handle.fileno())
-                os.replace(temp_name, report_path)
-                temp_name = ""
-                directory_fd = os.open(result.out_dir, os.O_RDONLY)
-                try:
-                    os.fsync(directory_fd)
-                finally:
-                    os.close(directory_fd)
-            finally:
-                if fd >= 0:
-                    os.close(fd)
-                if temp_name:
-                    try:
-                        os.unlink(temp_name)
-                    except OSError:
-                        pass
     except GapCompletionError as exc:
         print(f"[算子补全] 失败: {exc}", file=sys.stderr)
         if args.provider == "llm":
@@ -2349,7 +4272,77 @@ def _cmd_complete_gaps(args):
                 file=sys.stderr,
             )
         return 2
-
+    finally:
+        if progress_stop is not None:
+            progress_stop.set()
+        if progress_thread is not None:
+            progress_thread.join(timeout=1.0)
+    if provider is not None and result.drafts:
+        report_path = os.path.join(result.out_dir, "gap-report.json")
+        if os.path.islink(report_path) or not os.path.isfile(report_path):
+            raise GapCompletionError("gap report is not a regular file")
+        with open(report_path, "rb") as handle:
+            report_payload = handle.read(8 * 1024 * 1024 + 1)
+        if len(report_payload) > 8 * 1024 * 1024:
+            raise GapCompletionError("gap report exceeds the size limit")
+        report = json.loads(report_payload.decode("utf-8"))
+        actions = {
+            draft.gap_id: provider.action_for(draft)
+            for draft in result.drafts
+        }
+        report_drafts = report.get("drafts")
+        if not isinstance(report_drafts, list):
+            raise GapCompletionError("gap report draft list is invalid")
+        seen = set()
+        for draft_data in report_drafts:
+            if not isinstance(draft_data, dict):
+                raise GapCompletionError("gap report draft entry is invalid")
+            gap_id = draft_data.get("gap_id")
+            if gap_id not in actions:
+                raise GapCompletionError("gap report draft identity mismatch")
+            action = actions[gap_id]
+            draft_data["current_run_action"] = action
+            draft_data["current_run_actual_remote_call"] = (
+                action == "fresh_remote"
+            )
+            seen.add(gap_id)
+        if seen != set(actions):
+            raise GapCompletionError("gap report is missing a generated draft")
+        report["current_run_actions"] = dict(sorted(actions.items()))
+        report["current_run_actual_remote_call_count"] = sum(
+            action == "fresh_remote" for action in actions.values()
+        )
+        payload = (
+            json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True)
+            + "\n"
+        ).encode("utf-8")
+        fd = -1
+        temp_name = ""
+        try:
+            fd, temp_name = tempfile.mkstemp(
+                prefix=".gap-report-", suffix=".tmp", dir=result.out_dir
+            )
+            os.fchmod(fd, 0o600)
+            with os.fdopen(fd, "wb") as handle:
+                fd = -1
+                handle.write(payload)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temp_name, report_path)
+            temp_name = ""
+            directory_fd = os.open(result.out_dir, os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+        finally:
+            if fd >= 0:
+                os.close(fd)
+            if temp_name:
+                try:
+                    os.unlink(temp_name)
+                except OSError:
+                    pass
     print(f"[算子补全] status={result.status}")
     print(f"[算子补全] report={os.path.join(result.out_dir, 'gap-report.json')}")
     for spec in result.specs:
@@ -3835,8 +5828,20 @@ def _migrate_report_info(res):
 
 def main(argv=None):
     arguments = sys.argv[1:] if argv is None else list(argv)
-    if not arguments and render_home(__version__):
-        return 0
+    if len(arguments) >= 2 and [item.lower() for item in arguments[:2]] == [
+        "check",
+        "llm",
+    ]:
+        # Keep the exact phrase shown by the persistent terminal useful for a
+        # one-shot shell invocation too: ``numpilot check llm``.
+        arguments = ["check-llm", *arguments[2:]]
+    if not arguments:
+        from numpilot.repl import can_start_repl, run_repl
+
+        if can_start_repl(sys.stdin, sys.stdout):
+            return run_repl(__version__, main)
+        if render_home(__version__):
+            return 0
 
     parser = argparse.ArgumentParser(
         prog="numpilot",
@@ -4115,6 +6120,118 @@ def main(argv=None):
         "--json",
         action="store_true",
         help="只输出 workflow-report JSON，不混入阶段日志",
+    )
+
+    interactive = sub.add_parser(
+        "interactive-migrate",
+        aliases=["interactive-run"],
+        help=(
+            "交互式普通脚本迁移：读取任意绝对路径→静态分析/模型解读→"
+            "y 确认→迁移、验证与可选性能门"
+        ),
+    )
+    interactive.add_argument(
+        "file",
+        nargs="?",
+        help="待迁移 Python 源文件绝对路径；省略时仅在 TTY 中交互询问",
+    )
+    interactive.add_argument(
+        "--source",
+        dest="source_option",
+        help="与位置参数等价的源文件绝对路径，便于脚本/自动化调用",
+    )
+    interactive.add_argument("--backend", choices=["npu", "shim"], default="npu")
+    interactive.add_argument(
+        "--fallback-policy",
+        choices=["ask", "accept", "reject"],
+        default="reject",
+        help="发现已审计 fallback 时的策略（默认 reject）",
+    )
+    interactive.add_argument(
+        "--target-soc",
+        default=os.getenv("ASCEND_SOC_VERSION", "unknown"),
+    )
+    interactive.add_argument(
+        "--cann-version",
+        default=os.getenv("CANN_VERSION", "unknown"),
+    )
+    interactive.add_argument(
+        "--output",
+        dest="outputs",
+        action="append",
+        default=None,
+        help="脚本全局输出变量，可重复；默认 result",
+    )
+    interactive.add_argument(
+        "--out",
+        default=None,
+        help="本次交互会话的全新绝对目录（含算子、迁移、验证、性能与总报告）",
+    )
+    benchmark_mode = interactive.add_mutually_exclusive_group()
+    benchmark_mode.add_argument(
+        "--benchmark",
+        dest="benchmark",
+        action="store_true",
+        help="验证通过后追加 strict-NPU resident benchmark（默认开启）",
+    )
+    benchmark_mode.add_argument(
+        "--no-benchmark",
+        dest="benchmark",
+        action="store_false",
+        help="只做迁移与数值验证",
+    )
+    interactive.set_defaults(benchmark=True)
+    interactive.add_argument("--warmup", type=int, default=3)
+    interactive.add_argument("--samples", type=int, default=20)
+    interactive.add_argument("--core", type=int, default=None)
+    interactive.add_argument("--timeout", type=float, default=3600.0)
+    interactive.add_argument("--python", default=None)
+    interactive.add_argument("--skip-env-check", action="store_true")
+    interactive.add_argument(
+        "--interpret-max-tokens",
+        type=int,
+        default=1800,
+        help="迁移前源码解读的单次模型预算（默认 1800；空响应最多一次加大重试）",
+    )
+    interactive.add_argument(
+        "--yes",
+        action="store_true",
+        help="自动确认迁移；仅用于明确授权的自动化/录制",
+    )
+    interactive.add_argument(
+        "--execute-source",
+        action="store_true",
+        help="独立授权执行已展示且绑定哈希的用户源码；通用 --yes 不包含此授权",
+    )
+    interactive.add_argument(
+        "--non-interactive",
+        action="store_true",
+        help="与 --yes 一起用于无 TTY 自动化；没有 --yes 时仍 fail-closed",
+    )
+    interactive.add_argument(
+        "--cannbot-gap-draft",
+        action="store_true",
+        help="确认后对发现的 GapSpec 走官方解析→CANNBot Skill→真实模型 draft-only 路由",
+    )
+    interactive.add_argument(
+        "--accept-cannbot-license",
+        action="store_true",
+        help="明确接受本次 CANNBot/CANN OSL（CANNBot 路由必需）",
+    )
+    interactive.add_argument(
+        "--show-cannbot-skill",
+        choices=["none", "summary", "full"],
+        default="full",
+        help="CANNBot 生成阶段的公开 Skill 展示级别（默认 full）",
+    )
+    interactive.add_argument("--cannbot-skill-root", default=None)
+    interactive.add_argument("--cann-root", default=os.getenv("ASCEND_HOME_PATH", ""))
+    interactive.add_argument("--cannbot-max-tokens", type=int, default=4096)
+    interactive.add_argument("--cannbot-timeout", type=float, default=300.0)
+    interactive.add_argument(
+        "--skill-path",
+        default=None,
+        help="显式提供的已校验 NumPilot Skill 路径",
     )
 
     verify = sub.add_parser(
@@ -4406,6 +6523,11 @@ def main(argv=None):
         "--strict",
         action="store_true",
         help="发现关键缺口时以退出码 1 结束；默认仅报告，不阻断 shell",
+    )
+
+    check_llm_parser = sub.add_parser(
+        "check-llm",
+        help="向 llm.json 中的模型发送最小消息并验证真实应答",
     )
 
     cfg = sub.add_parser(
@@ -4729,6 +6851,15 @@ def main(argv=None):
         help="兼容旧命令；complete-gaps 现在始终不联网获取 Skill",
     )
     gaps.add_argument(
+        "--show-cannbot-skill",
+        choices=["none", "summary", "full"],
+        default="none",
+        help=(
+            "展示本次请求实际嵌入的官方 CANNBot 生成上下文；"
+            "full 仅用于本地录制/审阅"
+        ),
+    )
+    gaps.add_argument(
         "--asnumpy-reference",
         default=os.getenv("NUMPILOT_ASNUMPY_REFERENCE", ""),
         help="AsNumpy 接入模板目录，仅作为生成契约引用",
@@ -4924,6 +7055,7 @@ def main(argv=None):
         bootstrap,
         mig,
         run_parser,
+        interactive,
         verify,
         benchmark_script_parser,
         bc,
@@ -4932,6 +7064,7 @@ def main(argv=None):
         doc,
         paths,
         suite,
+        check_llm_parser,
         cfg,
         skills,
         resolve_gaps,
@@ -4979,6 +7112,10 @@ def main(argv=None):
             return _cmd_bootstrap(args)
         if args.cmd in {"run", "pipeline"}:
             return _cmd_run(args)
+        if args.cmd in {"interactive-migrate", "interactive-run"}:
+            return _cmd_interactive_migrate(args)
+        if args.cmd == "check-llm":
+            return _cmd_check_llm(args)
         if args.cmd == "configure-llm":
             return _cmd_configure_llm(args)
         if args.cmd == "setup-skills":

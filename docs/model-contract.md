@@ -16,8 +16,18 @@ NumPilot 的生成路径使用用户自己配置的 OpenAI-compatible endpoint�
 远端调用的 payload 不限于 ordinary migration：`migrate` 发送完整输入源码；gap/operator 生成与
 修复发送有界缺口合同、静态语义函数、选定 CANNBot Skill 内容以及适用的草稿/诊断；AsNumpy adapter
 生成与修复发送本地目标投影选中的源码/头文件、仓库 integration Skill、overlay 与诊断。CANNBot
-提供的是固定工作流上下文，实际草稿仍由 configured model 生成。所有真实生成/修复请求都可能
+提供的是固定工作流上下文，实际草稿由当前入口明确选择并授权的边界模型生成。所有真实生成/修复请求都可能
 产生费用；使用非本地 endpoint 前必须确认这些材料允许披露。
+
+## 入口与 no-llm 边界
+
+本合同只约束 **terminal/manual** 或 **hybrid 中明确选择的 configured-model 子运行**。终端
+手动使用时，`llm.json` 可以不配置，用户也可直接提供候选并只运行 NumPilot 的确定性门禁。
+**CodeArts-agent** 入口先读取仓库与 Skill，由侧边栏交互模型独立完成迁移、缺口补全或算子草稿；
+若用户要求使用该模型或明确“不用 `llm.json`/内置模型”，不得读取配置、运行 `configure-llm`、
+传入 `--provider llm`、探测 endpoint 或静默回退。候选应标记 `agent_authored_draft`，没有适配器
+绑定完整 agent/provider/model/response/source/artifact 证据前，不适用本合同的 configured receipt
+或 strict-NPU/性能结论。Hybrid 切换到 configured 子运行必须重新声明、授权并使用新 run 目录。
 
 ## 配置 schema 2
 

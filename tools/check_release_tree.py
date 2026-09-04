@@ -1,4 +1,25 @@
 #!/usr/bin/env python3
+# This file is part of the NumPilot project at Harbin Institute of Technology (HIT).
+#
+# Copyright (c) 2026 AISS Group, Harbin Institute of Technology (HIT).
+# SPDX-License-Identifier: Apache-2.0
+#
+# Authors (accounts):
+# - Su Tonghua <@sutonghua>
+# - Li Xing <@li-xingHIT>
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Fail-closed audit for the NumPilot competition release tree.
 
 The audit is read-only and uses only the Python standard library.  It checks
@@ -49,6 +70,7 @@ REQUIRED_FILES = {
     "docs/architecture.md",
     "docs/assets/architecture/numpilot-architecture-en.svg",
     "docs/assets/architecture/numpilot-architecture-zh.svg",
+    "docs/assets/architecture/numpilot-two-routes.zh-CN.png",
     "docs/assets/brand/asnumpy-mark.png",
     "docs/assets/brand/ascend-wordmark.png",
     "docs/assets/brand/cann-wordmark.png",
@@ -62,19 +84,39 @@ REQUIRED_FILES = {
     "docs/numpilot-zh-v6.svg",
     "docs/numpilot-zh.pptx",
     "docs/numpilot-architecture.drawio",
+    ".codeartsdoer/skills/numpilot-migration-gate/SKILL.md",
+    ".codeartsdoer/skills/numpilot-migration-gate/agents/openai.yaml",
+    ".codeartsdoer/skills/numpilot-migration-gate/references/codearts-sidebar.md",
+    ".codeartsdoer/skills/numpilot-migration-gate/references/terminal-contract.md",
+    "skill/README.md",
+    "skill/SKILL.md",
+    "skill/agents/openai.yaml",
+    "skill/references/codearts-sidebar.md",
+    "skill/references/terminal-contract.md",
     "evidence/MANIFEST.sha256",
     "evidence/README.md",
+    "examples/add_one_migration_demo.py",
+    "examples/custom_operator_add_one.py",
     "examples/poisson_source_smooth_l1_map.py",
     "examples/recording_migration_demo.py",
     "install.sh",
     "numpilot/__init__.py",
+    "numpilot/add_one_gap.py",
     "numpilot/cli_ui.py",
     "numpilot/competition_readiness.py",
+    "numpilot/demo_llm_operator_generation.py",
+    "numpilot/interactive_migration.py",
+    "numpilot/interactive_report.py",
+    "numpilot/llm_check.py",
+    "numpilot/migration_skill.py",
+    "numpilot/repl.py",
+    "numpilot/runtime_extensions.py",
     "numpilot/workflow.py",
     "pyproject.toml",
     "run_demo.sh",
     "tools/audit_script_benchmark_receipt.py",
     "tools/check_release_tree.py",
+    "tools/demo_llm_operator_generation.py",
     "tools/release_artifact_manifest.py",
     "tools/render_demo_summary.py",
     "tools/render_migration_report.py",
@@ -82,6 +124,7 @@ REQUIRED_FILES = {
 
 FORBIDDEN_EXACT = {
     "NumPilot20260615-v1.pdf",
+    "TEMP-RECORDING-COMMANDS.zh-CN.md",
     "asnumpy_cpp.log",
     "run_poisson_demo.sh",
     "todo.md",

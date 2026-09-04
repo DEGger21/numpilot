@@ -17,5 +17,11 @@ asset with an approved official download. Do not infer trademark rights from Num
 | `ascend-wordmark.png` | owner-supplied `Ascendlogo.png` | whitespace crop; original white background retained | `fe81ec4a46ebec36debe0383453edf413f731926750bdc6cfd406de43ddabf6b` |
 | `codearts-icon.png` | owner-supplied `codearts logo raw.png` / matching deck media | background cleanup and transparent-bound crop | `863456ce490d600e557b985bd97536c26dd435f4a435d309022ed364c3efefc5` |
 
+The project owner also supplied `2种路线.png` on 2026-09-04. It is copied byte-for-byte to
+`docs/assets/architecture/numpilot-two-routes.zh-CN.png`, combines the inventoried NumPilot and CodeArts
+marks in a project workflow illustration, and has SHA-256
+`a0d64c681eb1e3efc5065ead52003a8a52df36f6c0fc20d7c83d68f11c4cd5e5`. Its inclusion does not change
+the trademark or redistribution caveats above.
+
 The processing above does not redraw or alter the marks' visual design. See
 [`THIRD_PARTY_NOTICES.md`](../../../THIRD_PARTY_NOTICES.md) for dependency and trademark notices.

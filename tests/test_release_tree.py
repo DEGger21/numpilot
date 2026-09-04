@@ -1,3 +1,24 @@
+# This file is part of the NumPilot project at Harbin Institute of Technology (HIT).
+#
+# Copyright (c) 2026 AISS Group, Harbin Institute of Technology (HIT).
+# SPDX-License-Identifier: Apache-2.0
+#
+# Authors (accounts):
+# - Su Tonghua <@sutonghua>
+# - Li Xing <@li-xingHIT>
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 from __future__ import annotations
 
 import json
@@ -125,6 +146,7 @@ def test_release_tree_component_gate_does_not_accept_untracked_attachment(tmp_pa
 def test_release_tree_forbidden_path_policy_covers_build_and_evidence_noise():
     forbidden = {
         "todo.md",
+        "TEMP-RECORDING-COMMANDS.zh-CN.md",
         "docs/AI-HANDOFF.md",
         "evidence/heat-diffusion-20260813/bench/cpu_baseline.npy",
         "evidence/poisson-ritz-p0-20260821/profiler/runtime.db",
@@ -204,7 +226,10 @@ def test_release_tree_cli_reports_missing_required_file_as_json(tmp_path):
     assert "missing required release file: README.zh-CN.md" in report["errors"]
     assert "missing required release file: numpilot/__init__.py" in report["errors"]
     assert "README.zh-CN.md" in REQUIRED_FILES
+    assert "docs/assets/architecture/numpilot-two-routes.zh-CN.png" in REQUIRED_FILES
     assert "numpilot/__init__.py" in REQUIRED_FILES
+    assert "numpilot/demo_llm_operator_generation.py" in REQUIRED_FILES
+    assert "numpilot/migration_skill.py" in REQUIRED_FILES
     assert "numpilot/workflow.py" in REQUIRED_FILES
 
 

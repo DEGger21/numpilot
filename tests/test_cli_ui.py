@@ -1,3 +1,24 @@
+# This file is part of the NumPilot project at Harbin Institute of Technology (HIT).
+#
+# Copyright (c) 2026 AISS Group, Harbin Institute of Technology (HIT).
+# SPDX-License-Identifier: Apache-2.0
+#
+# Authors (accounts):
+# - Su Tonghua <@sutonghua>
+# - Li Xing <@li-xingHIT>
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import io
 import json
 import re
@@ -9,7 +30,7 @@ from rich.console import Console
 from numpilot import __version__
 from numpilot import __main__ as cli
 from numpilot import cli_ui
-from numpilot.cli_ui import is_interactive, render_home, terminal_status
+from numpilot.cli_ui import flow_print, is_interactive, render_home, terminal_status
 from numpilot.env_check import ERROR, OK, WARN, EnvReport
 from numpilot.paths import state_home
 
@@ -50,6 +71,70 @@ def test_interactive_detection_honors_terminal_opt_outs():
     assert not is_interactive(stream, {"TERM": "dumb"})
     assert not is_interactive(stream, {"NUMPILOT_PLAIN": "1"})
     assert not is_interactive(io.StringIO(), {})
+
+
+def test_flow_print_adds_semantic_color_without_changing_text(monkeypatch):
+    _enable_rich_terminal(monkeypatch)
+    output = TtyBuffer()
+    messages = (
+        ("── NumPilot 交互迁移入口 ──", "title"),
+        ("[阶段 1/5] 已读取稳定源码", "phase"),
+        ("[状态] workflow=passed", "success"),
+        ("[算子草稿] generated_unverified", "warning"),
+        ("[迁移流水线] failed", "error"),
+        ("[性能] speedup=6.64x", "metric"),
+        ("[完整报告] /tmp/report.json", "artifact"),
+    )
+
+    for message, tone in messages:
+        assert flow_print(message, stream=output, tone=tone)
+
+    raw = output.getvalue()
+    assert "\x1b[" in raw
+    assert _ANSI.sub("", raw) == "".join(message + "\n" for message, _ in messages)
+    for color in (31, 32, 33, 35, 36, 94):
+        assert re.search(rf"\x1b\[[0-9;]*{color}m", raw)
+
+
+@pytest.mark.parametrize(
+    "environment",
+    (
+        {"NO_COLOR": "1"},
+        {"NUMPILOT_PLAIN": "1"},
+        {"TERM": "dumb"},
+    ),
+)
+def test_flow_print_opt_outs_are_exact_plain_text(monkeypatch, environment):
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.delenv("NUMPILOT_PLAIN", raising=False)
+    monkeypatch.setenv("TERM", "xterm-256color")
+    for key, value in environment.items():
+        monkeypatch.setenv(key, value)
+    output = TtyBuffer()
+    message = "[状态] workflow=passed"
+
+    assert not flow_print(message, stream=output, tone="success")
+    assert output.getvalue() == message + "\n"
+    assert "\x1b" not in output.getvalue()
+
+
+def test_flow_print_sanitizes_terminal_control_in_tty(monkeypatch):
+    _enable_rich_terminal(monkeypatch)
+    output = TtyBuffer()
+
+    flow_print(
+        "[源码] safe\x1b]8;;https://invalid.example\x07forged\x1b[31m",
+        stream=output,
+        tone="artifact",
+    )
+
+    raw = output.getvalue()
+    assert "\x1b]" not in raw
+    assert "\x07" not in raw
+    rendered = _ANSI.sub("", raw)
+    assert "safe" in rendered
+    assert "forged" in rendered
+    assert "�" in rendered
 
 
 def test_empty_argv_renders_product_home_only_on_tty(monkeypatch):
@@ -263,6 +348,29 @@ def test_terminal_status_marks_exception_and_reraises(monkeypatch):
     assert "✗ 抛出异常" in _ANSI.sub("", diagnostic.getvalue())
 
 
+def test_terminal_status_sanitizes_dynamic_terminal_controls(monkeypatch):
+    _enable_rich_terminal(monkeypatch)
+    diagnostic = TtyBuffer()
+    monkeypatch.setattr(sys, "stderr", diagnostic)
+
+    with terminal_status(
+        "backend=npu\x1b[2J"
+        "\x1b]8;;https://invalid.example\x07forged"
+        "\x1b]0;title\x1b\\tail"
+    ):
+        pass
+
+    raw = diagnostic.getvalue()
+    assert "\x1b[2J" not in raw
+    assert "\x1b]" not in raw
+    assert "\x07" not in raw
+    rendered = _ANSI.sub("", raw)
+    assert "backend=npu" in rendered
+    assert "forged" in rendered
+    assert "tail" in rendered
+    assert "�" in rendered
+
+
 @pytest.mark.parametrize("environment", ({}, {"NO_COLOR": "1"}))
 def test_terminal_status_is_silent_without_interactive_tty(
     monkeypatch, environment
@@ -295,6 +403,37 @@ def test_doctor_narrow_tty_keeps_diagnostic_detail(monkeypatch):
     assert "AsNumpy" in rendered
 
 
+@pytest.mark.parametrize("width", (30, 100))
+def test_doctor_tty_sanitizes_environment_text_in_all_layouts(
+    monkeypatch, width
+):
+    _enable_rich_terminal(monkeypatch)
+    _force_console_width(monkeypatch, width)
+    report = EnvReport("npu\x1b]0;BT\x07")
+    report.add(
+        "AsNumpy\x1b[2JNM",
+        ERROR,
+        "D0\x1b]8;;x\x07D1\x1b]0;y\x1b\\D2",
+    )
+    output = TtyBuffer()
+
+    assert cli_ui.render_doctor(report, stream=output)
+
+    raw = output.getvalue()
+    assert "\x1b[2J" not in raw
+    assert "\x1b]" not in raw
+    assert "\x07" not in raw
+    rendered = _ANSI.sub("", raw)
+    assert "BT" in rendered
+    assert "NM" in rendered
+    assert "D0" in rendered
+    assert "D1" in rendered
+    assert "D2" in rendered
+    assert "�" in rendered
+    # Remaining CSI bytes are emitted by Rich for the intended styles.
+    assert "\x1b[" in raw
+
+
 def test_paths_narrow_tty_keeps_full_path_value(monkeypatch):
     _enable_rich_terminal(monkeypatch)
     _force_console_width(monkeypatch, 30)
@@ -309,3 +448,32 @@ def test_paths_narrow_tty_keeps_full_path_value(monkeypatch):
     assert cli.main(["paths"]) == 0
     rendered = _ANSI.sub("", output.getvalue())
     assert "/PATH_VALUE_SENTINEL" in rendered
+
+
+@pytest.mark.parametrize("width", (30, 100))
+def test_paths_tty_sanitizes_names_and_values_in_all_layouts(
+    monkeypatch, width
+):
+    _enable_rich_terminal(monkeypatch)
+    _force_console_width(monkeypatch, width)
+    output = TtyBuffer()
+    paths = {
+        "state\x1b[2JNM": "/P0\x1b]8;;x\x07P1",
+        "config": "/P2\x1b]0;y\x1b\\P3",
+    }
+
+    assert cli_ui.render_paths(paths, stream=output)
+
+    raw = output.getvalue()
+    assert "\x1b[2J" not in raw
+    assert "\x1b]" not in raw
+    assert "\x07" not in raw
+    rendered = _ANSI.sub("", raw)
+    assert "NM" in rendered
+    assert "P0" in rendered
+    assert "P1" in rendered
+    assert "P2" in rendered
+    assert "P3" in rendered
+    assert "�" in rendered
+    # Names and paths retain their Rich emphasis/dim presentation.
+    assert "\x1b[" in raw

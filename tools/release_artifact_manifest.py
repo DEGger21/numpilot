@@ -1,4 +1,25 @@
 #!/usr/bin/env python3
+# This file is part of the NumPilot project at Harbin Institute of Technology (HIT).
+#
+# Copyright (c) 2026 AISS Group, Harbin Institute of Technology (HIT).
+# SPDX-License-Identifier: Apache-2.0
+#
+# Authors (accounts):
+# - Su Tonghua <@sutonghua>
+# - Li Xing <@li-xingHIT>
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Generate and verify a fail-closed NumPilot release artifact manifest.
 
 This tool intentionally depends only on the Python standard library.  It does
@@ -42,6 +63,7 @@ SCHEMA_VERSION = 1
 FORBIDDEN_BASENAMES = {
     ".env",
     "NumPilot20260615-v1.pdf",
+    "TEMP-RECORDING-COMMANDS.zh-CN.md",
     "llm.json",
     "todo.md",
 }
@@ -60,6 +82,7 @@ REVIEWED_ASSETS = (
     "docs/numpilot-zh-v6.svg",
     "docs/assets/architecture/numpilot-architecture-en.svg",
     "docs/assets/architecture/numpilot-architecture-zh.svg",
+    "docs/assets/architecture/numpilot-two-routes.zh-CN.png",
     "docs/assets/brand/asnumpy-mark.png",
     "docs/assets/brand/ascend-wordmark.png",
     "docs/assets/brand/cann-wordmark.png",
@@ -426,6 +449,14 @@ def _check_required_members(
         f"{package}/__main__.py",
         f"{package}/cli_ui.py",
         f"{package}/competition_readiness.py",
+        f"{package}/add_one_gap.py",
+        f"{package}/demo_llm_operator_generation.py",
+        f"{package}/interactive_migration.py",
+        f"{package}/interactive_report.py",
+        f"{package}/llm_check.py",
+        f"{package}/migration_skill.py",
+        f"{package}/repl.py",
+        f"{package}/runtime_extensions.py",
         f"{package}/_script_benchmark_worker.py",
         f"{package}/_script_verification_worker.py",
         f"{package}/script_benchmark.py",
@@ -444,6 +475,14 @@ def _check_required_members(
         "share/numpilot/codearts/agents/numpilot-operator-engineer.md",
         "share/numpilot/codearts/agents/numpilot-orchestrator.md",
         "share/numpilot/skills/numpilot-migration-gate/SKILL.md",
+        "share/numpilot/skills/numpilot-migration-gate/agents/openai.yaml",
+        "share/numpilot/skills/numpilot-migration-gate/references/codearts-sidebar.md",
+        "share/numpilot/skills/numpilot-migration-gate/references/terminal-contract.md",
+        "share/numpilot/skill/README.md",
+        "share/numpilot/skill/SKILL.md",
+        "share/numpilot/skill/agents/openai.yaml",
+        "share/numpilot/skill/references/codearts-sidebar.md",
+        "share/numpilot/skill/references/terminal-contract.md",
         "share/numpilot/skills/asnumpy-custom-op-integration/SKILL.md",
         "share/numpilot/skills/asnumpy-custom-op-integration/agents/openai.yaml",
         "share/numpilot/skills/asnumpy-custom-op-integration/references/legacy-case-lessons.md",
@@ -519,6 +558,8 @@ def _check_required_members(
             "docs/FRESH-NOTEBOOK-QUICKSTART.md",
             "docs/COMPETITION-READINESS.md",
             "docs/NumPilot-Demo-v1-Quickstart.ipynb",
+            "examples/custom_operator_add_one.py",
+            "examples/add_one_migration_demo.py",
             "examples/competition_power_log_exp.py",
             "evidence/competition-ordinary-20260828/qualified-analysis.json",
             "evidence/competition-ordinary-20260828/script-benchmark-report.json",
@@ -533,6 +574,14 @@ def _check_required_members(
             ".codeartsdoer/agents/numpilot-orchestrator.md",
             ".codeartsdoer/skills/ProjectSkillStatus.txt",
             ".codeartsdoer/skills/numpilot-migration-gate/SKILL.md",
+            ".codeartsdoer/skills/numpilot-migration-gate/agents/openai.yaml",
+            ".codeartsdoer/skills/numpilot-migration-gate/references/codearts-sidebar.md",
+            ".codeartsdoer/skills/numpilot-migration-gate/references/terminal-contract.md",
+            "skill/README.md",
+            "skill/SKILL.md",
+            "skill/agents/openai.yaml",
+            "skill/references/codearts-sidebar.md",
+            "skill/references/terminal-contract.md",
             ".codeartsdoer/skills/asnumpy-custom-op-integration/SKILL.md",
             ".codeartsdoer/skills/asnumpy-custom-op-integration/agents/openai.yaml",
             ".codeartsdoer/skills/asnumpy-custom-op-integration/references/legacy-case-lessons.md",
@@ -540,6 +589,7 @@ def _check_required_members(
             ".codeartsdoer/skills/asnumpy-custom-op-integration/references/official-aclnn-existing-module.md",
             ".codeartsdoer/skills/asnumpy-custom-op-integration/references/qualification-and-debug.md",
             "tools/check_release_tree.py",
+            "tools/demo_llm_operator_generation.py",
             "tools/release_artifact_manifest.py",
         ]
         required = [f"{source_root}/{member}" for member in source_required]

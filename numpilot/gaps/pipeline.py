@@ -1,3 +1,24 @@
+# This file is part of the NumPilot project at Harbin Institute of Technology (HIT).
+#
+# Copyright (c) 2026 AISS Group, Harbin Institute of Technology (HIT).
+# SPDX-License-Identifier: Apache-2.0
+#
+# Authors (accounts):
+# - Su Tonghua <@sutonghua>
+# - Li Xing <@li-xingHIT>
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Prepare deterministic workspaces for fail-closed operator completion."""
 
 from dataclasses import dataclass
@@ -516,6 +537,12 @@ class GapCompletionResult:
         return len(self.drafts)
 
     def to_dict(self) -> Dict[str, Any]:
+        # This producer stops at an immutable, unverified draft.  Keep the
+        # boundary machine-readable so a UI or aggregate report cannot turn a
+        # successful model response into an AsNumpy integration claim.  The
+        # later build/integration/qualification/activation/rescan phases have
+        # separate evidence contracts and are not performed by this pipeline.
+        claim_level = "generated_unverified" if self.drafts else "none"
         result = {
             "schema_version": 1,
             "status": self.status,
@@ -526,8 +553,22 @@ class GapCompletionResult:
             "blocked": [dict(item) for item in self.blocked],
             "drafts": [draft.to_dict() for draft in self.drafts],
             "generated_count": self.generated_count,
+            "integrated_count": 0,
             "qualified_count": 0,
             "activated_count": 0,
+            "rescanned_count": 0,
+            "claim_boundary": {
+                "level": claim_level,
+                "build_performed": False,
+                "unit_test_performed": False,
+                "numerical_validation_performed": False,
+                "functional_correctness_verified": False,
+                "integration_performed": False,
+                "qualification_performed": False,
+                "activation_performed": False,
+                "capability_rescan_performed": False,
+                "interface_available": False,
+            },
             "generation_failures": [
                 dict(item) for item in self.generation_failures
             ],

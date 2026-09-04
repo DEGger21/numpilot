@@ -33,14 +33,17 @@ include tools/check_release_tree.py
 include tools/release_artifact_manifest.py
 include tools/render_demo_summary.py
 include tools/render_migration_report.py
+include tools/demo_llm_operator_generation.py
 
 recursive-include .codeartsdoer/agents *.md
 include .codeartsdoer/skills/ProjectSkillStatus.txt
-recursive-include .codeartsdoer/skills/numpilot-migration-gate *.md
+recursive-include .codeartsdoer/skills/numpilot-migration-gate *.md *.yaml
+recursive-include skill *.md *.yaml
 recursive-include .codeartsdoer/skills/asnumpy-custom-op-integration *.md *.yaml
 
 # Defense in depth: these names remain forbidden even when absent from Git.
 exclude todo.md
 exclude NumPilot20260615-v1.pdf
+exclude TEMP-RECORDING-COMMANDS.zh-CN.md
 prune tests
 global-exclude __pycache__ *.py[cod] *.db *.log *.npy *.npz *.tmp *.orig

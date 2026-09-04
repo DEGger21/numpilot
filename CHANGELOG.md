@@ -19,6 +19,13 @@
   spinner 与持久耗时结果，`doctor`/`paths` 使用宽屏表格/窄屏列表的自适应 Rich 视图；JSON、单路径、重定向、`NO_COLOR`
   和 `TERM=dumb` 均保持无动态控制符的纯文本。模型检查新增脱敏代理路由状态，强制代理缺失或
   命中 bypass 时在联网前给出可操作错误；demo 失败会报告阶段、退出码、耗时和保留的运行目录；
+- 增加持久 `numpilot` 交互终端、独立 `check llm`、源码解读确认和精确 `numpy.add(array, 1)`
+  登记缺口路线；将未验证 CANNBot 草稿、run-scoped AsNumpy 组合接口、脚本迁移、数值门和性能门
+  分开回执。组合接口资格化现绑定 matched runtime identity 与 `ones_like/add` strict-NPU 回执，
+  CPU/shim 或证据不足时零执行并失败关闭；源码执行使用独立 `execute`/`--execute-source` 授权，
+  静态门禁同时拒绝可能在运行时求值的危险注解表达式。同步发布根目录/CodeArts 双镜像 migration
+  Skill，明确 configured-terminal 与 agent/no-llm 两种模型来源不可静默混用，并为本轮 NumPilot
+  自有代码统一 Apache-2.0 版权头；
 - 比赛就绪度对 hosted video 页面链接（含常见视频域名、Markdown/HTML 视频标签）做保守识别，
   仍将未提供 `accessible=true` 回执的链接标为未独立验证，不把普通文档链接误当视频证明；
 - 将公开首页整理为英文 `README.md` 与中文 `README.zh-CN.md`，增加双语安装/验收指南、按代码
