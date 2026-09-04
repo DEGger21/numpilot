@@ -163,6 +163,16 @@ artifact adapter stops honestly at an agent-authored draft rather than fabricati
 - Scope-bound benchmarking and machine-readable JSON/Markdown reports.
 - Interactive terminal and Agent Skill workflows.
 
+## Architecture overview
+
+<p align="center">
+  <a href="docs/numpilot-zh-v6.svg">
+    <img src="docs/numpilot-zh-v6.svg" alt="NumPilot v6 architecture" width="100%">
+  </a>
+</p>
+
+<p align="center"><sub>Click the diagram to open the full-size architecture view.</sub></p>
+
 ## How it works
 
 ```text

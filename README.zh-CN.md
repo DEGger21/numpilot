@@ -158,6 +158,16 @@ NumPilot 的确定性门禁。请如实报告 stopped、unverified、数值、�
 - 范围绑定的性能测试及机器可读 JSON/Markdown 报告。
 - 交互式终端与 Agent Skill 两种使用方式。
 
+## 系统架构
+
+<p align="center">
+  <a href="docs/numpilot-zh-v6.svg">
+    <img src="docs/numpilot-zh-v6.svg" alt="NumPilot v6 系统架构" width="100%">
+  </a>
+</p>
+
+<p align="center"><sub>点击图片可查看完整尺寸的系统架构图。</sub></p>
+
 ## 工作原理
 
 ```text
