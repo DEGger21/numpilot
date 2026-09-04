@@ -30,6 +30,41 @@ NumPilot 分析受支持、可静态理解的单文件 NumPy 程序，生成基�
 
 ## 安装
 
+### 推荐：华为云 Ascend 基础镜像
+
+> **CANN 9.0.0 · Ascend 910B · Ubuntu 22.04 · Linux/Arm64 · Python 3.10 + 3.11** —
+> `swr.cn-southwest-2.myhuaweicloud.com/wuzhenqing/cann:9.0.0-910b-ubuntu22.04-py3.11`
+
+该镜像可用于统一华为云上的操作系统、CANN 和 Python 基础环境，减少不同机器之间的环境差异：
+
+```bash
+git clone --branch main --depth 1 https://gitcode.com/li-xingHIT/numpilot.git
+cd numpilot
+
+export NUMPILOT_IMAGE='swr.cn-southwest-2.myhuaweicloud.com/wuzhenqing/cann:9.0.0-910b-ubuntu22.04-py3.11'
+docker pull "$NUMPILOT_IMAGE"
+
+# 进入镜像；NPU 使用还需添加华为云环境提供的设备与宿主机驱动映射参数
+docker run --rm -it \
+  -v "$PWD":/workspace/numpilot \
+  -w /workspace/numpilot \
+  "$NUMPILOT_IMAGE" bash
+
+# 进入容器后确认实际解释器，不要只依据镜像标签判断 ABI
+uname -m
+command -v python3
+python3 -c 'import platform; print(platform.python_implementation(), platform.python_version())'
+```
+
+当前镜像为 `linux/arm64`，CANN 位于 `/usr/local/Ascend/cann-9.0.0`；镜像同时包含 Python 3.10
+与 3.11，当前 `PATH` 优先使用 Miniconda Python 3.10。镜像标签可能更新，因此应以上述容器内检查
+结果为准。随仓 AsNumpy wheel 是 `cp310`：选择 CPython 3.10.x 时可以使用下面的安装器，但当前
+strict-NPU 结论仍进一步绑定 CPython 3.10.20 和 Ascend 910B4；选择 Python 3.11 时只能先使用核心
+CLI、shim 和 Agent Skill，或者重新构建、登记并验证新的 `cp311` AsNumpy 组件。
+
+镜像不等同于已经通过 NumPilot strict-NPU 资格验证，也不会替代宿主机驱动、固件、NPU 设备授权
+或容器设备映射。不要通过改名强行安装 `cp310` wheel；正式部署还应固定并复核镜像 digest。
+
 ### 核心 CLI
 
 这条路线无需 CANN 或 NPU，可用于静态分析、shim 后端和 Agent Skill 模式：

@@ -30,6 +30,43 @@ checks. Unsupported or ambiguous behavior stops explicitly instead of being sile
 
 ## Install
 
+### Recommended: Huawei Cloud Ascend base image
+
+> **CANN 9.0.0 · Ascend 910B · Ubuntu 22.04 · Linux/Arm64 · Python 3.10 + 3.11** —
+> `swr.cn-southwest-2.myhuaweicloud.com/wuzhenqing/cann:9.0.0-910b-ubuntu22.04-py3.11`
+
+Use this image to standardize the OS, CANN, and Python base environment across Huawei Cloud machines:
+
+```bash
+git clone --branch main --depth 1 https://gitcode.com/li-xingHIT/numpilot.git
+cd numpilot
+
+export NUMPILOT_IMAGE='swr.cn-southwest-2.myhuaweicloud.com/wuzhenqing/cann:9.0.0-910b-ubuntu22.04-py3.11'
+docker pull "$NUMPILOT_IMAGE"
+
+# Enter the image; NPU use also needs the device and host-driver mappings supplied by Huawei Cloud
+docker run --rm -it \
+  -v "$PWD":/workspace/numpilot \
+  -w /workspace/numpilot \
+  "$NUMPILOT_IMAGE" bash
+
+# Inside the container, inspect the selected interpreter instead of inferring its ABI from the image tag
+uname -m
+command -v python3
+python3 -c 'import platform; print(platform.python_implementation(), platform.python_version())'
+```
+
+The current image is `linux/arm64`, with CANN at `/usr/local/Ascend/cann-9.0.0`. It contains both Python 3.10
+and 3.11, and its current `PATH` selects Miniconda Python 3.10 first. Image tags can be updated, so treat the
+in-container checks above as authoritative. The bundled AsNumpy wheel is `cp310`: CPython 3.10.x can use the
+installer below, although the current strict-NPU claim is further bound to CPython 3.10.20 and Ascend 910B4.
+With Python 3.11, use only the core CLI, shim, and Agent Skill, or build, register, and qualify a new `cp311`
+AsNumpy component.
+
+The image is not itself proof of NumPilot strict-NPU qualification and does not replace the host driver,
+firmware, NPU device authorization, or container device mapping. Never bypass the ABI check by renaming the
+`cp310` wheel; production deployments should also pin and verify the image digest.
+
 ### Core CLI
 
 This route supports analysis, the shim backend, and Agent Skill use without CANN or an NPU:
