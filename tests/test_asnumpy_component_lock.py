@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -7,6 +8,7 @@ import pytest
 
 from numpilot.asnumpy_component import (
     AsNumpyComponentError,
+    component_receipt_identity,
     load_component_manifest,
 )
 from numpilot.bootstrap import ASNUMPY_COMMIT, ASNUMPY_TREE, ASNUMPY_VERSION
@@ -93,3 +95,36 @@ def test_component_path_rejects_symlink_traversal_before_normalization(tmp_path)
 
     with pytest.raises(AsNumpyComponentError, match="symlink"):
         load_component_manifest(link / ".." / "target" / "manifest.json")
+
+
+def test_component_receipt_uses_digest_of_the_same_payload_that_was_parsed(
+    tmp_path, monkeypatch
+):
+    trusted = (ROOT / "components/asnumpy/manifest.json").read_bytes()
+    replacement = trusted.replace(
+        b'"sha256": "8d4dbd08',
+        b'"sha256": "00000000',
+        1,
+    )
+    assert replacement != trusted
+    manifest = tmp_path / "manifest.json"
+    manifest.write_bytes(trusted)
+    original_read_bytes = Path.read_bytes
+    reads = 0
+
+    def replace_after_first_read(path):
+        nonlocal reads
+        payload = original_read_bytes(path)
+        if path == manifest:
+            reads += 1
+            if reads == 1:
+                manifest.write_bytes(replacement)
+        return payload
+
+    monkeypatch.setattr(Path, "read_bytes", replace_after_first_read)
+
+    component = load_component_manifest(manifest)
+    identity = component_receipt_identity(component)
+
+    assert reads == 1
+    assert identity["manifest_sha256"] == hashlib.sha256(trusted).hexdigest()

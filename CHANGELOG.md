@@ -26,6 +26,11 @@
   静态门禁同时拒绝可能在运行时求值的危险注解表达式。同步发布根目录/CodeArts 双镜像 migration
   Skill，明确 configured-terminal 与 agent/no-llm 两种模型来源不可静默混用，并为本轮 NumPilot
   自有代码统一 Apache-2.0 版权头；
+- 修复默认冻结 AsNumpy internal-component 安装回执无法通过真实 NPU 运行时门禁的问题：新增独立、
+  哈希绑定的 component audit identity，严格核对 manifest、wheel、METADATA、RECORD、附件、安装文件
+  与解释器/运行环境；manifest 摘要改为与解析 payload 同次捕获以关闭替换竞态。capability 回执仅在
+  SoC 缺失时使用只读 `npu-smi` 补齐，严格 runtime identity 仍无条件以真机探测为准；`add_one`
+  的 `ones_like → add` 组合现可在默认发布安装路径完成 3 组真实 NPU 数值资格验证；
 - 比赛就绪度对 hosted video 页面链接（含常见视频域名、Markdown/HTML 视频标签）做保守识别，
   仍将未提供 `accessible=true` 回执的链接标为未独立验证，不把普通文档链接误当视频证明；
 - 将公开首页整理为英文 `README.md` 与中文 `README.zh-CN.md`，增加双语安装/验收指南、按代码

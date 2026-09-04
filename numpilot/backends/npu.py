@@ -57,6 +57,16 @@ ASNUMPY_SOURCE_BUILD_AUDIT_ID = (
     "init8761f7f9-cannac907b3a-linalgd2965c2e-"
     "random6c9c7891-pinned-source-receipt-v2"
 )
+ASNUMPY_INTERNAL_COMPONENT_AUDIT_ID = (
+    "asnumpy-0.3.1.dev4-g1929a3ba4-internal-component-"
+    "manifest873e9673-wheel8d4dbd08-core4166713f-v1"
+)
+_ASNUMPY_INTERNAL_COMPONENT_ID = (
+    "asnumpy-0.3.1.dev4+g1929a3ba4-cp310-cp310-linux_aarch64"
+)
+_ASNUMPY_INTERNAL_COMPONENT_MANIFEST_SHA256 = (
+    "873e9673f2b44a725a100838ad1157ae1ae46955b4566da937cc221df4405fd5"
+)
 _AUDITED_RUNTIME_FILE_SHA256 = {
     "__init__.py": "8761f7f9fe557606df6c6683245f4dfc3b8ac69385689a0673f3c90e33afd28e",
     "_types.py": "3686cc4be153e88950357aacdc71e90d98a71f2d01e659c3376ff4e0b2d66fa7",
@@ -242,6 +252,19 @@ _ASNUMPY_SOURCE_RECEIPT_ACTIONS = frozenset(
         "built_wheel_installed",
         "asnumpy_official_readme_smoke_passed",
     }
+)
+_ASNUMPY_COMPONENT_RECEIPT_ACTIONS = (
+    "environment_gates_passed",
+    "internal_component_verified",
+    "verified_component_wheel_installed",
+    "asnumpy_official_readme_smoke_passed",
+)
+_ASNUMPY_COMPONENT_RECEIPT_ACTIONS_WITH_CANNBOT = (
+    "environment_gates_passed",
+    "internal_component_verified",
+    "cannbot_bundle_verified",
+    "verified_component_wheel_installed",
+    "asnumpy_official_readme_smoke_passed",
 )
 _ASNUMPY_SOURCE_KEY_FILES = frozenset(
     {
@@ -835,12 +858,226 @@ def _source_build_receipt_identity_matches(module):
     )
 
 
+def _internal_component_receipt_identity_matches(module):
+    """Admit only the exact release-bundled AsNumpy component and receipt.
+
+    The component is deliberately a third identity class.  Although its
+    source commit is pinned, the installed native object is the immutable
+    release attachment rather than a native object built by this bootstrap
+    run, so it must never inherit the ``pinned-source-build`` audit label.
+    """
+
+    observation = _audited_runtime_observation(module)
+    receipt_path = _bootstrap_receipt_path()
+    if observation is None or receipt_path is None:
+        return False
+    init_path, core_path, observed = observation
+
+    expected_python = {
+        name: digest
+        for name, digest in _AUDITED_RUNTIME_FILE_SHA256.items()
+        if name != "_core"
+    }
+    if {name: observed[name] for name in expected_python} != expected_python:
+        return False
+
+    receipt = _read_private_bootstrap_receipt(receipt_path)
+    if receipt is None:
+        return False
+    try:
+        from numpilot import __version__ as numpilot_version
+        from numpilot.asnumpy_component import (
+            component_receipt_identity,
+            load_component_manifest,
+        )
+        from numpilot.bootstrap import (
+            ASNUMPY_COMMIT,
+            ASNUMPY_LICENSE,
+            ASNUMPY_REPOSITORY,
+            ASNUMPY_TREE,
+            ASNUMPY_VERSION,
+            _verify_internal_component,
+        )
+
+        component = load_component_manifest()
+        expected_component = component_receipt_identity(component)
+        expected_wheel = _verify_internal_component(component)
+        source = receipt["repositories"]["asnumpy"]
+        wheel = receipt["wheel"]
+        verification = receipt["verification"]["asnumpy"]
+        environment = receipt["environment"]
+        receipt_python = environment["python"]
+        receipt_machine = environment["machine"]
+        receipt_cann = environment["cann"]
+        actions = receipt["actions"]
+    except (KeyError, OSError, RuntimeError, TypeError, ValueError):
+        return False
+    except Exception:
+        # Component parsing and wheel/attachment verification expose their own
+        # exception types.  Identity discovery is a gate, so every malformed
+        # or unavailable release attachment degrades to audit-required.
+        return False
+
+    if (
+        expected_component.get("manifest_sha256")
+        != _ASNUMPY_INTERNAL_COMPONENT_MANIFEST_SHA256
+        or component.component_id != _ASNUMPY_INTERNAL_COMPONENT_ID
+        or component.artifact_required is not True
+        or component.artifact_status != "bundled-and-verified"
+        or component.repository != ASNUMPY_REPOSITORY
+        or component.commit != ASNUMPY_COMMIT
+        or component.tree != ASNUMPY_TREE
+        or component.version != ASNUMPY_VERSION
+        or component.license != ASNUMPY_LICENSE
+        or component.build.get("source_commit") != ASNUMPY_COMMIT
+        or component.build.get("source_tree") != ASNUMPY_TREE
+        or set(component.source_files_sha256) != _ASNUMPY_SOURCE_KEY_FILES
+        or any(
+            not _sha256_text(value)
+            for value in component.source_files_sha256.values()
+        )
+    ):
+        return False
+
+    if (
+        receipt.get("schema_version") != 1
+        or receipt.get("producer") != "numpilot-bootstrap-v1"
+        or receipt.get("numpilot_version") != numpilot_version
+        or receipt.get("status") != "ready"
+        or receipt.get("ready") is not True
+        or not _sha256_text(receipt.get("plan_sha256"))
+        or type(actions) is not list
+        or tuple(actions)
+        not in {
+            _ASNUMPY_COMPONENT_RECEIPT_ACTIONS,
+            _ASNUMPY_COMPONENT_RECEIPT_ACTIONS_WITH_CANNBOT,
+        }
+    ):
+        return False
+
+    expected_source = {
+        "mode": "internal-component",
+        "source_repository_claimed": True,
+        "component": expected_component,
+        "repository": ASNUMPY_REPOSITORY,
+        "commit": ASNUMPY_COMMIT,
+        "tree": ASNUMPY_TREE,
+        "license": ASNUMPY_LICENSE,
+    }
+    expected_wheel_receipt = {"kind": "internal-component", **expected_wheel}
+    if (
+        type(source) is not dict
+        or source != expected_source
+        or type(wheel) is not dict
+        or wheel != expected_wheel_receipt
+    ):
+        return False
+
+    runtime = component.runtime
+    required_runtime = {
+        "cann_version",
+        "machine",
+        "loguru_version",
+        "numpy_version",
+        "python_implementation",
+        "python_major_minor",
+    }
+    if type(runtime) is not dict or set(runtime) != required_runtime:
+        return False
+    try:
+        interpreter = str(Path(sys.executable).resolve(strict=True))
+        receipt_interpreter = str(
+            Path(verification["interpreter"]).resolve(strict=True)
+        )
+        plan_interpreter = str(
+            Path(receipt_python["executable"]).resolve(strict=True)
+        )
+        module_path = str(init_path.resolve(strict=True))
+        installed_asnumpy_version = importlib_metadata.version("asnumpy")
+        installed_numpy_version = importlib_metadata.version("numpy")
+        installed_loguru_version = importlib_metadata.version("loguru")
+        current_python_version = platform.python_version()
+        current_python_implementation = platform.python_implementation()
+        current_python_major_minor = "%d.%d" % sys.version_info[:2]
+        current_machine = platform.machine()
+        _, current_cann_version = _runtime_identity_cann_facts()
+    except (
+        KeyError,
+        OSError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+        importlib_metadata.PackageNotFoundError,
+    ):
+        return False
+
+    expected_installed = expected_wheel.get("installed_files")
+    if type(expected_installed) is not dict:
+        return False
+    installed_module = expected_installed.get("module")
+    installed_native = expected_installed.get("native_modules")
+    verification_native = verification.get("native_modules")
+    native_hash = observed["_core"]
+    module_hash = observed["__init__.py"]
+    if (
+        type(verification) is not dict
+        or verification.get("status") != "passed"
+        or verification.get("source")
+        != "official AsNumpy README.md installation verification"
+        or verification.get("asnumpy_version") != ASNUMPY_VERSION
+        or verification.get("module_path") != module_path
+        or verification.get("module_sha256") != module_hash
+        or verification.get("wheel_file_identity_verified") is not True
+        or verification.get("shape") != [1000, 1000]
+        or verification.get("dtype") != "float32"
+        or receipt_interpreter != interpreter
+        or plan_interpreter != interpreter
+        or type(receipt_python) is not dict
+        or receipt_python.get("version") != current_python_version
+        or receipt_python.get("implementation") != current_python_implementation
+        or receipt_python.get("major_minor") != current_python_major_minor
+        or type(receipt_machine) is not dict
+        or receipt_machine.get("machine") != current_machine
+        or type(receipt_cann) is not dict
+        or receipt_cann.get("version") != current_cann_version
+        or receipt_cann.get("version_conflict") is not False
+        or type(installed_module) is not dict
+        or installed_module.get("path") != "asnumpy/__init__.py"
+        or installed_module.get("sha256") != module_hash
+        or type(installed_native) is not list
+        or type(verification_native) is not list
+        or len(installed_native) != 1
+        or len(verification_native) != 1
+        or type(installed_native[0]) is not dict
+        or type(verification_native[0]) is not dict
+        or installed_native[0].get("path") != "asnumpy/" + core_path.name
+        or installed_native[0].get("sha256") != native_hash
+        or verification_native[0].get("path") != core_path.name
+        or verification_native[0].get("sha256") != native_hash
+    ):
+        return False
+
+    return (
+        installed_asnumpy_version == ASNUMPY_VERSION
+        and runtime["cann_version"] == current_cann_version
+        and runtime["machine"] == current_machine
+        and runtime["numpy_version"] == installed_numpy_version
+        and runtime["loguru_version"] == installed_loguru_version
+        and runtime["python_implementation"] == current_python_implementation
+        and runtime["python_major_minor"] == current_python_major_minor
+        and verification.get("numpy_version") == installed_numpy_version
+        and verification.get("loguru_version") == installed_loguru_version
+    )
+
+
 def _audited_runtime_identity_matches(module):
-    """Bind either the fixed wheel or an exact pinned-source build receipt."""
+    """Bind a fixed wheel, pinned-source build, or internal component."""
 
     return _fixed_audited_runtime_identity_matches(
         module
-    ) or _source_build_receipt_identity_matches(module)
+    ) or _source_build_receipt_identity_matches(
+        module
+    ) or _internal_component_receipt_identity_matches(module)
 
 
 _RUNTIME_IDENTITY_TOKEN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+:-]{0,255}$")
@@ -897,6 +1134,44 @@ def _identity_path(value, *, require_existing=False, require_directory=False):
     return text
 
 
+def _read_only_npu_smi_soc_model():
+    """Return one sanitized hardware SoC observation, or ``unknown``."""
+
+    try:
+        from numpilot.env_check import _probe_npu_smi_soc_model
+
+        return _identity_token(_probe_npu_smi_soc_model())
+    except Exception:
+        return UNKNOWN_ENVIRONMENT_VALUE
+
+
+def _npu_runtime_environment(module):
+    """Capture capability facts with one read-only SoC fallback.
+
+    The generic capability helper intentionally leaves an absent SoC value as
+    unknown.  NpuBackend can safely improve only that field with the same
+    ``npu-smi info`` probe used by its strict runtime identity.  An unavailable,
+    malformed, or failing probe remains ``unknown``.
+    """
+
+    unknown = UNKNOWN_ENVIRONMENT_VALUE
+    try:
+        environment = dict(detect_runtime_environment(module))
+    except Exception:
+        environment = {
+            "module_path": unknown,
+            "cann_home": unknown,
+            "cann_version": unknown,
+            "soc_version": unknown,
+            "python_version": _identity_token(platform.python_version()),
+        }
+    soc_version = _identity_token(environment.get("soc_version"))
+    if soc_version == unknown:
+        soc_version = _read_only_npu_smi_soc_model()
+    environment["soc_version"] = soc_version
+    return environment
+
+
 def _metadata_only_asnumpy_module():
     """Locate AsNumpy without importing it or initialising its native runtime."""
 
@@ -915,8 +1190,6 @@ def _metadata_only_asnumpy_module():
 def _ops_nn_matmul_runtime_identity(module):
     """Build the exact local qualification identity for the MatMul case."""
 
-    from numpilot.env_check import _probe_npu_smi_soc_model
-
     unknown = UNKNOWN_ENVIRONMENT_VALUE
     try:
         version = _identity_token(getattr(module, "__version__", None))
@@ -924,10 +1197,9 @@ def _ops_nn_matmul_runtime_identity(module):
         version = unknown
     file_facts = _runtime_identity_file_facts(module)
     cann_home, cann_version = _runtime_identity_cann_facts()
-    try:
-        soc_model = _identity_token(_probe_npu_smi_soc_model())
-    except Exception:
-        soc_model = unknown
+    # A strict identity must observe hardware, never trust module attributes or
+    # environment variables that can be supplied by the caller.
+    soc_model = _read_only_npu_smi_soc_model()
     python_executable = _identity_path(sys.executable, require_existing=True)
     try:
         python_version = _identity_token(platform.python_version())
@@ -1242,6 +1514,8 @@ def _runtime_audit_id(module, version):
     if version == AUDITED_ASNUMPY_VERSION:
         if _fixed_audited_runtime_identity_matches(module):
             return ASNUMPY_AUDIT_ID
+        if _internal_component_receipt_identity_matches(module):
+            return ASNUMPY_INTERNAL_COMPONENT_AUDIT_ID
         if _source_build_receipt_identity_matches(module):
             return ASNUMPY_SOURCE_BUILD_AUDIT_ID
         # Preserve the narrow injection seam used by unit/private backends.
@@ -1339,6 +1613,7 @@ def _provenance_profile(name, version, audit_id):
         )
     if audit_id not in {
         ASNUMPY_AUDIT_ID,
+        ASNUMPY_INTERNAL_COMPONENT_AUDIT_ID,
         ASNUMPY_SOURCE_BUILD_AUDIT_ID,
         P0_ASNUMPY_AUDIT_ID,
         P0_LINALG_ASNUMPY_AUDIT_ID,
@@ -1352,7 +1627,12 @@ def _provenance_profile(name, version, audit_id):
             ("requires a version-specific source audit",),
         )
     if (
-        audit_id in {ASNUMPY_AUDIT_ID, ASNUMPY_SOURCE_BUILD_AUDIT_ID}
+        audit_id
+        in {
+            ASNUMPY_AUDIT_ID,
+            ASNUMPY_INTERNAL_COMPONENT_AUDIT_ID,
+            ASNUMPY_SOURCE_BUILD_AUDIT_ID,
+        }
         and name in _GENERIC_NESTED_PROVENANCE
     ):
         return _GENERIC_NESTED_PROVENANCE[name]
@@ -1414,11 +1694,16 @@ def _provenance_profile(name, version, audit_id):
                 if audit_id == P0_ASNUMPY_AUDIT_ID
                 or audit_id in _P0_LINALG_AUDIT_IDS
                 else (
-                    "asnumpy@1929a3ba4 pinned-source receipt and wrapper audit: "
-                    "public wrapper delegates to an NPU binding"
-                    if audit_id == ASNUMPY_SOURCE_BUILD_AUDIT_ID
-                    else "asnumpy@1929a3ba4 source audit: public wrapper "
-                    "delegates to an NPU binding"
+                    "asnumpy@1929a3ba4 internal-component receipt and "
+                    "wheel audit: public wrapper delegates to an NPU binding"
+                    if audit_id == ASNUMPY_INTERNAL_COMPONENT_AUDIT_ID
+                    else (
+                        "asnumpy@1929a3ba4 pinned-source receipt and wrapper "
+                        "audit: public wrapper delegates to an NPU binding"
+                        if audit_id == ASNUMPY_SOURCE_BUILD_AUDIT_ID
+                        else "asnumpy@1929a3ba4 source audit: public wrapper "
+                        "delegates to an NPU binding"
+                    )
                 )
             )
         ),
@@ -1588,7 +1873,6 @@ class NpuBackend(ExecutionBackend):
             ASNUMPY_REPOSITORY,
             ASNUMPY_TREE,
         )
-        from numpilot.env_check import _probe_npu_smi_soc_model
 
         unknown = UNKNOWN_ENVIRONMENT_VALUE
         module = (
@@ -1609,10 +1893,9 @@ class NpuBackend(ExecutionBackend):
         receipt_facts = _runtime_identity_receipt_facts()
         receipt = receipt_facts.pop("receipt")
         cann_home, cann_version = _runtime_identity_cann_facts()
-        try:
-            soc_model = _identity_token(_probe_npu_smi_soc_model())
-        except Exception:
-            soc_model = unknown
+        # Strict identity is hardware-bound even when a caller supplies an
+        # apparently valid ASCEND_SOC_VERSION/module attribute.
+        soc_model = _read_only_npu_smi_soc_model()
         python_executable = _identity_path(
             sys.executable, require_existing=True
         )
@@ -1629,6 +1912,12 @@ class NpuBackend(ExecutionBackend):
             source_receipt_matches = _source_build_receipt_identity_matches(module)
         except Exception:
             source_receipt_matches = False
+        try:
+            component_receipt_matches = (
+                _internal_component_receipt_identity_matches(module)
+            )
+        except Exception:
+            component_receipt_matches = False
 
         issues = set()
         if receipt_facts["asnumpy_repository"] != ASNUMPY_REPOSITORY:
@@ -1663,9 +1952,12 @@ class NpuBackend(ExecutionBackend):
             issues.add("bootstrap receipt path is unavailable")
         if receipt_facts["bootstrap_receipt_sha256"] == unknown:
             issues.add("bootstrap receipt hash is unavailable")
-        if not source_receipt_matches:
+        if not (source_receipt_matches or component_receipt_matches):
             issues.add("bootstrap receipt does not bind the observed runtime")
-        if audit_id != ASNUMPY_SOURCE_BUILD_AUDIT_ID:
+        if audit_id not in {
+            ASNUMPY_SOURCE_BUILD_AUDIT_ID,
+            ASNUMPY_INTERNAL_COMPONENT_AUDIT_ID,
+        }:
             issues.add("generic AsNumpy audit ID is not receipt-bound")
 
         expected_cann_home = _identity_path(AUDITED_CANN_HOME)
@@ -1773,7 +2065,7 @@ class NpuBackend(ExecutionBackend):
             backend=self.name,
             backend_version=version,
             operators=capabilities,
-            environment=detect_runtime_environment(module),
+            environment=_npu_runtime_environment(module),
             audit_id=audit_id,
         )
 

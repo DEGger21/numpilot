@@ -119,6 +119,7 @@ class AsNumpyComponent:
     """Validated lock metadata for one immutable AsNumpy wheel attachment."""
 
     manifest_path: Path
+    manifest_sha256: str
     component_id: str
     distribution: str
     version: str
@@ -216,7 +217,12 @@ class AsNumpyComponent:
         }
 
 
-def _validate_manifest(raw: Mapping[str, Any], path: Path) -> AsNumpyComponent:
+def _validate_manifest(
+    raw: Mapping[str, Any],
+    path: Path,
+    *,
+    manifest_sha256: str,
+) -> AsNumpyComponent:
     schema = _text(raw.get("schema"), "schema")
     if schema != COMPONENT_SCHEMA:
         raise AsNumpyComponentError("unexpected AsNumpy component manifest schema")
@@ -352,6 +358,7 @@ def _validate_manifest(raw: Mapping[str, Any], path: Path) -> AsNumpyComponent:
 
     return AsNumpyComponent(
         manifest_path=path,
+        manifest_sha256=manifest_sha256,
         component_id=component_id,
         distribution="asnumpy",
         version=package_version,
@@ -394,7 +401,11 @@ def load_component_manifest(path: Optional[Path] = None) -> AsNumpyComponent:
         raw = json.loads(payload.decode("utf-8"), object_pairs_hook=_strict_object)
     except (UnicodeError, json.JSONDecodeError, AsNumpyComponentError) as exc:
         raise AsNumpyComponentError("AsNumpy component manifest is invalid JSON") from exc
-    return _validate_manifest(_mapping(raw, "manifest"), target)
+    return _validate_manifest(
+        _mapping(raw, "manifest"),
+        target,
+        manifest_sha256=hashlib.sha256(payload).hexdigest(),
+    )
 
 
 def default_component_root() -> Path:
@@ -531,9 +542,10 @@ def component_receipt_identity(component: AsNumpyComponent) -> dict[str, Any]:
     return {
         "component_id": component.component_id,
         "manifest_schema": COMPONENT_SCHEMA,
-        "manifest_sha256": hashlib.sha256(
-            component.manifest_path.read_bytes()
-        ).hexdigest(),
+        # This digest is captured from the exact payload parsed by the loader.
+        # Re-reading the path here would permit a manifest replacement between
+        # validation and receipt construction.
+        "manifest_sha256": component.manifest_sha256,
         "wheel_filename": component.wheel_filename,
         "wheel_sha256": component.wheel_sha256,
         "repository": component.repository,
