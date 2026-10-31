@@ -34,7 +34,7 @@ NumPilot 将 NumPy 程序的静态分析、迁移候选生成、数值验证和 
 
 ## 架构图
 
-- [English architecture](assets/architecture/numpilot-architecture-en.svg) / [中文架构](assets/architecture/numpilot-architecture-zh.svg)；
+- [English architecture](assets/architecture/numpilot-architecture-en.png) / [中文架构](assets/architecture/numpilot-architecture-zh.png)；
 - [两种使用方式](assets/architecture/numpilot-two-routes.zh-CN.png)；
 - [AsNumpy 自定义算子接入](numpilot-asnumpy-custom-operator-flow.png)；
 - [官方算子解析流程](numpilot-official-operator-resolution.drawio)。

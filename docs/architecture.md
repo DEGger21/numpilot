@@ -4,8 +4,8 @@ NumPilot 将可静态分析的普通 NumPy 单文件迁移为 AsNumpy 候选，�
 哈希、数值验证和可选性能门决定候选能否进入后续阶段。模型或交互式 AI 负责提出候选，
 确定性检查负责准入；任何证据缺失、身份漂移或语义不明都会失败关闭。
 
-完整架构图：[中文 SVG](assets/architecture/numpilot-architecture-zh.svg) ·
-[English SVG](assets/architecture/numpilot-architecture-en.svg)。
+完整架构图：[中文 PNG](assets/architecture/numpilot-architecture-zh.png) ·
+[English PNG](assets/architecture/numpilot-architecture-en.png)。
 
 ## 1. 支持范围
 

@@ -65,8 +65,8 @@ REQUIRED_FILES = {
     "docs/numpilot-asnumpy-custom-operator-flow.drawio",
     "docs/numpilot-asnumpy-custom-operator-flow.png",
     "docs/architecture.md",
-    "docs/assets/architecture/numpilot-architecture-en.svg",
-    "docs/assets/architecture/numpilot-architecture-zh.svg",
+    "docs/assets/architecture/numpilot-architecture-en.png",
+    "docs/assets/architecture/numpilot-architecture-zh.png",
     "docs/assets/architecture/numpilot-two-routes.zh-CN.png",
     "docs/assets/brand/asnumpy-mark.png",
     "docs/assets/brand/ascend-wordmark.png",
@@ -971,37 +971,21 @@ def _validate_versions(root: Path, errors: list[str]) -> str | None:
     return version
 
 
-def _validate_architecture_svg(root: Path, errors: list[str]) -> None:
+def _validate_architecture_png(root: Path, errors: list[str]) -> None:
     for relative in (
-        "docs/assets/architecture/numpilot-architecture-en.svg",
-        "docs/assets/architecture/numpilot-architecture-zh.svg",
+        "docs/assets/architecture/numpilot-architecture-en.png",
+        "docs/assets/architecture/numpilot-architecture-zh.png",
     ):
         path = root / relative
         if not path.is_file():
             continue
         try:
-            tree = ET.parse(path)
-        except (ET.ParseError, OSError):
-            errors.append(f"invalid architecture SVG: {relative}")
+            payload = path.read_bytes()
+        except OSError:
+            errors.append(f"cannot read architecture PNG: {relative}")
             continue
-        element = tree.getroot()
-        try:
-            text = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeError):
-            errors.append(f"cannot read architecture SVG: {relative}")
-            continue
-        if element.tag != "{http://www.w3.org/2000/svg}svg":
-            errors.append(f"architecture asset is not SVG: {relative}")
-        required_boundaries = (
-            "ADAPTER_CANDIDATE",
-            "CAPABILITY_AUDIT_REQUIRED",
-            "REVIEWED_MATMUL_ONLY",
-            "SOURCE_EVIDENCE_ONLY",
-            "UNVERIFIED_OPERATOR_DRAFT",
-        )
-        if any(boundary not in text for boundary in required_boundaries):
-            errors.append(f"architecture SVG omits required capability boundaries: {relative}")
-
+        if not payload.startswith(b"\x89PNG\r\n\x1a\n"):
+            errors.append(f"architecture asset is not PNG: {relative}")
 
 def _scan_public_text(root: Path, files: Iterable[str], errors: list[str]) -> None:
     for relative in files:
@@ -1091,7 +1075,7 @@ def audit_release_tree(
         require_artifact=require_asnumpy_component,
     )
     version = _validate_versions(root, errors)
-    _validate_architecture_svg(root, errors)
+    _validate_architecture_png(root, errors)
 
     status = _run_git(root, "status", "--porcelain", "--untracked-files=all")
     if status.returncode != 0:

@@ -8,7 +8,7 @@ include THIRD_PARTY_NOTICES.md
 include install.sh
 include run_demo.sh
 
-recursive-include docs *.md *.drawio *.svg *.png
+recursive-include docs *.md *.drawio *.png
 recursive-include examples *.py
 
 include integrations/asnumpy/README.md

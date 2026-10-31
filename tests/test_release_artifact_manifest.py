@@ -19,10 +19,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import base64
 import io
 import json
 import shutil
+import struct
+import zlib
 import subprocess
 import tarfile
 import zipfile
@@ -47,20 +48,30 @@ License-File: THIRD_PARTY_NOTICES.md
 
 test package
 """.encode()
-VALID_PNG = base64.b64decode(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
-)
-VALID_SVG = (
-    b'<svg xmlns="http://www.w3.org/2000/svg"><text>'
-    b"ADAPTER_CANDIDATE CAPABILITY_AUDIT_REQUIRED REVIEWED_MATMUL_ONLY "
-    b"SOURCE_EVIDENCE_ONLY UNVERIFIED_OPERATOR_DRAFT"
-    b"</text></svg>\n"
-)
+def _png_pixel(rgba):
+    def chunk(kind, payload):
+        return (
+            struct.pack(">I", len(payload))
+            + kind
+            + payload
+            + struct.pack(">I", zlib.crc32(kind + payload) & 0xFFFFFFFF)
+        )
+
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 6, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(b"\x00" + bytes(rgba)))
+        + chunk(b"IEND", b"")
+    )
+
+
+VALID_PNG = _png_pixel((0, 0, 0, 0))
+ALTERNATE_PNG = _png_pixel((255, 255, 255, 0))
 
 
 REVIEWED_PAYLOADS = {
-    "docs/assets/architecture/numpilot-architecture-en.svg": VALID_SVG,
-    "docs/assets/architecture/numpilot-architecture-zh.svg": VALID_SVG,
+    "docs/assets/architecture/numpilot-architecture-en.png": VALID_PNG,
+    "docs/assets/architecture/numpilot-architecture-zh.png": VALID_PNG,
     "docs/assets/architecture/numpilot-two-routes.zh-CN.png": VALID_PNG,
     "docs/assets/brand/asnumpy-mark.png": VALID_PNG,
     "docs/assets/brand/ascend-wordmark.png": VALID_PNG,
@@ -354,9 +365,9 @@ def test_verify_detects_changed_artifact(tmp_path):
     ("relative, payload, message"),
     [
         (
-            "docs/assets/architecture/numpilot-architecture-en.svg",
-            b'<svg xmlns="http://www.w3.org/2000/svg"/>',
-            "capability boundary",
+            "docs/assets/architecture/numpilot-architecture-en.png",
+            b"not a png",
+            "PNG",
         ),
         ("docs/assets/brand/numpilot-wordmark.png", b"not a png", "PNG"),
     ],
@@ -406,11 +417,11 @@ def test_artifact_rejects_missing_runtime_or_release_member(tmp_path, kind, miss
 def test_manifest_binds_sdist_architecture_to_reviewed_source(tmp_path):
     repo = _clean_repo(tmp_path)
     sdist = tmp_path / f"{NAME}-{VERSION}.tar.gz"
-    changed = VALID_SVG.replace(b"</svg>", b"<!-- changed --></svg>")
+    changed = ALTERNATE_PNG
     _sdist(
         sdist,
         extra=(
-            f"{NAME}-{VERSION}/docs/assets/architecture/numpilot-architecture-en.svg",
+            f"{NAME}-{VERSION}/docs/assets/architecture/numpilot-architecture-en.png",
             changed,
         ),
     )
@@ -498,5 +509,5 @@ def test_sdist_manifest_excludes_historical_internal_material():
     assert "include tools/check_release_tree.py" in manifest.splitlines()
     assert "include tools/release_artifact_manifest.py" in manifest.splitlines()
     assert "recursive-include docs" in manifest
-    assert "*.svg" in manifest
+    assert "*.svg" not in manifest
     assert "*.png" in manifest
