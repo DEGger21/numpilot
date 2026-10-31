@@ -24,11 +24,11 @@
 </div>
 
 > **Project status: active refactor.**
-> NumPilot is being re-architected around a single three-stage, six-role pipeline. The architecture
-> diagram and role contracts below describe the target design; parts of this repository still implement
-> the previous parallel pipelines and are being migrated incrementally. CLI entry points, module layout,
-> and internal interfaces may change until the refactor completes. For reproducible use, pin a commit or
-> release.
+> NumPilot is being re-architected around the three-stage, six-role pipeline shown in the canonical PNG
+> architecture diagrams below. The old architecture SVGs and their generator have been removed. The
+> repository still contains legacy execution paths while the primary CLI is being connected to the new
+> pipeline. CLI entry points, module layout, and internal interfaces may change until the refactor
+> completes. For reproducible use, pin a commit or release.
 
 ## Overview
 
@@ -81,13 +81,28 @@ target design.
 | Architecture contract | Defined | This README and the architecture diagram define the target |
 | Unified fact layer | In progress | Consolidating duplicated AST and call-site scanning |
 | Capability registry | In progress | Merging coverage, catalog, and profile logic into one registry |
-| ModelGateway | Planned | All six roles will share one typed, auditable gateway |
-| Analyzer / Planner | Partially implemented | Current analysis and decision agents are rule-based; LLM roles are being introduced |
+| ModelGateway | In progress | The private configured model is available; all role calls are being routed through one gateway |
+| Analyzer / Planner | Scaffolded | Role records and deterministic planning exist; unified model calls remain to be wired |
 | Code Migrator | In progress | Existing script migration path is being reduced to a single rewrite role |
-| API Gap Filler | Partially implemented | Existing gap pipeline is being simplified to one task per unique gap |
+| API Gap Filler | Scaffolded | Gap classification exists; candidate generation and API-gate integration remain |
 | Full-program validation | Implemented | Retained as the deterministic program-level gate |
-| Diagnostics / Reporter | Planned | New roles; existing reporting is being consolidated |
+| Competition direct vertical slice | Planned | Direct source → model candidate → validation receipt → replay |
+| Benchmark adapter | Planned | Added after the direct and gap vertical slices are stable |
+| Diagnostics / Reporter | Scaffolded | Role records exist; validation-driven diagnosis and reporting remain to be unified |
 | Legacy pipelines | To be retired | Moved to `compat/legacy` after parity is established |
+
+## Development order
+
+The development order follows the canonical PNG architecture and keeps one reviewable vertical slice in front of broad coverage:
+
+1. Freeze role, artifact, receipt, and CLI contracts; finish the shared `ModelGateway`.
+2. Complete a straight-line direct migration with `migrate --mode full`, deterministic validation, `verify`, and `replay`.
+3. Complete one real gap, `np.concatenate`, through official-first resolution, API correctness, integration, and full-program validation.
+4. Demonstrate rejection and repair of an intentionally bad candidate.
+5. Qualify the current AsNumpy runtime before publishing strict-NPU or performance claims.
+6. Adapt the 150-case benchmark, bundle CANNBot skills, and finish release/performance evidence.
+
+The private `llm.json` is used only through the shared `ModelGateway`. Tokens, endpoints, and raw model responses must never enter run artifacts, logs, commits, or reports.
 
 ### What is changing
 
@@ -143,13 +158,28 @@ For air-gapped, hash-bound, or reproducible deployments, see
 
 ## Usage
 
-> The commands below reflect the current CLI. Entry points are being consolidated during the refactor and
-> may change. Pin a commit for reproducible workflows.
+> The CLI is still being consolidated. The commands below distinguish the development target from the
+> currently supported legacy paths. Pin a commit for reproducible workflows.
+
+### Target CLI contract
+
+The competition route is converging on this contract:
+
+```bash
+numpilot analyze SOURCE [--json]
+numpilot migrate SOURCE --mode full [--out RUN_DIR] [--json]
+numpilot verify RUN_DIR [--json]
+numpilot replay RUN_DIR [--json]
+numpilot demo --case direct_add|gap_concatenate|bad_candidate
+```
+
+`analyze` is the no-model lane. `assisted` and `gap` are controlled fallback or ablation lanes. Until the refactor is complete, some target commands remain under implementation and the existing `verify-script` and `--mode contract` paths are legacy adapters.
 
 ### Terminal workflow
 
 NumPilot can use an OpenAI-compatible model configured explicitly for it. The configuration is private and
-opt-in. The repository ships a blank `llm.example.json`; copy it to the git-ignored `llm.json` and fill in
+opt-in; during the refactor, `llm.json` is consumed only by the shared `ModelGateway` and never copied into
+run artifacts. The repository ships a blank `llm.example.json`; copy it to the git-ignored `llm.json` and fill in
 your own values.
 
 ```bash
@@ -229,8 +259,8 @@ tools/               repository and release utilities
 ## Documentation
 
 - [Installation and verification](docs/installation.md)
-- [Current implementation notes and trust boundaries](docs/architecture.md) — describes the pre-refactor
-  tree and will be updated as the refactor lands
+- [Current implementation notes and trust boundaries](docs/architecture.md) — describes the current code
+  while the canonical target remains the PNG architecture diagrams
 - [Model configuration and transport contract](docs/model-contract.md)
 - [Numerical verification](docs/script-verification.md)
 - [Strict-NPU benchmarking](docs/script-benchmark.md)

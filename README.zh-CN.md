@@ -24,9 +24,9 @@
 </div>
 
 > **项目状态：正在重构。**
-> NumPilot 正在围绕单一的三阶段、六角色流水线重新设计。下方的架构图与角色契约描述的是目标设计；
-> 仓库中仍有部分代码实现旧的并行流水线，正在逐步迁移。重构完成前，CLI 入口、模块布局和内部接口
-> 可能发生变化。需要可复现使用时，请固定 commit 或 release。
+> NumPilot 正在按照下方两张 PNG 架构图收敛到三阶段、六角色主链。旧架构 SVG 和生成器已经删除；
+> 仓库中仍保留部分旧执行路径，正在接入新的主 CLI。重构完成前，CLI 入口、模块布局和内部接口可能
+> 发生变化。需要可复现使用时，请固定 commit 或 release。
 
 ## 概述
 
@@ -73,13 +73,28 @@ NumPilot 是面向 Ascend NPU 上 AsNumpy 的 NumPy 程序迁移框架，目标�
 | 架构契约 | 已定义 | 本 README 与架构图定义目标 |
 | 统一事实层 | 进行中 | 合并重复的 AST 与调用点扫描 |
 | 能力注册表 | 进行中 | 将覆盖、目录与画像逻辑合并为单一注册表 |
-| ModelGateway | 已规划 | 六个角色共享一个带类型、可审计的网关 |
-| Analyzer / Planner | 部分实现 | 现有分析与决策 Agent 基于规则；LLM 角色正在引入 |
+| ModelGateway | 进行中 | 私有配置模型已经可用，正在统一接入一个共享网关 |
+| Analyzer / Planner | 已搭骨架 | 角色记录和确定性规划已存在，统一模型调用仍待接入 |
 | Code Migrator | 进行中 | 现有脚本迁移路径正在收敛为单一改写角色 |
-| API Gap Filler | 部分实现 | 现有缺口流水线正在简化为“每个唯一缺口一个任务” |
+| API Gap Filler | 已搭骨架 | 缺口分类已存在，候选生成和 API gate 接入仍待完成 |
 | 全程序验证 | 已实现 | 保留为确定性的程序级 gate |
-| Diagnostics / Reporter | 已规划 | 新角色；现有报告逻辑正在合并 |
+| 比赛直迁垂直切片 | 计划中 | 源程序 → 模型候选 → 验证回执 → replay |
+| Benchmark adapter | 计划中 | 直迁和缺口垂直切片稳定后再接入 |
+| Diagnostics / Reporter | 已搭骨架 | 角色记录已存在，基于验证结果的诊断和报告仍待统一 |
 | 旧流水线 | 待退役 | 达到行为对等后移入 `compat/legacy` |
+
+## 开发顺序
+
+后续开发严格按照两张 PNG 架构图推进，先完成一条可审查的垂直闭环，再扩大覆盖面：
+
+1. 冻结角色、工件、回执和 CLI 契约，完成共享 `ModelGateway`。
+2. 用 `migrate --mode full` 跑通 straight-line 直迁、确定性验证、`verify` 和 `replay`。
+3. 以 `np.concatenate` 跑通 official-first、API 正确性检查、集成和全程序验证。
+4. 展示错误候选被拒绝、诊断并在预算内修复。
+5. 审计当前 AsNumpy 运行时，再发布 strict-NPU 或性能结论。
+6. 最后接入 150 个 benchmark、静态 CANNBot bundle 和发布/性能证据。
+
+私有 `llm.json` 只允许由共享 `ModelGateway` 使用；token、endpoint 和原始模型响应不能进入运行工件、日志、提交或报告。
 
 ### 变化内容
 
@@ -132,11 +147,25 @@ python -m numpilot doctor --backend npu    # 在 Ascend 机器上
 
 ## 使用
 
-> 以下命令反映当前 CLI。重构期间入口正在收敛，可能发生变化；可复现工作流请固定 commit。
+> CLI 仍在收敛。下面区分开发目标和当前仍在使用的旧适配路径；可复现工作流请固定 commit。
+
+### 目标 CLI 契约
+
+比赛主路线正在收敛到以下命令：
+
+```bash
+numpilot analyze SOURCE [--json]
+numpilot migrate SOURCE --mode full [--out RUN_DIR] [--json]
+numpilot verify RUN_DIR [--json]
+numpilot replay RUN_DIR [--json]
+numpilot demo --case direct_add|gap_concatenate|bad_candidate
+```
+
+`analyze` 是无模型路线；`assisted` 和 `gap` 是受控的降级/消融路线。重构完成前，部分目标命令仍在实现，现有 `verify-script` 和 `--mode contract` 属于旧适配入口。
 
 ### 终端工作流
 
-NumPilot 可以使用为它显式配置的 OpenAI-compatible 模型。配置是私有且可选启用的。仓库内提供空白模板
+NumPilot 可以使用为它显式配置的 OpenAI-compatible 模型。配置是私有且可选启用的；重构期间 `llm.json` 只由共享 `ModelGateway` 读取，不会复制到运行工件。仓库内提供空白模板
 `llm.example.json`；复制为被 `.gitignore` 忽略的 `llm.json` 后填写自己的值。
 
 ```bash
@@ -212,7 +241,7 @@ tools/               仓库与发布工具
 ## 文档
 
 - [安装与验收](docs/installation.zh-CN.md)
-- [当前实现说明与信任边界](docs/architecture.md)——描述重构前的代码树，重构落地后会更新
+- [当前实现说明与信任边界](docs/architecture.md)——描述当前代码；目标设计以两张 PNG 架构图为准
 - [模型配置与传输契约](docs/model-contract.md)
 - [数值验证](docs/script-verification.md)
 - [strict-NPU 性能测试](docs/script-benchmark.md)
