@@ -96,7 +96,7 @@ target design.
 The development order follows the canonical PNG architecture and keeps one reviewable vertical slice in front of broad coverage:
 
 1. Freeze role, artifact, receipt, and CLI contracts; finish the shared `ModelGateway`.
-2. Complete a straight-line direct migration with `migrate --mode full`, deterministic validation, `verify`, and `replay`.
+2. Complete a straight-line direct migration with `migrate --out RUN_DIR`, deterministic validation, `verify`, and `replay`.
 3. Complete one real gap, `np.concatenate`, through official-first resolution, API correctness, integration, and full-program validation.
 4. Demonstrate rejection and repair of an intentionally bad candidate.
 5. Qualify the current AsNumpy runtime before publishing strict-NPU or performance claims.
@@ -159,26 +159,35 @@ For air-gapped, hash-bound, or reproducible deployments, see
 
 ## Usage
 
-> The CLI is still being consolidated. The commands below distinguish the development target from the
-> currently supported legacy paths. Pin a commit for reproducible workflows.
+> The CLI is the canonical execution contract. The commands below mark lower-level compatibility paths
+> explicitly so reproducible workflows use the same stage names and receipts.
 
-### Target CLI contract
+### Canonical CLI contract
 
-The competition route is converging on this contract:
+The CLI is NumPilot's only formal execution contract. It owns the workflow state, hash-bound
+artifacts, deterministic gates, and JSON receipts. The IDE/sidebar Agent Skill is an optional
+adapter over this contract; it does not implement a second migration or verification engine.
+
+The public stage commands are:
 
 ```bash
 numpilot analyze SOURCE [--json]
-numpilot migrate SOURCE --mode full [--out RUN_DIR] [--json]
-numpilot verify RUN_DIR [--json]
+numpilot migrate SOURCE --out RUN_DIR
+numpilot verify SOURCE \
+  --migration-report RUN_DIR/migration/script-migration-report.json \
+  --output result --out RUN_DIR/verification.json [--json]
 numpilot replay RUN_DIR [--json]
-numpilot demo --case direct_add|gap_concatenate|bad_candidate
 ```
 
-`analyze` is the no-model lane. `assisted` and `gap` are controlled fallback or ablation lanes. Until the refactor is complete, some target commands remain under implementation and the existing `verify-script` and `--mode contract` paths are legacy adapters.
+`run` remains a convenience coordinator for the same stages. `verify-script`,
+`benchmark-script`, `interactive-migrate`, and `--mode contract` remain lower-level or
+compatibility interfaces; they share the same receipts and gates and are not separate products.
+`replay` is read-only: it validates the workflow report and stage receipts without invoking a
+model, executing user source, or running an NPU stage.
 
-### Terminal workflow
+### Terminal/configured CLI lane
 
-NumPilot can use an OpenAI-compatible model configured explicitly for it. The configuration is private and
+The terminal lane is the canonical configured-model adapter over the CLI contract. NumPilot can use an OpenAI-compatible model configured explicitly for it. The configuration is private and
 opt-in; during the refactor, `llm.json` is consumed only by the shared `ModelGateway` and never copied into
 run artifacts. The repository ships a blank `llm.example.json`; copy it to the git-ignored `llm.json` and fill in
 your own values.
@@ -206,10 +215,12 @@ exit
 candidate. Keep `llm.json` at mode `0600`; it is git-ignored, and `llm.example.json` must stay blank. Never
 commit a filled configuration.
 
-### Agent Skill workflow
+### Agent Skill workflow (optional sidebar adapter)
 
 If you use an IDE/sidebar AI that can read the workspace and run approved commands, NumPilot can operate
-without `llm.json`. The sidebar model authors the candidate; NumPilot performs the deterministic gates.
+without `llm.json`. The sidebar model authors the candidate, while the adapter invokes the same canonical
+CLI commands and displays their receipts. It must not duplicate migration, verification, capability,
+or performance logic.
 
 ```text
 Read /absolute/path/to/numpilot/skill/SKILL.md and use its agent/no-llm lane.

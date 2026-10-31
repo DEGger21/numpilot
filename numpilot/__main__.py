@@ -935,6 +935,36 @@ def _cmd_run(args):
     return 0 if result["status"] == "passed" else (1 if result["status"] == "blocked" else 2)
 
 
+def _cmd_replay(args):
+    """Render a read-only summary of a hash-bound workflow directory."""
+
+    from numpilot.workflow import WorkflowError, replay_workflow
+
+    try:
+        result = replay_workflow(args.run_dir)
+    except WorkflowError as exc:
+        print("[replay] %s: %s" % (exc.code, exc), file=sys.stderr)
+        return 2
+
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False, allow_nan=False, indent=2, sort_keys=True))
+    else:
+        integrity = result["receipt_integrity"]
+        print("── NumPilot workflow replay（只读）──")
+        print("[运行目录] %s" % result["run_dir"])
+        print("[状态] workflow=%s · receipt_integrity=%s" % (
+            result["workflow_status"], integrity["status"],
+        ))
+        for stage in result["stages"]:
+            print("[%s] %s" % (stage["status"], stage["name"]))
+        print("[执行] execution_performed=false · actual_remote_call=false")
+        print("[回执] %s" % result["workflow_report"])
+        if integrity["errors"]:
+            for error in integrity["errors"]:
+                print("[完整性错误] %s" % error, file=sys.stderr)
+    return 0 if result["receipt_integrity"]["status"] == "passed" else 1
+
+
 # ---------------------------------------------------------------------------
 # Interactive ordinary-script entry point
 # ---------------------------------------------------------------------------
@@ -5824,7 +5854,9 @@ def main(argv=None):
             "常用流程:\n"
             "  numpilot doctor --backend npu\n"
             "  numpilot analyze script.py\n"
-            "  numpilot migrate script.py\n"
+            "  numpilot migrate script.py --out RUN_DIR\n"
+            "  numpilot verify script.py --migration-report RUN_DIR/migration/script-migration-report.json --output result --out RUN_DIR/verification.json\n"
+            "  numpilot replay RUN_DIR\n"
             "使用 `numpilot <command> --help` 查看命令参数。"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -6207,8 +6239,9 @@ def main(argv=None):
     )
 
     verify = sub.add_parser(
-        "verify-script",
-        help="显式执行 ordinary 原脚本与已发布迁移产物并做哈希绑定数值对拍",
+        "verify",
+        aliases=["verify-script"],
+        help="canonical：执行 ordinary 原脚本与已发布迁移产物并做哈希绑定数值对拍",
     )
     verify.add_argument("file", help="migrate 使用的原始 NumPy 脚本")
     verify.add_argument(
@@ -6259,6 +6292,17 @@ def main(argv=None):
         "--json",
         action="store_true",
         help="将完整 verification receipt 输出到 stdout",
+    )
+
+    replay = sub.add_parser(
+        "replay",
+        help="canonical：只读校验 workflow report 与阶段回执，不执行模型、源码或 NPU",
+    )
+    replay.add_argument("run_dir", help="已完成或已停止的 workflow 运行目录")
+    replay.add_argument(
+        "--json",
+        action="store_true",
+        help="将完整 replay receipt 输出到 stdout",
     )
 
     benchmark_script_parser = sub.add_parser(
@@ -7049,8 +7093,10 @@ def main(argv=None):
     try:
         if args.cmd == "analyze":
             return _cmd_analyze(args)
-        if args.cmd == "verify-script":
+        if args.cmd in {"verify", "verify-script"}:
             return _cmd_verify_script(args)
+        if args.cmd == "replay":
+            return _cmd_replay(args)
         if args.cmd in {"benchmark-script", "bench-script"}:
             return _cmd_benchmark_script(args)
         if args.cmd == "bootstrap":

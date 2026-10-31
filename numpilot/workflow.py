@@ -984,3 +984,144 @@ def run_ordinary_workflow(
     payload = (json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode("utf-8")
     _write_private(report_path, payload)
     return report
+
+
+def _bounded_sha256_file(path: Path) -> str | None:
+    """Hash one bounded regular file without allocating its whole contents."""
+
+    try:
+        hasher = hashlib.sha256()
+        total = 0
+        with path.open("rb") as handle:
+            while True:
+                chunk = handle.read(1024 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > MAX_RECEIPT_BYTES:
+                    return None
+                hasher.update(chunk)
+        return hasher.hexdigest()
+    except (OSError, TypeError, ValueError):
+        return None
+
+
+def replay_workflow(run_dir: os.PathLike[str] | str) -> dict[str, Any]:
+    """Read-only integrity summary for a completed ordinary workflow.
+
+    Replay deliberately does not execute the source, invoke a model, import
+    AsNumpy, or run an NPU stage. It validates the immutable workflow index
+    and the stage receipts that the original coordinator published, making it
+    safe for the terminal and sidebar adapters to use the same evidence.
+    """
+
+    root = _safe_path(run_dir, "workflow run")
+    if not root.is_dir() or root.is_symlink():
+        raise WorkflowError("invalid_run", "workflow run must be a regular directory")
+    _require_private_directory(root)
+
+    report_path = root / "workflow-report.json"
+    report = _load_json(report_path, root=root)
+    if report is None:
+        raise WorkflowError("invalid_report", "workflow-report.json is invalid or missing")
+    if report.get("schema_version") != WORKFLOW_SCHEMA_VERSION:
+        raise WorkflowError("invalid_report", "unsupported workflow report schema")
+    if report.get("record_type") != "numpilot_ordinary_workflow":
+        raise WorkflowError("invalid_report", "unexpected workflow report type")
+
+    errors: list[str] = []
+    receipts_value = report.get("receipts")
+    receipts = receipts_value if isinstance(receipts_value, Mapping) else {}
+    if not isinstance(receipts_value, Mapping):
+        errors.append("receipts is not an object")
+
+    receipt_summary: dict[str, dict[str, Any]] = {}
+    for label, raw_path in sorted(receipts.items()):
+        if raw_path is None:
+            receipt_summary[str(label)] = {"present": False, "status": "not_run"}
+            continue
+        if not isinstance(raw_path, str) or not raw_path:
+            errors.append("receipt path for %s is invalid" % label)
+            receipt_summary[str(label)] = {"present": False, "status": "invalid"}
+            continue
+        candidate = Path(raw_path)
+        if not candidate.is_absolute():
+            candidate = root / candidate
+        if not _safe_output_file(candidate, root):
+            errors.append("receipt path for %s escapes the run directory" % label)
+            receipt_summary[str(label)] = {
+                "present": False,
+                "status": "invalid",
+                "path": str(candidate),
+            }
+            continue
+        payload = _load_json(candidate, root=root)
+        digest = _bounded_sha256_file(candidate)
+        if payload is None or digest is None:
+            errors.append("receipt for %s is unreadable" % label)
+            receipt_summary[str(label)] = {
+                "present": True,
+                "status": "invalid",
+                "path": str(candidate),
+            }
+            continue
+        receipt_summary[str(label)] = {
+            "present": True,
+            "status": str(payload.get("status", "published")),
+            "path": str(candidate),
+            "sha256": digest,
+        }
+
+    stages_value = report.get("stages")
+    stages = stages_value if isinstance(stages_value, list) else []
+    if not isinstance(stages_value, list):
+        errors.append("stages is not an array")
+    stage_summary: list[dict[str, Any]] = []
+    stage_receipt = {
+        "01-analyze": "analysis",
+        "02-migrate": "migration",
+        "03-verify": "verification",
+        "04-benchmark": "benchmark",
+    }
+    for stage in stages:
+        if not isinstance(stage, Mapping):
+            errors.append("stage entry is not an object")
+            continue
+        name = stage.get("name")
+        status = stage.get("status")
+        if not isinstance(name, str) or not isinstance(status, str):
+            errors.append("stage entry has invalid name or status")
+            continue
+        stage_summary.append({"name": name, "status": status})
+        receipt_label = stage_receipt.get(name)
+        if status == "passed" and receipt_label:
+            receipt = receipt_summary.get(receipt_label)
+            if not receipt or receipt.get("status") == "invalid" or not receipt.get("present"):
+                errors.append("passed stage %s has no valid receipt" % name)
+
+    report_digest = _bounded_sha256_file(report_path)
+    if report_digest is None:
+        raise WorkflowError("invalid_report", "workflow report is unreadable")
+
+    return {
+        "schema_version": 1,
+        "record_type": "numpilot_workflow_replay",
+        "run_dir": str(root),
+        "workflow_report": str(report_path),
+        "workflow_report_sha256": report_digest,
+        "workflow_status": report.get("status", "unknown"),
+        "source": {
+            "path": report.get("source_path"),
+            "sha256": report.get("source_sha256"),
+        },
+        "stages": stage_summary,
+        "receipts": receipt_summary,
+        "receipt_integrity": {
+            "status": "passed" if not errors else "failed",
+            "errors": errors,
+        },
+        "claims": dict(report.get("claims")) if isinstance(report.get("claims"), Mapping) else {},
+        "replay_mode": "read_only",
+        "execution_performed": False,
+        "actual_remote_call": False,
+    }

@@ -24,6 +24,8 @@ NumPilot 将可静态分析的普通 NumPy 单文件迁移为 AsNumpy 候选，�
 
 ## 2. 两种交互路线
 
+两条路线共享同一个 CLI 执行面和 run 目录契约：正式阶段命令为 `analyze`、`migrate`、`verify`、`replay`。Terminal 和 Agent Skill 只记录不同的 `entry_lane`/`model_source`，不会产生两套迁移、验证或性能逻辑；`verify-script` 等旧名称仅作为兼容别名保留。
+
 | 路线 | 候选由谁提出 | `llm.json` 边界 | 可进入普通迁移报告的条件 |
 |---|---|---|---|
 | Terminal workflow | 用户手工编辑，或明确授权的 configured model | 仅 configured-model 子运行可读取；调用前校验配置与模型身份 | configured response 或已登记 adapter 通过来源、AST 与哈希门 |

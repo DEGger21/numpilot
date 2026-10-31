@@ -19,6 +19,8 @@ NumPilot CLI + contracts + capability registry
 
 这样，多智能体协作来自真实 CodeArts AgentTeam 和项目级自定义智能体，NumPilot 则承担必须可重复、可测试、可审计的领域逻辑。
 
+NumPilot 的 CLI 是唯一正式执行契约：analyze → migrate → verify → replay 共享同一 run 目录、manifest 和 JSON receipt。Terminal/configured 与 CodeArts-agent 只是不同的入口 lane；侧栏 Skill 是薄适配器，不能复制迁移、验证、能力或性能逻辑。比赛发布以 CLI 为主，侧栏只展示自然语言请求如何映射到同一 CLI 和同一组可审计回执。
+
 ## 模型来源与入口门禁
 
 CodeArts 交互模型可以直接承担迁移、缺口补全和算子/接入候选的生成；NumPilot 负责确定性的
@@ -97,18 +99,16 @@ verify/benchmark 标为 `not_run`。
 
 ## 推荐演示脚本
 
-1. 在 CodeArts Agent Space 选择 AgentTeam，输入一个真实科学网络迁移需求。
-2. Leader 让 analyzer 生成 callsite、shape/dtype 和 capability 缺口清单。
-3. 无缺口时按已选 lane 调用 `numpilot-migration-gate`：terminal/manual lane 可由用户填写
-   可选 `llm.json`，或直接提供候选；CodeArts-agent lane 由侧边栏模型先生成隔离的
-   `agent_authored_draft`；hybrid lane 将该草稿交给终端。三者最后都由 NumPilot 做确定性
-   gate；只有显式授权的 configured sub-run 才执行 `migrate`。有缺口时先生成 GapSpec 并交给
-   operator engineer；不得绕过官方优先和模型来源门禁。
-4. 在 Remote SSH 的 NPU 机展示迁移 diff、exact AST 门、named-output 数值门和
+1. 先在终端用 `numpilot analyze` 和正式 CLI 主线展示一条可复现的迁移闭环。
+2. 需要侧栏展示时，在 CodeArts Agent Space 选择 AgentTeam，输入一个真实科学网络迁移需求。
+3. Leader 让 analyzer 生成 callsite、shape/dtype 和 capability 缺口清单；侧栏只负责计划、确认
+   和草稿 handoff，随后调用同一 CLI 的 `analyze`、`migrate`、`verify` 或 `replay`，共享同一 run 目录和回执。没有适配器时保留 `agent_authored_draft` 并停止后续门禁。
+4. 有缺口时先生成 GapSpec 并交给 operator engineer；不得绕过官方优先和模型来源门禁。
+5. 在 Remote SSH 的 NPU 机展示迁移 diff、exact AST 门、named-output 数值门和
    runtime/profile/call-count/sync 门。
-5. evidence auditor 独立复跑；任一门失败或命中 CPU fallback 时，界面明确显示
+6. evidence auditor 独立复跑；任一门失败或命中 CPU fallback 时，界面明确显示
    `performance_valid=false`，不得发布 speedup。
-6. 最后展示报告中从需求、任务、代码、测试、capability、kernel/profiler 到性能数字的证据链。
+7. 最后展示报告中从需求、任务、代码、测试、capability、kernel/profiler 到性能数字的证据链。
 
 ## 边界与下一步
 

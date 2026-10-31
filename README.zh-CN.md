@@ -88,7 +88,7 @@ NumPilot 是面向 Ascend NPU 上 AsNumpy 的 NumPy 程序迁移框架，目标�
 后续开发严格按照两张 PNG 架构图推进，先完成一条可审查的垂直闭环，再扩大覆盖面：
 
 1. 冻结角色、工件、回执和 CLI 契约，完成共享 `ModelGateway`。
-2. 用 `migrate --mode full` 跑通 straight-line 直迁、确定性验证、`verify` 和 `replay`。
+2. 用 `migrate --out RUN_DIR` 跑通 straight-line 直迁、确定性验证、`verify` 和 `replay`。
 3. 以 `np.concatenate` 跑通 official-first、API 正确性检查、集成和全程序验证。
 4. 展示错误候选被拒绝、诊断并在预算内修复。
 5. 审计当前 AsNumpy 运行时，再发布 strict-NPU 或性能结论。
@@ -148,25 +148,33 @@ CANNBot Skill 快照；自动运行路径只读取这些快照，不联网拉取
 
 ## 使用
 
-> CLI 仍在收敛。下面区分开发目标和当前仍在使用的旧适配路径；可复现工作流请固定 commit。
+> CLI 是正式执行契约。下面明确标出底层兼容入口，保证可复现工作流使用同一组阶段命令和回执。
 
-### 目标 CLI 契约
+### 唯一正式 CLI 契约
 
-比赛主路线正在收敛到以下命令：
+CLI 是 NumPilot 唯一的正式执行契约，负责工作流状态、哈希绑定工件、确定性门禁和 JSON 回执。
+IDE/侧栏 Agent Skill 是可选适配器，只负责交互、审批、任务编排和结果展示，不维护第二套迁移或
+验证引擎。
+
+公开阶段命令为：
 
 ```bash
 numpilot analyze SOURCE [--json]
-numpilot migrate SOURCE --mode full [--out RUN_DIR] [--json]
-numpilot verify RUN_DIR [--json]
+numpilot migrate SOURCE --out RUN_DIR
+numpilot verify SOURCE \
+  --migration-report RUN_DIR/migration/script-migration-report.json \
+  --output result --out RUN_DIR/verification.json [--json]
 numpilot replay RUN_DIR [--json]
-numpilot demo --case direct_add|gap_concatenate|bad_candidate
 ```
 
-`analyze` 是无模型路线；`assisted` 和 `gap` 是受控的降级/消融路线。重构完成前，部分目标命令仍在实现，现有 `verify-script` 和 `--mode contract` 属于旧适配入口。
+`run` 仍是同一套阶段的便捷协调器。`verify-script`、`benchmark-script`、
+`interactive-migrate` 和 `--mode contract` 保留为底层或兼容接口；它们共享同一套回执和门禁，
+不构成第二个产品。`replay` 是只读操作，只校验 workflow report 与阶段回执，不调用模型、不执行
+用户源码，也不运行 NPU 阶段。
 
-### 终端工作流
+### 终端/配置模型 CLI 路线
 
-NumPilot 可以使用为它显式配置的 OpenAI-compatible 模型。配置是私有且可选启用的；重构期间 `llm.json` 只由共享 `ModelGateway` 读取，不会复制到运行工件。仓库内提供空白模板
+终端路线是 CLI 正式契约上的配置模型适配器。NumPilot 可以使用为它显式配置的 OpenAI-compatible 模型。配置是私有且可选启用的；重构期间 `llm.json` 只由共享 `ModelGateway` 读取，不会复制到运行工件。仓库内提供空白模板
 `llm.example.json`；复制为被 `.gitignore` 忽略的 `llm.json` 后填写自己的值。
 
 ```bash
@@ -191,10 +199,11 @@ exit
 `y` 授权生成候选；`execute` 另行授权运行已展示的源码与候选。请保持 `llm.json` 权限为 `0600`；
 它已被 `.gitignore` 忽略，`llm.example.json` 必须保持空白。绝不能提交填写后的配置。
 
-### Agent Skill 工作流
+### Agent Skill 工作流（可选侧栏适配器）
 
 如果你使用的 IDE/侧边栏 AI 能读取工作区并执行经授权的命令，NumPilot 可以在没有 `llm.json` 的情况下
-工作。侧边栏模型负责生成候选，NumPilot 执行确定性 gate。
+工作。侧边栏模型负责生成候选，适配器调用同一套正式 CLI 并展示回执；它不复制迁移、验证、能力或
+性能逻辑。
 
 ```text
 请阅读 /absolute/path/to/numpilot/skill/SKILL.md，并使用其中的 agent/no-llm 路线。

@@ -6,6 +6,8 @@ network, model, NPU, or installation permissions. It supports the terminal/confi
 AI/CodeArts-agent model sources, with an optional hybrid handoff; select one before touching model
 configuration.
 
+The adapter has no independent execution engine. Its canonical calls are analyze → migrate → verify → replay; each call targets the same private run directory and receipt schema used by the terminal CLI. The entry fields are entry_lane and model_source, while the CLI remains responsible for all deterministic gates.
+
 ## Recommended interaction
 
 Use a short, explicit request such as:
@@ -40,7 +42,7 @@ The sidebar agent should then:
    hash-bound ordinary migration report. The current CLI has no generic adapter for arbitrary
    hand-authored ordinary files: when none is registered, record `migrate=draft/stopped`, leave
    `verify=not_run` and `benchmark=not_run`, and never synthesize or hand-edit a report. Invoke
-   `verify-script` only for an adapter-accepted report, and invoke `benchmark-script` only when that
+   `verify` only for an adapter-accepted report, and invoke `benchmark-script` only when that
    report is fully qualified and the user requests it. Stream concise stage events, but use JSON
    receipts as the authority.
 5. If the source uses the registered exact `numpy.add(array, 1)` form, preserve the same claim split
@@ -74,7 +76,7 @@ Select one entry/model source before reading any configuration:
   the exact agent/provider/model/response and source/artifact hashes, the result remains a draft and
   cannot carry configured-model, strict-NPU, or performance claims. The agent model's provenance is
   a separate `codearts_agent_receipt`, not a configured-model receipt; if no ordinary-report adapter
-  is available, stop before `verify-script`/`benchmark-script`.
+  is available, stop before `verify`/`benchmark-script`.
 * **Hybrid:** CodeArts plans/reviews or authors the draft, while a terminal invokes deterministic
   `analyze`/hash/verify/benchmark commands. Keep CodeArts task/event evidence and candidate labels
   separate. A configured-model sub-run is permitted only after an explicit switch, authorization, and

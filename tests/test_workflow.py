@@ -576,3 +576,64 @@ def test_workflow_does_not_read_receipt_symlink_outside_output(tmp_path, monkeyp
     assert "leaked-secret" not in report_text
     assert "should-not-appear" not in report_text
     assert result["receipts"]["analysis"] is None
+
+
+def _write_replay_fixture(root: Path) -> Path:
+    root.mkdir(mode=0o700)
+    analysis = root / "qualified-analysis.json"
+    analysis.write_text(
+        json.dumps({"schema_version": 1, "status": "DIRECT"}) + "\n",
+        encoding="utf-8",
+    )
+    report = {
+        "schema_version": workflow.WORKFLOW_SCHEMA_VERSION,
+        "record_type": "numpilot_ordinary_workflow",
+        "status": "passed",
+        "source_path": str(root / "source.py"),
+        "source_sha256": "a" * 64,
+        "stages": [{"name": "01-analyze", "status": "passed"}],
+        "receipts": {"analysis": str(analysis), "migration": None, "verification": None, "benchmark": None},
+        "claims": {"numerically_verified": False},
+    }
+    (root / "workflow-report.json").write_text(
+        json.dumps(report) + "\n", encoding="utf-8"
+    )
+    return root
+
+
+def test_replay_workflow_is_read_only_and_validates_receipts(tmp_path):
+    run = _write_replay_fixture(tmp_path / "run")
+    before = (run / "workflow-report.json").read_bytes()
+
+    result = workflow.replay_workflow(run)
+
+    assert result["record_type"] == "numpilot_workflow_replay"
+    assert result["receipt_integrity"]["status"] == "passed"
+    assert result["replay_mode"] == "read_only"
+    assert result["execution_performed"] is False
+    assert result["actual_remote_call"] is False
+    assert (run / "workflow-report.json").read_bytes() == before
+    assert not (run / "replay.json").exists()
+
+
+def test_replay_cli_emits_machine_readable_summary(tmp_path, capsys):
+    run = _write_replay_fixture(tmp_path / "run")
+
+    assert cli.main(["replay", str(run), "--json"]) == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["receipt_integrity"]["status"] == "passed"
+    assert payload["execution_performed"] is False
+
+
+def test_replay_workflow_fails_closed_when_receipt_escapes_run(tmp_path):
+    run = _write_replay_fixture(tmp_path / "run")
+    report_path = run / "workflow-report.json"
+    payload = json.loads(report_path.read_text(encoding="utf-8"))
+    payload["receipts"]["analysis"] = str(tmp_path / "outside.json")
+    report_path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+
+    result = workflow.replay_workflow(run)
+
+    assert result["receipt_integrity"]["status"] == "failed"
+    assert "escapes the run directory" in result["receipt_integrity"]["errors"][0]

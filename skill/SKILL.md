@@ -7,6 +7,8 @@ description: Migrate ordinary NumPy programs to AsNumpy/NPU with NumPilot's inte
 
 ## Purpose and two primary entrypoints
 
+The CLI is the only canonical execution contract. The Skill is a thin IDE/CodeArts adapter: it selects a lane, collects approvals, invokes the CLI, and presents the same run directory and JSON receipts. It must not implement a second migration, verification, capability, or performance engine.
+
 This is NumPilot's repository-owned, open-source operating contract. It tells an interactive AI how
 to use the framework; it is not a model or proof that a CodeArts account loaded it. Select one model
 source before inspecting any model configuration:
@@ -109,6 +111,10 @@ the selected model can return a usable response; it must never hard-code or infe
 credential, or private endpoint.
 
 ## CodeArts interaction contract
+
+### Thin-adapter boundary
+
+The sidebar chooses the model lane and approval points, then calls the canonical CLI stages analyze, migrate, verify, and replay. It shares one run directory, manifest, and receipt schema with the terminal lane. Sidebar messages and model drafts are provenance inputs; they are never substitutes for CLI gate receipts.
 
 When this skill is invoked in a sidebar, start with a short plan and a read-only analysis. Keep
 these boundaries visible to the user:
@@ -223,7 +229,7 @@ after reading the repository and Skill; in a hybrid run, either of those drafts 
 terminal. Mark non-configured candidates `agent_authored_draft` or `user_authored_draft` and retain
 their source/artifact hashes. Do not create a configured-model receipt for them. There is currently no
 generic adapter that turns an arbitrary hand-authored ordinary file into the schema-2
-`script-migration-report.json` consumed by `verify-script`; absent a registered adapter, record the
+`script-migration-report.json` consumed by `verify`; absent a registered adapter, record the
 candidate hash and stop rather than pretending that deterministic verification can run.
 
 For the optional configured-model terminal sub-run, first check local configuration. In a source
@@ -258,7 +264,7 @@ hash-bound ordinary migration report. If it cannot, record `migrate=draft/stoppe
 configured-model report to disguise its origin. Only an adapter-accepted report may use:
 
 ```bash
-python -m numpilot verify-script SOURCE \
+python -m numpilot verify SOURCE \
   --migration-report RUN_DIR/script-migration-report.json \
   --output RESULT_NAME \
   --out RUN_DIR/script-verification-report.json

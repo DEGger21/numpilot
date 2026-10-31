@@ -1,5 +1,7 @@
 # NumPilot Skill
 
+CLI 是 NumPilot 唯一的正式执行契约；本 Skill 是可选的 IDE/CodeArts 薄适配器。它只负责选择入口 lane、收集审批、调用 analyze/migrate/verify/replay 并展示同一套 JSON 回执，不实现第二套迁移或验证逻辑。
+
 这是仓库根目录下的人类可见 Skill 入口。核心说明在 [`SKILL.md`](SKILL.md)，侧边栏界面
 元数据在 [`agents/openai.yaml`](agents/openai.yaml)，按需读取的终端与 CodeArts 参考在
 [`references/`](references/)。
@@ -19,7 +21,7 @@ numpilot
 # AI/CodeArts lane：把下面一句发给交互模型
 # “阅读这个 Skill，使用 agent 模式，不用 llm.json 里的内置模型进行迁移。”
 
-# 自动化入口仍使用同一框架流程，但必须显式授权
+# 自动化适配器仍调用同一 CLI 流程，但必须显式授权
 python -m numpilot --llm-config /absolute/private/llm.json \
   interactive-migrate --source /absolute/path/to/source.py --yes --execute-source
 ```
