@@ -514,6 +514,17 @@ class _OpVisitor(ast.NodeVisitor):
             self._unsupported_python_operator(node, type(node.op).__name__)
         self.generic_visit(node)
 
+    def visit_AugAssign(self, node):
+        # ``x += y`` needs device write-back and aliasing semantics that the
+        # strict forward surface does not model; report it explicitly instead
+        # of leaving migratable=False without a reason.
+        self._unsupported_python_structure(
+            node,
+            "AugAssign",
+            reason="原地运算需要 NPU 写回与别名语义，当前不在 strict 执行表面内",
+        )
+        self.generic_visit(node)
+
     def _unsupported_python_operator(self, node, operator):
         self.op_uses.append(OpUse(
             name="python_operator." + operator,
@@ -522,12 +533,12 @@ class _OpVisitor(ast.NodeVisitor):
             reason="当前 NPUArray 未验证对应 Python dunder，需显式 np.* 调用",
         ))
 
-    def _unsupported_python_structure(self, node, structure):
+    def _unsupported_python_structure(self, node, structure, reason=None):
         self.op_uses.append(OpUse(
             name="python_structure." + structure,
             lineno=getattr(node, "lineno", 0),
             supported=False,
-            reason="forward 内部 import 不在 strict NPU 可信执行表面",
+            reason=reason or "forward 内部 import 不在 strict NPU 可信执行表面",
         ))
 
     def _call_supported(self, name, qualified_name, node):

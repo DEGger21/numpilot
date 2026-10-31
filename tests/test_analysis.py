@@ -211,6 +211,22 @@ def test_rejects_unrewritten_python_array_operators():
     assert "python_operator.Add" in result.unsupported
 
 
+def test_inplace_augassign_is_reported_with_a_reason():
+    result = AnalysisAgent().analyze(
+        "import numpy as np\n"
+        "def forward(x, y):\n"
+        "    x += y\n"
+        "    return np.sqrt(x)\n"
+    )
+    assert not result.migratable
+    assert "python_structure.AugAssign" in result.unsupported
+    reason = [
+        use.reason for use in result.op_uses
+        if use.name == "python_structure.AugAssign"
+    ][0]
+    assert "原地" in reason
+
+
 def test_requires_a_real_numpy_import_and_respects_shadowing():
     no_import = AnalysisAgent().analyze(
         "def forward(x): return np.square(x)\n"

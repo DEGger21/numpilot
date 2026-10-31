@@ -75,8 +75,6 @@ FORBIDDEN_PATH_PARTS = {
 }
 FORBIDDEN_SUFFIXES = {".db", ".log", ".npy", ".npz", ".orig", ".pyc", ".pyo", ".tmp"}
 REVIEWED_ASSETS = (
-    "docs/numpilot-en-v6.svg",
-    "docs/numpilot-zh-v6.svg",
     "docs/assets/architecture/numpilot-architecture-en.svg",
     "docs/assets/architecture/numpilot-architecture-zh.svg",
     "docs/assets/architecture/numpilot-two-routes.zh-CN.png",
@@ -470,8 +468,6 @@ def _check_required_members(
             "run_demo.sh",
             "docs/installation.md",
             "docs/installation.zh-CN.md",
-            "docs/numpilot-en-v6.svg",
-            "docs/numpilot-zh-v6.svg",
             "docs/assets/architecture/numpilot-architecture-en.svg",
             "docs/assets/architecture/numpilot-architecture-zh.svg",
             "docs/assets/brand/asnumpy-mark.png",

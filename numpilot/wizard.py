@@ -16,20 +16,18 @@ from rich.prompt import Confirm, Prompt
 from rich.table import Table
 from rich import box
 
-from numpilot.agents.analysis import AnalysisAgent
-from numpilot.agents.decision import DecisionAgent
-from numpilot.agents.migration import MigrationAgent
-from numpilot.agents.verification import VerificationAgent
 from numpilot.backends.base import select_backend
 from numpilot.cli_ui import compact_diagnostic
+from numpilot.contracts import MigrationResult
 from numpilot.coverage import is_custom
 from numpilot.engines.llm import LlmError
 from numpilot.env_check import Env
 from numpilot.llm_config import (LlmConfigError, configure_llm_interactive,
                                  load_llm_config)
-from numpilot.orchestrator import _make_engine
+from numpilot.orchestrator import Orchestrator, _make_engine
 from numpilot.paths import default_benchmark_dir, default_wizard_dir
 from numpilot.report import agent_roster, save_migration_report
+from numpilot.roles import role_definition
 
 console = Console()
 
@@ -150,105 +148,67 @@ def _startup_check(backend, interactive):
 
 
 def _run_pipeline(source, path, engine_name, backend_name, out_dir):
-    """跑分析→整段决策→迁移→产物校验→证据门禁。"""
+    """跑六角色主链:Analyzer → Planner → [Gap Filler] → Code Migrator →
+    全程序验证 → Diagnostics → Reporter。"""
     data = {"path": path, "engine": engine_name, "backend": backend_name}
-    mig_tag = os.getenv("NUMPILOT_LLM_MODEL", "LLM") if engine_name == "llm" else "AST"
-    # 每步归属的智能体(名称, 该步用的模型/引擎), 让用户看清是谁在动作
-    steps = [
-        ("分析智能体", "分析算子", "规则AST"),
-        ("决策智能体", "划分 NPU 岛", "整段 forward"),
-        ("迁移智能体", "迁移改写", mig_tag),
-        ("验证智能体", "产物级语义校验", "严格比较"),
-        ("验证智能体", "capability 证据门禁", "provenance"),
-    ]
-    def sdesc(i, extra=""):
-        a, act, m = steps[i]
-        return f"[{i+1}/5] {a} · {act}({m}){extra}"
-
+    orchestrator = Orchestrator(
+        backend=select_backend(backend_name),
+        engine=_make_engine(engine_name),
+    )
     with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
                   BarColumn(bar_width=24), TextColumn("{task.completed}/{task.total}"),
                   TimeElapsedColumn(), console=console) as prog:
-        t = prog.add_task("准备中", total=len(steps))
+        t = prog.add_task("准备中", total=6)
 
-        # [1] 分析智能体
-        prog.update(t, description=sdesc(0))
-        analysis = AnalysisAgent().analyze(source, path)
-        data["analysis"] = analysis
-        distinct = sorted({o.name for o in analysis.op_uses})
-        if not analysis.migratable:
-            prog.console.print(f"   ↳ [red]发现 {len(analysis.unsupported)} 个覆盖集缺口:"
-                               f"{', '.join(analysis.unsupported)} —— 无法迁移[/]")
+        def on_record(record):
+            name = role_definition(record.role).display_name
+            prog.update(t, description=f"[{record.status}] {name}")
+            prog.console.print(f"   ↳ [cyan]{name}[/] {record.summary}")
             prog.advance(t)
-            data["stopped"] = "unsupported"
-            return data
-        prog.console.print(f"   ↳ [cyan]分析智能体[/] {len(analysis.op_uses)} 处 numpy 调用 · {len(distinct)} 个算子 · 全部在覆盖集 ✓")
-        prog.advance(t)
 
-        # [2] 决策智能体
-        prog.update(t, description=sdesc(1))
-        plan = DecisionAgent().plan(analysis)
-        data["plan"] = plan
-        npu_ops = sorted(o for o, p in plan.placement.items() if p == "NPU")
-        prog.console.print(
-            f"   ↳ [cyan]决策智能体[/] 策略={plan.strategy}:"
-            f"forward 内 {len(npu_ops)} 个算子统一进入 NPU 岛"
+        result = orchestrator.run_source(
+            source, path, out_dir, on_record=on_record
         )
-        prog.advance(t)
-
-        # [3] 迁移智能体(LLM 时较慢)
-        prog.update(t, description=sdesc(2, " · 请求中…" if engine_name == "llm" else ""))
-        migration = MigrationAgent(_make_engine(engine_name)).migrate(source, plan)
-        data["migration"] = migration
-        os.makedirs(out_dir, exist_ok=True)
-        mig_path = os.path.join(out_dir, "migrated.py")
-        with open(mig_path, "w", encoding="utf-8") as f:
-            f.write(migration.migrated_source)
-        data["migrated_path"] = mig_path
-        model_tag = ((os.getenv("NUMPILOT_LLM_MODEL", "LLM") + " 大模型")
-                     if migration.engine == "llm" else "AST 规则改写")
-        prog.console.print(f"   ↳ [magenta]迁移智能体·{model_tag}[/] 替换 {migration.total_rewrites} 处 np.* → ap.*")
-        prog.advance(t)
-
-        # [4] 验证智能体：运行迁移产物自己的 build_inputs + forward。
-        prog.update(t, description=sdesc(3))
-        report = VerificationAgent(select_backend(backend_name)).verify(
-            source,
-            migration.migrated_source,
-            measure=False,
-            required_ops=migration.expected_rewrites,
+        prog.update(
+            t, total=len(result["roles"]), completed=len(result["roles"])
         )
-        data["report"] = report
-        mark = "✓" if report.numerically_consistent else "✗"
-        detail = (
-            f"异常 {report.exception_phase}/{report.exception_type}: {report.exception_message}"
-            if report.exception_type
-            else f"max_abs={report.max_abs_diff:.2e}, max_rel={report.max_rel_diff:.2e}"
+
+    data["analysis"] = result["analysis"]
+    data["plan"] = result.get("plan")
+    data["route"] = result.get("route")
+    data["roles"] = result.get("roles", [])
+    if result["status"] == "unsupported":
+        data["stopped"] = "unsupported"
+        return data
+    data["migration"] = MigrationResult(
+        engine=result["engine"],
+        migrated_source=result["migrated_source"],
+        rewrites=result["rewrites"],
+        expected_rewrites=result["expected_rewrites"],
+        model_receipt=result["model_receipt"],
+        model_identity=result["model_identity"],
+    )
+    data["report"] = result["report"]
+    data["migrated_path"] = result["migrated_path"]
+    data["validation_evidence"] = result.get("validation_evidence")
+
+    # capability/provenance 只判资格，不在向导中顺手发布性能。
+    provenance = result["report"].backend_provenance or {}
+    data["performance_valid"] = False
+    if provenance:
+        ok = provenance.get("ok")
+        audit_id = provenance.get("audit_id", "?")
+        gate = (
+            ("通过" if ok else "未通过")
+            if provenance.get("strict_npu")
+            else "未执行(shim/非 strict)"
         )
         prog.console.print(
-            f"   ↳ [cyan]验证智能体[/] 产物级数值一致 {mark} · {detail} · "
-            f"自身 build_inputs={'是' if report.artifact_inputs_executed else '否'}"
+            f"   ↳ [cyan]验证智能体[/] capability audit={audit_id} · "
+            f"strict-NPU 门禁={gate}"
         )
-        prog.advance(t)
-
-        # [5] capability/provenance 只判资格，不在向导中顺手发布性能。
-        prog.update(t, description=sdesc(4))
-        provenance = report.backend_provenance or {}
-        data["performance_valid"] = False
-        if provenance:
-            ok = provenance.get("ok")
-            audit_id = provenance.get("audit_id", "?")
-            gate = (
-                ("通过" if ok else "未通过")
-                if provenance.get("strict_npu")
-                else "未执行(shim/非 strict)"
-            )
-            prog.console.print(
-                f"   ↳ [cyan]验证智能体[/] capability audit={audit_id} · "
-                f"strict-NPU 门禁={gate}"
-            )
-        else:
-            prog.console.print("   ↳ [yellow]无 capability provenance，不具备性能发布资格[/]")
-        prog.advance(t)
+    else:
+        console.print("   ↳ [yellow]无 capability provenance，不具备性能发布资格[/]")
     return data
 
 

@@ -76,9 +76,6 @@ REQUIRED_FILES = {
     "docs/assets/brand/README.md",
     "docs/installation.md",
     "docs/installation.zh-CN.md",
-    "docs/numpilot-en-v6.svg",
-    "docs/numpilot-zh-v6.svg",
-    "docs/numpilot-architecture.drawio",
     ".codeartsdoer/skills/numpilot-migration-gate/SKILL.md",
     ".codeartsdoer/skills/numpilot-migration-gate/agents/openai.yaml",
     ".codeartsdoer/skills/numpilot-migration-gate/references/codearts-sidebar.md",
@@ -978,8 +975,6 @@ def _validate_architecture_svg(root: Path, errors: list[str]) -> None:
     for relative in (
         "docs/assets/architecture/numpilot-architecture-en.svg",
         "docs/assets/architecture/numpilot-architecture-zh.svg",
-        "docs/numpilot-en-v6.svg",
-        "docs/numpilot-zh-v6.svg",
     ):
         path = root / relative
         if not path.is_file():

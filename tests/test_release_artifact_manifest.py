@@ -59,8 +59,6 @@ VALID_SVG = (
 
 
 REVIEWED_PAYLOADS = {
-    "docs/numpilot-en-v6.svg": VALID_SVG,
-    "docs/numpilot-zh-v6.svg": VALID_SVG,
     "docs/assets/architecture/numpilot-architecture-en.svg": VALID_SVG,
     "docs/assets/architecture/numpilot-architecture-zh.svg": VALID_SVG,
     "docs/assets/architecture/numpilot-two-routes.zh-CN.png": VALID_PNG,

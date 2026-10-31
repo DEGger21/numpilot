@@ -1,9 +1,9 @@
 # examples/mlp_forward.py
 """待迁移示例:小型 MLP 前向推理。仅使用 AsNumpy 覆盖集算子。
 
-计算主体 forward() 全程使用 np.<op>(覆盖集算子), 便于 NumPilot 的分析智能体
-识别、决策智能体估规模、AST 引擎把 np.<op> 改写为 ap.<op>。验证阶段分别执行
-原始(np)与迁移后(ap, 由后端提供 asnumpy 模块)源码并比对数值一致性。
+计算主体 forward() 全程使用 np.<op>(覆盖集算子), 便于 NumPilot 的 Analyzer
+提取调用契约、Planner 选择直迁路线、Code Migrator 把 np.<op> 改写为 ap.<op>。
+验证阶段分别执行原始(np)与迁移后(ap, 由后端提供 asnumpy 模块)源码并比对数值一致性。
 """
 import numpy as np
 

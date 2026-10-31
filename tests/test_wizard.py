@@ -33,12 +33,12 @@ def test_agent_roster_migration_model_follows_engine(monkeypatch):
     monkeypatch.setenv("NUMPILOT_LLM_MODEL", "glm-5.1")
     ast_roster = agent_roster("ast")
     llm_roster = agent_roster("llm")
-    assert len(ast_roster) == 5
-    # 迁移智能体是唯一(可选)用大模型的;其余无模型
-    ast_mig = [m for n, r, m in ast_roster if "Migration" in n][0]
-    llm_mig = [m for n, r, m in llm_roster if "Migration" in n][0]
+    assert len(ast_roster) == 6
+    # 六角色主链：只有 Code Migrator 可能用大模型，其余五个角色无模型
+    ast_mig = [m for n, r, m in ast_roster if "Code Migrator" in n][0]
+    llm_mig = [m for n, r, m in llm_roster if "Code Migrator" in n][0]
     assert "无模型" in ast_mig and "glm-5.1" in llm_mig
-    assert all("无模型" in m for n, r, m in ast_roster if "Migration" not in n)
+    assert all("无模型" in m for n, r, m in ast_roster if "Code Migrator" not in n)
 
 
 def test_ast_engine_never_reads_llm_config(monkeypatch):

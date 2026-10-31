@@ -1,15 +1,39 @@
-"""编排智能体:统筹分析→决策→迁移→验证, 汇总迁移报告。"""
+"""编排智能体:按六角色主链统筹 Understand → Migrate → Validate。
+
+Flow (matches ``docs/assets/architecture/numpilot-architecture-en.png``):
+
+1. **Understanding** — the Analyzer parses the AST and writes a Program IR/DAG
+   plus a capability verdict; the Planner turns that into a Migration Plan and
+   answers "Direct Migration, or Fill API Gaps?".
+2. **Migration** — on the gap route the API Gap Filler inventories and routes
+   every unique gap; it stops fail-closed when an artifact would be required.
+   On the direct route the Code Migrator rewrites the program.  Failures after
+   full integration come back to the Code Migrator through a bounded repair
+   loop (at most :data:`MAX_REPAIR_ITERATIONS` attempts).
+3. **Validation** — the deterministic verifier is the backbone, not a role.
+   The Diagnostics Agent locates a failure and names the role that must act;
+   the Migration Reporter collects the evidence, artifacts and output program.
+
+The orchestrator is the coordinator, not one of the six roles.
+"""
+import hashlib
 import json
 import os
 
 from numpilot.agents.analysis import AnalysisAgent
-from numpilot.agents.decision import DecisionAgent
+from numpilot.agents.diagnostics import DiagnosticsAgent
+from numpilot.agents.gap_filler import GapFillerAgent
 from numpilot.agents.migration import MigrationAgent
+from numpilot.agents.planner import ROUTE_FILL_GAPS, PlannerAgent
 from numpilot.agents.verification import VerificationAgent
 from numpilot.backends.base import select_backend
 from numpilot.engines.ast_rewrite import AstRewriteEngine
 from numpilot.engines.llm import LlmEngine
 from numpilot.paths import default_benchmark_dir
+from numpilot.program_ir import build_program_ir
+from numpilot.roles import Role, RoleRecord, RoleStage, records_to_dicts
+
+MAX_REPAIR_ITERATIONS = 3
 
 
 def _make_engine(name):
@@ -19,6 +43,98 @@ def _make_engine(name):
         # CLI 显式选 llm → strict:失败直接终止, 不回退 AST(用智能体迁移, 失败即暴露)
         return LlmEngine(strict=True)
     raise ValueError(f"未知引擎: {name!r}(可选 ast | llm)")
+
+
+def _sha256(text):
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _analyzer_record(analysis, program_ir):
+    return RoleRecord(
+        Role.ANALYZER,
+        RoleStage.UNDERSTAND,
+        "ok" if analysis.migratable else "blocked",
+        (
+            f"IR {program_ir.n_nodes} 节点/{program_ir.n_edges} 边；"
+            f"{len(analysis.op_uses)} 个调用点，缺口 {len(analysis.unsupported)} 个"
+        ),
+        {
+            "n_calls": len(analysis.op_uses),
+            "unsupported": list(analysis.unsupported),
+            "program_ir": program_ir.to_dict(),
+        },
+    )
+
+
+def _planner_record(plan):
+    return RoleRecord(
+        Role.PLANNER,
+        RoleStage.UNDERSTAND,
+        "ok" if plan.direct else "blocked",
+        (
+            "直迁（Direct Migration）"
+            if plan.direct
+            else f"需要补缺口（Fill API Gaps）：{len(plan.gap_tasks)} 个任务"
+        ),
+        plan.to_dict(),
+    )
+
+
+def _gap_record(gap_plan):
+    blocking = gap_plan.blocking
+    review = [task for task in gap_plan.tasks if task.status == "review_required"]
+    if blocking:
+        summary = f"{len(gap_plan.tasks)} 个任务，其中 {len(blocking)} 个阻断"
+    elif review:
+        summary = f"{len(gap_plan.tasks)} 个任务全部可路由；{len(review)} 个契约偏差需门禁复核"
+    else:
+        summary = f"{len(gap_plan.tasks)} 个任务，无阻断"
+    return RoleRecord(
+        Role.GAP_FILLER,
+        RoleStage.MIGRATE,
+        "blocked" if blocking else "ok",
+        summary,
+        gap_plan.to_dict(),
+    )
+
+
+def _migrator_record(migration, repair_attempts):
+    evidence = {
+        "engine": migration.engine,
+        "rewrites": dict(migration.rewrites),
+        "expected_rewrites": dict(migration.expected_rewrites),
+        "rewrite_integrity": migration.rewrite_integrity,
+        "model_identity": migration.model_identity or {},
+        "repair_attempts": repair_attempts,
+    }
+    return RoleRecord(
+        Role.CODE_MIGRATOR,
+        RoleStage.MIGRATE,
+        "ok" if migration.rewrite_integrity else "failed",
+        (
+            f"{sum(migration.rewrites.values())} 处改写，"
+            f"完整性={'通过' if migration.rewrite_integrity else '失败'}"
+            + (f"，有界修复 {repair_attempts} 次" if repair_attempts else "")
+        ),
+        evidence,
+    )
+
+
+def _validation_evidence(report, source, migration):
+    return {
+        "status": report.status,
+        "numerically_consistent": report.numerically_consistent,
+        "input_consistent": report.input_consistent,
+        "kernel_consistent": report.kernel_consistent,
+        "artifact_consistent": report.artifact_consistent,
+        "artifact_inputs_executed": report.artifact_inputs_executed,
+        "backend": report.backend,
+        "backend_version": report.backend_version,
+        "backend_provenance": report.backend_provenance or {},
+        "comparisons": report.comparisons or {},
+        "source_sha256": _sha256(source),
+        "migrated_sha256": _sha256(migration.migrated_source),
+    }
 
 
 class Orchestrator:
@@ -37,12 +153,26 @@ class Orchestrator:
     def run(self, source_path: str, out_dir=None) -> dict:
         with open(source_path, encoding="utf-8") as f:
             source = f.read()
+        return self.run_source(source, source_path, out_dir)
 
+    def run_source(self, source, source_path, out_dir=None, on_record=None) -> dict:
+        """Run the six-role mainline on in-memory source.
+
+        ``on_record`` is an optional observer called with each
+        :class:`~numpilot.roles.RoleRecord` as soon as it is produced; the
+        wizard uses it for progress, the CLI ignores it.
+        """
+        records = []
+
+        def emit(record):
+            records.append(record)
+            if on_record is not None:
+                on_record(record)
+
+        # ---------------------------------------------------------- Understand
         profile_resolver = (
             self.backend
-            if callable(
-                getattr(self.backend, "resolve_profile_capability", None)
-            )
+            if callable(getattr(self.backend, "resolve_profile_capability", None))
             else None
         )
         analysis = AnalysisAgent(profile_resolver).analyze(
@@ -50,18 +180,95 @@ class Orchestrator:
             source_path,
             profiles=self.analysis_profiles,
         )
-        if not analysis.migratable:
+        program_ir = build_program_ir(source, source_path)
+        gap_plan = GapFillerAgent().plan(analysis)
+        plan = PlannerAgent(self.threshold).plan(analysis, gap_plan)
+        emit(_analyzer_record(analysis, program_ir))
+        emit(_planner_record(plan))
+
+        # ------------------------------------------------------------ Migrate
+        if plan.route == ROUTE_FILL_GAPS:
+            # The Gap Filler owns these tasks.  No accepted artifact exists
+            # yet, so the mainline stops here instead of rewriting around a
+            # gap; a silent substitute would be exactly what the project bans.
+            emit(_gap_record(gap_plan))
+            reporter = RoleRecord(
+                Role.REPORTER,
+                RoleStage.VALIDATE,
+                "ok",
+                "已写出缺口报告" if out_dir else "未落盘（无 out_dir）",
+                {"unsupported": list(analysis.unsupported)},
+            )
+            emit(reporter)
             result = {
                 "status": "unsupported",
+                "route": plan.route,
                 "unsupported": analysis.unsupported,
                 "analysis": analysis,
+                "plan": plan,
+                "program_ir": program_ir.to_dict(),
+                "gap_plan": gap_plan.to_dict(),
                 "source_path": source_path,
+                "roles": records_to_dicts(records),
+                "diagnosis": None,
             }
             self._maybe_write(out_dir, result)
             return result
 
-        plan = DecisionAgent(self.threshold).plan(analysis)
-        migration = MigrationAgent(self.engine).migrate(source, plan)
+        emit(_gap_record(gap_plan))
+        migrator = MigrationAgent(self.engine)
+        verifier = VerificationAgent(self.backend)
+        migration = migrator.migrate(source, plan)
+        report = verifier.verify(
+            source,
+            migration.migrated_source,
+            measure=False,
+            required_ops=migration.expected_rewrites,
+        )
+        diagnostics = DiagnosticsAgent()
+        diagnosis = diagnostics.diagnose(report)
+
+        # Bounded repair: only engines that implement ``repair`` can consume a
+        # diagnosis; the deterministic AST engine has exactly one attempt.
+        repair_attempts = 0
+        while (
+            report.status != "pass"
+            and diagnosis is not None
+            and diagnosis.suggested_role == "code_migrator"
+            and migrator.supports_repair
+            and repair_attempts < MAX_REPAIR_ITERATIONS
+        ):
+            repair_attempts += 1
+            migration = migrator.repair(
+                source, plan, migration.migrated_source, diagnosis
+            )
+            report = verifier.verify(
+                source,
+                migration.migrated_source,
+                measure=False,
+                required_ops=migration.expected_rewrites,
+            )
+            diagnosis = diagnostics.diagnose(report)
+
+        emit(_migrator_record(migration, repair_attempts))
+
+        # ----------------------------------------------------------- Validate
+        if diagnosis is None:
+            emit(RoleRecord(
+                Role.DIAGNOSTICS,
+                RoleStage.VALIDATE,
+                "skipped",
+                "验证通过，无需诊断",
+                {"repair_attempts": repair_attempts},
+            ))
+        else:
+            emit(RoleRecord(
+                Role.DIAGNOSTICS,
+                RoleStage.VALIDATE,
+                "ok",
+                diagnosis.summary,
+                diagnosis.to_dict(),
+            ))
 
         migrated_path = None
         if out_dir:
@@ -69,18 +276,23 @@ class Orchestrator:
             migrated_path = os.path.join(out_dir, "migrated.py")
             with open(migrated_path, "w", encoding="utf-8") as f:
                 f.write(migration.migrated_source)
+        evidence = _validation_evidence(report, source, migration)
+        emit(RoleRecord(
+            Role.REPORTER,
+            RoleStage.VALIDATE,
+            "ok",
+            "已写出报告、验证证据与迁移产物" if out_dir else "未落盘（无 out_dir）",
+            {"status": report.status},
+        ))
 
-        report = VerificationAgent(self.backend).verify(
-            source,
-            migration.migrated_source,
-            measure=False,
-            required_ops=migration.expected_rewrites,
-        )
         result = {
             "status": report.status,
+            "route": plan.route,
             "report": report,
             "analysis": analysis,
             "plan": plan,
+            "program_ir": program_ir.to_dict(),
+            "gap_plan": gap_plan.to_dict(),
             "engine": migration.engine,
             "rewrites": migration.rewrites,
             "expected_rewrites": migration.expected_rewrites,
@@ -90,6 +302,10 @@ class Orchestrator:
             "migrated_source": migration.migrated_source,
             "migrated_path": migrated_path,
             "source_path": source_path,
+            "repair_attempts": repair_attempts,
+            "validation_evidence": evidence,
+            "roles": records_to_dicts(records, migration.engine),
+            "diagnosis": diagnosis.to_dict() if diagnosis is not None else None,
         }
         self._maybe_write(out_dir, result)
         return result
@@ -104,6 +320,7 @@ class Orchestrator:
         expected_rewrites = result.get("expected_rewrites", {}) or {}
         summary = {
             "status": result["status"],
+            "route": result.get("route"),
             "source_path": result["source_path"],
             "unsupported": result.get("unsupported", []),
             "engine": result.get("engine"),
@@ -140,6 +357,12 @@ class Orchestrator:
             "t_mig_ms": getattr(rep, "t_mig_ms", None),
             "n_elements": getattr(rep, "n_elements", None),
             "strategy": getattr(result.get("plan"), "strategy", None),
+            "program_ir": result.get("program_ir"),
+            "gap_plan": result.get("gap_plan"),
+            "diagnosis": result.get("diagnosis"),
+            "repair_attempts": result.get("repair_attempts", 0),
+            "validation_evidence": result.get("validation_evidence"),
+            "roles": result.get("roles", []),
         }
         with open(os.path.join(out_dir, "report.json"), "w", encoding="utf-8") as f:
             json.dump(summary, f, ensure_ascii=False, indent=2)
@@ -147,12 +370,39 @@ class Orchestrator:
             f.write(_render_md(summary, result))
 
 
+def _render_roles(lines, roles):
+    if not roles:
+        return
+    lines.append("")
+    lines.append("## 六角色执行记录")
+    for record in roles:
+        lines.append(
+            f"- {record['name']}（{record['stage']}，{record['status']}）："
+            f"{record['summary']} · 模型={record['model']}"
+        )
+
+
 def _render_md(summary, result) -> str:
     lines = ["# NumPilot 迁移报告", ""]
     lines.append(f"- 源文件:`{summary['source_path']}`")
     lines.append(f"- 状态:**{summary['status']}**")
+    lines.append(f"- 路线:`{summary.get('route') or '?'}`")
+    roles = summary.get("roles") or []
     if summary["status"] == "unsupported":
         lines.append(f"- 缺口算子(未迁移):{', '.join(summary['unsupported'])}")
+        _render_roles(lines, roles)
+        gap_plan = summary.get("gap_plan") or {}
+        tasks = gap_plan.get("tasks") or []
+        if tasks:
+            lines.append("")
+            lines.append("## 缺口任务")
+            for task in tasks:
+                lines.append(
+                    f"- `{task['name']}`（{task['category']} → {task['route']}，"
+                    f"{task['status']}）@L{', '.join(str(n) for n in task['call_sites'])}"
+                )
+                if task.get("reason"):
+                    lines.append(f"  - {task['reason']}")
         return "\n".join(lines) + "\n"
     lines.append(f"- 数值一致:{summary['numerically_consistent']}")
     if summary.get("exception_type"):
@@ -186,6 +436,17 @@ def _render_md(summary, result) -> str:
         ):
             if key in comparisons:
                 lines.append(f"  - {label}:{comparisons[key].get('consistent')}")
+
+    _render_roles(lines, roles)
+    diagnosis = summary.get("diagnosis") or {}
+    if diagnosis:
+        lines.append("")
+        lines.append("## 诊断")
+        lines.append(
+            f"- 分类:`{diagnosis.get('category')}` · 回退角色:"
+            f"`{diagnosis.get('suggested_role')}`"
+        )
+        lines.append(f"- 结论:{diagnosis.get('summary')}")
 
     # 替换算子清单(迁移后真实调用的 ap.* 算子)
     rewrites = summary.get("rewrites") or {}

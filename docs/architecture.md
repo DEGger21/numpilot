@@ -4,8 +4,8 @@ NumPilot 将可静态分析的普通 NumPy 单文件迁移为 AsNumpy 候选，�
 哈希、数值验证和可选性能门决定候选能否进入后续阶段。模型或交互式 AI 负责提出候选，
 确定性检查负责准入；任何证据缺失、身份漂移或语义不明都会失败关闭。
 
-完整架构图：[中文 SVG](numpilot-zh-v6.svg) · [English SVG](numpilot-en-v6.svg) ·
-[可编辑 Draw.io 源文件](numpilot-architecture.drawio)。
+完整架构图：[中文 SVG](assets/architecture/numpilot-architecture-zh.svg) ·
+[English SVG](assets/architecture/numpilot-architecture-en.svg)。
 
 ## 1. 支持范围
 
@@ -38,7 +38,31 @@ Configured model 会收到完整输入源码，并可能产生费用。缺口生
 函数、选定的 CANNBot Skill 内容以及适用的诊断；adapter 生成只发送目标所需的源码、头文件、
 overlay 和哈希清单。CANNBot 提供工作流上下文，不是代码生成模型。
 
-## 3. 普通文件迁移流程
+## 3. 六角色主链（与架构图一致）
+
+架构图把迁移分成 Understand → Migrate → Validate 三段。六个模型角色只出现在这些位置：
+编排器负责传递上下文与汇总报告，确定性验证（API 正确性、全程序验证、ValidationReceipt）
+是主干，不占角色名额。实现与图中每个框一一对应：
+
+| 阶段 | 角色 / 主干 | 输入 → 输出 | 实现 |
+|---|---|---|---|
+| Understand | ① Analyzer | 源码 → AST · Program IR/DAG · capability 判定 | `agents/analysis.py`、`program_ir.py` |
+| Understand | ② Planner | 分析结果 + 缺口清单 → Migration Plan（Direct / Fill API Gaps） | `agents/planner.py` |
+| Migrate | ③ API Gap Filler | 缺口清单 → GapTask（official alias / 确定性下降 / 需生成） | `agents/gap_filler.py` |
+| Migrate | API Correctness Check | 缺口产物 → 接受 / 拒绝 | `capabilities.py`、`gaps/qualification.py`（主干，不是角色） |
+| Migrate | ④ Code Migrator | 计划 + 源码 → 迁移后 AsNumpy 代码 | `agents/migration.py`、`engines/` |
+| Validate | 全程序验证 | 原程序 vs 迁移产物 → 三层数值比较 | `agents/verification.py`（主干，不是角色） |
+| Validate | ⑤ Diagnostics Agent | 失败报告 → 分类 + 回退角色 | `agents/diagnostics.py` |
+| Validate | ⑥ Migration Reporter | 验证证据 + 中间产物 + 输出程序 → 报告 | `report.py`、`orchestrator.py` |
+
+实现上的三条硬约束与图一致：
+
+1. Planner 在任何改写前给出路线；缺口不可路由时在 Migrate 阶段失败关闭，不绕过缺口改写。
+2. 全程序验证失败后只回退到 Diagnostics 指定的角色；`repair` 仅对声明支持修复的引擎开放，
+   最多 3 次（`MAX_REPAIR_ITERATIONS`）。
+3. Reporter 引用验证证据，不重新判定通过与否。
+
+## 4. 普通文件迁移流程
 
 ```text
 source
@@ -70,7 +94,7 @@ Configured-model 产物必须绑定 configured/requested/response model identity
 每次运行使用独立、write-once 目录。`migrated.py`、GapSpec、迁移报告、验证报告和性能报告
 不得从其他 run 拼接；每个阶段都重新检查父级产物及其 SHA-256。
 
-## 4. 验证与性能门
+## 5. 验证与性能门
 
 `verify-script` 重新绑定 source、migration report 和 migrated artifact，在两个独立解释器进程中
 执行原文件与候选，并通过有界、无 pickle 的 named-output 合同比较 numeric/bool 输出。它记录
@@ -92,7 +116,7 @@ os_sandbox=false
 详细合同见[普通文件数值验证](script-verification.md)和
 [strict-NPU resident benchmark](script-benchmark.md)。
 
-## 5. 缺口与算子边界
+## 6. 缺口与算子边界
 
 缺口处理固定为 official-first：
 
@@ -132,7 +156,7 @@ recovery run 时冻结；授权某类副作用不代表该副作用已经发生�
 [Gap 恢复状态合同](gap-recovery-state.md)和
 [自定义算子流程图](numpilot-asnumpy-custom-operator-flow.png)。
 
-## 6. 安装与组件信任
+## 7. 安装与组件信任
 
 `bootstrap` 无参数或 `--plan` 时只读。`--apply` 只接受以下一种明确来源：
 
@@ -149,7 +173,7 @@ Bootstrap receipt 绑定 source/component、wheel、Python/native 模块、解�
 安装文件和回执。组件发布合同见
 [AsNumpy 内部组件锁定](ASNUMPY-INTERNAL-COMPONENT-LOCK.zh-CN.md)。
 
-## 7. 兼容性边界
+## 8. 兼容性边界
 
 | 层级 | 支持范围 | 可以证明 |
 |---|---|---|
@@ -164,7 +188,7 @@ strict-NPU 能力范围。CANN、driver、firmware 和 OPP 均为外部依赖，
 
 安装和验收步骤见[安装指南](installation.md)。
 
-## 8. 主要组件
+## 9. 主要组件
 
 ```text
 numpilot/
@@ -176,8 +200,9 @@ numpilot/
 ├── capabilities.py              runtime-bound capability/provenance
 ├── backends/                    shim 与真实 NPU runtime adapter
 ├── gaps/                        GapSpec、官方解析、草稿、adapter、资格与状态原语
-├── contracts.py / agents/       legacy contract 通道
-└── engines/ / orchestrator.py   legacy 迁移编排
+├── roles.py / agents/           六角色主链（Analyzer → Planner → Gap Filler → Migrator → Diagnostics → Reporter）
+├── program_ir.py                Program IR / DAG
+└── engines/ / orchestrator.py   改写引擎与六角色编排（确定性验证为主干）
 ```
 
 模型身份、回执和 no-llm 规则见[模型合同](model-contract.md)；Terminal、Agent Skill 与 hybrid

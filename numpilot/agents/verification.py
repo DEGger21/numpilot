@@ -1,4 +1,5 @@
 """验证智能体：独立执行原始/迁移产物并做严格语义比较。"""
+import inspect
 import os
 import random
 import time
@@ -44,11 +45,45 @@ def _load_namespace(source: str, filename: str) -> dict:
 
 
 def _normalise_inputs(value):
+    """Accept the tuple/list contract and the benchmark's named-dict contract.
+
+    ``build_inputs()`` may return a tuple/list (legacy contract, bound
+    positionally) or a ``dict`` (benchmark contract, bound by parameter name).
+    The dict is copied so neither side can mutate the caller's object.
+    """
     if isinstance(value, tuple):
         return value
     if isinstance(value, list):
         return tuple(value)
-    raise TypeError("build_inputs() 必须返回 tuple 或 list")
+    if isinstance(value, dict):
+        if not all(isinstance(key, str) for key in value):
+            raise TypeError("build_inputs() 的 dict 键必须是字符串")
+        return dict(value)
+    raise TypeError("build_inputs() 必须返回 tuple、list 或 dict")
+
+
+def _validate_dict_inputs(forward, inputs):
+    """Fail closed when the named inputs do not bind to ``forward``."""
+    try:
+        signature = inspect.signature(forward)
+    except (TypeError, ValueError) as exc:
+        raise TypeError(
+            "forward 签名不可检查，无法按名字绑定 build_inputs() 的 dict"
+        ) from exc
+    try:
+        signature.bind(**inputs)
+    except TypeError as exc:
+        raise TypeError(
+            "build_inputs() 的 dict 键与 forward 参数不匹配: %s" % exc
+        ) from exc
+
+
+def _invoke_forward(forward, inputs):
+    """Invoke ``forward`` with either positional or named inputs."""
+    if isinstance(inputs, dict):
+        _validate_dict_inputs(forward, inputs)
+        return forward(**inputs)
+    return forward(*inputs)
 
 
 def _to_host_tree(backend, value):
@@ -129,16 +164,16 @@ def _overall_comparison(input_result, kernel_result, artifact_result):
     )
 
 
-def _time_call(fn, args, sync=None, warmup=3, iters=10):
-    """测 ``fn(*args)`` 的中位耗时；sync 用于强制异步后端完成。"""
+def _time_call(fn, inputs, sync=None, warmup=3, iters=10):
+    """测 ``fn(*inputs)`` / ``fn(**inputs)`` 的中位耗时；sync 用于强制异步后端完成。"""
     for _ in range(warmup):
-        result = fn(*args)
+        result = _invoke_forward(fn, inputs)
         if sync is not None:
             sync(result)
     samples = []
     for _ in range(iters):
         start = time.perf_counter()
-        result = fn(*args)
+        result = _invoke_forward(fn, inputs)
         if sync is not None:
             sync(result)
         samples.append(time.perf_counter() - start)
@@ -276,7 +311,9 @@ class VerificationAgent:
             original_forward_rng = (np.random.get_state(), random.getstate())
             phase = "original.forward"
             _set_rng_state(original_forward_rng)
-            out_orig = orig_ns["forward"](*_clone_tree(canonical_inputs))
+            out_orig = _invoke_forward(
+                orig_ns["forward"], _clone_tree(canonical_inputs)
+            )
             t_orig = (
                 _time_call(orig_ns["forward"], _clone_tree(canonical_inputs))
                 if measure else None
@@ -302,7 +339,8 @@ class VerificationAgent:
                 # 第一层：两侧使用同一份规范输入，只验证迁移计算主体。
                 _set_rng_state(original_forward_rng)
                 out_common = _to_host_tree(
-                    self.backend, forward(*_clone_tree(canonical_inputs))
+                    self.backend,
+                    _invoke_forward(forward, _clone_tree(canonical_inputs)),
                 )
                 kernel_comparison = compare_outputs(out_orig, out_common)
                 kernel_runtime_counts = dict(runtime_call_counts)
@@ -310,7 +348,8 @@ class VerificationAgent:
                 # 第二层：直接运行产物自己的 build_inputs + forward，验证交付完整性。
                 _set_rng_state(migrated_forward_rng)
                 out_artifact = _to_host_tree(
-                    self.backend, forward(*_clone_tree(migrated_inputs))
+                    self.backend,
+                    _invoke_forward(forward, _clone_tree(migrated_inputs)),
                 )
                 artifact_comparison = compare_outputs(out_orig, out_artifact)
                 artifact_runtime_counts = {

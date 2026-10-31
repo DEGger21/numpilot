@@ -1,4 +1,4 @@
-"""决策智能体:单设备边界 MVP,默认将完整 forward 放到 NPU。"""
+"""决策智能体:Planner 的放置子步骤,默认将完整 forward 放到 NPU。"""
 from numpilot.contracts import AnalysisResult, OffloadPlan
 
 
