@@ -190,12 +190,17 @@ def _command_env(
         "ASNUMPY_LOG_DIR": _private_environment_directory(sandbox / "asnumpy-logs"),
     }
     repository = Path(__file__).resolve().parents[1]
-    runtime_site = (
-        python.absolute().parent.parent / "lib/python3.10/site-packages"
+    runtime_root = python.absolute().parent.parent
+    runtime_sites = tuple(
+        runtime_root.glob("lib/python*/site-packages")
     )
-    if not runtime_site.is_dir():
+    runtime_site = next(
+        (candidate for candidate in runtime_sites if candidate.is_dir()),
+        None,
+    )
+    if runtime_site is None:
         raise RuntimeError(
-            f"selected Python 3.10 site-packages is missing: {runtime_site}"
+            f"selected interpreter site-packages is missing under: {runtime_root}"
         )
     support_site = repository.parent / _SUPPORT_SITE_RELATIVE_TO_WORKSPACE
     trusted_path = (python.absolute().parent, *_TRUSTED_SYSTEM_PATH)

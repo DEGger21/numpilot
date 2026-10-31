@@ -1348,6 +1348,10 @@ def load_official_resolution_report(path: str) -> OfficialOperatorResolutionRepo
         raise OfficialResolutionError(
             "resolution report is not bounded strict UTF-8 JSON"
         ) from exc
+    if not isinstance(data, Mapping):
+        raise OfficialResolutionError(
+            "resolution report is not bounded strict UTF-8 JSON"
+        )
     try:
         return OfficialOperatorResolutionReport.from_dict(data)
     except OfficialResolutionError:

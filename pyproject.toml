@@ -61,6 +61,13 @@ include = ["numpilot*"]
   "components/asnumpy/SBOM.spdx.json",
   "components/asnumpy/*.whl",
 ]
+"share/numpilot/components/cannbot-skills/39919e2c995e1cd9e193f11ac2e3fcb3cbd1d26c" = [
+  "components/cannbot-skills/39919e2c995e1cd9e193f11ac2e3fcb3cbd1d26c/manifest.json",
+  "components/cannbot-skills/39919e2c995e1cd9e193f11ac2e3fcb3cbd1d26c/bundle.json",
+]
+"share/numpilot/docs" = [
+  "docs/asnumpy-api-support.zh-CN.md",
+]
 "share/numpilot/codearts" = [
   ".codeartsdoer/skills/ProjectSkillStatus.txt",
 ]

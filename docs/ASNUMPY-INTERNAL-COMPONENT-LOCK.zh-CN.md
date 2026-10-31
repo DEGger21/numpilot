@@ -26,38 +26,38 @@ AsNumpy 是 NumPilot 的锁定运行时组件，不是可由依赖解析器自�
 
 | 字段 | 锁定值 |
 |---|---|
-| Component ID | `asnumpy-0.3.1.dev4+g1929a3ba4-cp310-cp310-linux_aarch64` |
+| Component ID | `asnumpy-0.4.1.dev12+gc9115e8ce.d20261031-cp312-cp312-linux_aarch64` |
 | 上游仓库 | `https://gitcode.com/cann/asnumpy.git` |
-| Git commit | `1929a3ba44eb532a9f544f774a249cdf1c4119be` |
-| Git tree | `bf2f353825f60bd96f910c3a90fd5b75d4c3c8d0` |
-| 包版本 | `0.3.1.dev4+g1929a3ba4` |
+| Git commit | `1e7177f12039b2d87e3cdff6693459d895744f68` |
+| Git tree | `a5fb1f3a70be9fc17ecf0dd928776924d4c78e1e` |
+| 包版本 | `0.4.1.dev12+gc9115e8ce.d20261031` |
 | 许可证 | `Apache-2.0` |
-| 构建方式 | `pinned-source-build-with-installed-native-repack` |
-| 构建工具链 | `GCC 14.3.0`、CANN `9.0.0`、CPython `3.10.20` |
-| 目标 wheel | `asnumpy-0.3.1.dev4+g1929a3ba4-cp310-cp310-linux_aarch64.whl` |
-| Wheel tag | `cp310-cp310-linux_aarch64` |
-| Wheel SHA-256 | `8d4dbd083b1b1a5033431ec6fb9c0b793c96b1cd89386acad1738926b8138271` |
-| Wheel `METADATA` SHA-256 | `bb1206b150596ee9d5be3930c0477cc902bb09c1f2b2232547116ac7eedaddf9` |
-| Wheel `RECORD` SHA-256 | `8aa704914cd7b767a1c625041bd2c238ebf15d62bf8c05ec1b41c002c52be7d5` |
-| `asnumpy/__init__.py` SHA-256 | `8761f7f9fe557606df6c6683245f4dfc3b8ac69385689a0673f3c90e33afd28e` |
-| `asnumpy/_core.cpython-310-aarch64-linux-gnu.so` SHA-256 | `4166713fcc87fde10d707a09ea40b8acfaf46496298697925d6b22b180011173` |
+| 构建方式 | `source-commit-with-aclnn-matmul-overlay` |
+| 构建工具链 | `GCC 11.4.0`、CANN `9.2.0-beta.2`、CPython `3.12.14` |
+| 目标 wheel | `asnumpy-0.4.1.dev12+gc9115e8ce.d20261031-cp312-cp312-linux_aarch64.whl` |
+| Wheel tag | `cp312-cp312-linux_aarch64` |
+| Wheel SHA-256 | `a8c47cfe71994f3bfd4180d7354df3904d2bc96c476c3119083fefac747a2138` |
+| Wheel `METADATA` SHA-256 | `c07bcf35a9923e07f908d984dd220c6adccb0d9670260b1f3fd1c8b3d6a925e0` |
+| Wheel `RECORD` SHA-256 | `7baf091897058f1107dd17bbb213c33c49cdc64a75196d88176298f2160a99e6` |
+| `asnumpy/__init__.py` SHA-256 | `7061af131970ef158c87dfbf36261404ec9e1d682c3945f87d55c35fb22e8d1d` |
+| `asnumpy/_core.cpython-310-aarch64-linux-gnu.so` SHA-256 | `02f38dfae1cef5b0e995ab0cd5922ae66923c3d76d49b61e9482901f577f8f8a` |
 | 组件 LICENSE SHA-256 | `1eb85fc97224598dad1852b5d6483bbcf0aa8608790dcc657a5a2a761ae9c8c6` |
-| 组件 SBOM SHA-256 | `a1ed973ab1f15e2b40d726266ff9c64a466cb312d4a0d7e739dfc8d03f8aa7ed` |
-| 组件 manifest SHA-256 | `873e9673f2b44a725a100838ad1157ae1ae46955b4566da937cc221df4405fd5` |
+| 组件 SBOM SHA-256 | `2257e349c8fa9000d069760b5e1d4e779dba11e50017be6071b8a41f4bbde4dc` |
+| 组件 manifest SHA-256 | `8bd7893a6a77df35d7c1a1f05d1144b2c49ed04a8a8f93afd9b5d4e53e93a539` |
 
-Manifest 的运行约束为 Linux/AArch64、CPython 3.10、CANN 9.0.0、NumPy 2.2.6 和 Loguru 0.7.3。
-NumPilot 当前严格画像进一步绑定 Ascend 910B4、CPython 3.10.20 和精确 CANN 身份。画像外环境
+Manifest 的运行约束为 Linux/AArch64、CPython 3.12、CANN 9.2.0-beta.2、NumPy 2.5.4 和 Loguru 0.7.3。
+NumPilot 当前严格画像进一步绑定 Ascend 910B3、CPython 3.12.14 和精确 CANN 身份。画像外环境
 只能返回 `CAPABILITY_AUDIT_REQUIRED`，不能继承 strict-NPU 或性能结论。
 
 组件还绑定以下构建关键文件摘要：
 
 ```text
-CMakeLists.txt                 d76544dae90390e791fc89caa4018f9bfd1bcd4617b52ae7c23ae05abe87e7a4
-LICENSE                        1eb85fc97224598dad1852b5d6483bbcf0aa8608790dcc657a5a2a761ae9c8c6
-README.md                      9634533554d62b8bfd0286da7d0b6a1d6974e7154299b88cb809ea10af3f1aee
-bindings/python/CMakeLists.txt 4d1e928a8a4e3f695a2bc009a4dbfb8441339bd3a035c532eee57d8639361e35
-csrc/CMakeLists.txt            3f5ca526867de88dbefc8912d9563053ad78b6e3bc0b58630baacbc37ae281b6
-pyproject.toml                 517be204bad4626bce5c0050a894c73a602d88e5d9e282015507667de4e67e1e
+CMakeLists.txt                  e5da3e46e13e2e5936c4e3e03af526b1638f13ae6c73462829abaff1ade1b956
+LICENSE                         1eb85fc97224598dad1852b5d6483bbcf0aa8608790dcc657a5a2a761ae9c8c6
+README.md                       a5cfdbeab3539b55e4852760f06e9768fdf48399e10ffead4f984853abc65a86
+bindings/python/CMakeLists.txt  6a39bb565d5a4762daaa48217198b3f40296b6a431fa37e924f9784b31f7d1d5
+csrc/CMakeLists.txt             3f5ca526867de88dbefc8912d9563053ad78b6e3bc0b58630baacbc37ae281b6
+pyproject.toml                  ed92ce53169bcd819dadc34658be54ff778919f277b9a83392d91110a818d6ac
 ```
 
 Git commit/tree 与 wheel 字节是两层独立合同。同一源码可能因编译器、CANN、链接器或构建环境

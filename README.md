@@ -149,12 +149,13 @@ python -m numpilot doctor --backend npu    # on an Ascend machine
 ```
 
 If AsNumpy lives in another virtual environment, activate that environment and install NumPilot there.
-NumPilot uses the AsNumpy importable from its own interpreter; it does not vendor or replace your AsNumpy
-build.
+NumPilot uses the AsNumpy importable from its own interpreter. Frozen releases also carry the author-owned
+hash-bound AsNumpy component and CANNBot skill snapshot under `components/`; the automatic runtime path
+reads those snapshots and does not fetch or upgrade them.
 
 For air-gapped, hash-bound, or reproducible deployments, see
-[Installation and verification](docs/installation.md). Those paths are optional; the default contract is
-"bring a working AsNumpy".
+[Installation and verification](docs/installation.md) and the
+[AsNumpy API and CANNBot snapshot catalog](docs/asnumpy-api-support.zh-CN.md).
 
 ## Usage
 
@@ -251,7 +252,8 @@ A claim without a receipt in the current run is reported as `qualification_requi
 numpilot/            CLI and core modules (being reorganized)
 docs/                architecture, contracts, verification, installation
 skill/               Agent Skill contract and references
-components/asnumpy/  optional pinned AsNumpy component for reproducible installs
+components/asnumpy/  author-maintained, hash-bound AsNumpy wheel and provenance
+components/cannbot-skills/  author-maintained static CANNBot skill bundle
 tests/               regression tests and fixtures
 tools/               repository and release utilities
 ```

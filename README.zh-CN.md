@@ -140,10 +140,11 @@ python -m numpilot doctor --backend npu    # 在 Ascend 机器上
 ```
 
 如果 AsNumpy 位于另一个虚拟环境，请先激活那个环境，再把 NumPilot 安装进去。NumPilot 使用其自身
-解释器中可导入的 AsNumpy，不会自带或替换你的 AsNumpy 构建。
+解释器中可导入的 AsNumpy。冻结发布还会在 `components/` 中携带作者维护的哈希绑定 AsNumpy 组件和
+CANNBot Skill 快照；自动运行路径只读取这些快照，不联网拉取或升级。
 
-离线、哈希绑定或需要可复现的部署方式，见[安装与验收](docs/installation.zh-CN.md)。这些路径是可选的；
-默认契约是“自带一个可用的 AsNumpy”。
+离线、哈希绑定或需要可复现的部署方式，见[安装与验收](docs/installation.zh-CN.md)和
+[AsNumpy API 与 CANNBot 快照清单](docs/asnumpy-api-support.zh-CN.md)。
 
 ## 使用
 
@@ -233,7 +234,8 @@ NumPilot 的确定性门禁。请如实报告 stopped、unverified、数值、�
 numpilot/            CLI 与核心模块（正在重组）
 docs/                架构、契约、验证、安装
 skill/               Agent Skill 契约与参考
-components/asnumpy/  可选的、固定版本的 AsNumpy 组件，用于可复现安装
+components/asnumpy/  作者维护的哈希绑定 AsNumpy wheel 与来源材料
+components/cannbot-skills/  作者维护的静态 CANNBot Skill bundle
 tests/               回归测试与 fixtures
 tools/               仓库与发布工具
 ```

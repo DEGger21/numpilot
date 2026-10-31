@@ -6,16 +6,37 @@ import pytest
 
 from numpilot.cannbot_skills import (
     CANNBOT_COMMIT,
+    CANNBOT_TREE,
     CannbotSkillError,
     _BUNDLE_FILES,
+    default_static_skill_root,
     load_skill_bundle,
+    load_static_skill_bundle,
+    resolve_skill_bundle,
 )
 
 
 def test_official_cannbot_pin_and_bundle_shape_are_stable():
-    assert CANNBOT_COMMIT == "1ef6372a538f39b0b7ed34666a3e1f465fb4936a"
+    assert CANNBOT_COMMIT == "39919e2c995e1cd9e193f11ac2e3fcb3cbd1d26c"
+    assert CANNBOT_TREE == "3a95d925b085dfb401233f26f44fa9fab3d31999"
     assert len(_BUNDLE_FILES) == 36
     assert len(set(_BUNDLE_FILES)) == 36
+
+
+def test_author_owned_static_bundle_is_verified_without_git():
+    bundle = load_static_skill_bundle(default_static_skill_root())
+    assert bundle.commit == CANNBOT_COMMIT
+    assert bundle.bundle_sha256 == "da0ee3d6a12561da0d630125d7f4ae8602848dbd4c6f1b3f7150b26a57ead79f"
+    assert bundle.total_bytes == 302003
+    assert len(bundle.files) == 36
+
+
+def test_auto_resolution_is_static_and_fail_closed(monkeypatch):
+    bundle = resolve_skill_bundle("auto", allow_fetch=True)
+    assert bundle.commit == CANNBOT_COMMIT
+    monkeypatch.setattr("numpilot.cannbot_skills.default_static_skill_root", lambda: Path("/missing/static"))
+    with pytest.raises(CannbotSkillError, match="static CANNBot skill bundle is missing"):
+        resolve_skill_bundle("auto", allow_fetch=True)
 
 
 def _run(*args, cwd):

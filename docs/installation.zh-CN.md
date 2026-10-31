@@ -11,9 +11,9 @@
 | strict-NPU 就绪 | 完整运行时身份与请求调用的已审计画像精确匹配 | 是，且画像必须精确 |
 
 > [!WARNING]
-> 当前 strict 画像绑定 Linux/AArch64、Ascend 910B4、CANN 9.0.0、CPython 3.10.20，以及精确的
+> 当前 strict 画像绑定 Linux/AArch64、Ascend 910B3、CANN 9.2.0-beta.2、CPython 3.12.14，以及精确的
 > AsNumpy 源码、安装文件和回执哈希。核心包接受 Python 3.10+，但随仓组件安装器要求 AArch64 上的
-> CPython 3.10；不同 SoC、CANN、Python ABI、wrapper、原生库或回执在独立资格化前必须返回
+> CPython 3.12；不同 SoC、CANN、Python ABI、wrapper、原生库或回执在独立资格化前必须返回
 > `CAPABILITY_AUDIT_REQUIRED`。
 
 ## 1. CPU/shim 开发环境
@@ -46,7 +46,7 @@ Python 环境。任意 Python 3.10+ 主机不能自动视为完整测试资格�
 
 - 兼容的 Ascend 驱动、固件、CANN Toolkit 与 OPP；
 - `npu-smi info` 可见的 NPU；
-- 随仓组件要求 CPython 3.10，并具备 `venv`/`pip`；
+- 随仓组件要求 CPython 3.12，并具备 `venv`/`pip`；
 - 当前用户独占的 venv、运行回执空间和持久化状态目录。
 
 固定 wheel 安装不需要 Git、CMake、Make/Ninja、GCC/G++、Python 开发头文件或系统
@@ -68,7 +68,7 @@ sudo apt-get install -y \
 uname -m
 python3 -c 'import platform; print(platform.python_implementation(), platform.python_version())'
 npu-smi info
-test -f /usr/local/Ascend/cann-9.0.0/set_env.sh
+test -f /usr/local/Ascend/cann-9.2.0-beta.2/set_env.sh
 ```
 
 源码优先模式再额外检查 `git --version`、`g++ --version`、`cmake --version` 和 Python
@@ -89,7 +89,7 @@ chmod 700 "$HOME/.local/venvs"
 
 ./install.sh --allow-network \
   --python "$(command -v python3)" \
-  --cann-env /usr/local/Ascend/cann-9.0.0/set_env.sh \
+  --cann-env /usr/local/Ascend/cann-9.2.0-beta.2/set_env.sh \
   --venv "$HOME/.local/venvs/numpilot" \
   --persistent-root "$HOME/.local/share/numpilot"
 
@@ -100,7 +100,7 @@ python -m numpilot doctor --backend npu
 
 安装器会在创建 venv 或调用 pip 之前校验组件 manifest、wheel、LICENSE/SBOM、CPython ABI 和机器
 架构，并按 manifest 中记录的精确版本解析 NumPy 与 Loguru。如果所需解释器不是默认 `python3`，
-请使用 `--python /absolute/path/to/python3.10`。
+请使用 `--python /absolute/path/to/python3.12`。
 
 release manifest 还必须绑定 wheel 的 `METADATA`/`RECORD`、安装后的
 `asnumpy/__init__.py` 与 native `_core` 哈希、Python/架构标签，以及已审计的 CANN/SoC 画像。
@@ -108,7 +108,7 @@ release manifest 还必须绑定 wheel 的 `METADATA`/`RECORD`、安装后的
 wheel 摘要和升级/回滚流程见
 [AsNumpy 内部组件锁定与发布合同](ASNUMPY-INTERNAL-COMPONENT-LOCK.zh-CN.md)。
 
-当前附件只适用于 Linux AArch64、CPython 3.10 和 CANN 9.0.0；它不包含 CANN 驱动、固件或 OPP。
+当前附件只适用于 Linux AArch64、CPython 3.12 和 CANN 9.2.0-beta.2；它不包含 CANN 驱动、固件或 OPP。
 因此现场不再需要拉取/编译 AsNumpy 源码，但仍要在目标 venv 中执行一次本地 wheel 安装，并先
 加载匹配的 CANN `set_env.sh`。
 
@@ -128,9 +128,9 @@ git clone --branch main --depth 1 https://gitcode.com/li-xingHIT/numpilot.git
 cd numpilot
 
 ./install.sh --allow-network \
-  --python /absolute/path/to/python3.10 \
+  --python /absolute/path/to/python3.12 \
   --asnumpy-source /absolute/path/to/pinned/asnumpy \
-  --cann-env /usr/local/Ascend/cann-9.0.0/set_env.sh \
+  --cann-env /usr/local/Ascend/cann-9.2.0-beta.2/set_env.sh \
   --venv /absolute/user-owned/numpilot-venv \
   --persistent-root /absolute/user-owned/numpilot-runtime
 
@@ -145,7 +145,7 @@ AsNumpy 源码。它不会运行 `sudo`、修改 shell 启动文件、保存模�
 ```bash
 # 使用 origin/commit/tree 精确匹配且干净的 AsNumpy checkout。
 ./install.sh --allow-network \
-  --python /absolute/path/to/python3.10 \
+  --python /absolute/path/to/python3.12 \
   --asnumpy-source /absolute/path/to/pinned/asnumpy \
   --cann-env /absolute/path/to/CANN/set_env.sh \
   --venv /absolute/user-owned/numpilot-venv \
@@ -153,7 +153,7 @@ AsNumpy 源码。它不会运行 `sudo`、修改 shell 启动文件、保存模�
 
 # 固定组件模式下显式选择 Python 包索引；不要把凭据写进 URL。
 ./install.sh --allow-network \
-  --python /absolute/path/to/python3.10 \
+  --python /absolute/path/to/python3.12 \
   --pip-index-url https://mirror.example.invalid/simple \
   --asnumpy-component "$PWD/components/asnumpy" \
   --cann-env /absolute/path/to/CANN/set_env.sh \
@@ -232,7 +232,7 @@ checkout 中运行 `git show 1ef6372a538f39b0b7ed34666a3e1f465fb4936a:LICENSE` �
 
 ```bash
 ./install.sh --allow-network \
-  --python /absolute/path/to/python3.10 \
+  --python /absolute/path/to/python3.12 \
   --with-cannbot --accept-cannbot-license \
   --cann-env /absolute/path/to/CANN/set_env.sh \
   --venv /absolute/user-owned/numpilot-venv \
@@ -259,7 +259,7 @@ python -m numpilot setup-skills \
 ```
 
 CANNBot Skills 与 `cann/ops-nn` 是不同依赖。安装器不会自动获取 `ops-nn`；当前 official-source
-resolver 只接受用户显式提供、与版本匹配的本地 checkout，且现有源码映射只固定 CANN 9.0.0。
+resolver 只接受用户显式提供、与版本匹配的本地 checkout，且现有源码映射只固定 CANN 9.2.0-beta.2。
 
 ## 7. 配置并探测模型（终端 configured 子路径，可选）
 

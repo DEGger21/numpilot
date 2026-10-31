@@ -63,49 +63,50 @@ from numpilot.capability_profile import OPS_NN_MATMUL_ASNUMPY_AUDIT_ID
 # This is deliberately an exact version match.  A different wheel may change a
 # Python wrapper without changing whether its public name exists, so version
 # drift must be re-audited before it can make a strict-NPU performance claim.
-AUDITED_ASNUMPY_VERSION = "0.3.1.dev4+g1929a3ba4"
-AUDITED_CANN_HOME = "/usr/local/Ascend/cann-9.0.0"
-AUDITED_CANN_VERSION = "9.0.0"
-AUDITED_SOC_MODEL = "Ascend910B4"
-AUDITED_PYTHON_VERSION = "3.10.20"
+AUDITED_ASNUMPY_VERSION = "0.4.1.dev12+gc9115e8ce.d20261031"
+AUDITED_CANN_HOME = "/usr/local/Ascend/cann-9.2.0-beta.2"
+AUDITED_CANN_VERSION = "9.2.0-beta.2"
+AUDITED_SOC_MODEL = "Ascend910B3"
+AUDITED_PYTHON_VERSION = "3.12.14"
 ASNUMPY_AUDIT_ID = (
-    "asnumpy-0.3.1.dev4-g1929a3ba4-runtime-"
-    "init8761f7f9-cannac907b3a-linalgd2965c2e-"
-    "random6c9c7891-coreab71b004-v4"
+    "asnumpy-0.4.1.dev12-gc9115e8ce-runtime-"
+    "init7061af13-cannac907b3a-linalg68ba1971-"
+    "random6c9c7891-math32a64a3f-logice03f3b0f-"
+    "core02f38dfa-v5"
 )
 ASNUMPY_SOURCE_BUILD_AUDIT_ID = (
-    "asnumpy-0.3.1.dev4-g1929a3ba4-"
-    "init8761f7f9-cannac907b3a-linalgd2965c2e-"
-    "random6c9c7891-pinned-source-receipt-v2"
+    "asnumpy-0.4.1.dev12-gc9115e8ce-"
+    "init7061af13-cannac907b3a-linalg68ba1971-"
+    "random6c9c7891-pinned-source-receipt-v3"
 )
 ASNUMPY_INTERNAL_COMPONENT_AUDIT_ID = (
-    "asnumpy-0.3.1.dev4-g1929a3ba4-internal-component-"
-    "manifest873e9673-wheel8d4dbd08-core4166713f-v1"
+    "asnumpy-0.4.1.dev12-gc9115e8ce-internal-component-"
+    "manifest8bd7893a-wheel-a8c47cfe-core02f38dfa-v2"
 )
 _ASNUMPY_INTERNAL_COMPONENT_ID = (
-    "asnumpy-0.3.1.dev4+g1929a3ba4-cp310-cp310-linux_aarch64"
+    "asnumpy-0.4.1.dev12+gc9115e8ce.d20261031-cp312-cp312-linux_aarch64"
 )
 _ASNUMPY_INTERNAL_COMPONENT_MANIFEST_SHA256 = (
-    "873e9673f2b44a725a100838ad1157ae1ae46955b4566da937cc221df4405fd5"
+    "8bd7893a6a77df35d7c1a1f05d1144b2c49ed04a8a8f93afd9b5d4e53e93a539"
 )
 _AUDITED_RUNTIME_FILE_SHA256 = {
-    "__init__.py": "8761f7f9fe557606df6c6683245f4dfc3b8ac69385689a0673f3c90e33afd28e",
-    "_types.py": "3686cc4be153e88950357aacdc71e90d98a71f2d01e659c3376ff4e0b2d66fa7",
-    "_version.py": "c5fa636eada219c1045482d84a2a1f91fb2951fdf3ee075ed3abeae1a5db9c77",
+    "__init__.py": "7061af131970ef158c87dfbf36261404ec9e1d682c3945f87d55c35fb22e8d1d",
+    "_types.py": "cae6a7d7c1180dde6329b7fff0a840eee57bbd15e5cc6acafaae2e79294eb3b7",
+    "_version.py": "1ff0b219853210f736cec2f7c791274ec3b4464bc679eaecce3db5a8c70e5302",
     "array.py": "16c901f5937027d2ce6ae6f9d58813d389d20252315333c954ec5ccb9a3b4cc3",
     "cann.py": "ac907b3a294e597e5429629387b9615abed963026a879ef411ba4a4ddecbcc3e",
     "linalg/__init__.py": "bae3efa81d9840d622c3f29ed677dfd834e7e2c2769b9a35daea0b9b55e52a83",
-    "linalg/_linalg.py": "d2965c2e3f7a6019e20c8e526a9ef78730f3836cb900d7d9fec5234a7eb70e88",
-    "linalg/direct.py": "c56b61be41eea589d3d1c15b9afd606e7e26f0a25fc601cb1563a4279e7244c3",
-    "logic.py": "56b9c8c6815a99f9734fb90cf84cb6df2ac7e810455f4d8b4d65e997decf8f29",
-    "math.py": "62e0ba09576ead5d3b44f6b0b33311e849efd47ab0bb11f7875c0a43f499085c",
+    "linalg/_linalg.py": "c5ddcc4f890588690882b927cb50854999dfabd95ea8082a68274500cbc71240",
+    "linalg/direct.py": "68ba1971ebee2b837ef0aa3e636b6dc015f0b1516a9a9e3c9c9eb8d3ff3f89b6",
+    "logic.py": "e03f3b0f77458c40e94f4c8785e5ac3ecfb1b4c7b2a744e463c8b5da6ea6cf4a",
+    "math.py": "32a64a3f246d8e44f8b6abe9dc23fda447e6835f494df52f68f638e3ff1bb71e",
     "nn.py": "c0b2ed95d70fa15e92e2939d76cc93da116b64b2b94579aeb684b03e1cf07748",
     "random/__init__.py": "3324a11a240100c612d157d17b4d653446281a4ebd8dcfabdec731ad61481b0a",
     "random/_random.py": "6c9c7891bd44892caad282c16bfd469f0ffee54f5616576777f8416d4a547b65",
     "sorting.py": "bc206227bbb2709cef9242db9b3de32e4eec15c58a9b83d568e9181729d9cf2c",
     "statistics.py": "175315eec27c8fa2875e236b3c88cb047d5e9d3cbc7735a3f1fae6231a14d3cd",
-    "utils.py": "d4105619f540f7f98dd29b9967fe925c6355c96769f54862dc245c0851666cb1",
-    "_core": "ab71b0041f872bd25f4581a9f269414af9accd37f83e4ad8d99b3e713d63ff53",
+    "utils.py": "26f2fc481afca839628f940f08eb06aa39016d93835d0f3c8b89c7465d6f054b",
+    "_core": "02f38dfae1cef5b0e995ab0cd5922ae66923c3d76d49b61e9482901f577f8f8a",
 }
 
 # Narrow official-operator integration used by the ops-nn MatMul case.  The
@@ -302,22 +303,22 @@ _ASNUMPY_SOURCE_KEY_FILES = frozenset(
 _CPU_FALLBACKS = {
     "inner": (
         ExecutionProvenance.CPU_FALLBACK,
-        "asnumpy@1929a3ba4: linalg/direct.py calls numpy.inner on host arrays",
+        "asnumpy@1e7177f1: linalg/direct.py calls numpy.inner on host arrays",
         ("all inputs execute on CPU",),
     ),
     "matmul": (
         ExecutionProvenance.CPU_FALLBACK,
-        "asnumpy@1929a3ba4: linalg/direct.py calls numpy.matmul on host arrays",
-        ("all inputs execute on CPU",),
+        "asnumpy@1e7177f1 generic audit: matmul is not admitted without the static/source receipt profile",
+        ("requires the author-owned FP32 2-D admission profile",),
     ),
     "outer": (
         ExecutionProvenance.CPU_FALLBACK,
-        "asnumpy@1929a3ba4: linalg/direct.py calls numpy.outer on host arrays",
+        "asnumpy@1e7177f1: linalg/direct.py calls numpy.outer on host arrays",
         ("all inputs execute on CPU",),
     ),
     "dot": (
         ExecutionProvenance.CONDITIONAL_CPU_FALLBACK,
-        "asnumpy@1929a3ba4: linalg/direct.py inspects host data and uses numpy.dot for float64",
+        "asnumpy@1e7177f1: linalg/direct.py inspects host data and uses numpy.dot for float64",
         (
             "device inputs are copied to host for dtype inspection",
             "float64 input executes on CPU",
@@ -325,7 +326,7 @@ _CPU_FALLBACKS = {
     ),
     "vdot": (
         ExecutionProvenance.CONDITIONAL_CPU_FALLBACK,
-        "asnumpy@1929a3ba4: linalg/direct.py inspects host data and uses numpy.vdot for float64",
+        "asnumpy@1e7177f1: linalg/direct.py inspects host data and uses numpy.vdot for float64",
         (
             "device inputs are copied to host for dtype inspection",
             "float64 input executes on CPU",
@@ -333,7 +334,7 @@ _CPU_FALLBACKS = {
     ),
     "floor": (
         ExecutionProvenance.CONDITIONAL_CPU_FALLBACK,
-        "asnumpy@1929a3ba4: math.py inspects host data and uses numpy.floor for integer/bool",
+        "asnumpy@1e7177f1: math.py inspects host data and uses numpy.floor for integer/bool",
         (
             "dtype=None copies device input to host for dtype inspection",
             "integer or bool input with dtype=None executes on CPU",
@@ -341,7 +342,7 @@ _CPU_FALLBACKS = {
     ),
     "signbit": (
         ExecutionProvenance.HOST_ASSISTED,
-        "asnumpy@1929a3ba4: math.py copies input to host to patch IEEE -0.0",
+        "asnumpy@1e7177f1: math.py copies input to host to patch IEEE -0.0",
         ("always performs host-side negative-zero detection",),
     ),
 }
@@ -350,32 +351,32 @@ _CPU_FALLBACKS = {
 _GENERIC_LINALG_PROVENANCE = {
     "linalg.det": (
         ExecutionProvenance.COMPOSITE_NPU,
-        "asnumpy@1929a3ba4: linalg.det composes audited NPU bindings",
+        "asnumpy@1e7177f1: linalg.det composes audited NPU bindings",
         (),
     ),
     "linalg.inv": (
         ExecutionProvenance.NATIVE_NPU,
-        "asnumpy@1929a3ba4: linalg.inv delegates to an NPU binding",
+        "asnumpy@1e7177f1: linalg.inv delegates to an NPU binding",
         (),
     ),
     "linalg.matrix_power": (
         ExecutionProvenance.CPU_FALLBACK,
-        "asnumpy@1929a3ba4: linalg.matrix_power computes with NumPy on the host",
+        "asnumpy@1e7177f1: linalg.matrix_power computes with NumPy on the host",
         ("all inputs execute on CPU",),
     ),
     "linalg.norm": (
         ExecutionProvenance.CPU_FALLBACK,
-        "asnumpy@1929a3ba4: linalg.norm computes with NumPy on the host",
+        "asnumpy@1e7177f1: linalg.norm computes with NumPy on the host",
         ("all inputs execute on CPU",),
     ),
     "linalg.qr": (
         ExecutionProvenance.NATIVE_NPU,
-        "asnumpy@1929a3ba4: linalg.qr delegates to an NPU binding",
+        "asnumpy@1e7177f1: linalg.qr delegates to an NPU binding",
         (),
     ),
     "linalg.slogdet": (
         ExecutionProvenance.CONDITIONAL_CPU_FALLBACK,
-        "asnumpy@1929a3ba4: linalg.slogdet includes a conditional host fallback",
+        "asnumpy@1e7177f1: linalg.slogdet includes a conditional host fallback",
         ("some inputs execute on CPU",),
     ),
 }
@@ -395,9 +396,9 @@ _GENERIC_RANDOM_PROVENANCE = {
             else ExecutionProvenance.COMPOSITE_NPU
         ),
         (
-            "asnumpy@1929a3ba4: %s delegates to an NPU binding" % name
+            "asnumpy@1e7177f1: %s delegates to an NPU binding" % name
             if name in _GENERIC_RANDOM_NATIVE
-            else "asnumpy@1929a3ba4: %s composes audited NPU bindings" % name
+            else "asnumpy@1e7177f1: %s composes audited NPU bindings" % name
         ),
         (),
     )
@@ -415,7 +416,7 @@ if set(_GENERIC_LINALG_PROVENANCE) != set(
 
 
 # ``coverage.py`` contains a demo snapshot that also lists ``angle``, but the
-# audited 1929a3ba4 public mapping/source does not contain that API.  If a wheel
+# audited 1e7177f1 public mapping/source does not contain that API.  If a wheel
 # with the same claimed version unexpectedly exposes it, runtime availability is
 # recorded while strict provenance remains fail-closed.
 _UNAUDITED_OPS = {"angle"}
@@ -1092,13 +1093,20 @@ def _internal_component_receipt_identity_matches(module):
 
 
 def _audited_runtime_identity_matches(module):
-    """Bind a fixed wheel, pinned-source build, or internal component."""
+    """Bind a fixed wheel, source receipt, or internal component.
 
-    return _fixed_audited_runtime_identity_matches(
-        module
-    ) or _source_build_receipt_identity_matches(
-        module
-    ) or _internal_component_receipt_identity_matches(module)
+    Once a bootstrap receipt exists, the receipt-bound identity is authoritative.
+    This prevents a component with identical file hashes from bypassing a
+    modified or invalid receipt through the generic hash profile.
+    """
+
+    receipt_path = _bootstrap_receipt_path()
+    if receipt_path is not None and os.path.lexists(str(receipt_path)):
+        return (
+            _internal_component_receipt_identity_matches(module)
+            or _source_build_receipt_identity_matches(module)
+        )
+    return _fixed_audited_runtime_identity_matches(module)
 
 
 _RUNTIME_IDENTITY_TOKEN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+:-]{0,255}$")
@@ -1533,10 +1541,13 @@ def _runtime_audit_id(module, version):
     ):
         return OPS_NN_MATMUL_ASNUMPY_AUDIT_ID
     if version == AUDITED_ASNUMPY_VERSION:
-        if _fixed_audited_runtime_identity_matches(module):
-            return ASNUMPY_AUDIT_ID
+        # The bundled wheel has the same file-level runtime hashes as the
+        # generic audit profile, so receipt-bound component identity must win
+        # before the generic hash check.
         if _internal_component_receipt_identity_matches(module):
             return ASNUMPY_INTERNAL_COMPONENT_AUDIT_ID
+        if _fixed_audited_runtime_identity_matches(module):
+            return ASNUMPY_AUDIT_ID
         if _source_build_receipt_identity_matches(module):
             return ASNUMPY_SOURCE_BUILD_AUDIT_ID
         # Preserve the narrow injection seam used by unit/private backends.
@@ -1668,7 +1679,7 @@ def _provenance_profile(name, version, audit_id):
             ExecutionProvenance.UNKNOWN,
             (
                 "API is in NumPilot's demo coverage snapshot but absent from "
-                "asnumpy@1929a3ba4 source"
+                "asnumpy@1e7177f1 source"
             ),
             ("requires an operator-specific source audit",),
         )
@@ -1701,6 +1712,29 @@ def _provenance_profile(name, version, audit_id):
                 "numel>=1",
             ),
         )
+    if (
+        audit_id
+        in {
+            ASNUMPY_INTERNAL_COMPONENT_AUDIT_ID,
+            ASNUMPY_SOURCE_BUILD_AUDIT_ID,
+        }
+        and name == "matmul"
+    ):
+        return (
+            ExecutionProvenance.NATIVE_NPU,
+            (
+                "author-owned AsNumpy static wheel delegates the admitted "
+                "2-D float32 contiguous path to ACLNN aclnnMatmul; other "
+                "inputs retain the NumPy compatibility fallback"
+            ),
+            (
+                "dtype=float32",
+                "rank>=2",
+                "rank<=2",
+                "contiguous=true",
+                "numel>=1",
+            ),
+        )
     if name in _CPU_FALLBACKS:
         return _CPU_FALLBACKS[name]
     return (
@@ -1715,14 +1749,14 @@ def _provenance_profile(name, version, audit_id):
                 if audit_id == P0_ASNUMPY_AUDIT_ID
                 or audit_id in _P0_LINALG_AUDIT_IDS
                 else (
-                    "asnumpy@1929a3ba4 internal-component receipt and "
+                    "asnumpy@1e7177f1 internal-component receipt and "
                     "wheel audit: public wrapper delegates to an NPU binding"
                     if audit_id == ASNUMPY_INTERNAL_COMPONENT_AUDIT_ID
                     else (
-                        "asnumpy@1929a3ba4 pinned-source receipt and wrapper "
+                        "asnumpy@1e7177f1 pinned-source receipt and wrapper "
                         "audit: public wrapper delegates to an NPU binding"
                         if audit_id == ASNUMPY_SOURCE_BUILD_AUDIT_ID
-                        else "asnumpy@1929a3ba4 source audit: public wrapper "
+                        else "asnumpy@1e7177f1 source audit: public wrapper "
                         "delegates to an NPU binding"
                     )
                 )
@@ -1733,6 +1767,15 @@ def _provenance_profile(name, version, audit_id):
 
 
 def _signature_variants(name, audit_id):
+    if (
+        audit_id
+        in {
+            ASNUMPY_INTERNAL_COMPONENT_AUDIT_ID,
+            ASNUMPY_SOURCE_BUILD_AUDIT_ID,
+        }
+        and name == "matmul"
+    ):
+        return (OperatorSignature(positional_args=2),)
     if audit_id == OPS_NN_MATMUL_ASNUMPY_AUDIT_ID and name == "matmul":
         return (OperatorSignature(positional_args=2),)
     if (

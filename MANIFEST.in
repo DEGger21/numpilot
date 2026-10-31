@@ -23,6 +23,11 @@ include components/asnumpy/LICENSE
 include components/asnumpy/SBOM.spdx.json
 include components/asnumpy/*.whl
 
+# Author-maintained static CANNBot skill snapshot; runtime must not fetch latest.
+include components/cannbot-skills/39919e2c995e1cd9e193f11ac2e3fcb3cbd1d26c/manifest.json
+include components/cannbot-skills/39919e2c995e1cd9e193f11ac2e3fcb3cbd1d26c/bundle.json
+include docs/asnumpy-api-support.zh-CN.md
+
 prune tools
 include tools/audit_script_benchmark_receipt.py
 include tools/check_release_tree.py

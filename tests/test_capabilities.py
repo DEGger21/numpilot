@@ -90,11 +90,11 @@ def _valid_runtime_identity(**overrides):
         "module_sha256": "5" * 64,
         "native_module_path": "/opt/asnumpy/asnumpy/_core.so",
         "native_module_sha256": "6" * 64,
-        "cann_home": "/usr/local/Ascend/cann-9.0.0",
-        "cann_version": "9.0.0",
-        "soc_model": "Ascend910B4",
+        "cann_home": "/usr/local/Ascend/cann-9.2.0-beta.2",
+        "cann_version": "9.2.0-beta.2",
+        "soc_model": "Ascend910B3",
         "python_executable": "/opt/numpilot/.venv/bin/python",
-        "python_version": "3.10.20",
+        "python_version": "3.12.14",
         "bootstrap_receipt_path": "/opt/numpilot/state/bootstrap/receipt.json",
         "bootstrap_receipt_sha256": "7" * 64,
         "audit_id": "asnumpy-audit-v1",
@@ -210,21 +210,21 @@ def test_runtime_identity_rejects_single_field_drift_against_canonical_hash(fiel
 
 
 def test_p0_audit_ids_bind_wrapper_dependencies():
-    assert "init8761f7f9" in npu_module.ASNUMPY_AUDIT_ID
+    assert "init7061af13" in npu_module.ASNUMPY_AUDIT_ID
     assert "cannac907b3a" in npu_module.ASNUMPY_AUDIT_ID
-    assert "linalgd2965c2e" in npu_module.ASNUMPY_AUDIT_ID
+    assert "linalg68ba1971" in npu_module.ASNUMPY_AUDIT_ID
     assert "random6c9c7891" in npu_module.ASNUMPY_AUDIT_ID
-    assert "coreab71b004" in npu_module.ASNUMPY_AUDIT_ID
-    assert npu_module.ASNUMPY_AUDIT_ID.endswith("-v4")
+    assert "core02f38dfa" in npu_module.ASNUMPY_AUDIT_ID
+    assert npu_module.ASNUMPY_AUDIT_ID.endswith("-v5")
     assert "cannac907b3a" in ASNUMPY_SOURCE_BUILD_AUDIT_ID
-    assert "linalgd2965c2e" in ASNUMPY_SOURCE_BUILD_AUDIT_ID
+    assert "linalg68ba1971" in ASNUMPY_SOURCE_BUILD_AUDIT_ID
     assert "random6c9c7891" in ASNUMPY_SOURCE_BUILD_AUDIT_ID
-    assert ASNUMPY_SOURCE_BUILD_AUDIT_ID.endswith("-receipt-v2")
+    assert ASNUMPY_SOURCE_BUILD_AUDIT_ID.endswith("-receipt-v3")
     assert "internal-component" in ASNUMPY_INTERNAL_COMPONENT_AUDIT_ID
-    assert "manifest873e9673" in ASNUMPY_INTERNAL_COMPONENT_AUDIT_ID
-    assert "wheel8d4dbd08" in ASNUMPY_INTERNAL_COMPONENT_AUDIT_ID
-    assert "core4166713f" in ASNUMPY_INTERNAL_COMPONENT_AUDIT_ID
-    assert ASNUMPY_INTERNAL_COMPONENT_AUDIT_ID.endswith("-v1")
+    assert "manifest8bd7893a" in ASNUMPY_INTERNAL_COMPONENT_AUDIT_ID
+    assert "wheel-a8c47cfe" in ASNUMPY_INTERNAL_COMPONENT_AUDIT_ID
+    assert "core02f38dfa" in ASNUMPY_INTERNAL_COMPONENT_AUDIT_ID
+    assert ASNUMPY_INTERNAL_COMPONENT_AUDIT_ID.endswith("-v2")
     assert "utilsfd94c025" in P0_ASNUMPY_AUDIT_ID
     assert P0_ASNUMPY_AUDIT_ID.endswith("-v2")
     assert "array16c901f5" in P0_LINALG_ASNUMPY_AUDIT_ID
@@ -611,7 +611,7 @@ def _write_source_receipt(receipt_path, receipt):
     receipt_path.chmod(0o600)
 
 
-def test_pinned_source_receipt_admits_dynamic_core_and_keeps_matmul_fallback(
+def test_pinned_source_receipt_admits_dynamic_core_and_qualifies_matmul_profile(
     tmp_path, monkeypatch
 ):
     from numpilot.backends import npu
@@ -626,7 +626,16 @@ def test_pinned_source_receipt_admits_dynamic_core_and_keeps_matmul_fallback(
 
     assert manifest.audit_id == ASNUMPY_SOURCE_BUILD_AUDIT_ID
     assert manifest.operators["add"].provenance is ExecutionProvenance.NATIVE_NPU
-    assert manifest.operators["matmul"].provenance is ExecutionProvenance.CPU_FALLBACK
+    matmul = manifest.operators["matmul"]
+    assert matmul.provenance is ExecutionProvenance.NATIVE_NPU
+    assert matmul.signature_variants == (OperatorSignature(positional_args=2),)
+    assert set(matmul.constraints) == {
+        "dtype=float32",
+        "rank>=2",
+        "rank<=2",
+        "contiguous=true",
+        "numel>=1",
+    }
 
 
 def test_pinned_source_receipt_rejects_native_and_wrapper_drift(
@@ -725,7 +734,7 @@ def test_internal_component_receipt_has_distinct_hash_bound_runtime_identity(
     ).hexdigest()
     assert manifest.audit_id == ASNUMPY_INTERNAL_COMPONENT_AUDIT_ID
     assert manifest.operators["add"].provenance is ExecutionProvenance.NATIVE_NPU
-    assert manifest.operators["matmul"].provenance is ExecutionProvenance.CPU_FALLBACK
+    assert manifest.operators["matmul"].provenance is ExecutionProvenance.NATIVE_NPU
 
 
 @pytest.mark.parametrize(
@@ -849,15 +858,15 @@ def _configure_runtime_identity_environment(tmp_path, monkeypatch):
     import numpilot.env_check as env_check
     from numpilot.backends import npu
 
-    cann_home = tmp_path / "Ascend" / "cann-9.0.0"
+    cann_home = tmp_path / "Ascend" / "cann-9.2.0-beta.2"
     opp = cann_home / "opp"
     opp.mkdir(parents=True)
-    (opp / "version.info").write_text("Version=9.0.0\n", encoding="utf-8")
+    (opp / "version.info").write_text("Version=9.2.0-beta.2\n", encoding="utf-8")
     monkeypatch.setenv("ASCEND_HOME_PATH", str(cann_home))
     monkeypatch.setenv("ASCEND_TOOLKIT_HOME", str(cann_home))
     monkeypatch.setenv("ASCEND_OPP_PATH", str(opp))
     monkeypatch.setattr(npu, "AUDITED_CANN_HOME", str(cann_home.resolve()))
-    monkeypatch.setattr(env_check, "_probe_npu_smi_soc_model", lambda: "Ascend910B4")
+    monkeypatch.setattr(env_check, "_probe_npu_smi_soc_model", lambda: "Ascend910B3")
     return cann_home
 
 
@@ -875,10 +884,10 @@ def test_pinned_source_runtime_identity_is_complete_hash_bound_and_matched(
     assert identity.status == "matched"
     assert identity.issues == ()
     assert identity.audit_id == ASNUMPY_SOURCE_BUILD_AUDIT_ID
-    assert identity.asnumpy_commit == "1929a3ba44eb532a9f544f774a249cdf1c4119be"
-    assert identity.asnumpy_tree == "bf2f353825f60bd96f910c3a90fd5b75d4c3c8d0"
-    assert identity.soc_model == "Ascend910B4"
-    assert identity.cann_version == "9.0.0"
+    assert identity.asnumpy_commit == "1e7177f12039b2d87e3cdff6693459d895744f68"
+    assert identity.asnumpy_tree == "a5fb1f3a70be9fc17ecf0dd928776924d4c78e1e"
+    assert identity.soc_model == "Ascend910B3"
+    assert identity.cann_version == "9.2.0-beta.2"
     assert identity.bootstrap_receipt_path == str(receipt_path.resolve())
     assert identity.module_sha256 == hashlib.sha256(
         (root / "__init__.py").read_bytes()
@@ -908,7 +917,7 @@ def test_capability_and_runtime_identity_share_read_only_soc_probe(
     manifest = backend.capability_manifest(["add"])
 
     assert identity.status == "matched"
-    assert identity.soc_model == "Ascend910B4"
+    assert identity.soc_model == "Ascend910B3"
     assert manifest.environment["soc_version"] == identity.soc_model
 
 
@@ -919,7 +928,7 @@ def test_runtime_identity_does_not_trust_forged_soc_environment(
 
     module, _, _, _ = _source_receipt_runtime(tmp_path, monkeypatch)
     _configure_runtime_identity_environment(tmp_path, monkeypatch)
-    monkeypatch.setenv("ASCEND_SOC_VERSION", "Ascend910B4")
+    monkeypatch.setenv("ASCEND_SOC_VERSION", "Ascend910B3")
     monkeypatch.setattr(
         env_check, "_probe_npu_smi_soc_model", lambda: "Ascend310P"
     )
@@ -928,7 +937,7 @@ def test_runtime_identity_does_not_trust_forged_soc_environment(
     identity = backend.runtime_identity()
     manifest = backend.capability_manifest(["add"])
 
-    assert manifest.environment["soc_version"] == "Ascend910B4"
+    assert manifest.environment["soc_version"] == "Ascend910B3"
     assert identity.soc_model == "Ascend310P"
     assert identity.status == "audit_required"
     assert "SoC model does not match the audited runtime" in identity.issues
@@ -1579,14 +1588,14 @@ def test_npu_environment_uses_read_only_npu_smi_soc_fallback(monkeypatch):
     for name in ("ASCEND_SOC_VERSION", "NPU_SOC_VERSION", "SOC_VERSION"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(
-        env_check, "_probe_npu_smi_soc_model", lambda: "Ascend910B4"
+        env_check, "_probe_npu_smi_soc_model", lambda: "Ascend910B3"
     )
 
     environment = NpuBackend(
         _fake_asnumpy(add=_callable)
     ).capability_manifest(["add"]).environment
 
-    assert environment["soc_version"] == "Ascend910B4"
+    assert environment["soc_version"] == "Ascend910B3"
 
 
 def test_npu_environment_soc_fallback_fails_closed(monkeypatch):
@@ -1610,7 +1619,7 @@ def test_runtime_environment_can_be_bound_without_initialising_acl(monkeypatch):
     module.__file__ = "/opt/asnumpy/asnumpy/__init__.py"
     monkeypatch.setenv("ASCEND_HOME_PATH", "/opt/ascend/cann")
     monkeypatch.setenv("CANN_VERSION", "9.1.0")
-    monkeypatch.setenv("ASCEND_SOC_VERSION", "Ascend910B4")
+    monkeypatch.setenv("ASCEND_SOC_VERSION", "Ascend910B3")
 
     environment = NpuBackend(module).capability_manifest(["add"]).environment
 
@@ -1618,7 +1627,7 @@ def test_runtime_environment_can_be_bound_without_initialising_acl(monkeypatch):
         "module_path": "/opt/asnumpy/asnumpy/__init__.py",
         "cann_home": "/opt/ascend/cann",
         "cann_version": "9.1.0",
-        "soc_version": "Ascend910B4",
+        "soc_version": "Ascend910B3",
         "python_version": platform.python_version(),
     }
 

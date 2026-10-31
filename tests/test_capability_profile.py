@@ -29,7 +29,7 @@ def _facts(**overrides):
     return StaticCallFacts(**values)
 
 
-def test_route_manifest_separates_121_public_apis_from_114_npu_routes():
+def test_route_manifest_separates_122_public_apis_from_115_npu_routes():
     manifest = build_pinned_route_manifest()
     top_level = {
         key: entry
@@ -37,8 +37,8 @@ def test_route_manifest_separates_121_public_apis_from_114_npu_routes():
         if "." not in key
     }
 
-    assert len(top_level) == 121
-    assert sum(entry.route.is_npu_computation for entry in top_level.values()) == 114
+    assert len(top_level) == 122
+    assert sum(entry.route.is_npu_computation for entry in top_level.values()) == 115
     assert "angle" not in manifest.entries
     assert manifest.entries["matmul"].route is ComputationRoute.CPU_FALLBACK
     assert manifest.entries["dot"].route is ComputationRoute.CONDITIONAL_CPU_FALLBACK

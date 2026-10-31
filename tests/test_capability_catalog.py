@@ -58,10 +58,10 @@ def test_fixed_catalog_is_versioned_and_has_the_exact_public_counts():
     catalog = ASNUMPY_CAPABILITY_CATALOG
 
     assert catalog.schema_version == 1
-    assert len(catalog.top_level_keys) == 121
+    assert len(catalog.top_level_keys) == 122
     assert len(catalog.keys_for_namespace("linalg")) == 6
     assert len(catalog.keys_for_namespace("random")) == 14
-    assert len(catalog.canonical_keys) == 141
+    assert len(catalog.canonical_keys) == 142
     assert "angle" not in catalog.canonical_keys
     assert "linalg.det" in catalog.canonical_keys
     assert "random.normal" in catalog.canonical_keys

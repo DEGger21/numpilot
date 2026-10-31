@@ -147,7 +147,7 @@ def test_component_receipt_uses_digest_of_the_same_payload_that_was_parsed(
 ):
     trusted = (ROOT / "components/asnumpy/manifest.json").read_bytes()
     replacement = trusted.replace(
-        b'"sha256": "8d4dbd08',
+        b'"sha256": "a8c47cfe',
         b'"sha256": "00000000',
         1,
     )

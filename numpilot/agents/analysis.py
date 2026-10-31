@@ -228,7 +228,7 @@ def _build_asnumpy_call_contracts():
         ("a", "axis", "dtype"),
     )
     add(
-        "max amax amin min nanmax",
+        "max amax amin min nanmax nanmin",
         2,
         ("a", "axis", "keepdims"),
         ("a",),

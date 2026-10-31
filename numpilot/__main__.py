@@ -6445,7 +6445,7 @@ def main(argv=None):
     )
     suite.add_argument(
         "--cann-version",
-        default=os.getenv("CANN_VERSION", "9.0.0"),
+        default=os.getenv("CANN_VERSION", "9.2.0-beta.2"),
         help="单缺口 GapSpec 的目标 CANN 版本（默认 %(default)s）",
     )
     suite.add_argument(

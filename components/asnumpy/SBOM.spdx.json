@@ -1,102 +1,94 @@
 {
   "SPDXID": "SPDXRef-DOCUMENT",
-  "spdxVersion": "SPDX-2.3",
-  "dataLicense": "CC0-1.0",
-  "name": "numpilot-asnumpy-component-0.3.1.dev4+g1929a3ba4",
-  "documentNamespace": "https://gitcode.com/li-xingHIT/numpilot/sbom/asnumpy/0.3.1.dev4-g1929a3ba4",
   "creationInfo": {
-    "created": "2026-09-03T00:00:00Z",
+    "created": "2026-10-31T00:00:00Z",
     "creators": [
       "Organization: NumPilot Contributors",
-      "Tool: NumPilot component release audit v1"
+      "Tool: NumPilot component release audit v2"
     ]
   },
+  "dataLicense": "CC0-1.0",
   "documentDescribes": [
     "SPDXRef-Package-AsNumpy"
   ],
-  "packages": [
-    {
-      "SPDXID": "SPDXRef-Package-AsNumpy",
-      "name": "asnumpy",
-      "versionInfo": "0.3.1.dev4+g1929a3ba4",
-      "downloadLocation": "https://gitcode.com/cann/asnumpy.git@1929a3ba44eb532a9f544f774a249cdf1c4119be",
-      "licenseConcluded": "Apache-2.0",
-      "licenseDeclared": "Apache-2.0",
-      "copyrightText": "NOASSERTION",
-      "filesAnalyzed": false,
-      "checksums": [
-        {
-          "algorithm": "SHA256",
-          "checksumValue": "8d4dbd083b1b1a5033431ec6fb9c0b793c96b1cd89386acad1738926b8138271"
-        }
-      ],
-      "externalRefs": [
-        {
-          "referenceCategory": "PACKAGE-MANAGER",
-          "referenceType": "purl",
-          "referenceLocator": "pkg:pypi/asnumpy@0.3.1.dev4%2Bg1929a3ba4"
-        }
-      ]
-    },
-    {
-      "SPDXID": "SPDXRef-Package-NumPy",
-      "name": "numpy",
-      "versionInfo": "2.2.6",
-      "downloadLocation": "https://pypi.org/project/numpy/2.2.6/",
-      "licenseConcluded": "BSD-3-Clause",
-      "licenseDeclared": "BSD-3-Clause",
-      "copyrightText": "NOASSERTION",
-      "filesAnalyzed": false,
-      "comment": "Runtime dependency declared by the AsNumpy wheel; not bundled in this component."
-    },
-    {
-      "SPDXID": "SPDXRef-Package-Loguru",
-      "name": "loguru",
-      "versionInfo": "0.7.3",
-      "downloadLocation": "https://pypi.org/project/loguru/0.7.3/",
-      "licenseConcluded": "MIT",
-      "licenseDeclared": "MIT",
-      "copyrightText": "NOASSERTION",
-      "filesAnalyzed": false,
-      "comment": "Runtime dependency declared by the AsNumpy wheel; not bundled in this component."
-    },
-    {
-      "SPDXID": "SPDXRef-Package-CANN",
-      "name": "Huawei CANN",
-      "versionInfo": "9.0.0",
-      "downloadLocation": "NOASSERTION",
-      "licenseConcluded": "LicenseRef-CANN-Open-Software-License-Agreement-2.0",
-      "licenseDeclared": "LicenseRef-CANN-Open-Software-License-Agreement-2.0",
-      "copyrightText": "NOASSERTION",
-      "filesAnalyzed": false,
-      "comment": "External runtime prerequisite linked by the native extension; no CANN files are bundled."
-    }
-  ],
+  "documentNamespace": "https://gitcode.com/li-xingHIT/numpilot/sbom/asnumpy/0.4.1.dev12+gc9115e8ce.d20261031",
   "hasExtractedLicensingInfos": [
     {
       "licenseId": "LicenseRef-CANN-Open-Software-License-Agreement-2.0",
       "name": "CANN Open Software License Agreement Version 2.0",
       "seeAlsos": [
         "https://www.hiascend.com/"
+      ]
+    }
+  ],
+  "name": "numpilot-asnumpy-component-0.4.1.dev12+gc9115e8ce.d20261031",
+  "packages": [
+    {
+      "SPDXID": "SPDXRef-Package-AsNumpy",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "a8c47cfe71994f3bfd4180d7354df3904d2bc96c476c3119083fefac747a2138"
+        }
       ],
-      "comment": "The target environment must provide and accept the applicable CANN terms."
+      "copyrightText": "NOASSERTION",
+      "downloadLocation": "https://gitcode.com/cann/asnumpy.git@1e7177f12039b2d87e3cdff6693459d895744f68",
+      "filesAnalyzed": false,
+      "licenseConcluded": "Apache-2.0",
+      "licenseDeclared": "Apache-2.0",
+      "name": "asnumpy",
+      "versionInfo": "0.4.1.dev12+gc9115e8ce.d20261031"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-NumPy",
+      "comment": "Runtime dependency declared by the AsNumpy wheel; not bundled in this component.",
+      "copyrightText": "NOASSERTION",
+      "downloadLocation": "https://pypi.org/project/numpy/2.5.4/",
+      "filesAnalyzed": false,
+      "licenseConcluded": "BSD-3-Clause",
+      "licenseDeclared": "BSD-3-Clause",
+      "name": "numpy",
+      "versionInfo": "2.5.4"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-Loguru",
+      "comment": "Runtime dependency declared by the AsNumpy wheel; not bundled in this component.",
+      "copyrightText": "NOASSERTION",
+      "downloadLocation": "https://pypi.org/project/loguru/0.7.3/",
+      "filesAnalyzed": false,
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
+      "name": "loguru",
+      "versionInfo": "0.7.3"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-CANN",
+      "comment": "External runtime prerequisite linked by the native extension; no CANN files are bundled.",
+      "copyrightText": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "LicenseRef-CANN-Open-Software-License-Agreement-2.0",
+      "licenseDeclared": "LicenseRef-CANN-Open-Software-License-Agreement-2.0",
+      "name": "Huawei CANN",
+      "versionInfo": "9.2.0-beta.2"
     }
   ],
   "relationships": [
     {
-      "spdxElementId": "SPDXRef-Package-AsNumpy",
+      "relatedSpdxElement": "SPDXRef-Package-NumPy",
       "relationshipType": "DEPENDS_ON",
-      "relatedSpdxElement": "SPDXRef-Package-NumPy"
+      "spdxElementId": "SPDXRef-Package-AsNumpy"
     },
     {
-      "spdxElementId": "SPDXRef-Package-AsNumpy",
+      "relatedSpdxElement": "SPDXRef-Package-Loguru",
       "relationshipType": "DEPENDS_ON",
-      "relatedSpdxElement": "SPDXRef-Package-Loguru"
+      "spdxElementId": "SPDXRef-Package-AsNumpy"
     },
     {
-      "spdxElementId": "SPDXRef-Package-AsNumpy",
+      "relatedSpdxElement": "SPDXRef-Package-CANN",
       "relationshipType": "DEPENDS_ON",
-      "relatedSpdxElement": "SPDXRef-Package-CANN"
+      "spdxElementId": "SPDXRef-Package-AsNumpy"
     }
-  ]
+  ],
+  "spdxVersion": "SPDX-2.3"
 }

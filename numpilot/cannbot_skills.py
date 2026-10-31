@@ -12,8 +12,10 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
+import sysconfig
 import tempfile
 from typing import Dict, Mapping, Optional, Tuple
 
@@ -23,7 +25,8 @@ class CannbotSkillError(RuntimeError):
 
 
 CANNBOT_REPOSITORY = "https://gitcode.com/cann/cannbot-skills.git"
-CANNBOT_COMMIT = "1ef6372a538f39b0b7ed34666a3e1f465fb4936a"
+CANNBOT_COMMIT = "39919e2c995e1cd9e193f11ac2e3fcb3cbd1d26c"
+CANNBOT_TREE = "3a95d925b085dfb401233f26f44fa9fab3d31999"
 CANNBOT_SKILL_NAME = "ascendc-registry-invoke-template"
 CANNBOT_LICENSE = "CANN Open Software License Agreement Version 2.0"
 _SKILL_PREFIX = "ops/ascendc-registry-invoke-template"
@@ -32,6 +35,134 @@ _API_PRACTICES_PREFIX = "ops/ascendc-api-best-practices"
 _PRECISION_PREFIX = "ops/ascendc-precision-debug"
 _MAX_BUNDLE_BYTES = 384 * 1024
 _MAX_GIT_OUTPUT = 4096
+_STATIC_BUNDLE_SCHEMA = "numpilot.cannbot-static-bundle"
+_STATIC_BUNDLE_VERSION = 1
+_STATIC_BUNDLE_MANIFEST = "manifest.json"
+_STATIC_BUNDLE_CONTENTS = "bundle.json"
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _static_skill_root_candidates() -> Tuple[Path, ...]:
+    package_parent = Path(__file__).resolve().parent.parent
+    relative = Path("components") / "cannbot-skills" / CANNBOT_COMMIT
+    return (
+        package_parent / relative,
+        Path(sysconfig.get_path("data")) / "share" / "numpilot" / relative,
+    )
+
+
+def default_static_skill_root() -> Path:
+    """Return the repository/package-owned static CANNBot snapshot."""
+
+    candidates = _static_skill_root_candidates()
+    for candidate in candidates:
+        if candidate.is_dir() and not candidate.is_symlink():
+            return candidate
+    return candidates[0]
+
+
+def _static_file(root: Path, relative: str) -> Path:
+    target = root / relative
+    if target.is_symlink() or not target.is_file():
+        raise CannbotSkillError(
+            "static CANNBot bundle file is missing or unsafe: %s" % relative
+        )
+    return target
+
+
+def load_static_skill_bundle(root: Optional[Path] = None) -> "SkillBundle":
+    """Load the author-owned static snapshot without Git or network access."""
+
+    snapshot = Path(root).expanduser() if root is not None else default_static_skill_root()
+    if snapshot.is_symlink() or not snapshot.is_dir():
+        raise CannbotSkillError(
+            "static CANNBot skill root is not a real directory: %s" % snapshot
+        )
+    try:
+        manifest = json.loads(
+            _static_file(snapshot, _STATIC_BUNDLE_MANIFEST).read_text(encoding="utf-8")
+        )
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise CannbotSkillError("static CANNBot skill manifest is invalid") from exc
+    if (
+        not isinstance(manifest, dict)
+        or manifest.get("schema") != _STATIC_BUNDLE_SCHEMA
+        or manifest.get("schema_version") != _STATIC_BUNDLE_VERSION
+        or manifest.get("repository") != CANNBOT_REPOSITORY
+        or manifest.get("commit") != CANNBOT_COMMIT
+        or manifest.get("tree") != CANNBOT_TREE
+        or manifest.get("skill_name") != CANNBOT_SKILL_NAME
+        or manifest.get("license") != CANNBOT_LICENSE
+    ):
+        raise CannbotSkillError("static CANNBot skill manifest identity is invalid")
+    declared_files = manifest.get("files")
+    if (
+        not isinstance(declared_files, dict)
+        or set(declared_files) != set(_BUNDLE_FILES)
+        or any(
+            not isinstance(relative, str)
+            or not isinstance(digest, str)
+            or not _SHA256_RE.fullmatch(digest)
+            for relative, digest in declared_files.items()
+        )
+    ):
+        raise CannbotSkillError("static CANNBot skill file manifest is invalid")
+    try:
+        contents = json.loads(
+            _static_file(snapshot, _STATIC_BUNDLE_CONTENTS).read_text(encoding="utf-8")
+        )
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise CannbotSkillError("static CANNBot skill contents are invalid") from exc
+    if not isinstance(contents, dict) or set(contents) != set(_BUNDLE_FILES):
+        raise CannbotSkillError("static CANNBot skill contents do not match manifest")
+    files: Dict[str, str] = {}
+    hashes: Dict[str, str] = {}
+    total = 0
+    for relative in _BUNDLE_FILES:
+        content = contents[relative]
+        if not isinstance(content, str) or any(ord(character) == 0 for character in content):
+            raise CannbotSkillError("static CANNBot skill content is invalid: %s" % relative)
+        payload = content.encode("utf-8")
+        digest = _sha256(payload)
+        if digest != declared_files[relative]:
+            raise CannbotSkillError(
+                "static CANNBot skill hash mismatch: %s" % relative
+            )
+        files[relative] = content
+        hashes[relative] = digest
+        total += len(payload)
+    identity = json.dumps(
+        {
+            "repository": CANNBOT_REPOSITORY,
+            "commit": CANNBOT_COMMIT,
+            "skill_name": CANNBOT_SKILL_NAME,
+            "files": dict(sorted(hashes.items())),
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    bundle_sha256 = _sha256(identity)
+    if (
+        not isinstance(manifest.get("bundle_sha256"), str)
+        or not _SHA256_RE.fullmatch(manifest["bundle_sha256"])
+        or total > _MAX_BUNDLE_BYTES
+        or bundle_sha256 != manifest.get("bundle_sha256")
+        or total != manifest.get("total_bytes")
+    ):
+        raise CannbotSkillError("static CANNBot skill bundle identity is invalid")
+    return SkillBundle(
+        root=str(snapshot.resolve()),
+        repository=CANNBOT_REPOSITORY,
+        commit=CANNBOT_COMMIT,
+        skill_name=CANNBOT_SKILL_NAME,
+        license=CANNBOT_LICENSE,
+        files=files,
+        file_sha256=hashes,
+        bundle_sha256=bundle_sha256,
+        total_bytes=total,
+    )
+
+
 
 # These are paths in the independently installed CANNBot repository, not
 # copies of Skill content.  Generation follows the official registry-invoke
@@ -344,15 +475,16 @@ def resolve_skill_bundle(
     *,
     allow_fetch: bool,
 ) -> SkillBundle:
-    """Resolve an explicit checkout or the versioned automatic cache."""
+    """Resolve the author-owned static bundle before any mutable checkout."""
 
     if skill_root and skill_root != "auto":
-        return load_skill_bundle(Path(skill_root))
-    cached = default_skill_checkout()
-    if cached.is_dir() and not cached.is_symlink():
-        return load_skill_bundle(cached)
-    if not allow_fetch:
-        raise CannbotSkillError(
-            "pinned CANNBot skill is not cached; run `python -m numpilot setup-skills`"
-        )
-    return fetch_pinned_skill(cached)
+        explicit = Path(skill_root)
+        if (explicit / _STATIC_BUNDLE_MANIFEST).is_file():
+            return load_static_skill_bundle(explicit)
+        return load_skill_bundle(explicit)
+    static_root = default_static_skill_root()
+    if static_root.is_dir() and not static_root.is_symlink():
+        return load_static_skill_bundle(static_root)
+    raise CannbotSkillError(
+        "static CANNBot skill bundle is missing; author must update the bundled snapshot"
+    )

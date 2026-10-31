@@ -178,8 +178,8 @@ Bootstrap receipt 绑定 source/component、wheel、Python/native 模块、解�
 | 层级 | 支持范围 | 可以证明 |
 |---|---|---|
 | Core CLI / shim | Linux，Python 3.10+，NumPy 1.26+ | 静态分析、流程检查和数值诊断；不证明 NPU |
-| Bundled NPU component | Linux AArch64、CPython 3.10、CANN 9.0.0、兼容的 driver/firmware/OPP | 安装并核对随发行物提供的 hash-bound AsNumpy wheel |
-| Strict verified profile | Ascend 910B4、CANN 9.0.0 位于 `/usr/local/Ascend/cann-9.0.0`、CPython 3.10.20、NumPy 2.2.6、Loguru 0.7.3、随发行物提供的 AsNumpy component | 仅在每个调用自身的 dtype/rank/layout/profile 与资格回执范围内证明 strict-NPU |
+| Bundled NPU component | Linux AArch64、CPython 3.12、CANN 9.2.0-beta.2、兼容的 driver/firmware/OPP | 安装并核对随发行物提供的 hash-bound AsNumpy wheel |
+| Strict verified profile | Ascend 910B3、CANN 9.2.0-beta.2 位于 `/usr/local/Ascend/cann-9.2.0-beta.2`、CPython 3.12.14、NumPy 2.5.4、Loguru 0.7.3、随发行物提供的 AsNumpy component | 仅在每个调用自身的 dtype/rank/layout/profile 与资格回执范围内证明 strict-NPU |
 
 不同 SoC、CANN 版本或安装位置、Python ABI、操作系统、wrapper/native 文件、driver/OPP 或组件
 哈希都不自动继承 strict 结论。此类环境必须返回 `CAPABILITY_AUDIT_REQUIRED`，直到新 profile、

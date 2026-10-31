@@ -117,7 +117,7 @@ def _make_module():
     ]:
         _u(name, getattr(np, name))
     # 归约(带 axis 透传)
-    for name in ["sum", "mean", "max", "min", "amax", "amin"]:
+    for name in ["sum", "mean", "max", "min", "amax", "amin", "nanmin"]:
         _u(name, getattr(np, name))
 
     # 非 numpy 原生算子

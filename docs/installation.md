@@ -11,9 +11,9 @@ This guide separates three different outcomes. Do not treat one as proof of anot
 | Strict-NPU readiness | The complete runtime identity matches an audited profile for the requested calls | Yes, exact profile |
 
 > [!WARNING]
-> The current strict profile is bound to Linux/AArch64, Ascend 910B4, CANN 9.0.0, CPython 3.10.20, and exact
+> The current strict profile is bound to Linux/AArch64, Ascend 910B3, CANN 9.2.0-beta.2, CPython 3.12.14, and exact
 > AsNumpy source/install/receipt hashes. The core package accepts Python 3.10+, but the bundled-component
-> installer requires CPython 3.10 on AArch64. A different SoC, CANN, Python ABI, wrapper, native library, or
+> installer requires CPython 3.12 on AArch64. A different SoC, CANN, Python ABI, wrapper, native library, or
 > receipt must return `CAPABILITY_AUDIT_REQUIRED` until it is independently qualified.
 
 ## 1. CPU/shim development setup
@@ -46,7 +46,7 @@ For the frozen-component mode, prepare these outside NumPilot before running `in
 
 - a compatible Ascend driver, firmware, CANN Toolkit, and OPP;
 - a visible NPU (`npu-smi info` must work);
-- CPython 3.10 with `venv`/`pip` for the bundled component;
+- CPython 3.12 with `venv`/`pip` for the bundled component;
 - user-owned space for the virtual environment, persistent state, and runtime receipts.
 
 Installing the fixed wheel does not require Git, CMake, Make/Ninja, GCC/G++, Python development headers, or
@@ -68,7 +68,7 @@ Check the fixed-component prerequisites before starting:
 uname -m
 python3 -c 'import platform; print(platform.python_implementation(), platform.python_version())'
 npu-smi info
-test -f /usr/local/Ascend/cann-9.0.0/set_env.sh
+test -f /usr/local/Ascend/cann-9.2.0-beta.2/set_env.sh
 ```
 
 For source-first mode, additionally check `git --version`, `g++ --version`, `cmake --version`, Python
@@ -91,7 +91,7 @@ chmod 700 "$HOME/.local/venvs"
 
 ./install.sh --allow-network \
   --python "$(command -v python3)" \
-  --cann-env /usr/local/Ascend/cann-9.0.0/set_env.sh \
+  --cann-env /usr/local/Ascend/cann-9.2.0-beta.2/set_env.sh \
   --venv "$HOME/.local/venvs/numpilot" \
   --persistent-root "$HOME/.local/share/numpilot"
 
@@ -102,7 +102,7 @@ python -m numpilot doctor --backend npu
 
 Before creating the venv or invoking pip, the installer verifies the component manifest, wheel, LICENSE/SBOM,
 CPython ABI, and machine. It resolves NumPy and Loguru at the exact versions recorded by that manifest. Use
-`--python /absolute/path/to/python3.10` if the required interpreter is not the default `python3`.
+`--python /absolute/path/to/python3.12` if the required interpreter is not the default `python3`.
 
 The release manifest must also bind the wheel `METADATA`/`RECORD`, installed `asnumpy/__init__.py`,
 native `_core` hashes, Python/architecture tag and the audited CANN/SoC profile. Keep the upstream
@@ -110,7 +110,7 @@ Apache-2.0 LICENSE beside the component and include it in the SBOM/license inven
 [AsNumpy internal-component lock](ASNUMPY-INTERNAL-COMPONENT-LOCK.zh-CN.md) for the reference identity,
 artifact caveat and upgrade/rollback procedure.
 
-The current attachment targets Linux AArch64, CPython 3.10, and CANN 9.0.0. It does not include the CANN
+The current attachment targets Linux AArch64, CPython 3.12, and CANN 9.2.0-beta.2. It does not include the CANN
 driver, firmware, or OPP. You no longer need to fetch or compile AsNumpy on site, but the local wheel still
 has to be installed once into the target virtual environment after loading the matching CANN environment.
 
@@ -131,9 +131,9 @@ git clone --branch main --depth 1 https://gitcode.com/li-xingHIT/numpilot.git
 cd numpilot
 
 ./install.sh --allow-network \
-  --python /absolute/path/to/python3.10 \
+  --python /absolute/path/to/python3.12 \
   --asnumpy-source /absolute/path/to/pinned/asnumpy \
-  --cann-env /usr/local/Ascend/cann-9.0.0/set_env.sh \
+  --cann-env /usr/local/Ascend/cann-9.2.0-beta.2/set_env.sh \
   --venv /absolute/user-owned/numpilot-venv \
   --persistent-root /absolute/user-owned/numpilot-runtime
 
@@ -149,7 +149,7 @@ Useful alternatives:
 ```bash
 # Use a clean checkout that already matches the exact pinned AsNumpy origin/commit/tree.
 ./install.sh --allow-network \
-  --python /absolute/path/to/python3.10 \
+  --python /absolute/path/to/python3.12 \
   --asnumpy-source /absolute/path/to/pinned/asnumpy \
   --cann-env /absolute/path/to/CANN/set_env.sh \
   --venv /absolute/user-owned/numpilot-venv \
@@ -157,7 +157,7 @@ Useful alternatives:
 
 # In frozen-component mode, select an explicit Python package index. Do not put credentials in the URL.
 ./install.sh --allow-network \
-  --python /absolute/path/to/python3.10 \
+  --python /absolute/path/to/python3.12 \
   --pip-index-url https://mirror.example.invalid/simple \
   --asnumpy-component "$PWD/components/asnumpy" \
   --cann-env /absolute/path/to/CANN/set_env.sh \
@@ -241,7 +241,7 @@ Install AsNumpy and the pinned CANNBot checkout together:
 
 ```bash
 ./install.sh --allow-network \
-  --python /absolute/path/to/python3.10 \
+  --python /absolute/path/to/python3.12 \
   --with-cannbot --accept-cannbot-license \
   --cann-env /absolute/path/to/CANN/set_env.sh \
   --venv /absolute/user-owned/numpilot-venv \
@@ -270,7 +270,7 @@ python -m numpilot setup-skills \
 
 CANNBot Skills and `cann/ops-nn` are different dependencies. The installer does not automatically fetch
 `ops-nn`; the current official-source resolver accepts only an explicitly provided, version-matched local
-checkout and currently pins the CANN 9.0.0 source mapping.
+checkout and currently pins the CANN 9.2.0-beta.2 source mapping.
 
 ## 7. Configure and probe the model (optional terminal configured sub-run)
 

@@ -19,8 +19,8 @@ from typing import Any, Dict, Mapping, Tuple
 
 CAPABILITY_CATALOG_SCHEMA_VERSION = 1
 ASNUMPY_CATALOG_REPOSITORY = "https://gitcode.com/cann/asnumpy.git"
-ASNUMPY_CATALOG_COMMIT = "1929a3ba44eb532a9f544f774a249cdf1c4119be"
-ASNUMPY_CATALOG_TREE = "bf2f353825f60bd96f910c3a90fd5b75d4c3c8d0"
+ASNUMPY_CATALOG_COMMIT = "1e7177f12039b2d87e3cdff6693459d895744f68"
+ASNUMPY_CATALOG_TREE = "a5fb1f3a70be9fc17ecf0dd928776924d4c78e1e"
 
 ASNUMPY_TOP_LEVEL_SOURCE = "src/asnumpy/__init__.py"
 ASNUMPY_LINALG_SOURCE = "src/asnumpy/linalg/__init__.py"
@@ -295,6 +295,14 @@ _NON_COMPUTE_LAZY_EXPORTS = {
     "ScalarLike": "._types",
     "broadcast_shape": ".utils",
     "ndarray": ".utils",
+    "can_cast": "._dtype",
+    "dtype": "._dtype",
+    "finfo": "._dtype",
+    "iinfo": "._dtype",
+    "isdtype": "._dtype",
+    "issubdtype": "._dtype",
+    "promote_types": "._dtype",
+    "result_type": "._dtype",
 }
 
 
@@ -314,7 +322,7 @@ _TOP_LEVEL_EXPORTS = {
         deg2rad degrees divide divmod exp exp2 expm1 fabs fix floor
         floor_divide fmax fmin fmod float_power gelu gcd heaviside hypot lcm
         ldexp log log10 log1p log2 logaddexp logaddexp2 max maximum min minimum
-        mod modf multiply nan_to_num nancumprod nancumsum nanmax nanprod nansum
+        mod modf multiply nan_to_num nancumprod nancumsum nanmax nanmin nanprod nansum
         negative power positive prod rad2deg radians real reciprocal relu
         remainder rint round_ sign signbit sin sinc sinh sqrt square subtract
         sum tan tanh true_divide trunc

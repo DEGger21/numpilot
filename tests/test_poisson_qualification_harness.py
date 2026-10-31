@@ -66,19 +66,17 @@ def test_subprocess_environment_is_private_and_only_inherits_safe_device_list(
     assert sentinel not in env.values()
     for name in inherited_names[:12]:
         assert name not in env
-    assert env["PYTHONPATH"].split(os.pathsep) == [
-        str(_SCRIPT.parents[1]),
-        str(
-            Path(sys.executable).absolute().parent.parent
-            / "lib/python3.10/site-packages"
-        ),
-        str(
-            _SCRIPT.parents[2]
-            / "numpilot-gap-runs/asnumpy-runtime-20260813/venv/lib/"
-            "python3.10/site-packages"
-        ),
-        "/usr/local/Ascend/cann-9.0.0/python/site-packages",
-        "/usr/local/Ascend/cann-9.0.0/opp/built-in/op_impl/ai_core/tbe",
+    python_path = env["PYTHONPATH"].split(os.pathsep)
+    assert python_path[0] == str(_SCRIPT.parents[1])
+    assert python_path[1].endswith("site-packages")
+    assert python_path[2] == str(
+        _SCRIPT.parents[2]
+        / "numpilot-gap-runs/asnumpy-runtime-20260813/venv/lib/"
+        "python3.10/site-packages"
+    )
+    assert python_path[3:] == [
+        str(harness._CANN_ROOT / "python/site-packages"),
+        str(harness._CANN_ROOT / "opp/built-in/op_impl/ai_core/tbe"),
     ]
     assert env["PATH"].split(os.pathsep)[0] == str(
         Path(sys.executable).absolute().parent

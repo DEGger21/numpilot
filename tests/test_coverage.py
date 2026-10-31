@@ -19,5 +19,5 @@ def test_supported_ops_is_frozenset():
     assert isinstance(SUPPORTED_OPS, frozenset)
     assert "matmul" in SUPPORTED_OPS
     assert SUPPORTED_OPS == ASNUMPY_CAPABILITY_CATALOG.top_level_keys
-    assert len(SUPPORTED_OPS) == 121
+    assert len(SUPPORTED_OPS) == 122
     assert CUSTOM_OPS == frozenset({"gelu", "relu", "softmax"})
