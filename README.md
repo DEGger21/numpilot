@@ -2,74 +2,120 @@
 
 <h1><img src="docs/assets/brand/numpilot-wordmark.png" alt="NumPilot" width="560"></h1>
 
-### Verified NumPy migration for Huawei Ascend NPUs
+### Auditable NumPy → AsNumpy migration for Ascend NPUs
 
 <p>
   <a href="README.zh-CN.md">简体中文</a> ·
   <a href="docs/installation.md">Installation</a> ·
-  <a href="docs/architecture.md">Architecture</a> ·
+  <a href="docs/architecture.md">Implementation notes</a> ·
   <a href="CONTRIBUTING.md">Contributing</a> ·
   <a href="LICENSE">License</a>
 </p>
 
 <p>
   <img alt="Version" src="https://img.shields.io/badge/version-0.3.0a1.dev0-6D5CE7?style=flat-square">
-  <img alt="Status" src="https://img.shields.io/badge/status-alpha-F59E0B?style=flat-square">
-  <img alt="Python" src="https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&amp;logo=python&amp;logoColor=white">
-  <img alt="NPU platform" src="https://img.shields.io/badge/NPU-Linux%20AArch64-008AA3?style=flat-square">
+  <img alt="Status" src="https://img.shields.io/badge/status-active%20refactor-F59E0B?style=flat-square">
+  <img alt="Python" src="https://img.shields.io/badge/Python-as%20supported%20by%20AsNumpy-3776AB?style=flat-square&amp;logo=python&amp;logoColor=white">
+  <img alt="NPU" src="https://img.shields.io/badge/NPU-Ascend%20(runtime--detected)-008AA3?style=flat-square">
   <img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-2EA44F?style=flat-square">
 </p>
 
 </div>
 
-NumPilot analyzes supported, statically understandable single-file NumPy programs, produces AsNumpy-based
-migration candidates, and admits them only after deterministic capability, provenance, structure, and numerical
-checks. Unsupported or ambiguous behavior stops explicitly instead of being silently rewritten or routed to CPU.
+> **Project status: active refactor.**
+> NumPilot is being re-architected around a single three-stage, six-role pipeline. The architecture
+> diagram and role contracts below describe the target design; parts of this repository still implement
+> the previous parallel pipelines and are being migrated incrementally. CLI entry points, module layout,
+> and internal interfaces may change until the refactor completes. For reproducible use, pin a commit or
+> release.
 
-> The model proposes a candidate; NumPilot's deterministic gates decide whether it can be used.
+## Overview
 
-## Install
+NumPilot is a migration framework for statically analyzable NumPy programs targeting AsNumpy on Ascend
+NPUs. It separates model-generated candidates from deterministic admission: parsing, capability
+resolution, builds, correctness checks, full-program validation, and receipts are deterministic; models
+are used for understanding, planning, code migration, gap filling, diagnosis, and reporting.
 
-### Recommended: Huawei Cloud Ascend base image
+Unsupported or ambiguous programs stop with a stable failure code instead of being silently rewritten or
+routed to CPU.
 
-> **CANN 9.0.0 · Ascend 910B · Ubuntu 22.04 · Linux/Arm64 · Python 3.10 + 3.11** —
-> `swr.cn-southwest-2.myhuaweicloud.com/wuzhenqing/cann:9.0.0-910b-ubuntu22.04-py3.11`
+## Target architecture
 
-Use this image to standardize the OS, CANN, and Python base environment across Huawei Cloud machines:
+<p align="center">
+  <a href="docs/assets/architecture/numpilot-architecture-en.png">
+    <img src="docs/assets/architecture/numpilot-architecture-en.png" alt="NumPilot: LLM-native NumPy to AsNumpy migration" width="100%">
+  </a>
+</p>
 
-```bash
-git clone --branch main --depth 1 https://gitcode.com/li-xingHIT/numpilot.git
-cd numpilot
+<p align="center"><sub>English architecture diagram · <a href="docs/assets/architecture/numpilot-architecture-zh.png">中文架构图</a></sub></p>
 
-export NUMPILOT_IMAGE='swr.cn-southwest-2.myhuaweicloud.com/wuzhenqing/cann:9.0.0-910b-ubuntu22.04-py3.11'
-docker pull "$NUMPILOT_IMAGE"
+The target pipeline has three stages and six model roles:
 
-# Enter the image; NPU use also needs the device and host-driver mappings supplied by Huawei Cloud
-docker run --rm -it \
-  -v "$PWD":/workspace/numpilot \
-  -w /workspace/numpilot \
-  "$NUMPILOT_IMAGE" bash
+| Stage | Deterministic backbone | Model roles | Stage exit |
+| --- | --- | --- | --- |
+| Understand | AST, Program IR, DAG, capability analysis | ① Analyzer · ② Planner | Validated migration plan |
+| Migrate | API registry, contracts, builds, API correctness check | ③ API Gap Filler · ④ Code Migrator | Migrated AsNumpy code |
+| Validate | Full-program validation, receipts, manifest | ⑤ Diagnostics Agent · ⑥ Migration Reporter | Program + evidence + report |
 
-# Inside the container, inspect the selected interpreter instead of inferring its ABI from the image tag
-uname -m
-command -v python3
-python3 -c 'import platform; print(platform.python_implementation(), platform.python_version())'
-```
+The diagram describes the target design, not a module dependency graph of the current tree.
 
-The current image is `linux/arm64`, with CANN at `/usr/local/Ascend/cann-9.0.0`. It contains both Python 3.10
-and 3.11, and its current `PATH` selects Miniconda Python 3.10 first. Image tags can be updated, so treat the
-in-container checks above as authoritative. The bundled AsNumpy wheel is `cp310`: CPython 3.10.x can use the
-installer below, although the current strict-NPU claim is further bound to CPython 3.10.20 and Ascend 910B4.
-With Python 3.11, use only the core CLI, shim, and Agent Skill, or build, register, and qualify a new `cp311`
-AsNumpy component.
+Two gates are never delegated to a model:
 
-The image is not itself proof of NumPilot strict-NPU qualification and does not replace the host driver,
-firmware, NPU device authorization, or container device mapping. Never bypass the ABI check by renaming the
-`cp310` wheel; production deployments should also pin and verify the image digest.
+- **API correctness check** — per gap: build, load, dtype/shape/edge behavior, and numerical comparison
+  with the NumPy oracle.
+- **Full-program validation** — the migrated program against the source program, with named outputs,
+  dtype/shape/numeric comparison, and a write-once receipt.
 
-### Core CLI
+A generated operator remains `generated_unverified` until the API correctness check passes. A single
+qualified operator does not imply a qualified program; the whole program must still clear full-program
+validation.
 
-This route supports analysis, the shim backend, and Agent Skill use without CANN or an NPU:
+## Refactor status
+
+The refactor is organized around the following workstreams. Status labels describe the repository, not the
+target design.
+
+| Workstream | Status | Notes |
+| --- | --- | --- |
+| Architecture contract | Defined | This README and the architecture diagram define the target |
+| Unified fact layer | In progress | Consolidating duplicated AST and call-site scanning |
+| Capability registry | In progress | Merging coverage, catalog, and profile logic into one registry |
+| ModelGateway | Planned | All six roles will share one typed, auditable gateway |
+| Analyzer / Planner | Partially implemented | Current analysis and decision agents are rule-based; LLM roles are being introduced |
+| Code Migrator | In progress | Existing script migration path is being reduced to a single rewrite role |
+| API Gap Filler | Partially implemented | Existing gap pipeline is being simplified to one task per unique gap |
+| Full-program validation | Implemented | Retained as the deterministic program-level gate |
+| Diagnostics / Reporter | Planned | New roles; existing reporting is being consolidated |
+| Legacy pipelines | To be retired | Moved to `compat/legacy` after parity is established |
+
+### What is changing
+
+| Area | Current repository | Target |
+| --- | --- | --- |
+| Entry points | CLI, wizard, Agent Skill, legacy contract path | CLI dispatch plus one workflow coordinator |
+| Model access | Per-module model providers | One ModelGateway |
+| Capability logic | Multiple scanners and catalogs | One ApiRegistry |
+| Migration paths | Parallel ordinary, contract, and gap chains | One Understand → Migrate → Validate pipeline |
+| Receipts | Stage-specific variants | Unified receipt schema and run manifest |
+
+## Requirements
+
+NumPilot follows **your AsNumpy installation**, not a hard-coded environment matrix. If NumPy and AsNumpy
+work in your interpreter, you have the environment NumPilot targets.
+
+- **Python / NumPy**: the versions your AsNumpy build supports. NumPilot does not introduce its own upper
+  pins.
+- **AsNumpy**: installed and importable in the same interpreter that runs NumPilot.
+- **CANN / Ascend driver / SoC**: discovered at runtime; NumPilot does not install or pin them.
+- **NPU**: optional. Without one, analysis and shim verification still work; strict-NPU and performance
+  claims require a real device and a qualified profile.
+
+`numpilot doctor` reports the detected environment. An unknown combination is marked
+`qualification_required`; it is not rejected and it is not silently treated as verified.
+
+## Installation
+
+Install NumPilot into the environment where AsNumpy already works:
 
 ```bash
 git clone --branch main --depth 1 https://gitcode.com/li-xingHIT/numpilot.git
@@ -77,198 +123,134 @@ cd numpilot
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install .
-python -m numpilot doctor --backend shim
+
+# NumPy and AsNumpy must already work in this interpreter
+python -c "import numpy, asnumpy; print(numpy.__version__, asnumpy.__version__)"
+
+python -m numpilot doctor --backend shim   # no NPU required
+python -m numpilot doctor --backend npu    # on an Ascend machine
 ```
 
-### Ascend NPU runtime
+If AsNumpy lives in another virtual environment, activate that environment and install NumPilot there.
+NumPilot uses the AsNumpy importable from its own interpreter; it does not vendor or replace your AsNumpy
+build.
 
-Install the matching Ascend driver and CANN first. The bundled component requires Linux/AArch64 and CPython
-3.10; the current strict profile was verified with CPython 3.10.20 and CANN 9.0.0 at
-`/usr/local/Ascend/cann-9.0.0`. Check the selected interpreter before installing:
+For air-gapped, hash-bound, or reproducible deployments, see
+[Installation and verification](docs/installation.md). Those paths are optional; the default contract is
+"bring a working AsNumpy".
 
-```bash
-uname -m
-python3 -c 'import platform; print(platform.python_implementation(), platform.python_version())'
-mkdir -p "$HOME/.local/venvs"
-chmod 700 "$HOME/.local/venvs"
+## Usage
 
-./install.sh --allow-network \
-  --python "$(command -v python3)" \
-  --cann-env /usr/local/Ascend/cann-9.0.0/set_env.sh \
-  --venv "$HOME/.local/venvs/numpilot" \
-  --persistent-root "$HOME/.local/share/numpilot"
+> The commands below reflect the current CLI. Entry points are being consolidated during the refactor and
+> may change. Pin a commit for reproducible workflows.
 
-. "$HOME/.local/share/numpilot/activate-numpilot.sh"
-python -m numpilot bootstrap --verify --json
-python -m numpilot doctor --backend npu
-```
+### Terminal workflow
 
-The two checks must report `aarch64` and `CPython 3.10.x`. Use
-`--python /absolute/path/to/python3.10` when the correct interpreter is not the default `python3`; only the exact
-3.10.20 profile currently carries the strict verified claim.
-
-What these commands add:
-
-| Route | Installed or created | Not installed |
-|---|---|---|
-| `pip install .` | NumPilot CLI, NumPy, Loguru, Rich, the Skill bundles, and the locked AsNumpy component attachment as package data | Ascend driver, CANN, OPP, an active AsNumpy runtime, CANNBot, or an LLM |
-| `install.sh` | A private virtual environment, NumPilot and its Python dependencies, the exact bundled AsNumpy wheel, bootstrap receipt, activation file, and state/config/cache directories | Ascend driver, firmware, CANN, OPP, system native libraries, model credentials, or shell-startup changes |
-
-CANNBot is optional. Enable the pinned checkout with `--with-cannbot --accept-cannbot-license`, or select an
-existing exact checkout with `--cannbot-source /absolute/path/to/cannbot-skills --accept-cannbot-license`.
-The configured-terminal `add_one` gap example requires one of these forms; ordinary mappings that already have
-qualified operators do not require CANNBot. The installer uses an editable NumPilot install and binds the
-activation file to this checkout, so keep the checkout at the same path. See the
-[installation guide](docs/installation.md) for prerequisites and troubleshooting.
-
-## Choose a workflow
-
-| Workflow | Model source | Is `llm.json` required? |
-|---|---|---|
-| Terminal workflow | The OpenAI-compatible endpoint configured for NumPilot | Yes |
-| Agent Skill workflow | The AI already running in your IDE or sidebar | No; the agent must not read or invoke it |
-
-### A. Terminal workflow with `llm.json`
-
-Ask NumPilot for the exact configuration path, then create the private template:
+NumPilot can use an OpenAI-compatible model configured explicitly for it. The configuration is private and
+opt-in.
 
 ```bash
 python -m numpilot paths --get llm_config
 python -m numpilot configure-llm --init
-```
-
-Without path overrides the file is `~/.config/numpilot/llm.json` (or
-`$XDG_CONFIG_HOME/numpilot/llm.json`). After activating the NPU installation shown above it is
-`$HOME/.local/share/numpilot/.numpilot-config/llm.json`. The path printed by `paths --get llm_config` is
-authoritative. Fill it as follows:
-
-```json
-{
-  "schema_version": 2,
-  "base_url": "https://your-openai-compatible-service.example/v1",
-  "auth_token": "REPLACE_WITH_A_PRIVATE_TOKEN",
-  "model": "exact-model-id",
-  "provider": "provider-label",
-  "protocol": "openai-chat-completions",
-  "response_model_aliases": []
-}
-```
-
-Then validate locally and make one explicit network probe:
-
-```bash
+# edit the generated llm.json: base_url, auth_token, model
 python -m numpilot configure-llm --check
 python -m numpilot configure-llm --probe
 numpilot
 ```
 
-Inside the shell, enter `check llm`, `migrate`, the absolute source path, `y`, `execute`, and `exit` in that
-order. `y` authorizes generation; `execute` separately authorizes running the displayed hash-bound source and
-candidate. Keep the configuration directory at mode `0700` and `llm.json` at `0600`; never commit it.
+Inside the interactive shell:
 
-### B. Agent Skill workflow without `llm.json`
+```text
+check llm
+migrate /absolute/path/to/program.py
+y
+execute
+exit
+```
 
-Open the cloned repository in an IDE/sidebar AI that can read workspace files and run approved commands. Do
-not run `configure-llm` or `check llm`. Send the sidebar AI a prompt like this:
+`y` authorizes candidate generation; `execute` separately authorizes running the displayed source and
+candidate. Keep `llm.json` at mode `0600` and never commit it.
+
+### Agent Skill workflow
+
+If you use an IDE/sidebar AI that can read the workspace and run approved commands, NumPilot can operate
+without `llm.json`. The sidebar model authors the candidate; NumPilot performs the deterministic gates.
 
 ```text
 Read /absolute/path/to/numpilot/skill/SKILL.md and use its agent/no-llm lane.
 Migrate /absolute/path/to/source.py with the model already available in this sidebar.
 Do not read llm.json, do not run configure-llm or check llm, and do not invoke NumPilot's
 configured-model provider. First perform read-only analysis and show me the plan. After I confirm,
-author the candidate yourself and submit only supported artifacts to NumPilot's deterministic gates.
-Report any stopped, unverified, numeric, runtime, and performance states without upgrading them.
+author the candidate and submit only supported artifacts to NumPilot's deterministic gates.
+Report stopped, unverified, numeric, runtime, and performance states without upgrading them.
 ```
 
-For the bundled example, replace the source with the absolute path to
-`examples/add_one_migration_demo.py`. The Skill is an operating contract, not a model: the sidebar AI writes
-the candidate, while NumPilot performs the supported analysis and verification gates. Without an NPU runtime,
-this route can analyze and draft but cannot claim strict-NPU qualification. A route without a registered
-artifact adapter stops honestly at an agent-authored draft rather than fabricating later receipts.
+A candidate without a registered adapter stops as `agent_authored_draft`; it cannot inherit strict-NPU or
+performance claims.
 
-<p align="center">
-  <img src="docs/assets/architecture/numpilot-two-routes.zh-CN.png" alt="Terminal and Agent Skill workflows" width="100%">
-</p>
+## Design principles
 
-## Highlights
+- **Deterministic facts first.** Parsing, call-site extraction, capability resolution, builds, validation,
+  and receipts are deterministic. Models do not add, remove, or silently reinterpret call sites.
+- **Models generate; validators decide.** Every model output is a candidate. `ValidationReceipt` is
+  written only by the validator.
+- **AsNumpy is the compatibility source of truth.** Capability evidence is bound to the actual AsNumpy,
+  Python ABI, CANN, and SoC in use. `hasattr` is not evidence.
+- **No silent fallback.** Unsupported, ambiguous, or unqualified behavior stops with a stable failure
+  code; CPU/host fallback requires explicit consent and disables strict-NPU/performance claims.
+- **Write once, replay always.** Each run writes a new directory with hashes, model calls, receipts, and
+  artifacts. Replay does not regenerate or recompile.
 
-- Whole-file call-site and bounded data-flow analysis for the supported NumPy subset.
-- Runtime-bound capability matching across AsNumpy, CANN, and the detected Ascend SoC.
-- Model-assisted migration with response, AST, source, and artifact integrity checks.
-- Official-operator-first discovery, registered gap-resolution workflows, and constrained operator drafting.
-- Isolated numerical comparison and real-NPU qualification for supported profiles.
-- Scope-bound benchmarking and machine-readable JSON/Markdown reports.
-- Interactive terminal and Agent Skill workflows.
+## Claims and evidence
 
-## Architecture overview
+- A migrated program is not verified merely because it was generated or compiled.
+- A single qualified operator does not imply a qualified program.
+- A benchmark of an isolated operator is not a whole-program speedup.
+- An unqualified SoC/CANN/Python combination is not a strict-NPU result.
 
-<p align="center">
-  <a href="docs/numpilot-zh-v6.svg">
-    <img src="docs/numpilot-zh-v6.svg" alt="NumPilot v6 architecture" width="100%">
-  </a>
-</p>
+A claim without a receipt in the current run is reported as `qualification_required`,
+`performance_valid=false`, or `blocked`.
 
-<p align="center"><sub>Click the diagram to open the full-size architecture view.</sub></p>
-
-## How it works
+## Repository layout
 
 ```text
-Analyze source → Match runtime capabilities → Generate candidate → Qualify → Verify → Report
+numpilot/            CLI and core modules (being reorganized)
+docs/                architecture, contracts, verification, installation
+skill/               Agent Skill contract and references
+components/asnumpy/  optional pinned AsNumpy component for reproducible installs
+tests/               regression tests and fixtures
+tools/               repository and release utilities
 ```
 
-Every stage is fail-closed. A generated operator remains an unverified draft until its required build, test,
-public-API, numerical, and real-device gates have passed.
+## Documentation
 
-## Compatibility
-
-NumPilot's installer accepts user-owned paths for CANN, virtual environments, state, cache, and model settings;
-it does not depend on one developer's workspace. The current strict-NPU profile nevertheless binds the exact
-CANN identity and location shown below. Binary NPU compatibility is intentionally narrower than source-level
-CLI compatibility:
-
-| Mode | Requirements | Supported use |
-|---|---|---|
-| Core CLI / shim | Python 3.10+, NumPy 1.26+, Linux | Analysis, CLI exploration, and numerical diagnostics without an NPU; no strict-NPU claim |
-| Bundled NPU component | Linux/AArch64, CPython 3.10, CANN 9.0.0, compatible Ascend driver/firmware/OPP | Installs the hash-bound AsNumpy wheel shipped in `components/asnumpy/` |
-| Strict verified profile | Ascend 910B4, CANN 9.0.0 at `/usr/local/Ascend/cann-9.0.0`, CPython 3.10.20, NumPy 2.2.6, Loguru 0.7.3, bundled AsNumpy component | Real-NPU qualification and scope-bound performance gates |
-| Other machines | Different SoC, CANN version/location, Python ABI, operating system, or native component | Not automatically qualified; define and review a new runtime profile, then rebuild and validate its component before making strict-NPU claims |
-
-The bundled wheel is tagged `linux_aarch64`, not `manylinux`, and has not been validated across Linux
-distributions. Its current native build requires glibc 2.34+, a compatible libstdc++, `libfmt.so.8`,
-`libspdlog.so.1`, `libpython3.10.so.1.0`, and the matching CANN runtime libraries.
-The package metadata's Python 3.10+ declaration alone therefore does not establish NPU compatibility. On every
-new machine, run `bootstrap --verify` and `doctor`; these checks validate the installation, while each workload
-must still pass its own capability and qualification gates. NumPilot does not install the Ascend driver,
-firmware, CANN, or OPP.
+- [Installation and verification](docs/installation.md)
+- [Current implementation notes and trust boundaries](docs/architecture.md) — describes the pre-refactor
+  tree and will be updated as the refactor lands
+- [Model configuration and transport contract](docs/model-contract.md)
+- [Numerical verification](docs/script-verification.md)
+- [Strict-NPU benchmarking](docs/script-benchmark.md)
+- [Agent Skill contract](skill/SKILL.md)
+- [Changelog](CHANGELOG.md)
 
 ## Security notes
 
-- Migrate and execute only source code you trust. `python -I` isolation is not an operating-system sandbox.
+- Migrate and execute only source code you trust. `python -I` isolation is not an operating-system
+  sandbox.
 - A configured remote model may receive source code and may incur usage charges.
 - Generated kernels and integrations remain unverified until all required gates pass.
 - Runtime identity or artifact drift produces an explicit blocked/audit-required result.
 
 Report vulnerabilities through [SECURITY.md](SECURITY.md).
 
-## Documentation
-
-- [Installation and verification](docs/installation.md)
-- [Architecture and trust boundaries](docs/architecture.md)
-- [Model configuration and transport contract](docs/model-contract.md)
-- [Numerical verification](docs/script-verification.md)
-- [Strict-NPU benchmarking](docs/script-benchmark.md)
-- [Agent Skill contract](skill/SKILL.md)
-- [Sidebar workflow](skill/references/codearts-sidebar.md)
-- [Changelog](CHANGELOG.md)
-
 ## Contributing
 
-Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md), add tests for behavioral changes, and run
-the relevant test and release-tree checks before opening a pull request.
+Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md), add tests for behavioral changes, and
+run the relevant test and release-tree checks before opening a pull request. During the refactor, prefer
+small, reviewable changes and keep legacy behavior behind `compat/legacy` rather than extending it.
 
 ## License
 
-NumPilot is licensed under the [Apache License 2.0](LICENSE). Third-party components retain their own licenses;
-see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Product names and logos remain the property of their
-respective owners and do not imply endorsement. Confirm the redistribution terms for bundled binaries and brand
-assets before publishing a binary distribution.
+NumPilot is licensed under the [Apache License 2.0](LICENSE). Third-party components retain their own
+licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Product names and logos remain the property
+of their respective owners and do not imply endorsement.
