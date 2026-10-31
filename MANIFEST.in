@@ -1,5 +1,6 @@
 include README.md
 include README.zh-CN.md
+include llm.example.json
 include CHANGELOG.md
 include CONTRIBUTING.md
 include SECURITY.md
@@ -40,4 +41,8 @@ exclude todo.md
 exclude NumPilot20260615-v1.pdf
 exclude TEMP-RECORDING-COMMANDS.zh-CN.md
 prune tests
+
+# Never package a filled local credential file, even if one exists in a
+# developer checkout.  The blank tracked template is llm.example.json.
+global-exclude llm.json
 global-exclude __pycache__ *.py[cod] *.db *.log *.npy *.npz *.tmp *.orig

@@ -24,11 +24,14 @@ import io
 import json
 import os
 from pathlib import Path
+import stat
+import subprocess
 import sys
 
 import pytest
 
 from numpilot import __main__ as cli
+from numpilot import llm_config as llm_config_module
 from numpilot.llm_config import (
     LlmConfigError,
     OPENAI_CHAT_COMPLETIONS_PROTOCOL,
@@ -807,3 +810,194 @@ def test_run_demo_does_not_source_configuration():
     shell_lines = [line.strip() for line in script.splitlines()]
     assert not any(line.startswith("source ") or line.startswith(". ") for line in shell_lines)
     assert "configure-llm --check" in script
+
+
+def _clear_checkout_config_environment(monkeypatch):
+    """Make a checkout-local discovery test independent of the caller's env."""
+
+    for key in _LLM_ENV:
+        monkeypatch.delenv(key, raising=False)
+    for key in (
+        "NUMPILOT_HOME",
+        "NUMPILOT_RUNTIME_ROOT",
+        "NUMPILOT_CONFIG_HOME",
+        "XDG_CONFIG_HOME",
+        "NUMPILOT_DISABLE_REPO_CONFIG",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+
+def _make_checkout(tmp_path, *, token="checkout-secret"):
+    repo = tmp_path / "checkout"
+    repo.mkdir()
+    (repo / "pyproject.toml").write_text(
+        "[project]\nname = 'numpilot-test'\n", encoding="utf-8"
+    )
+    target = repo / "llm.json"
+    target.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "base_url": "https://gateway.example/v1",
+                "auth_token": token,
+                "model": "glm-checkout",
+                "provider": "openai-compatible",
+                "protocol": OPENAI_CHAT_COMPLETIONS_PROTOCOL,
+                "response_model_aliases": [],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    os.chmod(target, 0o600)
+    return repo, target
+
+
+def test_shipped_llm_example_is_blank_and_matches_schema():
+    repo_root = Path(__file__).resolve().parents[1]
+    payload = json.loads((repo_root / "llm.example.json").read_text(encoding="utf-8"))
+
+    assert payload == {
+        "schema_version": 2,
+        "base_url": "",
+        "auth_token": "",
+        "model": "",
+        "provider": "openai-compatible",
+        "protocol": OPENAI_CHAT_COMPLETIONS_PROTOCOL,
+        "response_model_aliases": [],
+    }
+    assert payload["auth_token"] == ""
+
+
+def test_checkout_local_llm_json_is_discovered_without_explicit_home(
+    tmp_path, monkeypatch
+):
+    _clear_checkout_config_environment(monkeypatch)
+    repo, target = _make_checkout(tmp_path)
+    os.chmod(repo, 0o750)
+    monkeypatch.setattr(llm_config_module, "_repo_root", lambda: repo)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+
+    assert llm_config_path() == target
+    status = load_llm_config()
+
+    assert status.configured
+    assert status.path == target
+    assert status.source == "user-config"
+    assert os.environ["NUMPILOT_LLM_AUTH_TOKEN"] == "checkout-secret"
+
+
+def test_checkout_local_llm_json_requires_private_file_mode(tmp_path, monkeypatch):
+    _clear_checkout_config_environment(monkeypatch)
+    repo, target = _make_checkout(tmp_path)
+    os.chmod(repo, 0o750)
+    os.chmod(target, 0o644)
+    monkeypatch.setattr(llm_config_module, "_repo_root", lambda: repo)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+
+    with pytest.raises(LlmConfigError, match="chmod 600"):
+        load_llm_config()
+
+
+def test_checkout_local_llm_json_rejects_writable_checkout(tmp_path, monkeypatch):
+    _clear_checkout_config_environment(monkeypatch)
+    repo, _target = _make_checkout(tmp_path)
+    os.chmod(repo, 0o775)
+    monkeypatch.setattr(llm_config_module, "_repo_root", lambda: repo)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+
+    with pytest.raises(LlmConfigError, match="可写"):
+        load_llm_config()
+
+
+def test_explicit_config_home_wins_over_checkout_local(tmp_path, monkeypatch):
+    _clear_checkout_config_environment(monkeypatch)
+    repo, _target = _make_checkout(tmp_path)
+    explicit_home = tmp_path / "explicit-config"
+    monkeypatch.setattr(llm_config_module, "_repo_root", lambda: repo)
+    monkeypatch.setenv("NUMPILOT_CONFIG_HOME", str(explicit_home))
+
+    assert llm_config_path() == explicit_home / "llm.json"
+
+
+def test_xdg_config_home_does_not_hide_checkout_local(tmp_path, monkeypatch):
+    _clear_checkout_config_environment(monkeypatch)
+    repo, target = _make_checkout(tmp_path)
+    monkeypatch.setattr(llm_config_module, "_repo_root", lambda: repo)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg-config"))
+
+    assert llm_config_path() == target
+
+
+def test_disable_repo_config_skips_checkout_local(tmp_path, monkeypatch):
+    _clear_checkout_config_environment(monkeypatch)
+    repo, target = _make_checkout(tmp_path)
+    monkeypatch.setattr(llm_config_module, "_repo_root", lambda: repo)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("NUMPILOT_DISABLE_REPO_CONFIG", "1")
+
+    assert llm_config_path() != target
+
+
+def test_saving_checkout_local_config_preserves_checkout_mode(tmp_path, monkeypatch):
+    _clear_checkout_config_environment(monkeypatch)
+    repo, target = _make_checkout(tmp_path, token="old-secret")
+    os.chmod(repo, 0o750)
+    monkeypatch.setattr(llm_config_module, "_repo_root", lambda: repo)
+
+    saved = save_llm_config(
+        "https://gateway.example/v1",
+        "new-secret",
+        "glm-checkout",
+        path=str(target),
+    )
+
+    assert saved == target
+    assert stat.S_IMODE(target.stat().st_mode) == 0o600
+    assert stat.S_IMODE(repo.stat().st_mode) == 0o750
+
+
+def test_llm_json_is_ignored_and_example_is_tracked():
+    repo_root = Path(__file__).resolve().parents[1]
+    if not (repo_root / ".git").exists():
+        pytest.skip("not a git checkout")
+
+    ignored = subprocess.run(
+        ["git", "check-ignore", "-q", "llm.json"],
+        cwd=repo_root,
+        check=False,
+    )
+    assert ignored.returncode == 0
+    example_ignored = subprocess.run(
+        ["git", "check-ignore", "-q", "llm.example.json"],
+        cwd=repo_root,
+        check=False,
+    )
+    assert example_ignored.returncode == 1
+    tracked = subprocess.run(
+        ["git", "ls-files", "--error-unmatch", "llm.example.json"],
+        cwd=repo_root,
+        check=False,
+        capture_output=True,
+    )
+    assert tracked.returncode == 0
+
+
+def test_no_tracked_llm_json_contains_a_token():
+    repo_root = Path(__file__).resolve().parents[1]
+    if not (repo_root / ".git").exists():
+        pytest.skip("not a git checkout")
+
+    listing = subprocess.run(
+        ["git", "ls-files", "-z"],
+        cwd=repo_root,
+        check=True,
+        capture_output=True,
+    )
+    for relative in listing.stdout.decode("utf-8").split("\0"):
+        if not relative:
+            continue
+        if relative != "llm.json" and not relative.endswith("/llm.json"):
+            continue
+        payload = json.loads((repo_root / relative).read_text(encoding="utf-8"))
+        assert payload.get("auth_token", "") == "", relative

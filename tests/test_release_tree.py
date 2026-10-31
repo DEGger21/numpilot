@@ -143,6 +143,7 @@ def test_release_tree_forbidden_path_policy_covers_build_and_evidence_noise():
     forbidden = {
         "todo.md",
         "TEMP-RECORDING-COMMANDS.zh-CN.md",
+        "llm.json",
         "docs/AI-HANDOFF.md",
         "evidence/heat-diffusion-20260813/bench/cpu_baseline.npy",
         "evidence/poisson-ritz-p0-20260821/profiler/runtime.db",
@@ -222,6 +223,7 @@ def test_release_tree_cli_reports_missing_required_file_as_json(tmp_path):
     assert "missing required release file: README.zh-CN.md" in report["errors"]
     assert "missing required release file: numpilot/__init__.py" in report["errors"]
     assert "README.zh-CN.md" in REQUIRED_FILES
+    assert "llm.example.json" in REQUIRED_FILES
     assert "docs/assets/architecture/numpilot-two-routes.zh-CN.png" in REQUIRED_FILES
     assert "numpilot/__init__.py" in REQUIRED_FILES
     assert "numpilot/demo_llm_operator_generation.py" in REQUIRED_FILES

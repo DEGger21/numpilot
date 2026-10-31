@@ -29,7 +29,7 @@ from numpilot.llm_config import (LlmConfigError, configure_llm_interactive,
                                  load_llm_config)
 from numpilot.orchestrator import _make_engine
 from numpilot.paths import default_benchmark_dir, default_wizard_dir
-from numpilot.report import save_migration_report
+from numpilot.report import agent_roster, save_migration_report
 
 console = Console()
 
@@ -58,20 +58,6 @@ def validate_task_file(path):
 def custom_op_breakdown(rewrites):
     """挑出 AsNumpy 的扩展 API；这不代表本次新生成了自定义算子。"""
     return {op: n for op, n in rewrites.items() if is_custom(op)}
-
-
-def agent_roster(engine_name):
-    """返回 5 智能体阵容 [(名称, 职责, 模型/引擎)]。只有迁移智能体(可选)用大模型。"""
-    configured_model = os.getenv("NUMPILOT_LLM_MODEL", "已配置 LLM")
-    mig_model = (f"{configured_model} 大模型" if engine_name == "llm"
-                 else "AST 确定性改写(规则,无模型)")
-    return [
-        ("编排智能体 Orchestrator", "统筹流水线 · 传递上下文 · 汇总报告", "规则编排(无模型)"),
-        ("分析智能体 Analysis", "AST 静态解析算子 · 比对覆盖集", "Python AST(规则,无模型)"),
-        ("决策智能体 Decision", "把整个 forward 划为单一 NPU 岛", "确定性边界规则(无模型)"),
-        ("迁移智能体 Migration", "np.* → ap.* 代码改写", mig_model),
-        ("验证智能体 Verification", "双端执行 · 数值对比 · 测速", "数值对比 + 真机执行(无模型)"),
-    ]
 
 
 def _print_roster(engine_name):

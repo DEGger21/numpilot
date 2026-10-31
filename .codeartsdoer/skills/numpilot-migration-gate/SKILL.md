@@ -226,10 +226,12 @@ generic adapter that turns an arbitrary hand-authored ordinary file into the sch
 `script-migration-report.json` consumed by `verify-script`; absent a registered adapter, record the
 candidate hash and stop rather than pretending that deterministic verification can run.
 
-For the optional configured-model terminal sub-run, first check local configuration. Run a network
-probe only when a real endpoint call is authorized and needed as evidence:
+For the optional configured-model terminal sub-run, first check local configuration. In a source
+checkout, copy the tracked blank `llm.example.json` to the git-ignored `llm.json` (mode `0600`) and fill
+it in. Run a network probe only when a real endpoint call is authorized and needed as evidence:
 
 ```bash
+install -m 600 llm.example.json llm.json   # then edit base_url, auth_token, model
 python -m numpilot configure-llm --check
 python -m numpilot configure-llm --probe
 python -m numpilot doctor --backend npu

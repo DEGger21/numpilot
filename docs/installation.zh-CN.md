@@ -269,19 +269,27 @@ CodeArts-agent lane，让侧边栏先读仓库与 NumPilot Skill，由交互模�
 完全不配置模型，直接交给确定性 gate。
 
 ```bash
-python -m numpilot configure-llm --init
-# 编辑命令打印出的私有 schema-2 llm.json。
+install -m 600 llm.example.json llm.json
+# 编辑 schema-2 llm.json：base_url、auth_token、model。
+python -m numpilot paths --get llm_config
 python -m numpilot configure-llm --check
 python -m numpilot configure-llm --probe
 ```
+
+`llm.json` 已被 `.gitignore` 忽略；`llm.example.json` 是仓库内跟踪的空白模板，必须保持空白。在源码
+checkout 中，NumPilot 会在 `pyproject.toml` 旁自动发现 `llm.json`，与当前工作目录无关。
+`NUMPILOT_CONFIG_HOME`/`NUMPILOT_HOME`/`NUMPILOT_RUNTIME_ROOT` 优先；
+`NUMPILOT_DISABLE_REPO_CONFIG=1` 可跳过仓库本地发现。`XDG_CONFIG_HOME` 只改变默认用户目录，不会隐藏
+仓库本地 `llm.json`。`configure-llm --init` 仍作为回退，把同一模板写入用户配置目录。
 
 `--check` 不联网，只检查本地配置和当前代理门禁。`--probe` 会执行真实请求、可能产生费用，并要求
 预期 readiness marker。
 配置需要 `base_url`、`auth_token`、`model`；`provider` 只是审计标签，当前协议为
 `openai-chat-completions`。
 
-配置目录必须为 `0700`，`llm.json` 必须为 `0600`。Token、endpoint、代理地址和原始响应正文不得
-提交。
+普通用户配置目录必须为 `0700`，`llm.json` 必须为 `0600`。源码 checkout 的仓库根通常为
+`0750/0755`；此时 `llm.json` 本身仍必须为 `0600`，且仓库目录不得对其他用户可写。
+`llm.example.json` 必须保持空白。Token、endpoint、代理地址和原始响应正文不得提交。
 
 > [!WARNING]
 > 所有 configured-model 生成或修复调用都可能产生费用。`migrate` 会发送完整输入源码。

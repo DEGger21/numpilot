@@ -10,6 +10,28 @@ import re
 from numpilot.paths import reports_dir as default_reports_dir
 
 
+def agent_roster(engine_name):
+    """返回 5 智能体阵容 [(名称, 职责, 模型/引擎)]。
+
+    该元数据只描述本次迁移的职责划分，不依赖终端 UI；放在 report 模块可让
+    ``migrate`` 在没有可选 ``rich`` 依赖时仍能生成报告。
+    """
+
+    configured_model = os.getenv("NUMPILOT_LLM_MODEL", "已配置 LLM")
+    mig_model = (
+        f"{configured_model} 大模型"
+        if engine_name == "llm"
+        else "AST 确定性改写(规则,无模型)"
+    )
+    return [
+        ("编排智能体 Orchestrator", "统筹流水线 · 传递上下文 · 汇总报告", "规则编排(无模型)"),
+        ("分析智能体 Analysis", "AST 静态解析算子 · 比对覆盖集", "Python AST(规则,无模型)"),
+        ("决策智能体 Decision", "把整个 forward 划为单一 NPU 岛", "确定性边界规则(无模型)"),
+        ("迁移智能体 Migration", "np.* → ap.* 代码改写", mig_model),
+        ("验证智能体 Verification", "双端执行 · 数值对比 · 测速", "数值对比 + 真机执行(无模型)"),
+    ]
+
+
 def _scientific(value) -> str:
     try:
         return f"{float(value):.3e}"

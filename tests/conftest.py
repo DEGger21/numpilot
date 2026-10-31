@@ -61,6 +61,9 @@ _LLM_CONFIG_ENV = (
     "NUMPILOT_LLM_TIMEOUT",
     "NUMPILOT_LLM_MAX_TOKENS",
     "NUMPILOT_LLM_INSECURE",
+    # Ignore a developer's checkout-local llm.json unless a test explicitly
+    # exercises checkout discovery.
+    "NUMPILOT_DISABLE_REPO_CONFIG",
 )
 
 
@@ -76,6 +79,7 @@ def isolate_remote_route_environment(monkeypatch):
         monkeypatch.delenv(name, raising=False)
     for name in _LLM_CONFIG_ENV:
         monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("NUMPILOT_DISABLE_REPO_CONFIG", "1")
     yield
     for name, value in llm_snapshot.items():
         if value is None:

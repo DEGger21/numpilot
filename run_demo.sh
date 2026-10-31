@@ -280,7 +280,7 @@ run() {
 CONFIG_RC=0
 "$PY" -m numpilot configure-llm --check || CONFIG_RC=$?
 if [ "$CONFIG_RC" -ne 0 ]; then
-  echo "错误: configured model 不可用；请先配置 NUMPILOT_LLM_CONFIG_FILE、使用 --llm-config，或运行 configure-llm" >&2
+  echo "错误: configured model 不可用；请先在仓库根目录执行 install -m 600 llm.example.json llm.json 后填写，或配置 NUMPILOT_LLM_CONFIG_FILE、使用 --llm-config，或运行 configure-llm" >&2
   report_failure "$CONFIG_RC"
 fi
 

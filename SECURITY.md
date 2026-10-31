@@ -15,5 +15,6 @@ AsNumpy adapter 的生成/修复路径也会发送有界语义、Skill、目标�
 CANNBot 只提供固定工作流上下文，远端模型生成的算子固定为 `generated_unverified`，必须经过独立
 构建、测试、NPU 数值和激活门禁后才能使用。
 
-凭据应只放在 `python -m numpilot configure-llm` 创建的私有配置或 CI secret 中。真实凭据、
-授权头和原始模型响应不得进入仓库或公开证据包。
+凭据应只放在被 `.gitignore` 忽略的 `llm.json`（从仓库根 `llm.example.json` 复制，权限 `0600`）、
+`python -m numpilot configure-llm` 创建的私有配置或 CI secret 中。`llm.example.json` 必须保持空白；
+真实凭据、授权头和原始模型响应不得进入仓库或公开证据包。

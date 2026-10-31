@@ -281,19 +281,28 @@ Skill and have its interactive model handle boundary work; do not read `llm.json
 the deterministic gates.
 
 ```bash
-python -m numpilot configure-llm --init
-# Edit the private schema-2 llm.json path printed by the command.
+install -m 600 llm.example.json llm.json
+# Edit the schema-2 llm.json: base_url, auth_token, model.
+python -m numpilot paths --get llm_config
 python -m numpilot configure-llm --check
 python -m numpilot configure-llm --probe
 ```
+
+`llm.json` is git-ignored; `llm.example.json` is the tracked blank template and must stay blank. In a
+source checkout NumPilot finds `llm.json` next to `pyproject.toml` regardless of the current directory.
+`NUMPILOT_CONFIG_HOME`/`NUMPILOT_HOME`/`NUMPILOT_RUNTIME_ROOT` take precedence, and
+`NUMPILOT_DISABLE_REPO_CONFIG=1` skips checkout-local discovery. `XDG_CONFIG_HOME` only changes the
+default user directory; it does not hide a checkout-local `llm.json`. `configure-llm --init` remains available
+as a fallback that writes the same template into the user config directory.
 
 `--check` is network-free and validates both local configuration and the current proxy gate. `--probe` performs
 a real request, may incur cost, and requires the expected readiness marker. Configuration needs `base_url`,
 `auth_token`, and `model`; `provider` is only an audit label, and the current protocol is
 `openai-chat-completions`.
 
-The configuration directory must be `0700` and `llm.json` must be `0600`. Never commit the token, endpoint,
-proxy URL, or raw response body.
+Normal user configuration directories must be `0700` and `llm.json` must be `0600`. A source checkout is
+usually `0750/0755`; the file itself must still be `0600`, and the checkout must not be writable by other
+users. Never commit the token, endpoint, proxy URL, or raw response body.
 
 > [!WARNING]
 > Every configured-model generation or repair call may incur cost. `migrate` sends the complete input source.

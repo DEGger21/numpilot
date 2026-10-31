@@ -1,0 +1,9 @@
+{
+  "schema_version": 2,
+  "base_url": "",
+  "auth_token": "",
+  "model": "",
+  "provider": "openai-compatible",
+  "protocol": "openai-chat-completions",
+  "response_model_aliases": []
+}

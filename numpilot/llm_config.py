@@ -21,11 +21,14 @@
 
 """Open-source friendly LLM configuration managed by NumPilot itself.
 
-The repository never contains a real authentication token.  Interactive users
-configure the provider through ``python -m numpilot configure-llm``; NumPilot
-then stores a small JSON document in the user's config directory with mode
-``0600``.  CI can continue to inject the existing ``NUMPILOT_LLM_*``
-environment variables, which always take precedence over saved values.
+The repository never contains a real authentication token.  A blank template
+is tracked as ``llm.example.json`` at the repository root.  Users copy it to a
+git-ignored ``llm.json`` (mode ``0600``) and fill in their own endpoint; a
+source checkout discovers that file automatically.  Interactive users can
+alternatively run ``python -m numpilot configure-llm``, which stores the same
+JSON document in the user's config directory with mode ``0600``.  CI can
+continue to inject the existing ``NUMPILOT_LLM_*`` environment variables, which
+always take precedence over saved values.
 """
 from dataclasses import dataclass
 import getpass
@@ -277,8 +280,85 @@ def _validated_config_path(value: object) -> Path:
         raise LlmConfigError("LLM 配置路径无效") from exc
 
 
+def _repo_root() -> Optional[Path]:
+    """Return the source checkout root, or ``None`` for an installed package.
+
+    The check is deliberately based on this module's location rather than the
+    current working directory: ``numpilot`` must resolve the same config from
+    any directory, and a stray ``llm.json`` in an unrelated project must not be
+    picked up accidentally.
+    """
+
+    try:
+        root = Path(__file__).resolve().parents[1]
+    except (OSError, RuntimeError, IndexError):
+        return None
+    if (root / "pyproject.toml").is_file():
+        return root
+    return None
+
+
+def _repo_local_llm_config_path() -> Optional[Path]:
+    """Return the checkout-local ``llm.json`` candidate without reading it."""
+
+    root = _repo_root()
+    if root is None:
+        return None
+    return root / "llm.json"
+
+
+def _is_repo_local_config(path: Path) -> bool:
+    candidate = _repo_local_llm_config_path()
+    if candidate is None:
+        return False
+    try:
+        return os.path.normcase(os.path.abspath(os.fspath(path))) == os.path.normcase(
+            os.path.abspath(os.fspath(candidate))
+        )
+    except (OSError, RuntimeError, TypeError, ValueError):
+        return path == candidate
+
+
+def _has_explicit_config_home() -> bool:
+    """Return whether the user explicitly selected a config home.
+
+    An explicit config-home environment must win over checkout-local
+    discovery.  Tests and CI use this boundary to keep a developer's real
+    ``llm.json`` out of an isolated run.
+    """
+
+    return any(
+        (os.getenv(name) or "").strip()
+        for name in (
+            "NUMPILOT_CONFIG_HOME",
+            "NUMPILOT_HOME",
+            "NUMPILOT_RUNTIME_ROOT",
+        )
+    )
+
+
+def _repo_local_discovery_disabled() -> bool:
+    """Return whether automation asked to ignore a checkout-local llm.json."""
+
+    return (os.getenv("NUMPILOT_DISABLE_REPO_CONFIG") or "").strip() == "1"
+
+
 def llm_config_path(path: Optional[str] = None) -> Path:
-    """Resolve the private per-user JSON path, with test/automation overrides."""
+    """Resolve the private JSON path, with test/automation overrides.
+
+    Precedence:
+
+    1. an explicit ``path`` (``--llm-config``);
+    2. ``NUMPILOT_LLM_CONFIG_FILE``;
+    3. an explicit NumPilot config home (``NUMPILOT_CONFIG_HOME``,
+       ``NUMPILOT_HOME``, or ``NUMPILOT_RUNTIME_ROOT``);
+    4. an existing ``llm.json`` next to the source checkout's
+       ``pyproject.toml``;
+    5. ``<config_home>/llm.json``.
+
+    Set ``NUMPILOT_DISABLE_REPO_CONFIG=1`` to skip step 4 in automation.
+    """
+
     if path is not None:
         # Explicit paths are useful for CI and for a separately provisioned
         # managed runtime, but they still cross a command/configuration
@@ -291,6 +371,13 @@ def llm_config_path(path: Optional[str] = None) -> Path:
         # keeps the CLI ``--llm-config`` and direct environment setup exactly
         # equivalent without ever reading the file before validation.
         return _validated_config_path(explicit)
+    if (
+        not _has_explicit_config_home()
+        and not _repo_local_discovery_disabled()
+    ):
+        checkout_local = _repo_local_llm_config_path()
+        if checkout_local is not None and os.path.lexists(checkout_local):
+            return _validated_config_path(checkout_local)
     from numpilot.paths import config_home
 
     try:
@@ -358,6 +445,18 @@ def _require_private_config_directory(path: Path) -> None:
     if not stat.S_ISDIR(mode):
         raise LlmConfigError("LLM 配置父路径必须是目录: %s" % parent)
     permissions = stat.S_IMODE(mode)
+    if _is_repo_local_config(path):
+        # A source checkout is normally 0750/0755, so requiring a 0700 parent
+        # would reject the documented ``llm.json`` location.  The credential
+        # file itself is still checked for mode 0600 below.  Only group/other
+        # *write* access is dangerous here: another user could replace the
+        # file and redirect the next run to their endpoint.
+        if permissions & 0o022:
+            raise LlmConfigError(
+                "LLM 配置目录对其他用户可写(%03o): %s；请收紧仓库目录权限"
+                % (permissions, parent)
+            )
+        return
     if permissions & 0o077:
         raise LlmConfigError(
             "LLM 配置目录权限过宽(%03o): %s；请执行 chmod 700"
@@ -589,9 +688,13 @@ def init_llm_config_template(path: Optional[str] = None) -> Tuple[Path, bool]:
     target = llm_config_path(path)
     _reject_symlink_components(target)
     try:
-        target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        if os.name == "posix":
-            os.chmod(target.parent, 0o700)
+        # A checkout-local llm.json lives in the repository root.  Do not
+        # tighten that shared directory to 0700; only the file itself is
+        # private.
+        if not _is_repo_local_config(target):
+            target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            if os.name == "posix":
+                os.chmod(target.parent, 0o700)
     except OSError as exc:
         raise LlmConfigError(
             f"无法创建 LLM 配置目录 {target.parent}: {type(exc).__name__}"
@@ -673,9 +776,12 @@ def save_llm_config(
 
     target = llm_config_path(path)
     _reject_symlink_components(target)
-    target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    if os.name == "posix":
-        os.chmod(target.parent, 0o700)
+    # See init_llm_config_template: a checkout-local file must not chmod the
+    # repository root to 0700.  The atomic temp file and final file remain 0600.
+    if not _is_repo_local_config(target):
+        target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        if os.name == "posix":
+            os.chmod(target.parent, 0o700)
     payload = {
         "schema_version": 2,
         "base_url": base_url,

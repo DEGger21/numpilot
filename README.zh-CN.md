@@ -15,6 +15,7 @@
 <p>
   <img alt="版本" src="https://img.shields.io/badge/version-0.3.0a1.dev0-6D5CE7?style=flat-square">
   <img alt="状态" src="https://img.shields.io/badge/status-active%20refactor-F59E0B?style=flat-square">
+  <img alt="发布阶段" src="https://img.shields.io/badge/status-alpha-F59E0B?style=flat-square">
   <img alt="Python" src="https://img.shields.io/badge/Python-as%20supported%20by%20AsNumpy-3776AB?style=flat-square&amp;logo=python&amp;logoColor=white">
   <img alt="NPU" src="https://img.shields.io/badge/NPU-Ascend%20(runtime--detected)-008AA3?style=flat-square">
   <img alt="许可证" src="https://img.shields.io/badge/license-Apache--2.0-2EA44F?style=flat-square">
@@ -113,7 +114,8 @@ git clone --branch main --depth 1 https://gitcode.com/li-xingHIT/numpilot.git
 cd numpilot
 python3 -m venv .venv
 . .venv/bin/activate
-python -m pip install .
+python -m pip install .            # 核心 CLI：纯文本回退，无需 rich
+# python -m pip install '.[ui]'    # 可选：彩色 TUI 与交互式向导
 
 # NumPy 与 AsNumpy 必须已能在该解释器中工作
 python -c "import numpy, asnumpy; print(numpy.__version__, asnumpy.__version__)"
@@ -134,12 +136,13 @@ python -m numpilot doctor --backend npu    # 在 Ascend 机器上
 
 ### 终端工作流
 
-NumPilot 可以使用为它显式配置的 OpenAI-compatible 模型。配置是私有且可选启用的。
+NumPilot 可以使用为它显式配置的 OpenAI-compatible 模型。配置是私有且可选启用的。仓库内提供空白模板
+`llm.example.json`；复制为被 `.gitignore` 忽略的 `llm.json` 后填写自己的值。
 
 ```bash
+install -m 600 llm.example.json llm.json
+# 编辑 llm.json：base_url、auth_token、model
 python -m numpilot paths --get llm_config
-python -m numpilot configure-llm --init
-# 编辑生成的 llm.json：base_url、auth_token、model
 python -m numpilot configure-llm --check
 python -m numpilot configure-llm --probe
 numpilot
@@ -155,8 +158,8 @@ execute
 exit
 ```
 
-`y` 授权生成候选；`execute` 另行授权运行已展示的源码与候选。请保持 `llm.json` 权限为 `0600`，
-且绝不能提交到仓库。
+`y` 授权生成候选；`execute` 另行授权运行已展示的源码与候选。请保持 `llm.json` 权限为 `0600`；
+它已被 `.gitignore` 忽略，`llm.example.json` 必须保持空白。绝不能提交填写后的配置。
 
 ### Agent Skill 工作流
 

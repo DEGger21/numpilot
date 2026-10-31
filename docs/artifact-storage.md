@@ -19,7 +19,7 @@ python -m numpilot paths --json
 | 应用缓存根 | `$XDG_CACHE_HOME/numpilot`，通常为 `~/.cache/numpilot` |
 | 运行产物 | `<状态根>/runs` |
 | 迁移报告 | `<状态根>/reports` |
-| LLM 私有配置 | `<配置根>/llm.json` |
+| LLM 私有配置 | `<配置根>/llm.json` 或源码 checkout 根的 `llm.json` |
 | AsNumpy 源码缓存 | `<应用缓存根>/asnumpy/<commit>` |
 | CANNBot Skill 缓存 | `$XDG_CACHE_HOME/numpilot/cannbot-skills/<commit>` |
 
@@ -45,8 +45,9 @@ export NUMPILOT_RUNTIME_ROOT=/data/persistent-root
 `NUMPILOT_CONFIG_HOME`、`NUMPILOT_CACHE_HOME`、`NUMPILOT_LLM_CONFIG_FILE`、
 `NUMPILOT_ASNUMPY_CACHE` 和 `NUMPILOT_CANNBOT_CACHE` 分别控制更具体的目录；后两个变量都是
 cache base，NumPilot 再追加固定 commit。`NUMPILOT_CANNBOT_SKILLS` 是经过校验的 exact checkout
-覆盖，优先于 CANNBot cache base；`NUMPILOT_BOOTSTRAP_RECEIPT` 是精确文件覆盖。不要把
-私有配置或运行状态指回 Git 工作树。
+覆盖，优先于 CANNBot cache base；`NUMPILOT_BOOTSTRAP_RECEIPT` 是精确文件覆盖。不要把会被跟踪的
+私有配置或运行状态指回 Git 工作树。仓库根的 `llm.json` 是刻意保留的本地例外：它必须被
+`.gitignore` 忽略、权限为 `0600`，且永不提交。
 
 如果模型配置位于单独的持久运行根目录，可只指定运行时根，不必把凭据复制到仓库：
 

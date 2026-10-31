@@ -645,8 +645,11 @@ class LlmEngine(MigrationEngine):
         self.last_identity = {}
         if not self.is_configured():
             missing = [k for k in _REQUIRED_ENV if not os.getenv(k)]
-            raise LlmError("LLM 引擎未配置, 缺环境变量: " + ", ".join(missing)
-                           + "。请运行 `python -m numpilot configure-llm` 后重试。")
+            raise LlmError(
+                "LLM 引擎未配置, 缺环境变量: " + ", ".join(missing)
+                + "。请在仓库根目录执行 `install -m 600 llm.example.json llm.json` "
+                  "后填写，或运行 `python -m numpilot configure-llm` 后重试。"
+            )
 
         model = os.environ["NUMPILOT_LLM_MODEL"]
         npu_ops = sorted(op for op, p in plan.placement.items() if p == "NPU")

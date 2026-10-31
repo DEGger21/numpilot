@@ -24,3 +24,8 @@ RUN_LLM_TEMP.md
 # 公开 evidence 的反向规则不能重新纳入本地模型配置或 dotenv 凭据。
 evidence/**/.env*
 evidence/**/llm.json
+
+# 本地模型凭据：从 llm.example.json 复制为 llm.json，chmod 600 后填写。
+# llm.json 永不提交；llm.example.json 是仓库内的空白模板。
+llm.json
+.llm-*.tmp

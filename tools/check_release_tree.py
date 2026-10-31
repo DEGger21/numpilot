@@ -55,6 +55,7 @@ REQUIRED_FILES = {
     "CONTRIBUTING.md",
     "LICENSE",
     "MANIFEST.in",
+    "llm.example.json",
     "README.md",
     "README.zh-CN.md",
     "SECURITY.md",
@@ -116,6 +117,7 @@ FORBIDDEN_EXACT = {
     "NumPilot20260615-v1.pdf",
     "TEMP-RECORDING-COMMANDS.zh-CN.md",
     "asnumpy_cpp.log",
+    "llm.json",
     "run_poisson_demo.sh",
     "todo.md",
 }

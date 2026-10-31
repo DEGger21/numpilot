@@ -31,26 +31,42 @@ NumPilot 的生成路径使用用户自己配置的 OpenAI-compatible endpoint�
 
 ## 配置 schema 2
 
-`python -m numpilot configure-llm --init` 创建私有 `llm.json`：
+仓库根目录提供空白模板 `llm.example.json`。复制为私有、被 `.gitignore` 忽略的 `llm.json`：
+
+```bash
+install -m 600 llm.example.json llm.json
+# 编辑 llm.json：base_url、auth_token、model
+python -m numpilot configure-llm --check
+```
+
+模板内容：
 
 ```json
 {
   "schema_version": 2,
-  "base_url": "https://gateway.example/v1",
-  "auth_token": "由用户在私有文件中填写",
-  "model": "org/model",
-  "provider": "gateway-audit-label",
+  "base_url": "",
+  "auth_token": "",
+  "model": "",
+  "provider": "openai-compatible",
   "protocol": "openai-chat-completions",
   "response_model_aliases": []
 }
 ```
+
+源码 checkout 中，NumPilot 默认自动发现仓库根的 `llm.json`，与当前工作目录无关。若显式设置了
+`NUMPILOT_CONFIG_HOME`、`NUMPILOT_HOME` 或 `NUMPILOT_RUNTIME_ROOT`，该配置目录优先；自动化也可设
+`NUMPILOT_DISABLE_REPO_CONFIG=1` 跳过仓库本地文件。`XDG_CONFIG_HOME` 只影响默认用户目录，不会隐藏
+仓库本地文件。仍可用
+`python -m numpilot configure-llm --init` 在用户配置目录生成同一模板，或用 `--llm-config` 指定文件。
 
 对于仓库外的持久运行根，可设置
 `NUMPILOT_RUNTIME_ROOT=/absolute/persistent/numpilot-runtime`；单次命令也可用
 `python -m numpilot --llm-config /absolute/persistent/numpilot-runtime/.numpilot-config/llm.json configure-llm --check`
 显式选择私有文件（`--llm-config` 放在子命令后也可）。该选项只传递路径，不会输出 Token。
 
-目录权限为 `0700`、文件权限为 `0600`。环境变量逐字段优先于文件；若环境显式覆盖 `model`，
+普通用户配置目录为 `0700`、文件为 `0600`。源码 checkout 的仓库根通常为 `0750/0755`；此时
+`llm.json` 本身仍必须是 `0600`，且仓库目录不得对其他用户可写。`llm.example.json` 必须保持空白；
+Token、endpoint、代理地址和原始响应正文不得提交。环境变量逐字段优先于文件；若环境显式覆盖 `model`，
 不会继承旧模型的 alias allowlist。`--check` 使用与生成相同的本地 readiness/profile 校验且
 不联网；`--probe` 才执行真实请求。probe 与 gap/repair/adapter 的远端 readiness 都要求响应
 包含固定 `NUMPILOT_LLM_READY` marker，不能出现 probe 成功而真正生成门禁拒绝的分叉。

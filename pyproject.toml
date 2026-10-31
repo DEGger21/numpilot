@@ -12,7 +12,7 @@ readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
 requires-python = ">=3.10"
-dependencies = ["numpy>=1.26", "loguru>=0.7", "rich>=13"]
+dependencies = ["numpy>=1.26", "loguru>=0.7"]
 keywords = ["numpy", "ascend", "npu", "migration", "scientific-computing"]
 classifiers = [
   "Development Status :: 3 - Alpha",
@@ -32,7 +32,9 @@ Issues = "https://gitcode.com/li-xingHIT/numpilot/issues"
 numpilot = "numpilot.__main__:main"
 
 [project.optional-dependencies]
-dev = ["pytest>=7", "build>=1"]
+# 彩色 TUI/交互向导；核心命令在缺少 rich 时自动退化为纯文本。
+ui = ["rich>=13"]
+dev = ["pytest>=7", "build>=1", "rich>=13"]
 bootstrap = [
   "numpy>=2.0",
   "build>=1",
@@ -49,6 +51,9 @@ npu = ["threadpoolctl"]
 include = ["numpilot*"]
 
 [tool.setuptools.data-files]
+"share/numpilot" = [
+  "llm.example.json",
+]
 "share/numpilot/components/asnumpy" = [
   "components/asnumpy/manifest.json",
   "components/asnumpy/README.md",

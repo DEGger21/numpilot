@@ -23,7 +23,9 @@
 
 Dynamic output is deliberately limited to real terminals.  Redirected output,
 machine-readable commands, ``NO_COLOR``, and ``TERM=dumb`` keep using the
-stable plain-text renderers owned by each command.
+stable plain-text renderers owned by each command.  ``rich`` is optional; when
+it is unavailable every helper degrades to plain text so core commands remain
+usable in a minimal AsNumpy/NPU runtime.
 """
 
 from contextlib import contextmanager
@@ -33,11 +35,29 @@ import sys
 import time
 import unicodedata
 
-from rich import box
-from rich.console import Console
-from rich.panel import Panel
-from rich.table import Table
-from rich.text import Text
+try:
+    from rich import box
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.table import Table
+    from rich.text import Text
+except ModuleNotFoundError as exc:
+    # ``rich`` is an optional presentation dependency.  Core commands must
+    # keep working in a minimal AsNumpy runtime where only NumPy and the NPU
+    # stack are installed, so a missing rich package degrades to the plain
+    # text renderers owned by each command instead of aborting at import.
+    if exc.name != "rich" and not (exc.name or "").startswith("rich."):
+        raise
+    box = Console = Panel = Table = Text = None
+    _RICH_AVAILABLE = False
+else:
+    _RICH_AVAILABLE = True
+
+
+def rich_available():
+    """Return whether the optional ``rich`` presentation layer is importable."""
+
+    return _RICH_AVAILABLE
 
 
 _STATUS_STYLE = {
@@ -172,6 +192,8 @@ def is_interactive(stream=None, environment=None):
 
     output = sys.stdout if stream is None else stream
     values = os.environ if environment is None else environment
+    if not _RICH_AVAILABLE:
+        return False
     if (
         "NO_COLOR" in values
         or values.get("TERM", "").lower() == "dumb"
@@ -182,6 +204,8 @@ def is_interactive(stream=None, environment=None):
 
 
 def _console(stream):
+    if not _RICH_AVAILABLE:
+        raise RuntimeError("rich is not available")
     return Console(
         file=stream,
         highlight=False,
@@ -259,6 +283,9 @@ def _styled_flow_text(message, tone=None):
     rendering so source/model-derived values cannot inject ANSI or OSC data.
     """
 
+    if not _RICH_AVAILABLE:
+        return _terminal_safe(message)
+
     rendered = Text()
     lines = str(message).split("\n")
     for index, raw_line in enumerate(lines):
@@ -315,7 +342,7 @@ def terminal_status(message, *, enabled=True):
 
     stream = sys.stderr
     outcome = _StatusOutcome()
-    if not enabled or not is_interactive(stream):
+    if not enabled or not _RICH_AVAILABLE or not is_interactive(stream):
         yield outcome
         return
 

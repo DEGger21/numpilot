@@ -95,6 +95,7 @@ from numpilot.cli_ui import (                                 # noqa: E402
     render_doctor,
     render_home,
     render_paths,
+    rich_available,
     terminal_status,
 )
 from numpilot.coverage import is_custom                       # noqa: E402
@@ -3109,11 +3110,19 @@ def _load_llm_or_report():
         status = load_llm_config()
     except LlmConfigError as exc:
         print(f"[LLM] 本机配置无效: {exc}", file=sys.stderr)
-        print("[LLM] 请运行交互配置，或用 configure-llm --init 生成文件后手填。", file=sys.stderr)
+        print(
+            "[LLM] 请在仓库根目录执行 install -m 600 llm.example.json llm.json "
+            "后填写，或运行交互配置/configure-llm --init。",
+            file=sys.stderr,
+        )
         return None
     if not status.configured:
         print(f"[LLM] {status.summary()}", file=sys.stderr)
-        print("[LLM] 请运行交互配置，或用 configure-llm --init 生成文件后手填。", file=sys.stderr)
+        print(
+            "[LLM] 请在仓库根目录执行 install -m 600 llm.example.json llm.json "
+            "后填写，或运行交互配置/configure-llm --init。",
+            file=sys.stderr,
+        )
         return None
     return status
 
@@ -3498,6 +3507,8 @@ def _cmd_configure_llm(args):
         if created:
             print(f"LLM 配置模板已生成: {path} (权限 0600)")
             print("请打开该 JSON 文件，填写 base_url、auth_token 和 model。")
+            print("源码 checkout 也可直接使用仓库根模板: "
+                  "install -m 600 llm.example.json llm.json")
         else:
             print(f"LLM 配置目标已存在，未覆盖: {path}")
         print("填写后运行: python -m numpilot configure-llm --check")
@@ -3599,7 +3610,8 @@ def _cmd_configure_llm(args):
     elif not (sys.stdin.isatty() and sys.stdout.isatty()):
         print(
             "[LLM] 当前不是交互终端，拒绝等待凭据输入。CI 请使用 NUMPILOT_LLM_* "
-            "环境变量，或运行 configure-llm --init 生成文件后手填。",
+            "环境变量，或用 install -m 600 llm.example.json llm.json 后手填，"
+            "或运行 configure-llm --init。",
             file=sys.stderr,
         )
         return 2
@@ -5721,7 +5733,7 @@ def _cmd_migrate(args):
 
 def _migrate_report_info(res):
     """把 migrate 结果规范化为 report.build_report_md 的 info dict(无性能字段)。"""
-    from numpilot.wizard import agent_roster
+    from numpilot.report import agent_roster
     net = _net_name(res.get("source_path", "task"))
     info = {"net": net, "source_path": res.get("source_path"),
             "engine": res.get("engine"), "status": res["status"],
@@ -5795,10 +5807,11 @@ def main(argv=None):
         # one-shot shell invocation too: ``numpilot check llm``.
         arguments = ["check-llm", *arguments[2:]]
     if not arguments:
-        from numpilot.repl import can_start_repl, run_repl
+        if rich_available():
+            from numpilot.repl import can_start_repl, run_repl
 
-        if can_start_repl(sys.stdin, sys.stdout):
-            return run_repl(__version__, main)
+            if can_start_repl(sys.stdin, sys.stdout):
+                return run_repl(__version__, main)
         if render_home(__version__):
             return 0
 
@@ -7071,7 +7084,17 @@ def main(argv=None):
         if args.cmd == "repair-asnumpy-adapter":
             return _cmd_repair_asnumpy_adapter(args)
         if args.cmd == "wizard":
-            from numpilot.wizard import run_wizard
+            try:
+                from numpilot.wizard import run_wizard
+            except ModuleNotFoundError as exc:
+                if exc.name != "rich" and not (exc.name or "").startswith("rich."):
+                    raise
+                print(
+                    "numpilot wizard 需要可选依赖 rich："
+                    "pip install 'numpilot[ui]'",
+                    file=sys.stderr,
+                )
+                return 2
             return run_wizard(
                 file=args.file,
                 engine=args.engine,

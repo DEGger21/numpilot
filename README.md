@@ -15,6 +15,7 @@
 <p>
   <img alt="Version" src="https://img.shields.io/badge/version-0.3.0a1.dev0-6D5CE7?style=flat-square">
   <img alt="Status" src="https://img.shields.io/badge/status-active%20refactor-F59E0B?style=flat-square">
+  <img alt="Release stage" src="https://img.shields.io/badge/status-alpha-F59E0B?style=flat-square">
   <img alt="Python" src="https://img.shields.io/badge/Python-as%20supported%20by%20AsNumpy-3776AB?style=flat-square&amp;logo=python&amp;logoColor=white">
   <img alt="NPU" src="https://img.shields.io/badge/NPU-Ascend%20(runtime--detected)-008AA3?style=flat-square">
   <img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-2EA44F?style=flat-square">
@@ -122,7 +123,8 @@ git clone --branch main --depth 1 https://gitcode.com/li-xingHIT/numpilot.git
 cd numpilot
 python3 -m venv .venv
 . .venv/bin/activate
-python -m pip install .
+python -m pip install .            # core CLI: plain-text fallback, no rich required
+# python -m pip install '.[ui]'    # optional: colored TUI and interactive wizard
 
 # NumPy and AsNumpy must already work in this interpreter
 python -c "import numpy, asnumpy; print(numpy.__version__, asnumpy.__version__)"
@@ -147,12 +149,13 @@ For air-gapped, hash-bound, or reproducible deployments, see
 ### Terminal workflow
 
 NumPilot can use an OpenAI-compatible model configured explicitly for it. The configuration is private and
-opt-in.
+opt-in. The repository ships a blank `llm.example.json`; copy it to the git-ignored `llm.json` and fill in
+your own values.
 
 ```bash
+install -m 600 llm.example.json llm.json
+# edit llm.json: base_url, auth_token, model
 python -m numpilot paths --get llm_config
-python -m numpilot configure-llm --init
-# edit the generated llm.json: base_url, auth_token, model
 python -m numpilot configure-llm --check
 python -m numpilot configure-llm --probe
 numpilot
@@ -169,7 +172,8 @@ exit
 ```
 
 `y` authorizes candidate generation; `execute` separately authorizes running the displayed source and
-candidate. Keep `llm.json` at mode `0600` and never commit it.
+candidate. Keep `llm.json` at mode `0600`; it is git-ignored, and `llm.example.json` must stay blank. Never
+commit a filled configuration.
 
 ### Agent Skill workflow
 
