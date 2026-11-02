@@ -22,6 +22,8 @@ import os
 from pathlib import Path
 import re
 import sys
+import tarfile
+from pathlib import PurePosixPath
 from typing import Any, Mapping, Optional
 
 
@@ -32,6 +34,7 @@ COMPONENT_MANIFEST_NAME = "manifest.json"
 COMPONENT_README_NAME = "README.md"
 
 _MAX_MANIFEST_BYTES = 512 * 1024
+_MAX_SOURCE_ARCHIVE_BYTES = 256 * 1024 * 1024
 _MAX_TEXT = 4096
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _HEX40 = re.compile(r"^[0-9a-f]{40}$")
@@ -142,6 +145,7 @@ class AsNumpyComponent:
     sbom: Mapping[str, Any] = field(default_factory=dict)
     artifact_status: Optional[str] = None
     build: Mapping[str, Any] = field(default_factory=dict)
+    source_bundle: Mapping[str, Any] = field(default_factory=dict)
 
     @property
     def root(self) -> Path:
@@ -184,6 +188,8 @@ class AsNumpyComponent:
             result["artifact_status"] = self.artifact_status
         if self.build:
             result["build"] = dict(self.build)
+        if self.source_bundle:
+            result["source_bundle"] = dict(self.source_bundle)
         if self.license_file:
             result["license_file"] = dict(self.license_file)
         if self.sbom:
@@ -214,6 +220,7 @@ class AsNumpyComponent:
             "runtime": dict(self.runtime),
             "license_file": dict(self.license_file),
             "sbom": dict(self.sbom),
+            "source_bundle": dict(self.source_bundle),
         }
 
 
@@ -356,6 +363,82 @@ def _validate_manifest(
             raise AsNumpyComponentError("component source file path is unsafe")
         source_copy[relative] = _text(value, "source file digest", pattern=_SHA256).lower()
 
+    source_bundle_raw = raw.get("source_bundle")
+    source_bundle: dict[str, Any] = {}
+    if source_bundle_raw is not None:
+        block = _mapping(source_bundle_raw, "source_bundle")
+        source_filename = _text(block.get("filename"), "source_bundle.filename")
+        if (
+            Path(source_filename).name != source_filename
+            or _ATTACHMENT_FILENAME.fullmatch(source_filename) is None
+            or not source_filename.endswith(".tar.gz")
+        ):
+            raise AsNumpyComponentError("AsNumpy component source_bundle filename is unsafe")
+        format_name = _text(block.get("format"), "source_bundle.format")
+        if format_name != "tar.gz":
+            raise AsNumpyComponentError("AsNumpy component source_bundle format is unsupported")
+        source_digest = _text(block.get("sha256"), "source_bundle.sha256", pattern=_SHA256).lower()
+        manifest_filename = _text(
+            block.get("manifest_filename"), "source_bundle.manifest_filename"
+        )
+        if (
+            Path(manifest_filename).name != manifest_filename
+            or _ATTACHMENT_FILENAME.fullmatch(manifest_filename) is None
+            or manifest_filename == source_filename
+        ):
+            raise AsNumpyComponentError(
+                "AsNumpy component source_bundle manifest filename is unsafe"
+            )
+        source_manifest_digest = _text(
+            block.get("manifest_sha256"), "source_bundle.manifest_sha256", pattern=_SHA256
+        ).lower()
+        prefix = _text(block.get("prefix"), "source_bundle.prefix")
+        prefix_path = PurePosixPath(prefix)
+        if (
+            not prefix.endswith("/")
+            or prefix_path.is_absolute()
+            or ".." in prefix_path.parts
+            or "\\" in prefix
+        ):
+            raise AsNumpyComponentError("AsNumpy component source_bundle prefix is unsafe")
+        source_commit = _text(block.get("commit"), "source_bundle.commit", pattern=_HEX40)
+        source_tree = _text(block.get("tree"), "source_bundle.tree", pattern=_HEX40)
+        if source_commit != commit or source_tree != tree:
+            raise AsNumpyComponentError(
+                "AsNumpy component source_bundle source identity mismatch"
+            )
+        source_license = _text(block.get("license"), "source_bundle.license")
+        if source_license != license_name:
+            raise AsNumpyComponentError(
+                "AsNumpy component source_bundle license mismatch"
+            )
+        counts: dict[str, int] = {}
+        for key in ("bytes", "file_count", "total_file_bytes"):
+            value = block.get(key)
+            if type(value) is not int or value < 0:
+                raise AsNumpyComponentError(
+                    "AsNumpy component source_bundle %s is invalid" % key
+                )
+            counts[key] = value
+        if counts["file_count"] <= 0 or counts["total_file_bytes"] <= 0:
+            raise AsNumpyComponentError(
+                "AsNumpy component source_bundle file counts are invalid"
+            )
+        source_bundle = {
+            "filename": source_filename,
+            "format": format_name,
+            "sha256": source_digest,
+            "bytes": counts["bytes"],
+            "file_count": counts["file_count"],
+            "total_file_bytes": counts["total_file_bytes"],
+            "prefix": prefix,
+            "manifest_filename": manifest_filename,
+            "manifest_sha256": source_manifest_digest,
+            "commit": source_commit,
+            "tree": source_tree,
+            "license": source_license,
+        }
+
     return AsNumpyComponent(
         manifest_path=path,
         manifest_sha256=manifest_sha256,
@@ -379,6 +462,7 @@ def _validate_manifest(
         sbom=sbom,
         artifact_status=artifact_status,
         build=build_copy,
+        source_bundle=source_bundle,
     )
 
 
@@ -533,13 +617,169 @@ def verify_component_attachments(component: AsNumpyComponent) -> dict[str, Any]:
             ):
                 raise AsNumpyComponentError("AsNumpy component SBOM is not SPDX-2.3")
         verified[label] = {"filename": filename, "sha256": observed}
+    source_bundle = component.source_bundle
+    if source_bundle:
+        archive_name = str(source_bundle["filename"])
+        archive_path = _safe_local_path(component.root / archive_name, "source_bundle")
+        manifest_name = str(source_bundle["manifest_filename"])
+        source_manifest_path = _safe_local_path(
+            component.root / manifest_name, "source_bundle manifest"
+        )
+        if (
+            archive_path.name != archive_name
+            or archive_path.is_symlink()
+            or not archive_path.is_file()
+            or source_manifest_path.name != manifest_name
+            or source_manifest_path.is_symlink()
+            or not source_manifest_path.is_file()
+        ):
+            raise AsNumpyComponentError(
+                "AsNumpy component source_bundle attachment is missing"
+            )
+        try:
+            archive_bytes = archive_path.read_bytes()
+            source_manifest_bytes = source_manifest_path.read_bytes()
+        except OSError as exc:
+            raise AsNumpyComponentError(
+                "cannot read AsNumpy component source_bundle attachment"
+            ) from exc
+        if len(archive_bytes) > _MAX_SOURCE_ARCHIVE_BYTES:
+            raise AsNumpyComponentError(
+                "AsNumpy component source_bundle is too large"
+            )
+        if len(archive_bytes) != int(source_bundle["bytes"]):
+            raise AsNumpyComponentError(
+                "AsNumpy component source_bundle byte count mismatch"
+            )
+        if hashlib.sha256(archive_bytes).hexdigest() != source_bundle["sha256"]:
+            raise AsNumpyComponentError(
+                "AsNumpy component source_bundle SHA-256 mismatch"
+            )
+        if hashlib.sha256(source_manifest_bytes).hexdigest() != source_bundle["manifest_sha256"]:
+            raise AsNumpyComponentError(
+                "AsNumpy component source manifest SHA-256 mismatch"
+            )
+        try:
+            source_manifest = json.loads(
+                source_manifest_bytes.decode("utf-8"),
+                object_pairs_hook=_strict_object,
+            )
+        except (OSError, UnicodeError, json.JSONDecodeError, AsNumpyComponentError) as exc:
+            raise AsNumpyComponentError(
+                "AsNumpy component source manifest is invalid JSON"
+            ) from exc
+        if (
+            not isinstance(source_manifest, dict)
+            or source_manifest.get("schema") != "numpilot.asnumpy-source"
+            or source_manifest.get("schema_version") != 1
+            or source_manifest.get("repository") != component.repository
+            or source_manifest.get("commit") != component.commit
+            or source_manifest.get("tree") != component.tree
+            or source_manifest.get("license") != component.license
+        ):
+            raise AsNumpyComponentError(
+                "AsNumpy component source manifest identity mismatch"
+            )
+        source_archive = source_manifest.get("archive")
+        files = source_manifest.get("files")
+        if type(source_archive) is not dict or type(files) is not dict:
+            raise AsNumpyComponentError(
+                "AsNumpy component source manifest is incomplete"
+            )
+        for key in (
+            "filename",
+            "format",
+            "prefix",
+            "sha256",
+            "bytes",
+            "file_count",
+            "total_file_bytes",
+        ):
+            if source_archive.get(key) != source_bundle.get(key):
+                raise AsNumpyComponentError(
+                    "AsNumpy component source manifest archive mismatch"
+                )
+        if len(files) != int(source_bundle["file_count"]):
+            raise AsNumpyComponentError(
+                "AsNumpy component source manifest file count mismatch"
+            )
+        prefix = str(source_bundle["prefix"])
+        observed_files: dict[str, str] = {}
+        observed_total = 0
+        try:
+            with tarfile.open(archive_path, "r:gz") as archive:
+                for member in archive.getmembers():
+                    if member.isdir():
+                        continue
+                    if (
+                        not member.name.startswith(prefix)
+                        or member.issym()
+                        or member.islnk()
+                        or not member.isfile()
+                    ):
+                        raise AsNumpyComponentError(
+                            "AsNumpy source archive contains an unsafe member"
+                        )
+                    relative = member.name[len(prefix):]
+                    relative_path = PurePosixPath(relative)
+                    if (
+                        not relative
+                        or relative_path.is_absolute()
+                        or ".." in relative_path.parts
+                        or "\\" in relative
+                        or relative in observed_files
+                    ):
+                        raise AsNumpyComponentError(
+                            "AsNumpy source archive contains an unsafe path"
+                        )
+                    stream = archive.extractfile(member)
+                    if stream is None:
+                        raise AsNumpyComponentError(
+                            "AsNumpy source archive member is unreadable"
+                        )
+                    digest = hashlib.sha256()
+                    size = 0
+                    while True:
+                        chunk = stream.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        size += len(chunk)
+                        observed_total += len(chunk)
+                        if observed_total > int(source_bundle["total_file_bytes"]):
+                            raise AsNumpyComponentError(
+                                "AsNumpy source archive exceeds its manifest size"
+                            )
+                        digest.update(chunk)
+                    observed_files[relative] = digest.hexdigest()
+        except AsNumpyComponentError:
+            raise
+        except (OSError, tarfile.TarError, ValueError) as exc:
+            raise AsNumpyComponentError(
+                "AsNumpy component source archive is invalid"
+            ) from exc
+        if observed_files != files:
+            raise AsNumpyComponentError(
+                "AsNumpy component source archive file inventory mismatch"
+            )
+        if observed_total != int(source_bundle["total_file_bytes"]):
+            raise AsNumpyComponentError(
+                "AsNumpy component source archive byte count mismatch"
+            )
+        verified["source_bundle"] = {
+            "filename": archive_name,
+            "sha256": source_bundle["sha256"],
+            "manifest_filename": manifest_name,
+            "manifest_sha256": source_bundle["manifest_sha256"],
+            "file_count": len(observed_files),
+            "total_file_bytes": observed_total,
+        }
     return verified
 
 
 def component_receipt_identity(component: AsNumpyComponent) -> dict[str, Any]:
     """Return the identity block persisted in a bootstrap receipt."""
 
-    return {
+    identity = {
         "component_id": component.component_id,
         "manifest_schema": COMPONENT_SCHEMA,
         # This digest is captured from the exact payload parsed by the loader.
@@ -558,6 +798,9 @@ def component_receipt_identity(component: AsNumpyComponent) -> dict[str, Any]:
         "license_file": dict(component.license_file),
         "sbom": dict(component.sbom),
     }
+    if component.source_bundle:
+        identity["source_bundle"] = dict(component.source_bundle)
+    return identity
 
 
 __all__ = [

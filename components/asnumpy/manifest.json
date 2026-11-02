@@ -33,6 +33,20 @@
   },
   "schema": "numpilot.asnumpy-component",
   "schema_version": 1,
+  "source_bundle": {
+    "bytes": 643555,
+    "commit": "1e7177f12039b2d87e3cdff6693459d895744f68",
+    "file_count": 198,
+    "filename": "asnumpy-source-1e7177f12039b2d87e3cdff6693459d895744f68.tar.gz",
+    "format": "tar.gz",
+    "license": "Apache-2.0",
+    "manifest_filename": "source-manifest.json",
+    "manifest_sha256": "f697292d223bee0b6030a32ccc5bc0f2ba1d096d59b9e5a7efc148df6b0079b4",
+    "prefix": "asnumpy-source-1e7177f12039b2d87e3cdff6693459d895744f68/",
+    "sha256": "9a484272ad540879a93751e415c8adb10b52edfaab50e050672d3abd9cc6544d",
+    "total_file_bytes": 1691974,
+    "tree": "a5fb1f3a70be9fc17ecf0dd928776924d4c78e1e"
+  },
   "source_files_sha256": {
     "CMakeLists.txt": "e5da3e46e13e2e5936c4e3e03af526b1638f13ae6c73462829abaff1ade1b956",
     "LICENSE": "1eb85fc97224598dad1852b5d6483bbcf0aa8608790dcc657a5a2a761ae9c8c6",

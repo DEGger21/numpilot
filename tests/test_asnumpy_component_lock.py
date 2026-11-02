@@ -24,6 +24,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+import shutil
 
 import pytest
 
@@ -31,6 +32,7 @@ from numpilot.asnumpy_component import (
     AsNumpyComponentError,
     component_receipt_identity,
     load_component_manifest,
+    verify_component_attachments,
 )
 from numpilot.bootstrap import ASNUMPY_COMMIT, ASNUMPY_TREE, ASNUMPY_VERSION
 
@@ -173,3 +175,35 @@ def test_component_receipt_uses_digest_of_the_same_payload_that_was_parsed(
 
     assert reads == 1
     assert identity["manifest_sha256"] == hashlib.sha256(trusted).hexdigest()
+
+
+def test_bundled_asnumpy_source_snapshot_is_verified_and_receipted():
+    manifest = json.loads(COMPONENT_MANIFEST.read_text(encoding='utf-8'))
+    source = manifest['source_bundle']
+    component = load_component_manifest(COMPONENT_MANIFEST)
+    verified = verify_component_attachments(component)
+
+    assert source['file_count'] == 198
+    assert source['total_file_bytes'] == 1691974
+    assert verified['source_bundle']['filename'] == source['filename']
+    assert verified['source_bundle']['manifest_sha256'] == source['manifest_sha256']
+    assert verified['source_bundle']['file_count'] == source['file_count']
+    source_manifest = json.loads(
+        (COMPONENT_MANIFEST.parent / source['manifest_filename']).read_text(encoding='utf-8')
+    )
+    assert source_manifest['commit'] == manifest['commit']
+    assert source_manifest['tree'] == manifest['tree']
+    assert len(source_manifest['files']) == source['file_count']
+    assert component_receipt_identity(component)['source_bundle']['sha256'] == source['sha256']
+
+
+def test_tampered_asnumpy_source_snapshot_fails_closed(tmp_path):
+    component_dir = tmp_path / 'asnumpy'
+    shutil.copytree(COMPONENT_MANIFEST.parent, component_dir)
+    manifest = load_component_manifest(component_dir / 'manifest.json')
+    source_name = manifest.source_bundle['filename']
+    archive = component_dir / source_name
+    archive.write_bytes(archive.read_bytes() + b'tamper')
+
+    with pytest.raises(AsNumpyComponentError, match='source_bundle (?:byte count|SHA-256)'):
+        verify_component_attachments(manifest)

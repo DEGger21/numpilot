@@ -59,6 +59,8 @@ include = ["numpilot*"]
   "components/asnumpy/README.md",
   "components/asnumpy/LICENSE",
   "components/asnumpy/SBOM.spdx.json",
+  "components/asnumpy/source-manifest.json",
+  "components/asnumpy/*.tar.gz",
   "components/asnumpy/*.whl",
 ]
 "share/numpilot/components/cannbot-skills/39919e2c995e1cd9e193f11ac2e3fcb3cbd1d26c" = [

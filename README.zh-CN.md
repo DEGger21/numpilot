@@ -243,7 +243,7 @@ NumPilot 的确定性门禁。请如实报告 stopped、unverified、数值、�
 numpilot/            CLI 与核心模块（正在重组）
 docs/                架构、契约、验证、安装
 skill/               Agent Skill 契约与参考
-components/asnumpy/  作者维护的哈希绑定 AsNumpy wheel 与来源材料
+components/asnumpy/  作者维护的 AsNumpy wheel、完整源码基线与来源材料
 components/cannbot-skills/  作者维护的静态 CANNBot Skill bundle
 tests/               回归测试与 fixtures
 tools/               仓库与发布工具

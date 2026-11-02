@@ -81,13 +81,13 @@ ASNUMPY_SOURCE_BUILD_AUDIT_ID = (
 )
 ASNUMPY_INTERNAL_COMPONENT_AUDIT_ID = (
     "asnumpy-0.4.1.dev12-gc9115e8ce-internal-component-"
-    "manifest8bd7893a-wheel-a8c47cfe-core02f38dfa-v2"
+    "manifest9b4e95fe-wheel-a8c47cfe-core02f38dfa-v2"
 )
 _ASNUMPY_INTERNAL_COMPONENT_ID = (
     "asnumpy-0.4.1.dev12+gc9115e8ce.d20261031-cp312-cp312-linux_aarch64"
 )
 _ASNUMPY_INTERNAL_COMPONENT_MANIFEST_SHA256 = (
-    "8bd7893a6a77df35d7c1a1f05d1144b2c49ed04a8a8f93afd9b5d4e53e93a539"
+    "9b4e95fea4db4ce897c229f0f8b92e04c0cfc9dad9863275730a3f6edaf39db5"
 )
 _AUDITED_RUNTIME_FILE_SHA256 = {
     "__init__.py": "7061af131970ef158c87dfbf36261404ec9e1d682c3945f87d55c35fb22e8d1d",

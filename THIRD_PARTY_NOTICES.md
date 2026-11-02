@@ -11,7 +11,7 @@ NumPilot 自有源码按顶层 Apache-2.0 发布。依赖和随附材料仍受�
 | pytest | 开发与测试 | MIT |
 | build / scikit-build-core / pybind11 / setuptools-scm / towncrier | 可选 AsNumpy 源码构建工具链 | 各项目许可证；仅 `numpilot[bootstrap]` 可选依赖 |
 | threadpoolctl | 可选 BLAS 线程观测 | BSD-3-Clause |
-| AsNumpy | Ascend NPU 运行时内部组件 | Apache-2.0；当前仓库已随 `components/asnumpy/` 提供作者维护的固定 Linux/AArch64 CPython 3.12 wheel、SHA-256、上游 LICENSE 和 SPDX SBOM。正式发布仍须确认再分发权，不得解析浮动版本/`latest` |
+| AsNumpy | Ascend NPU 运行时内部组件 | Apache-2.0；当前仓库已随 `components/asnumpy/` 提供作者维护的固定 Linux/AArch64 CPython 3.12 wheel、完整源码快照、逐文件 source-manifest、SHA-256、上游 LICENSE 和 SPDX SBOM。正式发布仍须确认再分发权，不得解析浮动版本/`latest` |
 | Huawei CANN / CANNBot Skills | NPU 工具链、模板与算子开发参考 | CANN Open Software License Agreement Version 2.0；当前 CANNBot 只以 `components/cannbot-skills/<commit>/` 的作者维护静态 bundle 注入，运行时不联网更新；需遵守其用途和分发限制 |
 | Huawei ops-nn | official-first 缺口解析与定向算子来源；不随 NumPilot 默认安装或分发 | CANN Open Software License Agreement Version 2.0；下载、使用、修改或分发前需显式接受并遵守用途和分发限制 |
 
@@ -28,7 +28,7 @@ CodeArts 代码智能体及其内置模型属于外部平台。仓库中的 `.co
 
 项目不会把 CANN、ops-nn 或完整 CANNBot 仓库复制进 Python 分发包。AsNumpy 在冻结 release 中
 作为显式标记的内部运行时组件交付：源代码树中的附件位于 `components/asnumpy/`，构建出的
-NumPilot wheel/sdist 会按 `share/numpilot/components/asnumpy/` 携带同一份 manifest、LICENSE、SBOM
+NumPilot wheel/sdist 会按 `share/numpilot/components/asnumpy/` 携带同一份 manifest、源码归档、source-manifest、LICENSE、SBOM
 和精确 wheel（这不是把 CANN 原生库或上游源码偷偷混入包内）。若再分发条款不允许随 NumPilot
 包携带二进制，可改用同一 release 的外部组件附件，并让安装器显式指向它；组件锁定的 commit/tree、
 wheel/module/native 哈希和升级/回滚流程见

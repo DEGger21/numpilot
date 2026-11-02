@@ -11,6 +11,7 @@ Notable user-facing changes to NumPilot are recorded here.
 - Registered `add_one` API-gap route with separated operator draft, run-scoped interface qualification,
   migration, numerical verification, and performance states.
 - Hash-bound internal AsNumpy component, SBOM, bootstrap receipt, runtime identity, and real-NPU gates.
+- Bundled the complete MatMul-enabled AsNumpy source baseline with a per-file source manifest, maintainer extraction tool, and release-tree verification.
 - Ordinary single-file analysis, configured-model migration, isolated numerical comparison, and scope-bound
   strict-NPU benchmarking with JSON/Markdown reports.
 

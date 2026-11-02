@@ -25,6 +25,7 @@ NumPilot 将 NumPy 程序的静态分析、迁移候选生成、数值验证和 
 ## 组件、集成与发布
 
 - [AsNumpy 内部组件锁定](ASNUMPY-INTERNAL-COMPONENT-LOCK.zh-CN.md)；
+- [AsNumpy 源码基线与缺口扩展流程](asnumpy-source-extension.zh-CN.md)；
 - [固定 AsNumpy API 清单与 CANNBot 快照](asnumpy-api-support.zh-CN.md)：当前静态组件的公开计算面、已验证 MatMul 准入和快照身份；
 - [AsNumpy 接入说明](../integrations/asnumpy/README.md)；
 - [分支治理与发布约定](SUBMISSION.md)；

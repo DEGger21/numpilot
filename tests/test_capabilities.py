@@ -221,7 +221,7 @@ def test_p0_audit_ids_bind_wrapper_dependencies():
     assert "random6c9c7891" in ASNUMPY_SOURCE_BUILD_AUDIT_ID
     assert ASNUMPY_SOURCE_BUILD_AUDIT_ID.endswith("-receipt-v3")
     assert "internal-component" in ASNUMPY_INTERNAL_COMPONENT_AUDIT_ID
-    assert "manifest8bd7893a" in ASNUMPY_INTERNAL_COMPONENT_AUDIT_ID
+    assert "manifest9b4e95fe" in ASNUMPY_INTERNAL_COMPONENT_AUDIT_ID
     assert "wheel-a8c47cfe" in ASNUMPY_INTERNAL_COMPONENT_AUDIT_ID
     assert "core02f38dfa" in ASNUMPY_INTERNAL_COMPONENT_AUDIT_ID
     assert ASNUMPY_INTERNAL_COMPONENT_AUDIT_ID.endswith("-v2")

@@ -1,13 +1,14 @@
 # AsNumpy 内部组件锁定与发布合同
 
 本文定义 NumPilot 发布件如何交付、安装和验证 AsNumpy。当前版本仍处于 Alpha 阶段；该状态
-不放宽组件完整性、许可证或运行时资格要求。`components/asnumpy/` 中的 manifest、wheel、
-`LICENSE` 和 `SBOM.spdx.json` 共同构成不可分割的组件发布件。
+不放宽组件完整性、许可证或运行时资格要求。当前发布件同时保存默认运行 wheel 和已扩展 MatMul 的
+完整源码基线，源码只供作者审阅、修改和显式重建。`components/asnumpy/` 中的 manifest、wheel、源码归档、source-manifest、`LICENSE` 和
+`SBOM.spdx.json` 共同构成不可分割的组件发布件。
 
 ## 1. 交付边界
 
 AsNumpy 是 NumPilot 的锁定运行时组件，不是可由依赖解析器自由升级的浮动依赖。默认安装路径
-只读取本地 `components/asnumpy/`，先校验 manifest 和附件，再安装其中指定的精确 wheel。
+只读取本地 `components/asnumpy/`，先校验 manifest、wheel、源码归档和附件，再安装其中指定的精确 wheel。
 它不访问 PyPI 或上游 Git，也不安装 Ascend 驱动、固件、CANN 或 OPP。
 
 发布路径必须拒绝以下行为：
@@ -18,7 +19,7 @@ AsNumpy 是 NumPilot 的锁定运行时组件，不是可由依赖解析器自�
 - 接受 wheel、`METADATA`、`RECORD`、Python 模块、native `_core`、CANN、SoC 或 Python ABI 漂移。
 
 维护者可以显式使用 `--build-asnumpy` 或 `install.sh --asnumpy-source` 构建下一版组件；该路径
-必须与用户安装隔离，并产生新的不可变身份。默认组件安装若失败，必须阻断，不能退回源码下载。
+必须与用户安装隔离，并产生新的不可变身份。默认组件安装若失败，必须阻断，不能退回源码下载或自动从源码编译。
 
 ## 2. 锁定身份
 
@@ -37,13 +38,17 @@ AsNumpy 是 NumPilot 的锁定运行时组件，不是可由依赖解析器自�
 | 目标 wheel | `asnumpy-0.4.1.dev12+gc9115e8ce.d20261031-cp312-cp312-linux_aarch64.whl` |
 | Wheel tag | `cp312-cp312-linux_aarch64` |
 | Wheel SHA-256 | `a8c47cfe71994f3bfd4180d7354df3904d2bc96c476c3119083fefac747a2138` |
+| 源码归档 | `asnumpy-source-1e7177f12039b2d87e3cdff6693459d895744f68.tar.gz` |
+| 源码归档 SHA-256 | `9a484272ad540879a93751e415c8adb10b52edfaab50e050672d3abd9cc6544d` |
+| source-manifest SHA-256 | `f697292d223bee0b6030a32ccc5bc0f2ba1d096d59b9e5a7efc148df6b0079b4` |
+| 源码清单 | 198 个文件，1,691,974 bytes |
 | Wheel `METADATA` SHA-256 | `c07bcf35a9923e07f908d984dd220c6adccb0d9670260b1f3fd1c8b3d6a925e0` |
 | Wheel `RECORD` SHA-256 | `7baf091897058f1107dd17bbb213c33c49cdc64a75196d88176298f2160a99e6` |
 | `asnumpy/__init__.py` SHA-256 | `7061af131970ef158c87dfbf36261404ec9e1d682c3945f87d55c35fb22e8d1d` |
-| `asnumpy/_core.cpython-310-aarch64-linux-gnu.so` SHA-256 | `02f38dfae1cef5b0e995ab0cd5922ae66923c3d76d49b61e9482901f577f8f8a` |
+| `asnumpy/_core.cpython-312-aarch64-linux-gnu.so` SHA-256 | `02f38dfae1cef5b0e995ab0cd5922ae66923c3d76d49b61e9482901f577f8f8a` |
 | 组件 LICENSE SHA-256 | `1eb85fc97224598dad1852b5d6483bbcf0aa8608790dcc657a5a2a761ae9c8c6` |
 | 组件 SBOM SHA-256 | `2257e349c8fa9000d069760b5e1d4e779dba11e50017be6071b8a41f4bbde4dc` |
-| 组件 manifest SHA-256 | `8bd7893a6a77df35d7c1a1f05d1144b2c49ed04a8a8f93afd9b5d4e53e93a539` |
+| 组件 manifest SHA-256 | `9b4e95fea4db4ce897c229f0f8b92e04c0cfc9dad9863275730a3f6edaf39db5` |
 
 Manifest 的运行约束为 Linux/AArch64、CPython 3.12、CANN 9.2.0-beta.2、NumPy 2.5.4 和 Loguru 0.7.3。
 NumPilot 当前严格画像进一步绑定 Ascend 910B3、CPython 3.12.14 和精确 CANN 身份。画像外环境
@@ -92,11 +97,14 @@ manifest + LICENSE + SBOM
 
 组件缺失、附件不完整、哈希漂移、运行时不匹配或 smoke 失败时，安装和资格验证必须失败关闭。
 
+源码归档和 source-manifest 也必须在发布验收时校验。它们用于维护者重建，不会在普通安装中
+自动解包或编译；源码清单逐文件绑定 commit、tree、路径、SHA-256、文件数和总字节数。
+
 ## 4. 升级、回滚与安全修复流程
 
 AsNumpy 升级是一次新的组件发布：
 
-1. 在隔离环境获取明确的 upstream commit/tag，校验 origin、commit、tree、许可证和关键文件；
+1. 从发布件中的源码归档提取当前基线，或在隔离环境获取同一 upstream commit/tag；校验 origin、commit、tree、许可证和逐文件 source-manifest；
 2. 在目标 CANN/SoC/Python 矩阵构建 wheel，记录工具链、环境和新的 artifact SHA-256；
 3. 运行 AsNumpy 测试、NumPilot API/数值/strict-NPU 回归及适用的算子接入回归；
 4. 更新 component manifest、锁定文档、SBOM、许可证清单和资格回执；
@@ -123,5 +131,6 @@ AsNumpy 升级是一次新的组件发布：
 ## 6. 相关文档
 
 - [安装与验收](installation.zh-CN.md)
+- [源码基线与缺口扩展流程](asnumpy-source-extension.zh-CN.md)
 - [产物存储策略](artifact-storage.md)
 - [第三方软件与材料](../THIRD_PARTY_NOTICES.md)
