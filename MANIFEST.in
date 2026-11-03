@@ -29,11 +29,13 @@ include components/asnumpy/*.whl
 include components/cannbot-skills/39919e2c995e1cd9e193f11ac2e3fcb3cbd1d26c/manifest.json
 include components/cannbot-skills/39919e2c995e1cd9e193f11ac2e3fcb3cbd1d26c/bundle.json
 include docs/asnumpy-api-support.zh-CN.md
+include docs/asnumpy-contract-audit.zh-CN.md
 
 prune tools
 include tools/audit_script_benchmark_receipt.py
 include tools/check_release_tree.py
 include tools/extract_asnumpy_source.py
+include tools/asnumpy_contract_probe.py
 include tools/release_artifact_manifest.py
 include tools/render_demo_summary.py
 include tools/render_migration_report.py

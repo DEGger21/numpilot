@@ -235,3 +235,25 @@ def test_file_decision_aggregation_is_fail_closed():
         CapabilityDecision.BLOCKED,
         CapabilityDecision.CAPABILITY_AUDIT_REQUIRED,
     ]) is CapabilityDecision.BLOCKED
+
+
+@pytest.mark.parametrize(
+    ("key", "marker", "probe_case"),
+    [
+        ("fmax", "NaN", "fmax_nan_ignores_nan"),
+        ("copysign", "negative zero", "copysign_preserves_negative_zero"),
+    ],
+)
+def test_runtime_semantic_probe_gaps_never_admit_direct_migration(
+    key, marker, probe_case
+):
+    result = qualify_call(key, _facts())
+
+    assert result.route is ComputationRoute.NATIVE_NPU
+    assert result.decision is CapabilityDecision.CAPABILITY_AUDIT_REQUIRED
+    assert result.reason_code == "SEMANTIC_CONTRACT_GAP"
+    joined = " ".join(result.reasons)
+    assert marker in joined
+    assert probe_case in joined
+    assert "docs/asnumpy-contract-audit.zh-CN.md" in joined
+    assert result.next_action.startswith("collect a new source-bound")

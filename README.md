@@ -263,7 +263,7 @@ A claim without a receipt in the current run is reported as `qualification_requi
 numpilot/            CLI and core modules (being reorganized)
 docs/                architecture, contracts, verification, installation
 skill/               Agent Skill contract and references
-components/asnumpy/  author-maintained AsNumpy wheel, source baseline, and provenance
+components/asnumpy/  author-maintained AsNumpy wheel, source baseline, provenance, and contract probe
 components/cannbot-skills/  author-maintained static CANNBot skill bundle
 tests/               regression tests and fixtures
 tools/               repository and release utilities

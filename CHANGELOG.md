@@ -12,6 +12,7 @@ Notable user-facing changes to NumPilot are recorded here.
   migration, numerical verification, and performance states.
 - Hash-bound internal AsNumpy component, SBOM, bootstrap receipt, runtime identity, and real-NPU gates.
 - Bundled the complete MatMul-enabled AsNumpy source baseline with a per-file source manifest, maintainer extraction tool, and release-tree verification.
+- Added a deterministic AsNumpy contract probe for boundary semantics; the current audit records fmax NaN and copysign signed-zero gaps while confirming zero-dimensional add and fp32 MatMul.
 - Ordinary single-file analysis, configured-model migration, isolated numerical comparison, and scope-bound
   strict-NPU benchmarking with JSON/Markdown reports.
 

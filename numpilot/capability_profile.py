@@ -454,6 +454,25 @@ _AUDITED_EINSUM_EQUATIONS = frozenset({
     "abcd,abced->abce",
 })
 
+# Runtime contract probe 2026-11-02 found semantic differences that are
+# independent of API existence and route discovery.  Keep the route visible,
+# but never admit these calls as direct until a new qualification receipt
+# binds the corrected implementation and boundary behavior.  Each reason
+# names the deterministic probe case and the audit document so the decision
+# stays traceable without trusting a free-form model summary.
+_SEMANTIC_CONTRACT_GAPS = {
+    "fmax": (
+        "AsNumpy propagates NaN where NumPy fmax ignores it",
+        "tools/asnumpy_contract_probe.py case fmax_nan_ignores_nan "
+        "(docs/asnumpy-contract-audit.zh-CN.md)",
+    ),
+    "copysign": (
+        "AsNumpy loses the sign of negative zero",
+        "tools/asnumpy_contract_probe.py case copysign_preserves_negative_zero "
+        "(docs/asnumpy-contract-audit.zh-CN.md)",
+    ),
+}
+
 
 def _base_status(value: Any) -> QualificationStatus:
     if value is True:
@@ -732,6 +751,14 @@ def qualify_call(
         reason_code = "CALL_CONTRACT_REWRITE_REQUIRED"
         reasons = _contract_reasons(key, contract, facts)
         next_action = "rewrite or explicitly qualify the call contract before migration"
+    elif key in _SEMANTIC_CONTRACT_GAPS:
+        decision = CapabilityDecision.CAPABILITY_AUDIT_REQUIRED
+        reason_code = "SEMANTIC_CONTRACT_GAP"
+        reasons = (entry.evidence,) + _SEMANTIC_CONTRACT_GAPS[key]
+        next_action = (
+            "collect a new source-bound semantic qualification receipt; "
+            "do not direct-migrate this call"
+        )
     elif route in {
         ComputationRoute.CPU_FALLBACK,
         ComputationRoute.CONDITIONAL_CPU_FALLBACK,
