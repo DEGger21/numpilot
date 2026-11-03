@@ -99,7 +99,14 @@ from numpilot.gaps.candidate_materializer import (
 from numpilot.gaps.adapter_recovery import (
     AdapterRecoveryError,
     OfficialAdapterRecoveryResult,
+    RepairedAdapterRecoveryResult,
     ingest_official_adapter_candidate,
+    ingest_repaired_adapter_candidate,
+)
+from numpilot.gaps.integration import (
+    IntegrationError,
+    IntegrationTransactionResult,
+    run_official_adapter_integration,
 )
 
 __all__ = [
@@ -138,6 +145,7 @@ __all__ = [
     "RecoveryBinding",
     "RecoveryError",
     "RecoveryEvent",
+    "RepairedAdapterRecoveryResult",
     "RecoveryOutcome",
     "RecoveryPhase",
     "RecoveryPolicy",
@@ -185,9 +193,13 @@ __all__ = [
     "MaterializedOperatorCandidate",
     "OfficialAdapterInputError",
     "OfficialAdapterRecoveryResult",
+    "IntegrationError",
+    "IntegrationTransactionResult",
+    "run_official_adapter_integration",
     "OfficialCandidateAdapterInput",
     "bind_official_adapter_context",
     "ingest_official_adapter_candidate",
+    "ingest_repaired_adapter_candidate",
     "load_official_candidate_adapter_input",
     "load_operator_candidate_artifact",
     "materialize_official_binary_candidates",

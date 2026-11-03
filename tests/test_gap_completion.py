@@ -58,6 +58,7 @@ from numpilot.gaps.provider import (
     _load_asnumpy_adapter_report,
     _load_existing_draft,
     _load_repair_candidate,
+    _render_official_exact_edit_repair_dependencies,
     _should_use_staged_direct,
     _validate_adapter_context_plan,
     _validate_stage_bundle,
@@ -914,6 +915,24 @@ def test_adapter_context_read_paths_do_not_expand_writable_overlay(tmp_path):
         _validate_adapter_context_plan(unsafe)
 
 
+def test_adapter_context_plan_accepts_reordered_dependency_keys(tmp_path):
+    plan = _official_adapter_context_plan(tmp_path)
+    paths = tuple(plan["expected_overlay_paths"])
+
+    # Reports are persisted with ``sort_keys=True``; dependency object key
+    # order is not semantic and must not change the rebuilt adapter plan.
+    reordered = {
+        name: plan["prompt_dependencies"][name]
+        for name in reversed(paths)
+    }
+    assert tuple(reordered) != paths
+    plan["prompt_dependencies"] = reordered
+
+    validated = _validate_adapter_context_plan(plan)
+
+    assert tuple(validated["prompt_dependencies"]) == paths
+
+
 def _write_adapter_base(tmp_path, *, schema_version=2, context=None):
     context = dict(context or _ADAPTER_REFERENCE_CONTEXT)
     root = tmp_path / "adapter-base"
@@ -1237,9 +1256,11 @@ def test_remote_model_repairs_hash_bound_asnumpy_adapter_from_raw_log(
 ):
     base = _write_adapter_base(tmp_path, schema_version=4)
     prompts = []
+    call_options = []
 
-    def remote_chat(system, user, **_kwargs):
+    def remote_chat(system, user, **kwargs):
         prompts.append((system, user))
+        call_options.append(kwargs)
         response = """NUMPILOT_BUNDLE_V1
 SUMMARY: use installed private OPP vendor
 FILE: csrc/custom_ops/registry/cbrt/op.yaml
@@ -1277,6 +1298,7 @@ END_BUNDLE"""
     )
 
     assert len(prompts) == 1
+    assert call_options == [{"max_tokens": 16384}]
     assert diagnostic in prompts[0][1]
     assert "opp_vendor: custom_math" in prompts[0][1]
     assert "fixture for" in prompts[0][1]
@@ -1312,6 +1334,86 @@ END_BUNDLE"""
     reloaded, _payload, reloaded_hashes = _load_asnumpy_adapter_report(out)
     assert reloaded["adapter_artifact_id"] == report["adapter_artifact_id"]
     assert reloaded_hashes == report["files_sha256"]
+
+
+def test_official_exact_edit_repair_binds_absent_signed_header_by_hash():
+    reference_path = "include/asnumpy/array/basic.hpp"
+    header_path = "SIGNED_OFFICIAL_HEADER/aclnn_cat.h"
+    target_path = "csrc/array/basic.cpp"
+    reference = (
+        "NPUArray Concatenate(const std::vector<NPUArray>& arrays, int axis);\n"
+    )
+    target = (
+        "NPUArray Linspace(const py::object& start) {\n"
+        "    return NPUArray();\n"
+        "}\n\n"
+        "NPUArray Concatenate(const std::vector<NPUArray>& arrays, int axis) {\n"
+        "    return NPUArray();\n"
+        "}\n"
+    )
+    header_hash = "b" * 64
+    plan = {
+        "context_sha256": {
+            reference_path: hashlib.sha256(
+                reference.encode("utf-8")
+            ).hexdigest(),
+        },
+        "prompt_dependencies": {
+            target_path: [
+                {"source": "reference", "path": reference_path},
+                {"source": "signed_official_header", "path": header_path},
+            ],
+        },
+        "plan_sha256": "a" * 64,
+    }
+
+    rendered = _render_official_exact_edit_repair_dependencies(
+        target_path=target_path,
+        asnumpy_context={reference_path: reference},
+        base_context_hashes={header_path: header_hash},
+        normalized_plan=plan,
+        current_contents={target_path: target},
+        current_hashes={
+            target_path: hashlib.sha256(target.encode("utf-8")).hexdigest(),
+        },
+    )
+
+    body = rendered.split("\n\n", 1)[0]
+    prefix = "HASH-BOUND REPAIR DEPENDENCY PROJECTION:\n"
+    assert body.startswith(prefix)
+    projection = json.loads(body[len(prefix):])
+    signed = next(
+        item for item in projection["dependencies"]
+        if item["source"] == "signed_official_header"
+    )
+    assert signed["sha256"] == header_hash
+    assert signed["binding"] == (
+        "parent_adapter_report.asnumpy_context_sha256"
+    )
+    assert signed["content_supplied"] is False
+    reference_entry = next(
+        item for item in projection["dependencies"]
+        if item["source"] == "reference"
+    )
+    assert reference_entry["content_supplied"] is True
+    assert "HASH-BOUND REPAIR DEPENDENCY `%s`" % reference_path in rendered
+    assert "HASH-BOUND REPAIR DEPENDENCY `%s`" % header_path not in rendered
+
+    with pytest.raises(
+        DraftGenerationError, match="signed-header dependency is missing"
+    ):
+        _render_official_exact_edit_repair_dependencies(
+            target_path=target_path,
+            asnumpy_context={reference_path: reference},
+            base_context_hashes={},
+            normalized_plan=plan,
+            current_contents={target_path: target},
+            current_hashes={
+                target_path: hashlib.sha256(
+                    target.encode("utf-8")
+                ).hexdigest(),
+            },
+        )
 
 
 @pytest.mark.parametrize(

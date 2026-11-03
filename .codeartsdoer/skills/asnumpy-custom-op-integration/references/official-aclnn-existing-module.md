@@ -29,9 +29,10 @@ or symbol match proves semantic correctness.
 
 ## Existing-module overlay rules
 
-Read every supplied AsNumpy reference file before producing a replacement.
-Return exactly the requested complete file and no other path. Preserve public
-behavior outside the admitted profile.
+Read every supplied AsNumpy reference file before proposing edits. Return
+exactly the requested `NUMPILOT_EXACT_EDIT_V1` response for the requested file
+and no other path. Each `OLD` block must be copied verbatim from one supplied
+target edit window. Preserve public behavior outside the admitted profile.
 
 For the reviewed `numpy.matmul`/`asnumpy.matmul` plan:
 
@@ -61,6 +62,39 @@ For the reviewed `numpy.matmul`/`asnumpy.matmul` plan:
   matches the selected DSO and exposes the native `matmul` call. Stop on a
   mismatch; do not add another library with overlapping ACLNN symbols or make
   unrelated build-option changes.
+
+For the reviewed `numpy.concatenate`/`asnumpy.concatenate` plan:
+
+- the admitted form is a non-empty sequence of AsNumpy `ndarray` inputs with an
+  explicit integer `axis` (the default `axis=0` is an integer). `axis=None`
+  and the `dtype`, `out`, `casting`, and `order` keywords are outside the
+  reviewed mapping; reject them rather than guessing a host fallback;
+- `include/asnumpy/array/basic.hpp` declares the new existing-module entry
+  point and `csrc/array/basic.cpp` implements it with the signed
+  `aclnn_cat.h` ABI (`aclnnCatGetWorkspaceSize`, `aclnnCat`);
+- the signed `aclnn_cat.h` does not declare tensor-list helpers. Build the
+  input list with
+  `aclCreateTensorList(const aclTensor* const*, uint64_t)` and destroy it with
+  `aclDestroyTensorList` on every success and failure path. Both are declared
+  by `aclnn/acl_meta.h`, which `npu_array.hpp` already includes through
+  `aclnn/aclnn_base.h`; do not redeclare them;
+- normalize a negative `axis` with `axis += rank`. Require one shared rank,
+  equal extents on every non-axis dimension, identical `float32` dtype, and
+  C-contiguous inputs. Reject an empty sequence and any axis outside
+  `[-rank, rank)`. Allocate the output `NPUArray` with the explicitly computed
+  output shape and the input dtype before calling ACLNN;
+- `bindings/python/bind_array.cpp` must expose the same argument order and
+  types as the C++ entry point. `src/asnumpy/array.py` must keep the public
+  wrapper narrow (`concatenate(arrays, axis=0)`), pass the sequence through
+  unchanged, and wrap the native result in the public `ndarray` type.
+  `src/asnumpy/__init__.py` adds only the lazy export;
+- preserve the existing `Zeros`/`Ones`/`Linspace` behavior and the reviewed
+  CMake link items; do not change unrelated creation functions or add a DSO;
+- tests in `tests/asnumpy_tests/creation_tests/test_basic.py` must compare NPU
+  output, dtype, and shape with `numpy.concatenate` for admitted float32 cases,
+  including a negative axis and a single-input sequence, and must prove that
+  empty sequences, `axis=None`, mismatched non-axis extents, mixed dtype, and
+  non-contiguous forms do not enter the native path.
 
 An empty dimension is outside the current non-empty qualification profile.
 Do not silently admit it because NumPy can evaluate it.

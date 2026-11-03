@@ -52,7 +52,7 @@ LLM_CHECK_MARKER = "NUMPILOT_LLM_READY"
 LLM_CHECK_SYSTEM_MESSAGE = (
     "You are a connectivity checker. Return one short acknowledgement only."
 )
-LLM_CHECK_USER_MESSAGE = "Reply with NUMPILOT_LLM_READY."
+LLM_CHECK_USER_MESSAGE = "Reply with exactly the ASCII token NUMPILOT_LLM_READY and nothing else. Do not use XML tags, markup, or code fences."
 # Some reasoning-capable gateways consume a small completion budget internally
 # and occasionally return an empty visible acknowledgement at 64 tokens.  The
 # request itself remains a one-line connectivity probe; 256 keeps that single

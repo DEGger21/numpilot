@@ -214,6 +214,57 @@ def test_audited_installed_mapping_is_only_an_adapter_candidate(
     json.dumps(payload, sort_keys=True)
 
 
+def test_concatenate_mapping_matches_only_the_recorded_runtime(tmp_path):
+    candidate = _candidate("numpy.concatenate")
+    assert candidate.candidate_id == "numpy.concatenate-aclnn-cat"
+    assert candidate.header_name == "aclnn_cat.h"
+    assert candidate.required_symbols == (
+        "aclnnCatGetWorkspaceSize",
+        "aclnnCat",
+    )
+    assert candidate.audited_cann_versions == ("9.2.0-beta.2",)
+    assert candidate.audited_target_socs == ("ascend910b3",)
+    assert candidate.library_priority == (
+        "libopapi.so",
+        "libopapi_math.so",
+    )
+
+    root = _write_toolkit(tmp_path, version="9.2.0-beta.2")
+    result = _raw_resolve_installed_aclnn(
+        "numpy.concatenate",
+        cann_root=root,
+        expected_cann_version="9.2.0-beta.2",
+        expected_target_soc="Ascend910B3",
+        symbol_probe=_probe(),
+    )
+
+    assert result.status == EXACT_CANDIDATE
+    assert result.adapter_candidate is True
+    assert result.reason_code == "header_and_dynamic_symbols_present"
+    assert result.header.file.relative_path.endswith("/aclnn_cat.h")
+    assert result.library.file.relative_path.endswith("/libopapi.so")
+    payload = result.to_dict()
+    assert payload["semantic_equivalence"] == "unverified"
+    assert payload["required_next_gate"] == (
+        "generate_and_qualify_asnumpy_adapter"
+    )
+
+
+def test_concatenate_mapping_does_not_inherit_older_audit_profiles(tmp_path):
+    root = _write_toolkit(tmp_path)
+
+    result = resolve_installed_aclnn(
+        "numpy.concatenate",
+        cann_root=root,
+        expected_cann_version="9.0.0",
+        symbol_probe=lambda path: pytest.fail("probe must not run"),
+    )
+
+    assert result.status == INCOMPATIBLE
+    assert result.reason_code == "candidate_target_soc_not_audited"
+    assert result.candidate.candidate_id == "numpy.concatenate-aclnn-cat"
+
+
 def test_inventory_hashes_exact_files_and_records_no_full_symbol_listing(tmp_path):
     root = _write_toolkit(tmp_path)
 
@@ -241,17 +292,24 @@ def test_one_inventory_resolves_multiple_gaps_without_reprobing_libraries(tmp_pa
     )
     probe_count = len(calls)
 
+    fixture_candidates = tuple(
+        candidate
+        for candidate in ACLNN_ADAPTER_CANDIDATES
+        if "9.0.0" in candidate.audited_cann_versions
+        and TARGET_SOC in candidate.audited_target_socs
+    )
     results = tuple(
         resolve_installed_aclnn_from_inventory(
             candidate.qualified_api,
             inventory=inventory,
             expected_cann_version="9.0.0",
         )
-        for candidate in ACLNN_ADAPTER_CANDIDATES
+        for candidate in fixture_candidates
     )
 
     assert probe_count == 3
     assert len(calls) == probe_count
+    assert len(fixture_candidates) == 8
     assert all(result.status == EXACT_CANDIDATE for result in results)
     assert all(result.inventory is inventory for result in results)
 

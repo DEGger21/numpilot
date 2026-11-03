@@ -38,7 +38,7 @@
           ]
         },
         "candidate_mapping_sha256": "8275a8bf151b93f02b37623c51bfd62db40cffeae3481c55662ed0b0e5e4a685",
-        "catalog_revision": "installed-cann-aclnn-adapter-candidates-v2",
+        "catalog_revision": "installed-cann-aclnn-adapter-candidates-v3",
         "expected_cann_version": "9.0.0",
         "expected_target_soc": "Ascend910B4",
         "missing_symbols": [],

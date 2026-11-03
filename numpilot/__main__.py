@@ -3213,7 +3213,7 @@ _LLM_READY_MARKER = "NUMPILOT_LLM_READY"
 _LLM_PROBE_SYSTEM = (
     "You are a connectivity probe. Return one short acknowledgement."
 )
-_LLM_PROBE_QUESTION = "Reply with NUMPILOT_LLM_READY."
+_LLM_PROBE_QUESTION = "Reply with exactly the ASCII token NUMPILOT_LLM_READY and nothing else. Do not use XML tags, markup, or code fences."
 
 
 def _run_llm_readiness_gate(status, *, require_marker):
@@ -3829,6 +3829,92 @@ def _cmd_recover_gaps(args):
                     )
                 )
                 print("[接入候选导入] 输出=%s" % result.adapter_output_root)
+            return 0
+
+        if args.recovery_command == "ingest-adapter-repair":
+            from numpilot.gaps.adapter_recovery import (
+                AdapterRecoveryError,
+                ingest_repaired_adapter_candidate,
+            )
+
+            try:
+                result = ingest_repaired_adapter_candidate(
+                    args.state_dir,
+                    args.candidate,
+                    args.adapter_output,
+                )
+            except AdapterRecoveryError as exc:
+                print(
+                    "[接入候选修复导入] %s: %s" % (exc.code, exc),
+                    file=sys.stderr,
+                )
+                return 2
+            if args.json:
+                print(json.dumps(
+                    result.to_dict(),
+                    ensure_ascii=False,
+                    allow_nan=False,
+                    sort_keys=True,
+                ))
+            else:
+                print(
+                    "[接入候选修复导入] gap=%s · 阶段=%s · 修复轮=%d · "
+                    "本次追加=%d · producer_model=yes · build/execution=no"
+                    % (
+                        result.gap_id,
+                        result.recovery.state.phase.value,
+                        result.repairs_used,
+                        result.appended_revisions,
+                    )
+                )
+                print("[接入候选修复导入] 输出=%s" % result.adapter_output_root)
+            return 0
+
+        if args.recovery_command == "integrate-candidate":
+            from numpilot.gaps.integration import (
+                IntegrationError,
+                run_official_adapter_integration,
+            )
+
+            try:
+                result = run_official_adapter_integration(
+                    args.state_dir,
+                    args.candidate,
+                    args.adapter_output,
+                    args.asnumpy_reference,
+                    args.out,
+                    python_executable=args.python,
+                    timeout_seconds=args.timeout,
+                )
+            except IntegrationError as exc:
+                print("[隔离集成] %s: %s" % (exc.code, exc), file=sys.stderr)
+                return 2
+            if args.json:
+                print(json.dumps(
+                    result.to_dict(),
+                    ensure_ascii=False,
+                    allow_nan=False,
+                    sort_keys=True,
+                ))
+            else:
+                print(
+                    "[隔离集成] gap=%s · status=%s · 阶段=%s · "
+                    "本次追加=%d · model=no · activation=no"
+                    % (
+                        result.gap_id,
+                        result.status,
+                        result.recovery.state.phase.value,
+                        result.appended_revisions,
+                    )
+                )
+                print("[隔离集成] 事务=%s" % result.transaction_ref.locator)
+                if result.diagnostic_ref is not None:
+                    print("[隔离集成] 诊断=%s" % result.diagnostic_ref.locator)
+                if result.manual_review_required:
+                    print(
+                        "[隔离集成] MANUAL_REVIEW_REQUIRED",
+                        file=sys.stderr,
+                    )
             return 0
 
         status = recovery_status(args.state_dir)
@@ -5080,8 +5166,11 @@ def _cmd_repair_asnumpy_adapter(args):
     """Return a raw AsNumpy diagnostic to the model for one-file repair."""
 
     from numpilot.asnumpy_adapter_context import (
+        OFFICIAL_ACLNN_ARCHITECTURE,
         infer_asnumpy_adapter_api,
+        infer_official_adapter_api,
         plan_asnumpy_adapter_context,
+        plan_official_aclnn_adapter_context,
     )
     from numpilot.gaps.provider import (
         DraftGenerationError,
@@ -5114,17 +5203,46 @@ def _cmd_repair_asnumpy_adapter(args):
             raise DraftGenerationError(
                 "repair path is not part of the signed AsNumpy adapter"
             )
-        api_name = infer_asnumpy_adapter_api(tuple(base_hashes))
-        context_plan = plan_asnumpy_adapter_context(
-            args.asnumpy_reference, api_name
-        )
-        context = dict(context_plan.context)
-        context_manifest = context_plan.manifest()
         if _base_report.get("schema_version") != 4:
             raise DraftGenerationError(
                 "base adapter predates AsNumpy context-plan binding; regenerate it"
             )
-        if _base_report.get("asnumpy_adapter_context_plan") != context_manifest:
+        base_plan_manifest = _base_report.get("asnumpy_adapter_context_plan")
+        if not isinstance(base_plan_manifest, dict):
+            raise DraftGenerationError(
+                "base adapter does not bind an AsNumpy context plan"
+            )
+        if base_plan_manifest.get("architecture") == OFFICIAL_ACLNN_ARCHITECTURE:
+            api_name = infer_official_adapter_api(tuple(base_hashes))
+            binding = base_plan_manifest.get("official_library_binding")
+            if not isinstance(binding, dict):
+                raise DraftGenerationError(
+                    "official adapter does not bind an installed ACLNN library"
+                )
+            selected_library_relative_path = binding.get(
+                "selected_library_relative_path"
+            )
+            selected_library_sha256 = binding.get("selected_library_sha256")
+            if not isinstance(
+                selected_library_relative_path, str
+            ) or not isinstance(selected_library_sha256, str):
+                raise DraftGenerationError(
+                    "official adapter library binding is invalid"
+                )
+            context_plan = plan_official_aclnn_adapter_context(
+                args.asnumpy_reference,
+                api_name,
+                selected_library_relative_path=selected_library_relative_path,
+                selected_library_sha256=selected_library_sha256,
+            )
+        else:
+            api_name = infer_asnumpy_adapter_api(tuple(base_hashes))
+            context_plan = plan_asnumpy_adapter_context(
+                args.asnumpy_reference, api_name
+            )
+        context = dict(context_plan.context)
+        context_manifest = context_plan.manifest()
+        if base_plan_manifest != context_manifest:
             raise DraftGenerationError(
                 "AsNumpy reference layout or content changed; regenerate the adapter"
             )
@@ -6740,6 +6858,66 @@ def main(argv=None):
         help="包含 asnumpy-adapter-report.json 与 candidate/ 的已发布目录",
     )
     recovery_adapter.add_argument(
+        "--json", action="store_true", help="仅向 stdout 输出机器可读 JSON"
+    )
+
+    recovery_adapter_repair = recovery_sub.add_parser(
+        "ingest-adapter-repair",
+        help=(
+            "复验修复后的 official ACLNN AsNumpy overlay，并在记录过集成"
+            "失败后于 ADAPTER_CANDIDATE 原地恢复；最多三轮"
+        ),
+    )
+    recovery_adapter_repair.add_argument(
+        "--state-dir", required=True, help="已通过完整 hash-chain 校验的恢复状态目录"
+    )
+    recovery_adapter_repair.add_argument(
+        "--candidate", required=True, help="恢复状态精确绑定的 operator-candidate.json"
+    )
+    recovery_adapter_repair.add_argument(
+        "--adapter-output",
+        required=True,
+        help="包含 repaired_unverified 的 asnumpy-adapter-report.json 与 candidate/",
+    )
+    recovery_adapter_repair.add_argument(
+        "--json", action="store_true", help="仅向 stdout 输出机器可读 JSON"
+    )
+    recovery_integrate = recovery_sub.add_parser(
+        "integrate-candidate",
+        help=(
+            "把当前 adapter 叠加到固定 AsNumpy 的隔离副本，构建 wheel、在私有"
+            " runtime 中加载，并执行确定性 NumPy oracle API gate"
+        ),
+    )
+    recovery_integrate.add_argument(
+        "--state-dir", required=True, help="已通过完整 hash-chain 校验的恢复状态目录"
+    )
+    recovery_integrate.add_argument(
+        "--candidate", required=True, help="恢复状态精确绑定的 operator-candidate.json"
+    )
+    recovery_integrate.add_argument(
+        "--adapter-output",
+        required=True,
+        help="包含 asnumpy-adapter-report.json 与 candidate/ 的已发布目录",
+    )
+    recovery_integrate.add_argument(
+        "--asnumpy-reference",
+        required=True,
+        help="adapter context plan 绑定的干净固定 AsNumpy Git 工作树",
+    )
+    recovery_integrate.add_argument(
+        "--out", required=True, help="必须为绝对路径的私有 write-once 事务目录"
+    )
+    recovery_integrate.add_argument(
+        "--python", default=None, help="用于构建和隔离 runtime 的 Python 解释器"
+    )
+    recovery_integrate.add_argument(
+        "--timeout",
+        type=float,
+        default=1800.0,
+        help="每一步构建或 gate 的超时秒数（默认 1800）",
+    )
+    recovery_integrate.add_argument(
         "--json", action="store_true", help="仅向 stdout 输出机器可读 JSON"
     )
 

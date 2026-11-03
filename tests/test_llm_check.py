@@ -135,7 +135,7 @@ def test_connectivity_check_uses_bounded_prompt_and_renders_no_response_secrets(
     rendered = render_llm_connectivity_result(result)
     serialized = repr(result.to_safe_dict())
 
-    assert call["user"] == "Reply with NUMPILOT_LLM_READY."
+    assert call["user"] == "Reply with exactly the ASCII token NUMPILOT_LLM_READY and nothing else. Do not use XML tags, markup, or code fences."
     assert call["kwargs"] == {"max_tokens": LLM_CHECK_MAX_TOKENS}
     assert result.http_status == 200
     assert result.proxy_route == "environment"

@@ -1,0 +1,304 @@
+#!/usr/bin/env python3
+"""Deterministic API correctness gate for the reviewed concatenate adapter.
+
+This file is copied into an integration transaction and executed by a
+separate CPython process with an explicitly constructed ``PYTHONPATH``.  It
+must remain standalone: it imports only the standard library, NumPy, and the
+isolated AsNumpy build under test.  NumPilot never delegates this comparison
+to a model.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import resource
+import sys
+
+
+SCHEMA_VERSION = 1
+API_NAME = "numpy.concatenate"
+MAX_DETAIL_CHARS = 2048
+REPEATED_CALLS = 100
+REPRESENTATIVE_EXCEPTIONS = (TypeError, ValueError)
+
+
+def _write_result(path, payload):
+    temporary = path + ".tmp"
+    with open(temporary, "w", encoding="utf-8") as handle:
+        json.dump(
+            payload,
+            handle,
+            ensure_ascii=False,
+            sort_keys=True,
+            allow_nan=False,
+        )
+        handle.write("\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(temporary, path)
+
+
+def _detail(exc):
+    text = "%s: %s" % (type(exc).__name__, exc)
+    return text[:MAX_DETAIL_CHARS]
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--result", required=True)
+    parser.add_argument("--expected-root", required=True)
+    parser.add_argument("--api", default=API_NAME)
+    arguments = parser.parse_args(argv)
+
+    expected_root = os.path.realpath(arguments.expected_root)
+    result = {
+        "schema_version": SCHEMA_VERSION,
+        "gate": "numpilot.asnumpy_api_correctness",
+        "api": arguments.api,
+        "status": "failed",
+        "asnumpy_file": "",
+        "asnumpy_file_under_expected_root": False,
+        "asnumpy_version": "",
+        "numpy_version": "",
+        "python_version": "",
+        "cases": [],
+        "completed_cases": 0,
+        "oracle_comparisons": 0,
+        "peak_rss_kib": 0,
+        "error": None,
+    }
+
+    def publish():
+        result["completed_cases"] = len(result["cases"])
+        _write_result(arguments.result, result)
+
+    def record(name, status, detail=""):
+        result["cases"].append({
+            "name": name,
+            "status": status,
+            "detail": str(detail)[:MAX_DETAIL_CHARS],
+        })
+        publish()
+
+    try:
+        import numpy
+        import asnumpy as ap
+
+        module_file = os.path.realpath(getattr(ap, "__file__", ""))
+        result["asnumpy_file"] = module_file
+        result["asnumpy_file_under_expected_root"] = (
+            module_file == expected_root
+            or module_file.startswith(expected_root + os.sep)
+        )
+        result["asnumpy_version"] = str(getattr(ap, "__version__", ""))
+        result["numpy_version"] = str(numpy.__version__)
+        result["python_version"] = sys.version.split()[0]
+        if not result["asnumpy_file_under_expected_root"]:
+            raise RuntimeError(
+                "imported asnumpy does not come from the isolated runtime"
+            )
+        if not callable(getattr(ap, "concatenate", None)):
+            raise RuntimeError("asnumpy.concatenate is not available")
+
+        def _compare(name, arrays, axis, expected):
+            try:
+                actual = ap.concatenate(arrays, axis=axis)
+                payload = actual.to_numpy()
+                numpy.testing.assert_array_equal(payload, expected)
+                if payload.dtype != expected.dtype:
+                    raise AssertionError(
+                        "dtype %r != %r" % (payload.dtype, expected.dtype)
+                    )
+                if payload.shape != expected.shape:
+                    raise AssertionError(
+                        "shape %r != %r" % (payload.shape, expected.shape)
+                    )
+                result["oracle_comparisons"] += 1
+                record(name, "passed")
+            except BaseException as exc:
+                record(name, "failed", _detail(exc))
+
+        def _reject(name, arrays, axis, **kwargs):
+            import asnumpy.array as ap_array
+
+            original = ap_array._concatenate
+            entered = []
+
+            def _unexpected(*_args, **_kwargs):
+                entered.append(True)
+                raise AssertionError("native concatenate path was entered")
+
+            ap_array._concatenate = _unexpected
+            try:
+                try:
+                    ap_array.concatenate(arrays, axis=axis, **kwargs)
+                except REPRESENTATIVE_EXCEPTIONS as exc:
+                    if entered:
+                        record(
+                            name,
+                            "failed",
+                            "native path was entered before %s" % type(exc).__name__,
+                        )
+                    else:
+                        record(name, "passed", type(exc).__name__)
+                except BaseException as exc:
+                    record(name, "failed", _detail(exc))
+                else:
+                    record(name, "failed", "invalid input was accepted")
+            finally:
+                ap_array._concatenate = original
+
+        a2x3 = ap.full((2, 3), 1.0, dtype=numpy.float32)
+        b2x2 = ap.full((2, 2), 2.0, dtype=numpy.float32)
+        np_a2x3 = numpy.full((2, 3), 1.0, dtype=numpy.float32)
+        np_b2x2 = numpy.full((2, 2), 2.0, dtype=numpy.float32)
+
+        _compare(
+            "axis_negative_one",
+            [a2x3, b2x2],
+            -1,
+            numpy.concatenate([np_a2x3, np_b2x2], axis=-1),
+        )
+        _compare(
+            "single_input_identity",
+            [a2x3],
+            0,
+            np_a2x3,
+        )
+        _compare(
+            "tuple_input_axis_one",
+            (a2x3, b2x2),
+            1,
+            numpy.concatenate([np_a2x3, np_b2x2], axis=1),
+        )
+
+        a1 = ap.full((4,), 3.0, dtype=numpy.float32)
+        b1 = ap.full((2,), 4.0, dtype=numpy.float32)
+        _compare(
+            "one_dimensional_axis_zero",
+            [a1, b1],
+            0,
+            numpy.concatenate(
+                [
+                    numpy.full((4,), 3.0, dtype=numpy.float32),
+                    numpy.full((2,), 4.0, dtype=numpy.float32),
+                ],
+                axis=0,
+            ),
+        )
+
+        a3 = ap.full((2, 2, 2), 1.0, dtype=numpy.float32)
+        b3 = ap.full((2, 3, 2), 2.0, dtype=numpy.float32)
+        _compare(
+            "three_dimensional_axis_one",
+            [a3, b3],
+            1,
+            numpy.concatenate(
+                [
+                    numpy.full((2, 2, 2), 1.0, dtype=numpy.float32),
+                    numpy.full((2, 3, 2), 2.0, dtype=numpy.float32),
+                ],
+                axis=1,
+            ),
+        )
+
+        _reject("empty_sequence_rejected", [], 0)
+        _reject("axis_none_rejected", [a2x3], None)
+        _reject("axis_out_of_range_rejected", [a2x3], 2)
+        _reject(
+            "mismatched_non_axis_extent_rejected",
+            [a2x3, ap.zeros((3, 3), dtype=numpy.float32)],
+            1,
+        )
+        _reject(
+            "mismatched_rank_rejected",
+            [a2x3, ap.zeros((2, 3, 1), dtype=numpy.float32)],
+            0,
+        )
+        _reject(
+            "mixed_dtype_rejected",
+            [a2x3, ap.zeros((2, 2), dtype=numpy.float64)],
+            1,
+        )
+        _reject(
+            "numpy_input_rejected",
+            [numpy.zeros((2, 2), dtype=numpy.float32)],
+            0,
+        )
+        _reject(
+            "generator_input_rejected",
+            (item for item in [a2x3]),
+            0,
+        )
+        _reject(
+            "dtype_keyword_rejected",
+            [a2x3],
+            0,
+            dtype=numpy.float32,
+        )
+
+        class NonContiguous(ap.ndarray):
+            @property
+            def strides(self):
+                base = super().strides
+                return (base[1], base[0])
+
+        _reject(
+            "non_contiguous_input_rejected",
+            [
+                NonContiguous(ap.zeros((2, 3), dtype=numpy.float32)),
+                ap.zeros((2, 3), dtype=numpy.float32),
+            ],
+            0,
+        )
+
+        start_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        repeated_failure = None
+        for index in range(REPEATED_CALLS):
+            try:
+                actual = ap.concatenate([a2x3, b2x2], axis=1)
+                numpy.testing.assert_array_equal(
+                    actual.to_numpy(),
+                    numpy.concatenate([np_a2x3, np_b2x2], axis=1),
+                )
+                result["oracle_comparisons"] += 1
+            except BaseException as exc:
+                repeated_failure = "iteration %d: %s" % (index, _detail(exc))
+                break
+        end_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        result["peak_rss_kib"] = end_rss
+        result["repeated_calls"] = REPEATED_CALLS
+        result["rss_start_kib"] = start_rss
+        result["rss_end_kib"] = end_rss
+        if repeated_failure is not None:
+            record("repeated_calls_stable", "failed", repeated_failure)
+        else:
+            record("repeated_calls_stable", "passed")
+
+        failed = [case for case in result["cases"] if case["status"] != "passed"]
+        if failed:
+            result["status"] = "failed"
+            result["error"] = {
+                "type": "GateCaseFailure",
+                "message": "%d gate case(s) failed" % len(failed),
+            }
+            publish()
+            return 2
+        result["status"] = "passed"
+        result["error"] = None
+        publish()
+        return 0
+    except BaseException as exc:
+        result["status"] = "failed"
+        result["error"] = {"type": type(exc).__name__, "message": _detail(exc)}
+        try:
+            publish()
+        except BaseException:
+            pass
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

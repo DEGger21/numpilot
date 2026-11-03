@@ -154,6 +154,11 @@ _MAX_OFFICIAL_EXACT_EDIT_PROMPT_BYTES = 64 * 1024
 _MAX_OFFICIAL_CONTEXT_FILES = 12
 _OFFICIAL_EXACT_EDIT_INITIAL_MAX_TOKENS = 8192
 _OFFICIAL_EXACT_EDIT_RETRY_MAX_TOKENS = 16384
+# Repair requests carry the complete overlay plus architecture references.
+# A reasoning-capable gateway can consume the default 8192-token completion
+# budget before emitting final content, so repairs use the escalated bound
+# that the official exact-edit path already applies after an empty response.
+_ASNUMPY_ADAPTER_REPAIR_MAX_TOKENS = 16384
 _OFFICIAL_MATMUL_LINK_BLOCK = (
     "target_link_libraries(_core\n"
     "    PUBLIC\n"
@@ -189,6 +194,47 @@ _OFFICIAL_EXACT_EDIT_TARGET_WINDOWS = {
             "\n# ==========================================================================\n"
             "# 6. matrix_power 矩阵幂测试",
         ),
+    ),
+    # np.concatenate is implemented in the existing array module.  Only the
+    # include block and the tail after Linspace are editable in basic.cpp, so
+    # the model cannot rewrite unrelated creation functions.
+    "include/asnumpy/array/basic.hpp": (
+        ("complete_array_header", None, None),
+    ),
+    "csrc/array/basic.cpp": (
+        (
+            "includes",
+            "#include <asnumpy/array/basic.hpp>",
+            "namespace asnumpy {",
+        ),
+        (
+            "concatenate_implementation",
+            "NPUArray Linspace(const py::object& start, "
+            "const py::object& end, const py::object& steps, "
+            "const py::object& dtype) {",
+            None,
+        ),
+    ),
+    "bindings/python/bind_array.cpp": (
+        ("complete_binding_module", None, None),
+    ),
+    "src/asnumpy/array.py": (
+        ("complete_array_module", None, None),
+    ),
+    "src/asnumpy/__init__.py": (
+        (
+            "type_checking_array_imports",
+            "    from .array import (",
+            "    from .io import load, save, savez, savez_compressed",
+        ),
+        (
+            "lazy_array_exports",
+            "    # .array\n",
+            "    # .linalg\n",
+        ),
+    ),
+    "tests/asnumpy_tests/creation_tests/test_basic.py": (
+        ("complete_creation_test_module", None, None),
     ),
 }
 _GENERATION_FIELDS_V1 = frozenset({
@@ -455,6 +501,35 @@ must not overlap or leave the supplied target edit windows. Use the smallest
 sufficient OLD/NEW blocks. Do not use
 Markdown fences, ellipses, line numbers, unified diffs, commentary, TODOs,
 CPU fallbacks, network operations, installation, or build/NPU success claims.
+"""
+
+_ASNUMPY_OFFICIAL_EXACT_EDIT_REPAIR_SYSTEM_PROMPT = """You repair exactly one
+EXISTING file in an UNVERIFIED official ACLNN AsNumpy integration overlay. The
+raw local build or test diagnostic is authoritative. The current target file,
+its hash-bound dependencies, the selected official CANN header, and the
+supplied AsNumpy references are the only edit context.
+
+Never return a complete file or a NUMPILOT_BUNDLE_V1 envelope. Return exactly:
+NUMPILOT_EXACT_EDIT_V1
+PATH: the/exact/requested/path
+BASE_SHA256: lowercase SHA-256 supplied for that target
+EDIT_COUNT: N
+BEGIN_EDIT 1
+OLD:
+an exact non-empty substring copied verbatim from the supplied target
+END_OLD 1
+NEW:
+its exact replacement (which may be empty)
+END_NEW 1
+END_EDIT 1
+END_EXACT_EDIT
+
+For N edits, repeat the numbered block consecutively from 1 through N. Every
+OLD block must occur exactly once in the original target, and OLD intervals
+must not overlap or leave the supplied target edit windows. Use the smallest
+sufficient OLD/NEW blocks. Do not use Markdown fences, ellipses, line numbers,
+unified diffs, commentary, TODOs, CPU fallbacks, network operations,
+installation, or build/NPU success claims.
 """
 
 _ASNUMPY_ADAPTER_REPAIR_SYSTEM_PROMPT = """You repair exactly one file in an
@@ -1515,7 +1590,7 @@ def _validate_adapter_context_plan(value: object) -> Dict[str, object]:
         raw_dependencies = value.get("prompt_dependencies")
         if (
             not isinstance(raw_dependencies, dict)
-            or tuple(raw_dependencies) != paths
+            or set(raw_dependencies) != set(paths)
         ):
             raise DraftGenerationError(
                 "AsNumpy adapter prompt dependencies are invalid"
@@ -1712,30 +1787,18 @@ def _validate_official_exact_edit_inputs(
 ) -> None:
     """Prove that an official existing-module generation is route-bound."""
 
-    expected_prompt_dependencies = {
-        "csrc/linalg/product.cpp": [
-            {
-                "source": "reference",
-                "path": "include/asnumpy/linalg/product.hpp",
-            },
-            {
-                "source": "signed_official_header",
-                "path": "SIGNED_OFFICIAL_HEADER/aclnn_matmul.h",
-            },
-        ],
-        "src/asnumpy/linalg/direct.py": [
-            {
-                "source": "reference",
-                "path": "bindings/python/bind_linalg.cpp",
-            },
-        ],
-        "tests/asnumpy_tests/linalg_tests/test_product.py": [
-            {
-                "source": "generated_overlay",
-                "path": "src/asnumpy/linalg/direct.py",
-            },
-        ],
-    }
+    from numpilot.asnumpy_adapter_context import (
+        reviewed_official_adapter_prompt_dependencies,
+    )
+
+    try:
+        expected_prompt_dependencies = (
+            reviewed_official_adapter_prompt_dependencies(normalized_paths)
+        )
+    except ValueError as exc:
+        raise DraftGenerationError(
+            "official exact-edit overlay shape is not reviewed"
+        ) from exc
     if (
         operator_artifact.get("artifact_type")
         != "official_binary_adapter_input"
@@ -1755,7 +1818,11 @@ def _validate_official_exact_edit_inputs(
         or normalized_plan.get("schema_version") != 3
         or normalized_plan.get("prompt_dependencies")
         != expected_prompt_dependencies
-        or tuple(_OFFICIAL_EXACT_EDIT_TARGET_WINDOWS) != normalized_paths
+        or tuple(expected_prompt_dependencies) != normalized_paths
+        or any(
+            path not in _OFFICIAL_EXACT_EDIT_TARGET_WINDOWS
+            for path in normalized_paths
+        )
         or tuple(skill_files) != ASNUMPY_OFFICIAL_ADAPTER_SKILL_FILES
     ):
         raise DraftGenerationError(
@@ -2031,6 +2098,122 @@ def _render_official_exact_edit_projection(
     }
     return "\n\n".join((
         "HASH-BOUND TARGET DEPENDENCY PROJECTION:\n" + json.dumps(
+            projection, ensure_ascii=False, indent=2, sort_keys=True
+        ),
+        *content_sections,
+    ))
+
+
+def _render_official_exact_edit_repair_dependencies(
+    *,
+    target_path: str,
+    asnumpy_context: Dict[str, str],
+    base_context_hashes: Dict[str, str],
+    normalized_plan: Dict[str, object],
+    current_contents: Dict[str, str],
+    current_hashes: Dict[str, str],
+) -> str:
+    """Render only the reviewed dependencies of one repair target.
+
+    Repair does not regenerate the other overlay files, so their original
+    per-file generation provenance is unavailable.  Bind generated
+    dependencies to the validated parent report instead of fabricating
+    request/response hashes that the repair request never observed.
+    """
+
+    raw_dependencies = normalized_plan["prompt_dependencies"].get(target_path)
+    if not raw_dependencies:
+        raise DraftGenerationError(
+            "official exact-edit repair dependency plan is missing"
+        )
+
+    manifest = []
+    content_sections = []
+    for dependency in raw_dependencies:
+        source = dependency.get("source")
+        path = dependency.get("path")
+        if not isinstance(path, str) or not path:
+            raise DraftGenerationError(
+                "official exact-edit repair dependency path is invalid"
+            )
+        if source == "reference":
+            content = asnumpy_context.get(path)
+            digest = normalized_plan["context_sha256"].get(path)
+            if (
+                not isinstance(content, str)
+                or not content
+                or not _is_sha256(digest)
+                or _sha256_bytes(content.encode("utf-8")) != digest
+            ):
+                raise DraftGenerationError(
+                    "official exact-edit repair reference dependency drifted"
+                )
+            binding = "asnumpy_adapter_context_plan.context_sha256"
+        elif source == "signed_official_header":
+            content = asnumpy_context.get(path)
+            if isinstance(content, str) and content:
+                digest = _sha256_bytes(content.encode("utf-8"))
+                binding = "repair_request.asnumpy_context_sha256"
+            else:
+                # The repair request intentionally replays only the reviewed
+                # context-plan references.  The signed CANN header was read
+                # during generation but is not part of that plan, so bind it
+                # to the parent report's recorded digest instead of pretending
+                # the repair request carried its bytes.
+                digest = base_context_hashes.get(path)
+                if not _is_sha256(digest):
+                    raise DraftGenerationError(
+                        "official exact-edit repair signed-header dependency "
+                        "is missing"
+                    )
+                binding = "parent_adapter_report.asnumpy_context_sha256"
+        elif source == "generated_overlay":
+            content = current_contents.get(path)
+            digest = current_hashes.get(path)
+            if (
+                not isinstance(content, str)
+                or not content
+                or not _is_sha256(digest)
+                or _sha256_bytes(content.encode("utf-8")) != digest
+            ):
+                raise DraftGenerationError(
+                    "official exact-edit repair generated dependency drifted"
+                )
+            binding = "parent_adapter_report.files_sha256"
+        else:
+            raise DraftGenerationError(
+                "official exact-edit repair dependency source is invalid"
+            )
+        manifest.append({
+            "source": source,
+            "path": path,
+            "sha256": digest,
+            "binding": binding,
+            "content_supplied": bool(content),
+        })
+        if isinstance(content, str) and content:
+            content_sections.append(
+                "HASH-BOUND REPAIR DEPENDENCY `%s` (%s):\n%s"
+                % (path, source, content)
+            )
+
+    identity = {
+        "schema_version": 1,
+        "target_path": target_path,
+        "context_plan_sha256": normalized_plan["plan_sha256"],
+        "dependencies": manifest,
+    }
+    projection = {
+        **identity,
+        "projection_sha256": _sha256_bytes(json.dumps(
+            identity,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")),
+    }
+    return "\n\n".join((
+        "HASH-BOUND REPAIR DEPENDENCY PROJECTION:\n" + json.dumps(
             projection, ensure_ascii=False, indent=2, sort_keys=True
         ),
         *content_sections,
@@ -4506,6 +4689,11 @@ class LlmDraftProvider:
         candidate_dir = root / "candidate"
         if root.is_symlink() or not root.is_dir() or os.path.lexists(candidate_dir):
             raise DraftGenerationError("AsNumpy adapter repair output is invalid")
+        base_context_hashes = base_report.get("asnumpy_context_sha256")
+        if not isinstance(base_context_hashes, dict):
+            raise DraftGenerationError(
+                "AsNumpy adapter base context manifest is invalid"
+            )
         chat, generation_base = self._resolve_chat()
         if generation_base["mode"] != "remote_llm":
             raise DraftGenerationError(
@@ -4527,6 +4715,27 @@ class LlmDraftProvider:
             for label, content in sorted(current_contents.items())
         )
         skill_context = self._skill_bundle.prompt_context(skill_files)
+        official_repair = (
+            normalized_plan["architecture"]
+            == "official_aclnn_existing_module"
+        )
+        repair_thinking_mode = (
+            "disabled"
+            if (
+                official_repair
+                and generation_base["provider"] == "glm"
+                and generation_base["model"].lower().startswith("glm-")
+            )
+            else None
+        )
+        repair_reasoning_effort = (
+            "none" if repair_thinking_mode == "disabled" else None
+        )
+        repair_max_tokens = (
+            _OFFICIAL_EXACT_EDIT_INITIAL_MAX_TOKENS
+            if official_repair
+            else _ASNUMPY_ADAPTER_REPAIR_MAX_TOKENS
+        )
         receipts = []
         response_hashes = []
         failures = []
@@ -4534,27 +4743,100 @@ class LlmDraftProvider:
         total_attempts = 0
         failure = ""
         for repair_attempt in range(1, self.max_attempts + 1):
-            total_attempts += 1
-            prompt = "\n\n".join((
-                "Repair exactly `%s` and no other path." % normalized_path,
-                "Repair qualification profile (audit binding): `%s`."
-                % repair_profile,
-                "Your response first line must be exactly NUMPILOT_BUNDLE_V1 "
-                "and your last line must be exactly END_BUNDLE. Do not use "
-                "Markdown fences or commentary.",
-                "Raw local AsNumpy build/test diagnostic (authoritative):\n"
-                + diagnostic.strip(),
-                current_sections,
-                context_sections,
-                skill_context,
-            ))
+            if official_repair:
+                base_content = current_contents[normalized_path]
+                base_sha256 = normalized_hashes[normalized_path]
+                target_window_context, target_window_intervals = (
+                    _render_official_exact_edit_target_windows(
+                        target_path=normalized_path,
+                        base_content=base_content,
+                    )
+                )
+                dependency_projection = (
+                    _render_official_exact_edit_repair_dependencies(
+                        target_path=normalized_path,
+                        asnumpy_context=asnumpy_context,
+                        base_context_hashes=base_context_hashes,
+                        normalized_plan=normalized_plan,
+                        current_contents=current_contents,
+                        current_hashes=normalized_hashes,
+                    )
+                )
+                prompt = "\n\n".join(filter(None, (
+                    "Official existing-file repair 1/1. Propose exact edits "
+                    "for `%s` and no other path." % normalized_path,
+                    "Return NUMPILOT_EXACT_EDIT_V1 only. Do not return the "
+                    "complete file, NUMPILOT_BUNDLE_V1, a diff, Markdown, or "
+                    "commentary.",
+                    "TARGET PATH: `%s`\nTARGET BASE SHA-256: %s\n"
+                    "Every OLD block must be copied from and remain inside "
+                    "one supplied target edit window."
+                    % (normalized_path, base_sha256),
+                    "Repair qualification profile (audit binding): `%s`."
+                    % repair_profile,
+                    "Raw local AsNumpy build/test diagnostic "
+                    "(authoritative):\n" + diagnostic.strip(),
+                    target_window_context,
+                    dependency_projection,
+                    skill_context,
+                )))
+                system_prompt = (
+                    _ASNUMPY_OFFICIAL_EXACT_EDIT_REPAIR_SYSTEM_PROMPT
+                )
+            else:
+                prompt = "\n\n".join((
+                    "Repair exactly `%s` and no other path." % normalized_path,
+                    "Repair qualification profile (audit binding): `%s`."
+                    % repair_profile,
+                    "Your response first line must be exactly NUMPILOT_BUNDLE_V1 "
+                    "and your last line must be exactly END_BUNDLE. Do not use "
+                    "Markdown fences or commentary.",
+                    "Raw local AsNumpy build/test diagnostic (authoritative):\n"
+                    + diagnostic.strip(),
+                    current_sections,
+                    context_sections,
+                    skill_context,
+                ))
+                system_prompt = _ASNUMPY_ADAPTER_REPAIR_SYSTEM_PROMPT
             if failure:
                 prompt += (
                     "\n\nThe previous repair response was rejected by local "
                     "validation: " + failure[:500]
                 )
+            if official_repair:
+                _enforce_official_exact_edit_prompt_budget(
+                    system_prompt=system_prompt,
+                    user_prompt=prompt,
+                    model=generation_base["model"],
+                    max_tokens=repair_max_tokens,
+                    thinking_mode=repair_thinking_mode,
+                    reasoning_effort=repair_reasoning_effort,
+                    stream=True,
+                )
+            total_attempts += 1
             try:
-                result = chat(_ASNUMPY_ADAPTER_REPAIR_SYSTEM_PROMPT, prompt)
+                if official_repair:
+                    exact_call_options = {
+                        "max_tokens": repair_max_tokens,
+                        "stream": True,
+                    }
+                    if repair_thinking_mode is not None:
+                        exact_call_options["thinking_mode"] = (
+                            repair_thinking_mode
+                        )
+                    if repair_reasoning_effort is not None:
+                        exact_call_options["reasoning_effort"] = (
+                            repair_reasoning_effort
+                        )
+                    result = chat(
+                        system_prompt, prompt, **exact_call_options
+                    )
+                else:
+                    result = chat(
+                        system_prompt,
+                        prompt,
+                        max_tokens=_ASNUMPY_ADAPTER_REPAIR_MAX_TOKENS,
+                    )
                 if not isinstance(result, tuple) or len(result) != 2:
                     raise DraftGenerationError(
                         "remote AsNumpy repair call returned no auditable receipt"
@@ -4567,12 +4849,20 @@ class LlmDraftProvider:
                     response,
                     generation_base,
                 )
-                _summary, files = _validate_stage_bundle(
-                    response,
-                    (normalized_path,),
-                    path_validator=_safe_asnumpy_adapter_relative_path,
-                )
-                proposed = files[0][1]
+                if official_repair:
+                    proposed = _apply_official_exact_edit_response(
+                        response,
+                        expected_path=normalized_path,
+                        base_content=base_content,
+                        allowed_intervals=target_window_intervals,
+                    )
+                else:
+                    _summary, files = _validate_stage_bundle(
+                        response,
+                        (normalized_path,),
+                        path_validator=_safe_asnumpy_adapter_relative_path,
+                    )
+                    proposed = files[0][1]
                 proposed_size = len(proposed.encode("utf-8"))
                 replaced_size = len(
                     current_contents[normalized_path].encode("utf-8")
@@ -4592,6 +4882,15 @@ class LlmDraftProvider:
                 break
             except DraftGenerationError as exc:
                 failure = str(exc)
+                if (
+                    official_repair
+                    and failure == "official exact-edit response is empty"
+                ):
+                    # Mirror generation: a reasoning-capable gateway can
+                    # exhaust a bounded completion budget before final content.
+                    repair_max_tokens = (
+                        _OFFICIAL_EXACT_EDIT_RETRY_MAX_TOKENS
+                    )
                 failures.append(
                     "%s attempt %d: %s"
                     % (normalized_path, repair_attempt, failure[:500])

@@ -299,6 +299,101 @@ def test_exact_edit_rejects_unique_old_text_outside_reviewed_target_window():
         )
 
 
+def test_concatenate_exact_edit_windows_cover_reviewed_targets():
+    bases = {
+        "include/asnumpy/array/basic.hpp": (
+            "namespace asnumpy {\n}\n"
+        ),
+        "csrc/array/basic.cpp": (
+            "#include <asnumpy/array/basic.hpp>\n"
+            "#include <vector>\n\n"
+            "namespace asnumpy {\n\n"
+            "NPUArray Linspace(const py::object& start, const py::object& end, "
+            "const py::object& steps, const py::object& dtype) {\n"
+            "    return {};\n"
+            "}\n\n"
+            "} // namespace asnumpy\n"
+        ),
+        "bindings/python/bind_array.cpp": "void bind_array() {}\n",
+        "src/asnumpy/array.py": "def zeros(): pass\n",
+        "src/asnumpy/__init__.py": (
+            "if TYPE_CHECKING:\n"
+            "    from .array import (\n"
+            "        zeros,\n"
+            "    )\n"
+            "    from .io import load, save, savez, savez_compressed\n\n"
+            "_LAZY_MAPPING = {\n"
+            "    # .array\n"
+            '    "zeros": ".array",\n'
+            "    # .linalg\n"
+            '    "linalg": ".linalg",\n'
+            "}\n"
+        ),
+        "tests/asnumpy_tests/creation_tests/test_basic.py": (
+            "def test_zeros(): pass\n"
+        ),
+    }
+    for path, base in bases.items():
+        rendered, intervals = (
+            provider_module._render_official_exact_edit_target_windows(
+                target_path=path,
+                base_content=base,
+            )
+        )
+        assert rendered
+        assert intervals
+
+    native_path = "csrc/array/basic.cpp"
+    native_base = bases[native_path]
+    native_response = _exact_response(
+        native_path,
+        native_base,
+        ((
+            "#include <asnumpy/array/basic.hpp>",
+            "#include <asnumpy/array/basic.hpp>\n"
+            "#include <aclnnop/aclnn_cat.h>",
+        ),),
+    )
+    _rendered, native_intervals = (
+        provider_module._render_official_exact_edit_target_windows(
+            target_path=native_path,
+            base_content=native_base,
+        )
+    )
+    rebuilt = _apply_official_exact_edit_response(
+        native_response,
+        expected_path=native_path,
+        base_content=native_base,
+        allowed_intervals=native_intervals,
+    )
+    assert "#include <aclnnop/aclnn_cat.h>" in rebuilt
+
+    export_path = "src/asnumpy/__init__.py"
+    export_base = bases[export_path]
+    export_response = _exact_response(
+        export_path,
+        export_base,
+        ((
+            '    "zeros": ".array",\n',
+            '    "zeros": ".array",\n'
+            '    "concatenate": ".array",\n',
+        ),),
+    )
+    _rendered, export_intervals = (
+        provider_module._render_official_exact_edit_target_windows(
+            target_path=export_path,
+            base_content=export_base,
+        )
+    )
+    rebuilt = _apply_official_exact_edit_response(
+        export_response,
+        expected_path=export_path,
+        base_content=export_base,
+        allowed_intervals=export_intervals,
+    )
+    assert '"concatenate": ".array"' in rebuilt
+
+
 def test_official_exact_edit_generation_binds_full_rebuilt_files_and_receipts(
     tmp_path, monkeypatch
 ):

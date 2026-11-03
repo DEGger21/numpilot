@@ -12,6 +12,7 @@ from numpilot.asnumpy_adapter_context import (
 )
 from numpilot.gaps.adapter_recovery import (
     AdapterRecoveryError,
+    _official_adapter_api_name,
     ingest_official_adapter_candidate,
 )
 from numpilot.gaps.official_adapter import (
@@ -357,6 +358,18 @@ def _mutate_report(root: Path, change):
     change(report)
     report["adapter_artifact_id"] = _adapter_artifact_id(report)
     path.write_bytes(_canonical_bytes(report) + b"\n")
+
+
+def test_official_adapter_api_name_is_derived_from_candidate_api():
+    assert _official_adapter_api_name("numpy.concatenate") == "concatenate"
+    assert _official_adapter_api_name("numpy.matmul") == "matmul"
+    assert _official_adapter_api_name("asnumpy.concatenate") == ""
+    assert _official_adapter_api_name("numpy.") == ""
+    assert _official_adapter_api_name("numpy.concatenate.extra") == (
+        "concatenate.extra"
+    )
+    assert _official_adapter_api_name(None) == ""
+    assert _official_adapter_api_name(7) == ""
 
 
 def test_generated_official_adapter_advances_with_exact_typed_receipt(tmp_path):

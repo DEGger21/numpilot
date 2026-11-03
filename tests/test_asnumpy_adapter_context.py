@@ -13,6 +13,7 @@ from numpilot.asnumpy_adapter_context import (
     MANUAL_MODE,
     OFFICIAL_ACLNN_ARCHITECTURE,
     infer_asnumpy_adapter_api,
+    infer_official_adapter_api,
     plan_asnumpy_adapter_context,
     plan_official_aclnn_adapter_context,
 )
@@ -53,6 +54,28 @@ OFFICIAL_MATMUL_CONTEXT_PATHS = (
     "bindings/python/bind_utils.cpp",
 )
 OFFICIAL_MATMUL_LIBRARY = "aarch64-linux/lib64/libopapi.so"
+OFFICIAL_CONCATENATE_CONTEXT_PATHS = (
+    "include/asnumpy/array/basic.hpp",
+    "csrc/array/basic.cpp",
+    "bindings/python/bind_array.cpp",
+    "bindings/python/CMakeLists.txt",
+    "include/asnumpy/utils/acl_executor.hpp",
+    "include/asnumpy/utils/acl_resource.hpp",
+    "include/asnumpy/utils/npu_array.hpp",
+    "include/asnumpy/utils/status_handler.hpp",
+    "src/asnumpy/array.py",
+    "src/asnumpy/__init__.py",
+    "src/asnumpy/utils.py",
+    "tests/asnumpy_tests/creation_tests/test_basic.py",
+)
+OFFICIAL_CONCATENATE_OVERLAY_PATHS = (
+    "include/asnumpy/array/basic.hpp",
+    "csrc/array/basic.cpp",
+    "bindings/python/bind_array.cpp",
+    "src/asnumpy/array.py",
+    "src/asnumpy/__init__.py",
+    "tests/asnumpy_tests/creation_tests/test_basic.py",
+)
 OFFICIAL_MATMUL_LIBRARY_SHA256 = "a" * 64
 OFFICIAL_MATMUL_LINK_BLOCK = (
     "target_link_libraries(_core\n"
@@ -203,6 +226,106 @@ def test_official_aclnn_matmul_uses_reviewed_existing_module_plan(tmp_path):
         "selected_library_sha256": OFFICIAL_MATMUL_LIBRARY_SHA256,
     }
     assert len(plan.plan_sha256) == 64
+
+
+def test_official_aclnn_concatenate_uses_reviewed_existing_module_plan(
+    tmp_path,
+):
+    root = tmp_path / "official-concatenate-asnumpy"
+    _write_context(root, OFFICIAL_CONCATENATE_CONTEXT_PATHS)
+    (root / "bindings/python/CMakeLists.txt").write_text(
+        OFFICIAL_MATMUL_LINK_BLOCK,
+        encoding="utf-8",
+    )
+
+    plan = plan_official_aclnn_adapter_context(
+        root,
+        "concatenate",
+        selected_library_relative_path=OFFICIAL_MATMUL_LIBRARY,
+        selected_library_sha256=OFFICIAL_MATMUL_LIBRARY_SHA256,
+    )
+
+    assert plan.architecture == OFFICIAL_ACLNN_ARCHITECTURE
+    assert plan.mode == EXISTING_MODULE_MODE
+    assert plan.schema_version == 3
+    assert tuple(plan.context) == OFFICIAL_CONCATENATE_CONTEXT_PATHS
+    assert plan.expected_overlay_paths == OFFICIAL_CONCATENATE_OVERLAY_PATHS
+    assert plan.manifest()["prompt_dependencies"] == {
+        "include/asnumpy/array/basic.hpp": [
+            {
+                "source": "reference",
+                "path": "include/asnumpy/utils/npu_array.hpp",
+            },
+        ],
+        "csrc/array/basic.cpp": [
+            {
+                "source": "generated_overlay",
+                "path": "include/asnumpy/array/basic.hpp",
+            },
+            {
+                "source": "reference",
+                "path": "include/asnumpy/utils/acl_resource.hpp",
+            },
+            {
+                "source": "signed_official_header",
+                "path": "SIGNED_OFFICIAL_HEADER/aclnn_cat.h",
+            },
+        ],
+        "bindings/python/bind_array.cpp": [
+            {
+                "source": "generated_overlay",
+                "path": "include/asnumpy/array/basic.hpp",
+            },
+            {
+                "source": "generated_overlay",
+                "path": "csrc/array/basic.cpp",
+            },
+        ],
+        "src/asnumpy/array.py": [
+            {
+                "source": "generated_overlay",
+                "path": "bindings/python/bind_array.cpp",
+            },
+        ],
+        "src/asnumpy/__init__.py": [
+            {
+                "source": "generated_overlay",
+                "path": "src/asnumpy/array.py",
+            },
+        ],
+        "tests/asnumpy_tests/creation_tests/test_basic.py": [
+            {
+                "source": "generated_overlay",
+                "path": "src/asnumpy/array.py",
+            },
+        ],
+    }
+    assert plan.manifest()["official_library_binding"][
+        "selected_library_sha256"
+    ] == OFFICIAL_MATMUL_LIBRARY_SHA256
+    assert not any(
+        "custom_ops" in path for path in plan.expected_overlay_paths
+    )
+
+
+def test_reviewed_official_prompt_dependencies_fail_closed():
+    from numpilot.asnumpy_adapter_context import (
+        reviewed_official_adapter_prompt_dependencies,
+    )
+
+    dependencies = reviewed_official_adapter_prompt_dependencies(
+        OFFICIAL_CONCATENATE_OVERLAY_PATHS
+    )
+
+    assert tuple(dependencies) == OFFICIAL_CONCATENATE_OVERLAY_PATHS
+    assert dependencies["csrc/array/basic.cpp"][2] == {
+        "source": "signed_official_header",
+        "path": "SIGNED_OFFICIAL_HEADER/aclnn_cat.h",
+    }
+    with pytest.raises(AsnumpyAdapterContextError, match="not reviewed"):
+        reviewed_official_adapter_prompt_dependencies(
+            ("csrc/linalg/product.cpp",)
+        )
 
 
 def test_official_aclnn_planner_rejects_unreviewed_api_before_reading_tree(
@@ -414,3 +537,26 @@ def test_overlay_paths_recover_one_layout_independent_api(paths, expected):
 def test_overlay_api_inference_fails_closed_for_missing_conflicting_or_unsafe_paths(paths):
     with pytest.raises(AsnumpyAdapterContextError):
         infer_asnumpy_adapter_api(paths)
+
+
+def test_official_overlay_paths_recover_their_reviewed_api():
+    assert (
+        infer_official_adapter_api(OFFICIAL_CONCATENATE_OVERLAY_PATHS)
+        == "concatenate"
+    )
+
+
+@pytest.mark.parametrize(
+    "paths",
+    (
+        (),
+        ("csrc/linalg/product.cpp",),
+        OFFICIAL_CONCATENATE_OVERLAY_PATHS + ("src/asnumpy/utils.py",),
+        ("../src/asnumpy/array.py",),
+        OFFICIAL_CONCATENATE_OVERLAY_PATHS
+        + (OFFICIAL_CONCATENATE_OVERLAY_PATHS[0],),
+    ),
+)
+def test_official_overlay_api_inference_fails_closed(paths):
+    with pytest.raises(AsnumpyAdapterContextError):
+        infer_official_adapter_api(paths)

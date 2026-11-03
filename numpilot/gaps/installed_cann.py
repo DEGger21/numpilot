@@ -32,7 +32,7 @@ AMBIGUOUS = "ambiguous"
 ERROR = "error"
 
 RESOLUTION_SCHEMA_VERSION = 1
-CATALOG_REVISION = "installed-cann-aclnn-adapter-candidates-v2"
+CATALOG_REVISION = "installed-cann-aclnn-adapter-candidates-v3"
 
 _RESOLUTION_STATUSES = frozenset({
     EXACT_CANDIDATE,
@@ -178,10 +178,20 @@ _NN_LIBRARIES = ("libopapi_nn.so", "libopapi.so")
 # implementation identity; ``libopapi_nn.so`` remains a fallback for future
 # reviewed target layouts that explicitly link it.
 _ASNUMPY_MATMUL_LIBRARIES = ("libopapi.so", "libopapi_nn.so")
+# ``concatenate`` is dispatched from the existing AsNumPy ``array`` module,
+# whose reviewed target link graph also names the monolithic ``opapi`` DSO.
+# ``libopapi_math.so`` is retained as a second audited provider because this
+# toolkit exports the same two-stage Cat symbols from both libraries.
+_ASNUMPY_ARRAY_LIBRARIES = ("libopapi.so", "libopapi_math.so")
 _AUDITED_9_0 = ("9.0.0",)
+# Concatenate was audited only against the exact toolkit and device profile
+# recorded in docs/concatenate-official-audit.zh-CN.md.  Neither the broader
+# ``ascend910b`` family nor an unaudited CANN release may inherit this entry.
+_AUDITED_9_2_BETA2 = ("9.2.0-beta.2",)
 # Only the exact device profile observed by the audit is eligible.  The
 # broader ``ascend910b`` family must never imply B1/B2/B3/B4 equivalence.
 _AUDITED_910B4 = ("ascend910b4",)
+_AUDITED_910B3 = ("ascend910b3",)
 
 
 ACLNN_ADAPTER_CANDIDATES: Tuple[AclnnAdapterCandidate, ...] = (
@@ -214,6 +224,26 @@ ACLNN_ADAPTER_CANDIDATES: Tuple[AclnnAdapterCandidate, ...] = (
         semantic_review=(
             "validate start/stop/step normalization and empty ranges",
             "validate dtype inference, overflow, and output-size calculation",
+        ),
+    ),
+    AclnnAdapterCandidate(
+        candidate_id="numpy.concatenate-aclnn-cat",
+        qualified_api="numpy.concatenate",
+        header_name="aclnn_cat.h",
+        library_priority=_ASNUMPY_ARRAY_LIBRARIES,
+        required_symbols=("aclnnCatGetWorkspaceSize", "aclnnCat"),
+        audited_cann_versions=_AUDITED_9_2_BETA2,
+        audited_target_socs=_AUDITED_910B3,
+        semantic_review=(
+            "map an explicit integer axis to the ACLNN Cat ``dim`` argument; "
+            "axis=None and the dtype/out/casting keywords are outside this "
+            "reviewed mapping and must not enter the native path",
+            "qualify only non-empty sequences of float32 device tensors with "
+            "one shared rank, equal non-concatenated extents, and C-contiguous "
+            "storage; allocate the pre-computed output shape explicitly",
+            "validate negative-axis normalization, single-input copy behavior, "
+            "empty sequences, mixed dtype, mismatched shapes, and "
+            "non-contiguous inputs with a NumPy oracle before integration",
         ),
     ),
     AclnnAdapterCandidate(

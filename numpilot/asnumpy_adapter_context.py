@@ -20,7 +20,7 @@ from pathlib import Path, PurePosixPath
 import re
 import stat
 from types import MappingProxyType
-from typing import Dict, Mapping, Sequence, Tuple, Union
+from typing import Dict, List, Mapping, Sequence, Tuple, Union
 
 
 MANIFEST_ARCHITECTURE = "manifest_generator"
@@ -78,8 +78,9 @@ _LEGACY_CONTEXT_PATHS: Tuple[str, ...] = (
 # An installed ACLNN candidate is not a custom OPP.  It must be wired into an
 # existing AsNumPy module using an API-specific, locally reviewed path plan;
 # allowing the model to invent a module or an overlay path would turn a
-# semantic integration task into an unrestricted source-tree edit.  The first
-# reviewed plan deliberately covers only the public MatMul proof case.
+# semantic integration task into an unrestricted source-tree edit.  Each
+# reviewed plan covers exactly one public proof case and names its signed
+# ACLNN header; adding an API requires a new reviewed entry here.
 _OFFICIAL_ACLNN_EXISTING_MODULE_PLANS = {
     "matmul": {
         "context_paths": (
@@ -121,12 +122,98 @@ _OFFICIAL_ACLNN_EXISTING_MODULE_PLANS = {
                 ("generated_overlay", "src/asnumpy/linalg/direct.py"),
             ),
         },
+        "signed_official_header": "SIGNED_OFFICIAL_HEADER/aclnn_matmul.h",
         # The selected installed DSO must be the exact library already named
         # by the reviewed AsNumPy link graph.  Merely proving that another DSO
         # exports the same ACLNN symbols is insufficient: ELF interposition
         # could otherwise make a successful NPU test exercise an unbound
         # implementation.  This exact CMake block is deliberately versioned
         # with the reviewed source context rather than inferred by the model.
+        "official_library_binding": {
+            "cmake_path": "bindings/python/CMakeLists.txt",
+            "target": "_core",
+            "link_item": "opapi",
+            "selected_library_basename": "libopapi.so",
+            "cmake_link_block": (
+                "target_link_libraries(_core\n"
+                "    PUBLIC\n"
+                "    ascendcl\n"
+                "    runtime\n"
+                "    nnopbase\n"
+                "    opapi\n"
+                "    Python::NumPy\n"
+                ")"
+            ),
+        },
+    },
+    "concatenate": {
+        "context_paths": (
+            "include/asnumpy/array/basic.hpp",
+            "csrc/array/basic.cpp",
+            "bindings/python/bind_array.cpp",
+            "bindings/python/CMakeLists.txt",
+            "include/asnumpy/utils/acl_executor.hpp",
+            "include/asnumpy/utils/acl_resource.hpp",
+            "include/asnumpy/utils/npu_array.hpp",
+            "include/asnumpy/utils/status_handler.hpp",
+            "src/asnumpy/array.py",
+            "src/asnumpy/__init__.py",
+            "src/asnumpy/utils.py",
+            "tests/asnumpy_tests/creation_tests/test_basic.py",
+        ),
+        "expected_overlay_paths": (
+            "include/asnumpy/array/basic.hpp",
+            "csrc/array/basic.cpp",
+            "bindings/python/bind_array.cpp",
+            "src/asnumpy/array.py",
+            "src/asnumpy/__init__.py",
+            "tests/asnumpy_tests/creation_tests/test_basic.py",
+        ),
+        # The signed header declares only aclnnCat/aclnnCatGetWorkspaceSize;
+        # the C++ implementation must build and destroy its aclTensorList with
+        # aclCreateTensorList/aclDestroyTensorList from the signed ACL meta
+        # header already included by npu_array.hpp.  Every target depends on
+        # an earlier reviewed artifact so the binding, Python wrapper, export,
+        # and test cannot disagree about the public signature.
+        "prompt_dependencies": {
+            "include/asnumpy/array/basic.hpp": (
+                ("reference", "include/asnumpy/utils/npu_array.hpp"),
+            ),
+            "csrc/array/basic.cpp": (
+                (
+                    "generated_overlay",
+                    "include/asnumpy/array/basic.hpp",
+                ),
+                (
+                    "reference",
+                    "include/asnumpy/utils/acl_resource.hpp",
+                ),
+                (
+                    "signed_official_header",
+                    "SIGNED_OFFICIAL_HEADER/aclnn_cat.h",
+                ),
+            ),
+            "bindings/python/bind_array.cpp": (
+                (
+                    "generated_overlay",
+                    "include/asnumpy/array/basic.hpp",
+                ),
+                ("generated_overlay", "csrc/array/basic.cpp"),
+            ),
+            "src/asnumpy/array.py": (
+                (
+                    "generated_overlay",
+                    "bindings/python/bind_array.cpp",
+                ),
+            ),
+            "src/asnumpy/__init__.py": (
+                ("generated_overlay", "src/asnumpy/array.py"),
+            ),
+            "tests/asnumpy_tests/creation_tests/test_basic.py": (
+                ("generated_overlay", "src/asnumpy/array.py"),
+            ),
+        },
+        "signed_official_header": "SIGNED_OFFICIAL_HEADER/aclnn_cat.h",
         "official_library_binding": {
             "cmake_path": "bindings/python/CMakeLists.txt",
             "target": "_core",
@@ -235,6 +322,45 @@ def infer_asnumpy_adapter_api(paths: Sequence[str]) -> str:
             "AsNumpy adapter overlay does not bind exactly one API"
         )
     return next(iter(identities))
+
+
+def infer_official_adapter_api(paths: Sequence[str]) -> str:
+    """Recover the reviewed API identity of an official-module overlay.
+
+    Official overlays edit pre-existing AsNumPy modules, so their file names
+    do not encode the operator.  The reviewed existing-module plan table is
+    the only authority: the candidate path set must equal exactly one
+    reviewed ``expected_overlay_paths`` tuple.  The caller remains
+    responsible for validating the adapter report and file hashes first.
+    """
+
+    if (
+        isinstance(paths, (str, bytes))
+        or not isinstance(paths, Sequence)
+        or not paths
+        or len(paths) > _MAX_CONTEXT_FILES
+    ):
+        raise AsnumpyAdapterContextError(
+            "official ACLNN adapter overlay path set is invalid"
+        )
+    normalized = set()
+    for value in paths:
+        path = str(_safe_relative_path(value))
+        if path != value or path in normalized:
+            raise AsnumpyAdapterContextError(
+                "official ACLNN adapter overlay paths are invalid or duplicated"
+            )
+        normalized.add(path)
+    matches = [
+        api_name
+        for api_name, reviewed in _OFFICIAL_ACLNN_EXISTING_MODULE_PLANS.items()
+        if set(reviewed["expected_overlay_paths"]) == normalized
+    ]
+    if len(matches) != 1:
+        raise AsnumpyAdapterContextError(
+            "official ACLNN adapter overlay does not match one reviewed plan"
+        )
+    return matches[0]
 
 
 def _safe_relative_path(value: str) -> PurePosixPath:
@@ -659,7 +785,7 @@ def plan_official_aclnn_adapter_context(
             if source == "reference":
                 valid = relative in context_paths and relative != target
             elif source == "signed_official_header":
-                valid = relative == "SIGNED_OFFICIAL_HEADER/aclnn_matmul.h"
+                valid = relative == reviewed["signed_official_header"]
             elif source == "generated_overlay":
                 valid = relative in seen_generated
             else:
@@ -724,4 +850,30 @@ def plan_official_aclnn_adapter_context(
         schema_version=3,
         prompt_dependencies=MappingProxyType(prompt_dependencies),
         official_library_binding=official_library_binding,
+    )
+
+
+def reviewed_official_adapter_prompt_dependencies(
+    expected_overlay_paths: Sequence[str],
+) -> Dict[str, List[Dict[str, str]]]:
+    """Return the reviewed prompt-dependency manifest for an overlay shape.
+
+    This is a read-only lookup used by the provider gate.  It fails closed for
+    any path tuple that is not one of the reviewed existing-module plans, so a
+    caller cannot manufacture a dependency set for an unreviewed overlay.
+    """
+
+    paths = tuple(expected_overlay_paths)
+    for reviewed in _OFFICIAL_ACLNN_EXISTING_MODULE_PLANS.values():
+        if tuple(reviewed["expected_overlay_paths"]) != paths:
+            continue
+        return {
+            target: [
+                {"source": source, "path": relative}
+                for source, relative in reviewed["prompt_dependencies"][target]
+            ]
+            for target in paths
+        }
+    raise AsnumpyAdapterContextError(
+        "official ACLNN prompt dependency plan is not reviewed"
     )

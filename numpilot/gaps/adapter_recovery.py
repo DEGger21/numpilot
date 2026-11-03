@@ -3,8 +3,9 @@
 This module implements the narrow ``CANDIDATE_READY -> ADAPTER_CANDIDATE``
 receipt boundary.  It never invokes a model or accesses the network.  Instead,
 it revalidates an already-published schema-4 provider report, its complete
-candidate tree, the reviewed MatMul existing-module context plan, and the
-official-binary operator candidate to which the report claims to belong.
+candidate tree, the reviewed existing-module context plan for the
+candidate's qualified API, and the official-binary operator candidate to
+which the report claims to belong.
 
 The resulting recovery event truthfully records the model and network effects
 proved by that producer report.  Build, integration, import, execution,
@@ -17,6 +18,7 @@ from dataclasses import dataclass
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import stat
 from typing import Any, Dict, Mapping, Sequence, Tuple
@@ -71,12 +73,26 @@ _MAX_OFFICIAL_REPORT_BYTES = 8 * 1024 * 1024
 _MAX_SOURCE_BYTES = 4 * 1024 * 1024
 _MAX_APPEND_ATTEMPTS = 256
 _ADAPTER_REF_NAME = "asnumpy_adapter_candidate"
-_REVIEWED_QUALIFIED_API = "numpy.matmul"
-_REVIEWED_OVERLAY_PATHS = (
-    "csrc/linalg/product.cpp",
-    "src/asnumpy/linalg/direct.py",
-    "tests/asnumpy_tests/linalg_tests/test_product.py",
-)
+_ADAPTER_STATUS_GENERATED = "generated_unverified"
+_ADAPTER_STATUS_REPAIRED = "repaired_unverified"
+_ADAPTER_STATUSES = frozenset({
+    _ADAPTER_STATUS_GENERATED,
+    _ADAPTER_STATUS_REPAIRED,
+})
+_ADAPTER_REPAIR_REF_PREFIX = _ADAPTER_REF_NAME + "_repair_"
+INTEGRATION_FAILURE_REF_PREFIX = "integration_failure_"
+_MAX_REPAIR_ROUNDS = 3
+
+
+def _official_adapter_api_name(qualified_api: object) -> str:
+    """Derive the reviewed plan name from a NumPy-qualified candidate API."""
+
+    if (
+        not isinstance(qualified_api, str)
+        or not qualified_api.startswith("numpy.")
+    ):
+        return ""
+    return qualified_api[len("numpy."):]
 _PHASE_INDEX = {
     phase: index
     for index, phase in enumerate(
@@ -511,7 +527,27 @@ def _load_adapter_output(
     root: Path,
     candidate: OperatorCandidateArtifact,
     prepared,
+    *,
+    accepted_statuses: Sequence[str] = (_ADAPTER_STATUS_GENERATED,),
+    ref_name: str = _ADAPTER_REF_NAME,
 ) -> _ValidatedAdapter:
+    if (
+        isinstance(accepted_statuses, (str, bytes))
+        or not isinstance(accepted_statuses, Sequence)
+        or not accepted_statuses
+        or len(set(accepted_statuses)) != len(accepted_statuses)
+        or any(status not in _ADAPTER_STATUSES for status in accepted_statuses)
+    ):
+        raise AdapterRecoveryError(
+            "invalid_adapter_profile", "accepted adapter statuses are invalid"
+        )
+    if (
+        not isinstance(ref_name, str)
+        or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_.-]{0,127}", ref_name)
+    ):
+        raise AdapterRecoveryError(
+            "invalid_adapter_profile", "adapter reference name is invalid"
+        )
     root_identity = _directory_identity(root, "adapter output root")
     report_path = root / "asnumpy-adapter-report.json"
     before = _snapshot_regular_file(
@@ -520,12 +556,12 @@ def _load_adapter_output(
     raw_report = _strict_report(before.payload)
     if (
         raw_report.get("schema_version") != 4
-        or raw_report.get("status") != "generated_unverified"
+        or raw_report.get("status") not in accepted_statuses
         or raw_report.get("actual_remote_call") is not True
     ):
         raise AdapterRecoveryError(
             "wrong_adapter_profile",
-            "official adapter must be a generated_unverified schema-4 remote receipt",
+            "official adapter must be an accepted schema-4 remote receipt",
         )
     try:
         report, payload, file_hashes = _load_asnumpy_adapter_report(root)
@@ -543,29 +579,27 @@ def _load_adapter_output(
             "adapter_source_mismatch",
             "adapter source_artifact_id differs from the operator candidate",
         )
-    if candidate.qualified_api != _REVIEWED_QUALIFIED_API:
-        raise AdapterRecoveryError(
-            "unreviewed_official_adapter",
-            "only the reviewed numpy.matmul official ACLNN plan is accepted",
-        )
     context_plan = report.get("asnumpy_adapter_context_plan")
     if (
         not isinstance(context_plan, Mapping)
         or context_plan.get("architecture") != OFFICIAL_ACLNN_ARCHITECTURE
         or context_plan.get("mode") != EXISTING_MODULE_MODE
-        or tuple(context_plan.get("expected_overlay_paths", ()))
-        != _REVIEWED_OVERLAY_PATHS
-        or tuple(sorted(file_hashes)) != tuple(sorted(_REVIEWED_OVERLAY_PATHS))
     ):
         raise AdapterRecoveryError(
             "wrong_adapter_architecture",
-            "adapter does not use the reviewed MatMul existing-module overlay",
+            "adapter does not use an official existing-module overlay",
+        )
+    api_name = _official_adapter_api_name(candidate.qualified_api)
+    if not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", api_name):
+        raise AdapterRecoveryError(
+            "unreviewed_official_adapter",
+            "candidate qualified API has no reviewed official ACLNN plan",
         )
     try:
         selected_library = prepared.selected_library
         fresh_plan = plan_official_aclnn_adapter_context(
             context_plan.get("reference_root"),
-            "matmul",
+            api_name,
             selected_library_relative_path=selected_library[
                 "relative_path"
             ],
@@ -573,9 +607,19 @@ def _load_adapter_output(
         )
     except (AsnumpyAdapterContextError, OSError, TypeError, ValueError) as exc:
         raise AdapterRecoveryError(
-            "adapter_context_invalid",
-            "cannot revalidate the reviewed AsNumPy context plan",
+            "unreviewed_official_adapter",
+            "candidate qualified API has no reviewed official ACLNN plan",
         ) from exc
+    if (
+        tuple(context_plan.get("expected_overlay_paths", ()))
+        != fresh_plan.expected_overlay_paths
+        or tuple(sorted(file_hashes))
+        != tuple(sorted(fresh_plan.expected_overlay_paths))
+    ):
+        raise AdapterRecoveryError(
+            "wrong_adapter_architecture",
+            "adapter does not use the reviewed existing-module overlay",
+        )
     if fresh_plan.manifest() != dict(context_plan):
         raise AdapterRecoveryError(
             "adapter_context_drift",
@@ -583,14 +627,18 @@ def _load_adapter_output(
         )
     try:
         ready = bind_official_adapter_context(
-            prepared, fresh_plan, api_name="matmul"
+            prepared, fresh_plan, api_name=api_name
         )
     except (OfficialAdapterInputError, TypeError, ValueError) as exc:
         raise AdapterRecoveryError(
             "adapter_context_invalid",
             "reviewed context cannot open the official adapter model gate",
         ) from exc
-    if report.get("adapter_contract_sha256") != ready.adapter_contract_sha256:
+    if (
+        report.get("status") == _ADAPTER_STATUS_GENERATED
+        and report.get("adapter_contract_sha256")
+        != ready.adapter_contract_sha256
+    ):
         raise AdapterRecoveryError(
             "adapter_contract_mismatch",
             "adapter contract differs from the official candidate binding",
@@ -628,7 +676,7 @@ def _load_adapter_output(
         root=root,
         report=report,
         report_ref=EvidenceRef(
-            name=_ADAPTER_REF_NAME,
+            name=ref_name,
             locator=str(report_path),
             sha256=before.sha256,
         ),
@@ -850,9 +898,426 @@ def ingest_official_adapter_candidate(
     )
 
 
+def _adapter_ref_rank(ref: EvidenceRef) -> int | None:
+    """Return the stable chain position of an adapter reference."""
+
+    if ref.name == _ADAPTER_REF_NAME:
+        return 0
+    if ref.name.startswith(_ADAPTER_REPAIR_REF_PREFIX):
+        suffix = ref.name[len(_ADAPTER_REPAIR_REF_PREFIX):]
+        if suffix.isdigit() and str(int(suffix)) == suffix:
+            return int(suffix)
+    return None
+
+
+def _adapter_refs(refs: Sequence[EvidenceRef]) -> Tuple[EvidenceRef, ...]:
+    return tuple(ref for ref in refs if _adapter_ref_rank(ref) is not None)
+
+
+def _latest_adapter_ref(refs: Sequence[EvidenceRef]) -> EvidenceRef:
+    ranked = [
+        (rank, ref)
+        for ref in refs
+        if (rank := _adapter_ref_rank(ref)) is not None
+    ]
+    if not ranked:
+        raise AdapterRecoveryError(
+            "adapter_ref_missing", "gap has no content-bound adapter candidate"
+        )
+    highest = max(rank for rank, _ref in ranked)
+    matches = [ref for rank, ref in ranked if rank == highest]
+    if len(matches) != 1:
+        raise AdapterRecoveryError(
+            "adapter_ref_drift", "gap adapter candidate references are ambiguous"
+        )
+    return matches[0]
+
+
+def _repair_count(refs: Sequence[EvidenceRef]) -> int:
+    return sum(
+        1
+        for ref in refs
+        if (_adapter_ref_rank(ref) or 0) > 0
+    )
+
+
+def _failure_rank(ref: EvidenceRef) -> int | None:
+    if ref.name.startswith(INTEGRATION_FAILURE_REF_PREFIX):
+        suffix = ref.name[len(INTEGRATION_FAILURE_REF_PREFIX):]
+        if suffix.isdigit() and str(int(suffix)) == suffix:
+            return int(suffix)
+    return None
+
+
+def _latest_failure_ref(refs: Sequence[EvidenceRef]) -> EvidenceRef:
+    ranked = [
+        (rank, ref)
+        for ref in refs
+        if (rank := _failure_rank(ref)) is not None
+    ]
+    if not ranked:
+        raise AdapterRecoveryError(
+            "adapter_repair_diagnostic_missing",
+            "gap has no recorded integration failure for repair",
+        )
+    highest = max(rank for rank, _ref in ranked)
+    matches = [ref for rank, ref in ranked if rank == highest]
+    if len(matches) != 1:
+        raise AdapterRecoveryError(
+            "adapter_repair_diagnostic_ambiguous",
+            "gap integration failure references are ambiguous",
+        )
+    return matches[0]
+
+
+def _adapter_ref_with_sha(
+    refs: Sequence[EvidenceRef], sha256: object
+) -> EvidenceRef:
+    if not isinstance(sha256, str) or not re.fullmatch(r"[0-9a-f]{64}", sha256):
+        raise AdapterRecoveryError(
+            "adapter_repair_binding_mismatch",
+            "repaired adapter does not bind a parent report digest",
+        )
+    matches = tuple(ref for ref in _adapter_refs(refs) if ref.sha256 == sha256)
+    if len(matches) != 1:
+        raise AdapterRecoveryError(
+            "adapter_repair_parent_missing",
+            "repaired adapter parent is not the accepted adapter chain",
+        )
+    return matches[0]
+
+
+def _failure_ref_with_sha(
+    refs: Sequence[EvidenceRef], sha256: object
+) -> EvidenceRef:
+    if not isinstance(sha256, str) or not re.fullmatch(r"[0-9a-f]{64}", sha256):
+        raise AdapterRecoveryError(
+            "adapter_repair_binding_mismatch",
+            "repaired adapter does not bind an integration diagnostic digest",
+        )
+    matches = tuple(
+        ref
+        for ref in refs
+        if _failure_rank(ref) is not None and ref.sha256 == sha256
+    )
+    if len(matches) != 1:
+        raise AdapterRecoveryError(
+            "adapter_repair_diagnostic_mismatch",
+            "repaired adapter does not follow the recorded integration failure",
+        )
+    return matches[0]
+
+
+def _next_repair_ref_name(parent: EvidenceRef) -> str:
+    rank = _adapter_ref_rank(parent)
+    if rank is None:
+        raise AdapterRecoveryError(
+            "adapter_repair_parent_missing",
+            "repaired adapter parent is not an adapter reference",
+        )
+    if rank >= _MAX_REPAIR_ROUNDS:
+        raise AdapterRecoveryError(
+            "repair_budget_exhausted",
+            "automatic asnumpy adapter repair budget is exhausted; "
+            "MANUAL_REVIEW_REQUIRED",
+        )
+    return "%s%d" % (_ADAPTER_REPAIR_REF_PREFIX, rank + 1)
+
+
+def _report_artifact_id(ref: EvidenceRef) -> str:
+    path = _absolute_path(ref.locator, "parent adapter report")
+    if str(path) != ref.locator:
+        raise AdapterRecoveryError(
+            "binding_path_mismatch", "parent adapter report locator is not canonical"
+        )
+    snapshot = _snapshot_regular_file(
+        path, _MAX_INPUT_BYTES, "parent adapter report"
+    )
+    if snapshot.sha256 != ref.sha256:
+        raise AdapterRecoveryError(
+            "binding_hash_mismatch", "parent adapter report differs from recovery state"
+        )
+    report = _strict_report(snapshot.payload)
+    artifact_id = report.get("adapter_artifact_id")
+    if (
+        not isinstance(artifact_id, str)
+        or not re.fullmatch(r"adapter-[0-9a-f]{20}", artifact_id)
+    ):
+        raise AdapterRecoveryError(
+            "invalid_adapter_report", "parent adapter artifact identity is invalid"
+        )
+    return artifact_id
+
+
+@dataclass(frozen=True)
+class RepairedAdapterRecoveryResult:
+    """Deterministic result of attaching one repaired adapter receipt."""
+
+    recovery: RecoveryStatus
+    gap_id: str
+    candidate_id: str
+    adapter_artifact_id: str
+    adapter_ref: EvidenceRef
+    parent_adapter_ref: EvidenceRef
+    diagnostic_ref: EvidenceRef
+    adapter_output_root: str
+    repairs_used: int
+    appended_revisions: int
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "schema_version": ADAPTER_RECOVERY_SCHEMA_VERSION,
+            "record_type": "numpilot_official_adapter_repair_recovery",
+            "route": OperatorCandidateOrigin.OFFICIAL_BINARY.value,
+            "gap_id": self.gap_id,
+            "candidate_id": self.candidate_id,
+            "adapter_artifact_id": self.adapter_artifact_id,
+            "adapter_ref": self.adapter_ref.to_dict(),
+            "parent_adapter_ref": self.parent_adapter_ref.to_dict(),
+            "diagnostic_ref": self.diagnostic_ref.to_dict(),
+            "adapter_output_root": self.adapter_output_root,
+            "repairs_used": self.repairs_used,
+            "producer_receipt_revalidated": True,
+            "model_invoked_by_ingest": False,
+            "appended_revisions": self.appended_revisions,
+            "side_effects_performed": SideEffectTruth(
+                network_access_performed=True,
+                model_invocation_performed=True,
+            ).to_dict(),
+            "recovery": self.recovery.to_dict(),
+        }
+
+
+def _repair_result(
+    status: RecoveryStatus,
+    candidate: OperatorCandidateArtifact,
+    adapter: _ValidatedAdapter,
+    parent_ref: EvidenceRef,
+    diagnostic_ref: EvidenceRef,
+    appended: int,
+) -> RepairedAdapterRecoveryResult:
+    gap = _gap_for_candidate(status, candidate.gap_id)
+    return RepairedAdapterRecoveryResult(
+        recovery=status,
+        gap_id=candidate.gap_id,
+        candidate_id=candidate.candidate_id,
+        adapter_artifact_id=str(adapter.report["adapter_artifact_id"]),
+        adapter_ref=adapter.report_ref,
+        parent_adapter_ref=parent_ref,
+        diagnostic_ref=diagnostic_ref,
+        adapter_output_root=str(adapter.root),
+        repairs_used=_repair_count(gap.refs),
+        appended_revisions=appended,
+    )
+
+
+def ingest_repaired_adapter_candidate(
+    state_dir: os.PathLike[str] | str,
+    candidate_path: os.PathLike[str] | str,
+    adapter_output_root: os.PathLike[str] | str,
+) -> RepairedAdapterRecoveryResult:
+    """Revalidate one repaired official adapter and resume at the same phase.
+
+    A repair is accepted only after a recorded ``FAILED_ATTEMPT`` integration
+    failure and only while the three-round repair budget remains.  The repair
+    report must derive from the exact current adapter reference and from the
+    exact recorded failure diagnostic.  The event stays at
+    ``ADAPTER_CANDIDATE``, so it cannot satisfy a phase advance and carries no
+    stage receipt.
+    """
+
+    store = RecoveryStore(state_dir)
+    try:
+        status = store.status()
+    except RecoveryError as exc:
+        raise AdapterRecoveryError(
+            "state_unavailable", "cannot verify the complete recovery chain"
+        ) from exc
+    if not status.state.policy.network_allowed:
+        raise AdapterRecoveryError(
+            "network_not_authorized",
+            "frozen recovery policy does not allow adapter network access",
+        )
+    if not status.state.policy.model_allowed:
+        raise AdapterRecoveryError(
+            "model_not_authorized",
+            "frozen recovery policy does not allow adapter model invocation",
+        )
+    candidate_file = _absolute_path(candidate_path, "operator candidate")
+    adapter_root = _absolute_path(adapter_output_root, "adapter output root")
+    candidate, gap, candidate_before = _candidate_gap(status, candidate_file)
+    if gap.phase is not RecoveryPhase.ADAPTER_CANDIDATE:
+        raise AdapterRecoveryError(
+            "state_phase_mismatch",
+            "adapter repair requires an ADAPTER_CANDIDATE gap",
+        )
+
+    report_path = adapter_root / "asnumpy-adapter-report.json"
+    preliminary = _snapshot_regular_file(
+        report_path, _MAX_INPUT_BYTES, "repaired AsNumPy adapter report"
+    )
+    raw_report = _strict_report(preliminary.payload)
+    if (
+        raw_report.get("schema_version") != 4
+        or raw_report.get("status") != _ADAPTER_STATUS_REPAIRED
+    ):
+        raise AdapterRecoveryError(
+            "wrong_adapter_profile",
+            "adapter repair ingestion requires a repaired_unverified "
+            "schema-4 receipt",
+        )
+    parent_ref = _adapter_ref_with_sha(
+        gap.refs, raw_report.get("parent_adapter_report_sha256")
+    )
+    diagnostic_ref = _failure_ref_with_sha(
+        gap.refs, raw_report.get("diagnostic_sha256")
+    )
+    new_ref_name = _next_repair_ref_name(parent_ref)
+    prepared = _official_adapter_input(status, candidate)
+    adapter = _load_adapter_output(
+        adapter_root,
+        candidate,
+        prepared,
+        accepted_statuses=(_ADAPTER_STATUS_REPAIRED,),
+        ref_name=new_ref_name,
+    )
+    if (
+        adapter.report.get("parent_adapter_artifact_id")
+        != _report_artifact_id(parent_ref)
+        or adapter.report.get("parent_adapter_report_sha256") != parent_ref.sha256
+        or adapter.report.get("diagnostic_sha256") != diagnostic_ref.sha256
+        or adapter.report.get("source_artifact_id") != candidate.candidate_id
+    ):
+        raise AdapterRecoveryError(
+            "adapter_repair_binding_mismatch",
+            "repaired adapter does not derive from the current adapter and "
+            "the recorded integration failure",
+        )
+    source_adapter_root = _absolute_path(
+        adapter.report.get("source_adapter_root"), "parent adapter root"
+    )
+    if os.path.realpath(source_adapter_root) != os.path.realpath(
+        Path(parent_ref.locator).parent
+    ):
+        raise AdapterRecoveryError(
+            "adapter_repair_binding_mismatch",
+            "repaired adapter parent directory differs from the accepted adapter",
+        )
+    candidate_after = _snapshot_regular_file(
+        candidate_file, _MAX_INPUT_BYTES, "operator candidate"
+    )
+    if candidate_after != candidate_before:
+        raise AdapterRecoveryError(
+            "candidate_drift", "operator candidate changed during repair validation"
+        )
+
+    for _attempt in range(_MAX_APPEND_ATTEMPTS):
+        try:
+            current = store.status()
+        except RecoveryError as exc:
+            raise AdapterRecoveryError(
+                "state_unavailable", "cannot reload the complete recovery chain"
+            ) from exc
+        current_gap = _gap_for_candidate(current, candidate.gap_id)
+        existing = tuple(
+            ref for ref in current_gap.refs if ref.name == new_ref_name
+        )
+        if existing:
+            if len(existing) == 1 and existing[0] == adapter.report_ref:
+                return _repair_result(
+                    current,
+                    candidate,
+                    adapter,
+                    parent_ref,
+                    diagnostic_ref,
+                    0,
+                )
+            raise AdapterRecoveryError(
+                "adapter_repair_drift",
+                "repaired adapter reference differs from this output",
+            )
+        if (
+            current_gap.phase is not RecoveryPhase.ADAPTER_CANDIDATE
+            or current_gap.outcome is not RecoveryOutcome.FAILED_ATTEMPT
+        ):
+            raise AdapterRecoveryError(
+                "state_phase_mismatch",
+                "adapter repair requires a recorded integration failure at "
+                "ADAPTER_CANDIDATE",
+            )
+        if _latest_adapter_ref(current_gap.refs) != parent_ref:
+            raise AdapterRecoveryError(
+                "adapter_state_drift",
+                "adapter repair does not target the current adapter",
+            )
+        if _latest_failure_ref(current_gap.refs) != diagnostic_ref:
+            raise AdapterRecoveryError(
+                "adapter_repair_diagnostic_mismatch",
+                "adapter repair does not follow the latest integration failure",
+            )
+        next_gaps = tuple(
+            GapRecoveryState(
+                gap_id=item.gap_id,
+                phase=item.phase,
+                outcome=(
+                    RecoveryOutcome.READY
+                    if item.gap_id == candidate.gap_id
+                    else item.outcome
+                ),
+                attempt_count=item.attempt_count,
+                refs=(
+                    tuple(item.refs) + (adapter.report_ref,)
+                    if item.gap_id == candidate.gap_id
+                    else item.refs
+                ),
+                reason=(
+                    "repaired adapter was content-bound after integration "
+                    "failure %d" % (_failure_rank(diagnostic_ref) or 0)
+                    if item.gap_id == candidate.gap_id
+                    else item.reason
+                ),
+            )
+            for item in current.state.gaps
+        )
+        event = RecoveryEvent.bound_to(
+            current.state,
+            phase=current.state.phase,
+            outcome=RecoveryOutcome.READY,
+            gaps=next_gaps,
+            side_effects=SideEffectTruth(
+                network_access_performed=True,
+                model_invocation_performed=True,
+            ),
+            reason=(
+                "schema-4 repaired official ACLNN AsNumPy adapter was "
+                "content-bound at ADAPTER_CANDIDATE; integration and "
+                "qualification remain pending"
+            ),
+        )
+        try:
+            appended = store.append(event)
+        except RecoveryError:
+            continue
+        return _repair_result(
+            appended,
+            candidate,
+            adapter,
+            parent_ref,
+            diagnostic_ref,
+            1,
+        )
+    raise AdapterRecoveryError(
+        "state_append_failed",
+        "recovery state changed too often to append repaired adapter",
+    )
+
+
 __all__ = [
     "ADAPTER_RECOVERY_SCHEMA_VERSION",
     "AdapterRecoveryError",
+    "INTEGRATION_FAILURE_REF_PREFIX",
     "OfficialAdapterRecoveryResult",
+    "RepairedAdapterRecoveryResult",
     "ingest_official_adapter_candidate",
+    "ingest_repaired_adapter_candidate",
 ]
