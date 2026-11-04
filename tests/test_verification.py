@@ -1,8 +1,10 @@
 # tests/test_verification.py
+import numpy as np
+
 from numpilot.agents.analysis import AnalysisAgent
 from numpilot.agents.decision import DecisionAgent
 from numpilot.agents.migration import MigrationAgent
-from numpilot.agents.verification import VerificationAgent
+from numpilot.agents.verification import VerificationAgent, _clone_tree
 from numpilot.backends.shim import ShimBackend
 
 ORIG = open("examples/mlp_forward.py").read()
@@ -214,7 +216,7 @@ def forward(x):
     assert report.status == "fail"
     assert report.exception_phase == "migrated.surface"
     assert "PRECOMPUTED" in report.exception_message
-    assert "不依赖" in report.exception_message
+    assert "既不来自直接 ap.* 结果" in report.exception_message
 
 
 def _scoped_cbrt_backend(target_calls):
@@ -360,3 +362,92 @@ def test_verifier_rejects_original_source_target_monkeypatch_before_dispatch():
     assert target_calls == []
     assert report.backend_provenance["ok"] is False
     assert report.backend_provenance["strict_npu"] is False
+
+
+def test_clone_tree_preserves_overlapping_aliases():
+    base = np.array([1, 2, 4, 8, 16, 32], dtype=np.float32)
+    clone = _clone_tree({"x": base[1:], "y": base[:-1]})
+
+    assert np.shares_memory(clone["x"], clone["y"])
+    clone["x"] += clone["y"]
+
+    assert clone["x"].tolist() == [3.0, 6.0, 12.0, 24.0, 48.0]
+    assert clone["y"].tolist() == [1.0, 3.0, 6.0, 12.0, 24.0]
+    assert base.tolist() == [1.0, 2.0, 4.0, 8.0, 16.0, 32.0]
+
+
+def test_clone_tree_preserves_layout_and_object_identity():
+    fortran = np.asfortranarray(np.arange(12, dtype=np.float32).reshape(3, 4))
+    reversed_array = np.linspace(-1, 1, 19, dtype=np.float32)[::-1]
+    shared = np.arange(6, dtype=np.float32)
+
+    clone = _clone_tree({
+        "fortran": fortran,
+        "reversed": reversed_array,
+        "a": shared,
+        "b": shared,
+    })
+
+    assert clone["fortran"].flags["F_CONTIGUOUS"]
+    assert clone["fortran"].strides == fortran.strides
+    assert np.array_equal(clone["fortran"], fortran)
+    assert clone["reversed"].strides == (-4,)
+    assert np.array_equal(clone["reversed"], reversed_array)
+    assert clone["a"] is clone["b"]
+    assert not np.shares_memory(clone["a"], shared)
+
+
+def test_clone_tree_preserves_read_only_inputs():
+    original = np.arange(4, dtype=np.float32)
+    original.setflags(write=False)
+
+    clone = _clone_tree({"x": original})["x"]
+
+    assert clone.flags.writeable is False
+    assert np.array_equal(clone, original)
+
+
+def test_verifier_rejects_migration_that_drops_in_place_alias_semantics():
+    original = """
+import numpy as np
+def build_inputs():
+    base = np.array([1, 2, 4, 8, 16, 32], dtype=np.float32)
+    return {'x': base[1:], 'y': base[:-1]}
+def forward(x, y):
+    x += y
+    return {'out': x, 'alias': y}
+"""
+    migrated = """
+import numpy as np
+def build_inputs():
+    base = np.array([1, 2, 4, 8, 16, 32], dtype=np.float32)
+    return {'x': base[1:], 'y': base[:-1]}
+def forward(x, y):
+    x = x + y
+    return {'out': x, 'alias': y}
+"""
+    report = VerificationAgent(ShimBackend()).verify(
+        original, migrated, measure=False
+    )
+
+    assert report.status == "fail"
+    assert report.numerically_consistent is False
+    assert report.kernel_consistent is False
+
+
+def test_verifier_accepts_non_mutating_forward_with_aliased_inputs():
+    original = """
+import numpy as np
+def build_inputs():
+    base = np.array([1, 2, 4, 8, 16, 32], dtype=np.float32)
+    return {'x': base[1:], 'y': base[:-1]}
+def forward(x, y):
+    return {'out': np.add(x, y)}
+"""
+    report = VerificationAgent(ShimBackend()).verify(
+        original, original, measure=False
+    )
+
+    assert report.status == "pass"
+    assert report.kernel_consistent
+    assert report.numerically_consistent

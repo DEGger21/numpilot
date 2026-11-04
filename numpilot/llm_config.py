@@ -556,12 +556,16 @@ def _status(path: Path, source: str) -> LlmConfigStatus:
             protocol,
             aliases,
         )
-        try:
-            max_tokens = int(os.getenv("NUMPILOT_LLM_MAX_TOKENS", "8192"))
-        except ValueError as exc:
-            raise LlmConfigError("LLM max_tokens 必须是数字") from exc
-        if not 1 <= max_tokens <= 1_000_000:
-            raise LlmConfigError("LLM max_tokens 必须在 1～1000000 之间")
+        configured_max_tokens = os.getenv(
+            "NUMPILOT_LLM_MAX_TOKENS", ""
+        ).strip()
+        if configured_max_tokens:
+            try:
+                max_tokens = int(configured_max_tokens)
+            except ValueError as exc:
+                raise LlmConfigError("LLM max_tokens 必须是数字") from exc
+            if not 1 <= max_tokens <= 1_000_000:
+                raise LlmConfigError("LLM max_tokens 必须在 1～1000000 之间")
         validate_llm_timeout(os.getenv("NUMPILOT_LLM_TIMEOUT", "120"))
         if os.getenv("NUMPILOT_LLM_INSECURE", "0") not in {"0", "1"}:
             raise LlmConfigError("NUMPILOT_LLM_INSECURE 只能是 0 或 1")

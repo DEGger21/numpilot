@@ -155,13 +155,30 @@ class Orchestrator:
             source = f.read()
         return self.run_source(source, source_path, out_dir)
 
-    def run_source(self, source, source_path, out_dir=None, on_record=None) -> dict:
+    def run_source(
+        self,
+        source,
+        source_path,
+        out_dir=None,
+        on_record=None,
+        verification_source=None,
+        strict_input_types=False,
+    ) -> dict:
         """Run the six-role mainline on in-memory source.
 
         ``on_record`` is an optional observer called with each
         :class:`~numpilot.roles.RoleRecord` as soon as it is produced; the
         wizard uses it for progress, the CLI ignores it.
+
+        ``verification_source`` separates the program used for analysis and
+        migration from the NumPy oracle used for numerical verification.  The
+        benchmark adapter lowers documented equivalent spellings for analysis
+        while keeping the original program as the oracle.  ``source`` remains
+        the analysis source; ``verification_source`` defaults to it.
         """
+        oracle_source = (
+            source if verification_source is None else verification_source
+        )
         records = []
 
         def emit(record):
@@ -179,6 +196,7 @@ class Orchestrator:
             source,
             source_path,
             profiles=self.analysis_profiles,
+            strict_input_types=strict_input_types,
         )
         program_ir = build_program_ir(source, source_path)
         gap_plan = GapFillerAgent().plan(analysis)
@@ -220,7 +238,7 @@ class Orchestrator:
         verifier = VerificationAgent(self.backend)
         migration = migrator.migrate(source, plan)
         report = verifier.verify(
-            source,
+            oracle_source,
             migration.migrated_source,
             measure=False,
             required_ops=migration.expected_rewrites,
@@ -243,7 +261,7 @@ class Orchestrator:
                 source, plan, migration.migrated_source, diagnosis
             )
             report = verifier.verify(
-                source,
+                oracle_source,
                 migration.migrated_source,
                 measure=False,
                 required_ops=migration.expected_rewrites,
@@ -276,7 +294,7 @@ class Orchestrator:
             migrated_path = os.path.join(out_dir, "migrated.py")
             with open(migrated_path, "w", encoding="utf-8") as f:
                 f.write(migration.migrated_source)
-        evidence = _validation_evidence(report, source, migration)
+        evidence = _validation_evidence(report, oracle_source, migration)
         emit(RoleRecord(
             Role.REPORTER,
             RoleStage.VALIDATE,
@@ -302,6 +320,8 @@ class Orchestrator:
             "migrated_source": migration.migrated_source,
             "migrated_path": migrated_path,
             "source_path": source_path,
+            "source_sha256": _sha256(oracle_source),
+            "analysis_source_sha256": _sha256(source),
             "repair_attempts": repair_attempts,
             "validation_evidence": evidence,
             "roles": records_to_dicts(records, migration.engine),

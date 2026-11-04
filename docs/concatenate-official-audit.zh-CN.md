@@ -79,3 +79,26 @@ python -m numpilot resolve-gaps \
 
 复现时必须比较完整 `resolution_id`，不能只比较 `status`。任何头文件、库、CANN 版本或 SoC 漂移
 都会使该回执失效，需要重新审计。
+
+## 后续集成与 official qualification（2026-11-04）
+
+只读解析完成后的垂直切片已经走通：
+
+- attempt-04 隔离集成事务 `int-b5eb35c08839bea94076fe02`，候选 wheel
+  `6a31e3382dbfc7e2e72577d5ef78343f00762c7f13a78fedd117cadeb8c7ae0b`；构建通过，API gate
+  16 cases / 105 次 oracle，候选 pytest 14 passed。
+- official producer 在候选运行时中重跑六门 gate 并发布 overlay：qualification ID
+  `official-aclnn-35ce345fb531110e76a8`，overlay SHA-256
+  `811be0c277a076a866d43de773ff1b9940b660ed4d21ed8f0319d28fa835238f`，receipt SHA-256
+  `06f9ef899a7f8824691e68a205fed6ab60c765c8873c60e11d9a3d67dd41d07c`。
+- overlay 的 admission 绑定 runtime identity
+  `50ff6221b6be7bdf160b555b30ffcc15da5a3048fe5f0507670d506c6025c665` 和 base manifest
+  `048af828b641100264f5c8e14b0acfd45aa7e067888b78080c1d186948f13ac1`；非绑定运行时失败关闭。
+- 用该 overlay 完成整程序迁移，报告
+  `8004127fa34dd0aabee29bf04daedba31a5817a665f88fb6ab19b1ffe5001a87`
+  （`status=migrated_scoped_npu`），验证回执
+  `417b870a10281c3256f8b72c934d86e0bb72b8c393d20a3c4f35c8243a0c82af`
+  （`passed`、`numerically_consistent=true`、`max_abs_diff=0.0`、18 个元素）。
+
+边界：该 overlay 是 run-scoped qualification 产品，不是 Recovery `ACTIVATED`，也不是
+AsNumpy 静态组件的全局升级；`strict_npu_verified=false`、`performance_valid=false`。

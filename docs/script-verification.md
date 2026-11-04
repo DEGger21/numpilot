@@ -65,6 +65,20 @@ SHA-256、NumPy/AsNumPy/
 `asnumpy._core` 的版本、路径和有界文件哈希，以及逐输出 comparison。它不保存输出值、stdout、
 stderr、异常消息、Token 或 traceback。
 
+`contract.comparison_policy` 显式记录比较规则，读者不需要从实现反推：
+
+- `floating_rule`：浮点叶子的通过条件为
+  `abs(actual - reference) <= atol + rtol * abs(reference)`；
+- `tolerance_source`：`atol`/`rtol` 由参考输出的真实 dtype 决定，并同时记录在
+  `comparisons.<name>` 中；
+- `tolerance_by_reference_dtype`：当前 float16、float32、float64、complex64、complex128
+  的固定阈值；
+- `non_floating_rule`：整数、布尔及其他非浮点叶子在 shape 和 dtype 一致后要求完全相等；
+- `nan_policy`：NaN 只与对应位置的 NaN 匹配，不会与有限值互相通过；
+- `infinity_policy`：同符号 Infinity 必须匹配，异号或有限/无限混合均失败；
+- `shape_and_dtype_must_match`：比较前先验证 shape 和 dtype，任何漂移直接失败；
+- `comparison_unit`：规则作用于每个明确命名的输出叶子。
+
 ## 退出状态
 
 - `0`：所有明确命名的输出数值一致，`status=passed`；

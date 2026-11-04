@@ -37,13 +37,16 @@ import math
 import re
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
+from numpilot.capabilities import OperatorSignature
 from numpilot.capability_profile import (
     CallContractQualification,
     CapabilityDecision,
     ComputationRoute,
+    OverlayRouteAdmission,
     QualifiedCallDecision,
     StaticCallFacts,
     aggregate_decisions,
+    build_overlay_route_manifest,
     build_runtime_route_manifest,
     qualify_call,
 )
@@ -185,6 +188,7 @@ class QualifiedScriptAnalysis:
     decision: CapabilityDecision
     runtime_identity_status: str
     runtime_identity_sha256: Optional[str]
+    overlay_qualification: Optional[Dict[str, Any]] = None
     performance_valid: bool = False
     speedup: None = None
     schema_version: int = QUALIFIED_ANALYSIS_SCHEMA_VERSION
@@ -203,6 +207,11 @@ class QualifiedScriptAnalysis:
             "next_action": _next_action(self.decision),
             "runtime_identity_status": self.runtime_identity_status,
             "runtime_identity_sha256": self.runtime_identity_sha256,
+            "overlay_qualification": (
+                None
+                if self.overlay_qualification is None
+                else dict(self.overlay_qualification)
+            ),
             "actual_remote_call": False,
             "execution_performed": False,
             "performance_valid": self.performance_valid,
@@ -215,6 +224,8 @@ class _ValueProfile:
     kind: str = "unknown"
     dtype: Optional[str] = "unknown"
     shape: Optional[Tuple[int, ...]] = None
+    contiguous: Optional[bool] = None
+    elements: Tuple["_ValueProfile", ...] = ()
 
     @property
     def rank(self) -> Optional[int]:
@@ -223,6 +234,10 @@ class _ValueProfile:
     @property
     def is_array(self) -> bool:
         return self.kind == "array"
+
+    @property
+    def is_sequence(self) -> bool:
+        return self.kind == "sequence"
 
 
 _UNKNOWN = _ValueProfile()
@@ -659,7 +674,25 @@ class _StaticAnalyzer:
                     % (type(node.op).__name__, node.lineno)
                 )
             return profiles[-1] if profiles else _UNKNOWN
-        if isinstance(node, (ast.Tuple, ast.List, ast.Set)):
+        if isinstance(node, (ast.Tuple, ast.List)):
+            profiles = tuple(self._eval_expr(item) for item in node.elts)
+            if profiles and all(profile.is_array for profile in profiles):
+                dtype = (
+                    profiles[0].dtype
+                    if all(profile.dtype == profiles[0].dtype for profile in profiles)
+                    else "unknown"
+                )
+                return _ValueProfile(
+                    "sequence",
+                    dtype,
+                    (len(profiles),),
+                    contiguous=all(
+                        profile.contiguous is True for profile in profiles
+                    ),
+                    elements=profiles,
+                )
+            return _UNKNOWN
+        if isinstance(node, ast.Set):
             for item in node.elts:
                 self._eval_expr(item)
             return _UNKNOWN
@@ -710,6 +743,7 @@ class _StaticAnalyzer:
                 dtype=facts_profile.dtype,
                 rank=facts_profile.rank,
                 shape=facts_profile.shape,
+                contiguous=facts_profile.contiguous,
                 axis=self._axis_fact(key, call),
                 equation=self._equation_fact(key, call),
                 output_use=output_use,
@@ -794,11 +828,13 @@ class _StaticAnalyzer:
         if leaf in _CREATION:
             dtype = self._creation_dtype(leaf, call, arguments)
             shape = self._creation_shape(leaf, call, arguments)
-            return _ValueProfile("array", dtype, shape)
+            return _ValueProfile("array", dtype, shape, contiguous=True)
+        if key == "concatenate":
+            return self._concatenate_output_profile(call, arguments)
         if key.startswith("random."):
             shape_node = _bound_argument(call, 2, ("size",))
             shape = _static_shape(shape_node)
-            return _ValueProfile("array", "float64", shape)
+            return _ValueProfile("array", "float64", shape, contiguous=True)
         primary = next(
             (profile for profile in arguments if profile.is_array),
             arguments[0] if arguments else _UNKNOWN,
@@ -906,6 +942,52 @@ class _StaticAnalyzer:
             return _ValueProfile(primary.kind, primary.dtype, primary.shape)
         return _ValueProfile("array", primary.dtype, primary.shape)
 
+    def _concatenate_output_profile(
+        self,
+        call: ast.Call,
+        arguments: List[_ValueProfile],
+    ) -> _ValueProfile:
+        sequence = arguments[0] if arguments else _UNKNOWN
+        if not sequence.is_sequence or not sequence.elements:
+            return _ValueProfile("array", "unknown", None)
+        elements = sequence.elements
+        if not all(profile.is_array for profile in elements):
+            return _ValueProfile("array", "unknown", None)
+        dtype = elements[0].dtype
+        if dtype in {None, "unknown"} or any(
+            profile.dtype != dtype for profile in elements
+        ):
+            dtype = "unknown"
+        shape: Optional[Tuple[int, ...]] = None
+        ranks = {profile.rank for profile in elements}
+        if len(ranks) == 1 and None not in ranks:
+            rank = next(iter(ranks))
+            axis = self._axis_fact("concatenate", call)
+            if (
+                isinstance(axis, int)
+                and not isinstance(axis, bool)
+                and rank > 0
+            ):
+                normalized = axis + rank if axis < 0 else axis
+                shapes = [profile.shape for profile in elements]
+                if (
+                    0 <= normalized < rank
+                    and all(item is not None for item in shapes)
+                ):
+                    reference = shapes[0]
+                    outside = reference[:normalized] + reference[normalized + 1:]
+                    if all(
+                        item[:normalized] + item[normalized + 1:] == outside
+                        for item in shapes
+                    ):
+                        total = sum(item[normalized] for item in shapes)
+                        shape = (
+                            reference[:normalized]
+                            + (total,)
+                            + reference[normalized + 1:]
+                        )
+        return _ValueProfile("array", dtype, shape, contiguous=True)
+
     def _creation_dtype(
         self,
         leaf: str,
@@ -979,7 +1061,7 @@ class _StaticAnalyzer:
         arguments: List[_ValueProfile],
     ) -> _ValueProfile:
         leaf = key.rsplit(".", 1)[-1]
-        if leaf in _CREATION or key.startswith("random."):
+        if leaf in _CREATION or key.startswith("random.") or key == "concatenate":
             return output
         if (
             leaf in _REDUCTIONS
@@ -995,6 +1077,14 @@ class _StaticAnalyzer:
 
     def _axis_fact(self, key: str, call: ast.Call) -> Any:
         leaf = key.rsplit(".", 1)[-1]
+        if leaf == "concatenate":
+            supplied = len(call.args) >= 2 or _keyword(call, "axis") is not None
+            if not supplied:
+                return 0
+            value = _static_value(_bound_argument(call, 1, ("axis",)))
+            if isinstance(value, int) and not isinstance(value, bool):
+                return value
+            return "unknown"
         relevant = leaf in _REDUCTIONS or leaf in {
             "cross", "cumprod", "cumsum", "nancumprod", "nancumsum", "sort",
         }
@@ -1037,6 +1127,15 @@ class _StaticAnalyzer:
             or any(keyword.arg is None for keyword in call.keywords)
         ):
             return False
+        entry = self.route_manifest.entries.get(key)
+        if entry is not None and entry.signature_variants:
+            signature = OperatorSignature(
+                positional_args=len(call.args),
+                keyword_args=tuple(sorted(
+                    keyword.arg for keyword in call.keywords
+                )),
+            )
+            return signature in entry.signature_variants
         if key == "linalg.det":
             return (
                 (len(call.args) == 1 and not call.keywords)
@@ -1334,9 +1433,14 @@ def _runtime_state(runtime_identity: Any) -> Tuple[str, Optional[str], bool]:
     return rendered_status, valid_sha, matched
 
 
-def _runtime_downgrade(call: QualifiedCallsite) -> QualifiedCallsite:
+def _runtime_downgrade(
+    call: QualifiedCallsite,
+    admitted_keys: Optional[frozenset] = None,
+) -> QualifiedCallsite:
     current = call.qualification
     if current.decision is not CapabilityDecision.DIRECT:
+        return call
+    if admitted_keys is not None and current.canonical_key in admitted_keys:
         return call
     downgraded = QualifiedCallDecision(
         canonical_key=current.canonical_key,
@@ -1360,6 +1464,7 @@ def analyze_qualified_script(
     source_path: str,
     *,
     runtime_identity: Any = None,
+    overlay_admission: Optional[OverlayRouteAdmission] = None,
 ) -> QualifiedScriptAnalysis:
     """Return a machine-readable, fail-closed analysis without side effects."""
 
@@ -1392,15 +1497,34 @@ def analyze_qualified_script(
         runtime_audit_id = runtime_identity.get("audit_id")
     else:
         runtime_audit_id = getattr(runtime_identity, "audit_id", None)
-    analyzer = _StaticAnalyzer(
-        tree,
-        route_manifest=build_runtime_route_manifest(runtime_audit_id),
-    )
-    analyzer.analyze()
     runtime_status, runtime_sha, runtime_matched = _runtime_state(runtime_identity)
+    if overlay_admission is not None:
+        if not isinstance(overlay_admission, OverlayRouteAdmission):
+            raise QualifiedAnalysisError(
+                "overlay admission type is invalid"
+            )
+        if runtime_sha != overlay_admission.runtime_identity_sha256:
+            raise QualifiedAnalysisError(
+                "overlay admission is bound to another runtime identity"
+            )
+    base_manifest = build_runtime_route_manifest(runtime_audit_id)
+    route_manifest = (
+        build_overlay_route_manifest(base_manifest, overlay_admission)
+        if overlay_admission is not None
+        else base_manifest
+    )
+    analyzer = _StaticAnalyzer(tree, route_manifest=route_manifest)
+    analyzer.analyze()
     calls = tuple(analyzer.calls)
+    admitted_keys = (
+        frozenset(overlay_admission.entry_keys)
+        if overlay_admission is not None
+        else None
+    )
     if not runtime_matched:
-        calls = tuple(_runtime_downgrade(call) for call in calls)
+        calls = tuple(
+            _runtime_downgrade(call, admitted_keys) for call in calls
+        )
 
     issues = _unique(analyzer.issues)
     if issues:
@@ -1410,7 +1534,7 @@ def analyze_qualified_script(
         decision = CapabilityDecision.BLOCKED
     else:
         decisions = [call.decision for call in calls]
-        if not runtime_matched:
+        if not runtime_matched and overlay_admission is None:
             decisions.append(CapabilityDecision.CAPABILITY_AUDIT_REQUIRED)
         decision = aggregate_decisions(decisions)
 
@@ -1424,4 +1548,9 @@ def analyze_qualified_script(
         decision=decision,
         runtime_identity_status=runtime_status,
         runtime_identity_sha256=runtime_sha,
+        overlay_qualification=(
+            None
+            if overlay_admission is None
+            else overlay_admission.fingerprint()
+        ),
     )

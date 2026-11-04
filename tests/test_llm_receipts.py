@@ -171,6 +171,28 @@ def test_per_call_max_tokens_overrides_environment_without_changing_default(
     assert captured["request_data"]["max_tokens"] == expected_max_tokens
 
 
+def test_max_tokens_is_omitted_when_no_limit_is_configured(monkeypatch):
+    _configure(monkeypatch)
+    monkeypatch.delenv("NUMPILOT_LLM_MAX_TOKENS", raising=False)
+    response_body = json.dumps({
+        "model": "glm-requested",
+        "choices": [{"message": {"content": "ok"}}],
+    }).encode("utf-8")
+    captured = {}
+
+    def fake_urlopen(request, *, timeout, context):
+        del timeout, context
+        captured["request_data"] = json.loads(request.data.decode("utf-8"))
+        return _Response(response_body)
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+    content, _receipt = LlmEngine._chat_with_receipt("system", "user")
+
+    assert content == "ok"
+    assert "max_tokens" not in captured["request_data"]
+
+
 @pytest.mark.parametrize(
     "invalid_max_tokens",
     (True, False, 0, -1, 1_000_001, 1.0, "4096"),
@@ -522,9 +544,10 @@ def test_malformed_completed_stream_returns_a_receipted_response_error(
     ).hexdigest()
 
 
-def test_oversized_stream_fails_during_bounded_incremental_read(monkeypatch):
+def test_oversized_stream_fails_when_an_optional_ceiling_is_configured(monkeypatch):
     _configure(monkeypatch)
-    response_body = b"x" * (llm_module._MAX_RESPONSE_BODY_BYTES + 1)
+    monkeypatch.setattr(llm_module, "_MAX_RESPONSE_BODY_BYTES", 1024)
+    response_body = b"x" * 1025
     monkeypatch.setattr(
         "urllib.request.urlopen",
         lambda *_args, **_kwargs: _Response(response_body),

@@ -11,11 +11,16 @@ write-once 的 JSON hash chain。状态机只验证事实和收据，真正的 r
 CREATED → ANALYZED → GAP_PREPARED → RESOLVED
   → CANDIDATE_READY                 # installed official_binary
   → ADAPTER_CANDIDATE               # reviewed numpy.matmul official adapter
+  → INTEGRATED_CANDIDATE            # isolated attempt-04 integration transaction
 ```
 
-`INTEGRATED_CANDIDATE → QUALIFIED → ACTIVATED → RESCANNED → FINAL_MIGRATED → VERIFIED`
-仍是后续阶段。`generated_unverified` 是 provider 产物状态，不是 Recovery phase；
-`ADAPTER_CANDIDATE` 只证明该未验证 overlay 已被 typed receipt 绑定，不代表已经构建、集成、
+`QUALIFIED → ACTIVATED → RESCANNED → FINAL_MIGRATED → VERIFIED` 仍是 Recovery 状态机中的后续
+阶段。2026-11-04 的 official ACLNN qualification 是一个独立产品：它从
+`INTEGRATED_CANDIDATE` 的集成证据生成 run-scoped overlay，完成六门 gate，并用该 overlay
+执行 Code Migrator 与全程序数值验证；它**没有**向 Recovery 追加 `QUALIFIED` 或 `ACTIVATED`
+事件，因此权威状态仍是 `INTEGRATED_CANDIDATE / READY`，`next_action=qualify_candidate`
+保留为状态机动作名。`generated_unverified` 是 provider 产物状态，不是 Recovery phase；
+`ADAPTER_CANDIDATE` 只证明未验证 overlay 已被 typed receipt 绑定，不代表已经构建、集成、
 执行、资格化或激活。
 
 ## 固定阶段与收据
@@ -172,23 +177,50 @@ producer 已发生的
 `network=true/model=true` 如实带入状态事件；build/integration/import/execution/verification/
 system-write/subprocess/activation 仍为 false。
 
+## 4. 隔离集成与 official qualification（2026-11-04）
+
+`integrate-candidate` 在隔离候选工作树上执行集成事务，只有构建、API gate 和候选测试都通过
+才追加 `INTEGRATED_CANDIDATE` 收据。当前 `np.concatenate` run 的 attempt-04 事务 ID 为
+`int-b5eb35c08839bea94076fe02`，构建通过，API gate 覆盖 16 cases / 105 次 oracle，候选
+pytest 为 14 passed；recovery state 推进到 revision 13，`repairs_used=3`，
+`next_action=qualify_candidate`。API gate 或候选测试失败时保留原候选并只记录
+`FAILED_ATTEMPT`；累计 3 轮修复后进入 `BLOCKED`，并标记
+`MANUAL_REVIEW_REQUIRED`，不会无限重试。
+
+official ACLNN qualification 由 `tools/aclnn_overlay_qualification.py` 调用
+`numpilot.gaps.official_producer` 生成。它只读取已经存在的 attempt-04 证据，在候选运行时中
+重跑 `artifact_integrity`、`build`、`unit_test`、`numerical_validation`、
+`public_asnumpy_api`、`npu_execution` 六门 gate，然后以 compare-and-swap 发布
+`numpilot.official-aclnn-capability-overlay` 和 receipt。当前产品：
+
+- qualification ID `official-aclnn-35ce345fb531110e76a8`，overlay revision 1；
+- overlay SHA-256 `811be0c277a076a866d43de773ff1b9940b660ed4d21ed8f0319d28fa835238f`；
+- 六门 gate 全部 `passed`，receipt SHA-256
+  `06f9ef899a7f8824691e68a205fed6ab60c765c8873c60e11d9a3d67dd41d07c`；
+- Code Migrator 用该 overlay 生成 `migrated_scoped_npu` 报告，全程序验证回执
+  `417b870a10281c3256f8b72c934d86e0bb72b8c393d20a3c4f35c8243a0c82af` 为
+  `passed`、`max_abs_diff=0.0`。
+
+这个 producer 是只读复验加原子发布，不修改共享 AsNumpy、集成源码或候选 wheel；重复运行会
+发布 revision 2，因此复验应读取现有 overlay/receipt，而不是重跑 producer。
+
 ## 路由中立候选与当前边界
 
 `OperatorCandidateArtifact` 定义 `official_binary`、`official_source`、`remote_llm` 三种来源；
 来源必须与 official-resolution route 精确对应，所有 candidate 固定
-`activation_allowed=false`。当前自动接线只覆盖 installed `official_binary` 与 reviewed MatMul
-adapter。仍待实现：
+`activation_allowed=false`。当前自动接线覆盖 installed `official_binary`、reviewed MatMul
+adapter，以及 `np.concatenate` 的 isolated integration + official qualification 垂直切片。
+仍未通用化的部分：
 
 1. `official_source` 和 `remote_llm` 的 Recovery candidate materializer；
 2. 其他 API/route 的 reviewed AsNumPy adapter planner 与 receipt adapter；
-3. 隔离 integration transaction、构建、六门 qualification、激活与回滚；
-4. overlay-aware capability rescan、按已选 lane 的最终 migration 和 final verification（CodeArts-agent/no-llm 不调用 configured model）；
-5. ordinary strict-NPU provenance 与独立性能证据。
+3. 面向任意 gap 的 integration/qualification producer 自动接线；
+4. recovery `QUALIFIED`/`ACTIVATED`/`RESCANNED` 状态事件、overlay-aware capability rescan 和
+   按已选 lane 的通用最终迁移；
+5. 通用 ordinary strict-NPU provenance 与独立性能证据。
 
-当前 `candidate-generation` 的自动 producer 只到 `ADAPTER_CANDIDATE`。下列 integration/
-qualification/activation/rescan/final migration 任务只能由初始就冻结为
-`full-local-recovery` 的 run 授权，但对应 producer 尚未自动接线。
-
-因此，任何 `generated_unverified` 或 `ADAPTER_CANDIDATE` 都不能写成“本地 AsNumPy 已具备该
-接口”。只有后续 `INTEGRATED_CANDIDATE`、`QUALIFIED`、`ACTIVATED` 和 `RESCANNED` 均有独立
-收据后，能力目录才允许改变。
+当前 `candidate-generation` 的自动 producer 到 `ADAPTER_CANDIDATE`；`concatenate` 的
+integration 和 official qualification 是在独立运行目录中完成的垂直切片，并未把任意 gap
+自动推进到 `ACTIVATED`。任何 `generated_unverified`、`ADAPTER_CANDIDATE` 或 scoped overlay
+都不能写成“本地 AsNumPy 已全局具备该接口”。只有后续 Recovery `QUALIFIED`、`ACTIVATED` 和
+`RESCANNED` 均有独立收据后，能力目录才允许改变。

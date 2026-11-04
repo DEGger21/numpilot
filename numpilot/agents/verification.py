@@ -112,17 +112,123 @@ def _to_device_tree(backend, value):
     return value
 
 
-def _clone_tree(value):
-    """为双端 forward 提供互不共享的规范输入，避免原地修改互相影响。"""
-    if isinstance(value, tuple):
-        return tuple(_clone_tree(item) for item in value)
-    if isinstance(value, list):
-        return [_clone_tree(item) for item in value]
+def _array_span(array):
+    """返回数组覆盖的字节区间 ``[start, end)``。
+
+    负 stride 会把起点前移，因此不能只看 data 指针；空维度不产生访问，
+    不参与区间扩展。
+    """
+    start = array.__array_interface__["data"][0]
+    end = start + array.dtype.itemsize
+    for length, stride in zip(array.shape, array.strides):
+        if length <= 1:
+            continue
+        extent = (length - 1) * stride
+        if extent >= 0:
+            end += extent
+        else:
+            start += extent
+    return start, end
+
+
+def _clone_array_group(arrays):
+    """在同一个缓冲区里重建一组共享存储的数组。
+
+    只对数值 dtype 使用字节缓冲；object dtype 的引用计数语义无法用
+    裸字节安全重建，退化为彼此独立的 ``copy(order="K")``（此时本就不
+    存在可迁移的数值别名语义）。
+    """
+    if any(array.dtype.hasobject for array in arrays):
+        return [array.copy(order="K") for array in arrays]
+
+    spans = [_array_span(array) for array in arrays]
+    base_address = min(span[0] for span in spans)
+    total = max(span[1] for span in spans) - base_address
+    buffer = np.empty(max(total, 1), dtype=np.uint8)
+    clones = []
+    for array in arrays:
+        # ``offset`` 是首元素地址；负 stride 的首元素位于区间高端，
+        # 不能用 _array_span 的低端起点。
+        offset = array.__array_interface__["data"][0] - base_address
+        clone = np.ndarray(
+            array.shape,
+            dtype=array.dtype,
+            buffer=buffer,
+            offset=offset,
+            strides=array.strides,
+        )
+        # 重叠视图的内容彼此一致，写入顺序不影响结果。
+        clone[...] = array
+        if not array.flags.writeable:
+            clone.flags.writeable = False
+        clones.append(clone)
+    return clones
+
+
+def _collect_arrays(value, found):
     if isinstance(value, dict):
-        return {key: _clone_tree(item) for key, item in value.items()}
+        for item in value.values():
+            _collect_arrays(item, found)
+    elif isinstance(value, (tuple, list)):
+        for item in value:
+            _collect_arrays(item, found)
+    elif isinstance(value, np.ndarray):
+        found.append(value)
+
+
+def _replace_arrays(value, replacements):
+    if isinstance(value, tuple):
+        return tuple(_replace_arrays(item, replacements) for item in value)
+    if isinstance(value, list):
+        return [_replace_arrays(item, replacements) for item in value]
+    if isinstance(value, dict):
+        return {
+            key: _replace_arrays(item, replacements)
+            for key, item in value.items()
+        }
     if isinstance(value, np.ndarray):
-        return value.copy()
+        clone = replacements.get(id(value))
+        if clone is None:
+            return value.copy(order="K")
+        return clone
     return value
+
+
+def _clone_tree(value):
+    """克隆双端规范输入，同时保留共享存储、偏移、strides 与只读标记。
+
+    直接对每个 ndarray 调用 ``copy()`` 会把重叠别名拆成独立内存，并默认
+    转成 C 顺序，从而让 B014 这类原地别名陷阱与 Fortran/负 stride 输入
+    在原始 oracle 里失去意义。这里按真实 ``shares_memory`` 分组，在同一个
+    字节缓冲区上按原偏移和 strides 重建视图，再递归替换回输入树。
+    """
+    arrays = []
+    _collect_arrays(value, arrays)
+    unique = []
+    seen = set()
+    for array in arrays:
+        if id(array) in seen:
+            continue
+        seen.add(id(array))
+        unique.append(array)
+
+    components = []
+    for array in unique:
+        merged = [array]
+        remaining = []
+        for component in components:
+            if any(np.shares_memory(array, member) for member in component):
+                merged.extend(component)
+            else:
+                remaining.append(component)
+        remaining.append(merged)
+        components = remaining
+
+    replacements = {}
+    for component in components:
+        for original, clone in zip(component, _clone_array_group(component)):
+            replacements[id(original)] = clone
+    return _replace_arrays(value, replacements)
 
 
 def _set_rng_state(state):

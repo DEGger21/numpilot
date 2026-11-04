@@ -56,6 +56,16 @@ from numpilot.model_contract import (
 
 _MAX_SOURCE_BYTES = 4 * 1024 * 1024
 _SAFE_IDENTIFIER = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
+_OVERLAY_QUALIFICATION_ID = re.compile(r"^official-aclnn-[0-9a-f]{20}$")
+_OVERLAY_FINGERPRINT_FIELDS = frozenset({
+    "schema_version",
+    "qualification_id",
+    "overlay_sha256",
+    "base_manifest_sha256",
+    "admitted_audit_id",
+    "runtime_identity_sha256",
+    "entry_keys",
+})
 _NUMPY_DTYPE_NAMES = frozenset({
     "float16", "float32", "float64",
     "int8", "int16", "int32", "int64",
@@ -380,6 +390,68 @@ class _QualifiedMigrationOverlay:
     authorized_calls: Tuple[Tuple[int, int, str], ...] = ()
 
 
+def _validated_overlay_fingerprint(value: object) -> Optional[Dict[str, Any]]:
+    """Validate the analysis-carried official overlay admission fingerprint."""
+
+    if value is None:
+        return None
+    if (
+        not isinstance(value, Mapping)
+        or frozenset(value) != _OVERLAY_FINGERPRINT_FIELDS
+    ):
+        raise ScriptMigrationError("qualified overlay fingerprint is invalid")
+    if value["schema_version"] != 1:
+        raise ScriptMigrationError("qualified overlay schema is unsupported")
+    qualification_id = value["qualification_id"]
+    if (
+        not isinstance(qualification_id, str)
+        or not _OVERLAY_QUALIFICATION_ID.fullmatch(qualification_id)
+    ):
+        raise ScriptMigrationError("qualified overlay ID is invalid")
+    for name in (
+        "overlay_sha256",
+        "base_manifest_sha256",
+        "runtime_identity_sha256",
+    ):
+        digest = value[name]
+        if (
+            not isinstance(digest, str)
+            or len(digest) != 64
+            or any(character not in "0123456789abcdef" for character in digest)
+        ):
+            raise ScriptMigrationError(
+                "qualified overlay %s is invalid" % name
+            )
+    audit_id = value["admitted_audit_id"]
+    if (
+        not isinstance(audit_id, str)
+        or not audit_id
+        or "official-qualification-" not in audit_id
+    ):
+        raise ScriptMigrationError("qualified overlay audit ID is invalid")
+    entry_keys = value["entry_keys"]
+    if (
+        not isinstance(entry_keys, (list, tuple))
+        or not entry_keys
+        or any(
+            not isinstance(item, str)
+            or not _SAFE_IDENTIFIER.fullmatch(item)
+            for item in entry_keys
+        )
+        or len(set(entry_keys)) != len(entry_keys)
+    ):
+        raise ScriptMigrationError("qualified overlay entries are invalid")
+    return {
+        "schema_version": 1,
+        "qualification_id": qualification_id,
+        "overlay_sha256": value["overlay_sha256"],
+        "base_manifest_sha256": value["base_manifest_sha256"],
+        "admitted_audit_id": audit_id,
+        "runtime_identity_sha256": value["runtime_identity_sha256"],
+        "entry_keys": list(entry_keys),
+    }
+
+
 def _validated_qualified_overlay(
     qualified_analysis: object,
     source: str,
@@ -401,9 +473,19 @@ def _validated_qualified_overlay(
         raise ScriptMigrationError(
             "qualified analysis source binding is inconsistent"
         )
+    overlay_fingerprint = _validated_overlay_fingerprint(
+        qualified_analysis.overlay_qualification
+    )
+    overlay_admitted = (
+        overlay_fingerprint is not None
+        and overlay_fingerprint["runtime_identity_sha256"]
+        == qualified_analysis.runtime_identity_sha256
+    )
     if (
         qualified_analysis.runtime_identity_status != "matched"
-        or qualified_analysis.decision
+        and not overlay_admitted
+    ) or (
+        qualified_analysis.decision
         not in {CapabilityDecision.DIRECT, CapabilityDecision.FALLBACK_CONSENT}
         or qualified_analysis.issues
     ):
@@ -562,6 +644,19 @@ def _is_static_array_call(node: ast.AST, array_names: Iterable[str]) -> bool:
         ("np", "zeros"),
     }:
         return True
+    if path == ("np", "concatenate"):
+        if (
+            not 1 <= len(node.args) <= 2
+            or any(
+                keyword.arg not in {"axis"} for keyword in node.keywords
+            )
+            or not isinstance(node.args[0], (ast.Tuple, ast.List))
+        ):
+            return False
+        return all(
+            isinstance(item, ast.Name) and item.id in known
+            for item in node.args[0].elts
+        )
     if path in {
         ("np", "absolute"),
         ("np", "cos"),
@@ -1973,6 +2068,7 @@ def generate_qualified_script_with_configured_model(
     expected_protocol: str = OPENAI_CHAT_COMPLETIONS_PROTOCOL,
     response_model_aliases: Tuple[str, ...] = (),
     chat: Optional[Callable[[str, str], Tuple[str, Mapping[str, Any]]]] = None,
+    overlay_admission_provider: Optional[Callable[[], object]] = None,
 ) -> ScriptMigrationArtifact:
     """Revalidate the qualified admission receipt immediately before a call.
 
@@ -1983,7 +2079,10 @@ def generate_qualified_script_with_configured_model(
     """
 
     from numpilot.capabilities import RuntimeIdentity
-    from numpilot.capability_profile import CapabilityDecision
+    from numpilot.capability_profile import (
+        CapabilityDecision,
+        OverlayRouteAdmission,
+    )
     from numpilot.qualified_analysis import (
         QualifiedScriptAnalysis,
         analyze_qualified_script,
@@ -2018,9 +2117,45 @@ def generate_qualified_script_with_configured_model(
         )
     current_sha = getattr(current_runtime, "identity_sha256", None)
     current_status = getattr(current_runtime, "status", None)
+    expected_overlay = _validated_overlay_fingerprint(
+        qualified_analysis.overlay_qualification
+    )
+    admission = None
+    if expected_overlay is None:
+        if overlay_admission_provider is not None:
+            raise ScriptMigrationError(
+                "overlay admission provider was supplied without an "
+                "overlay-qualified analysis"
+            )
+        if current_status != "matched":
+            raise ScriptMigrationError(
+                "runtime identity changed after qualified analysis"
+            )
+    else:
+        if not callable(overlay_admission_provider):
+            raise ScriptMigrationError(
+                "overlay admission must be revalidated before the model call"
+            )
+        try:
+            admission = overlay_admission_provider()
+        except Exception as exc:
+            raise ScriptMigrationError(
+                "overlay admission refresh failed: %s" % type(exc).__name__
+            ) from exc
+        if not isinstance(admission, OverlayRouteAdmission):
+            raise ScriptMigrationError(
+                "overlay admission provider returned an invalid admission"
+            )
+        if admission.fingerprint() != expected_overlay:
+            raise ScriptMigrationError(
+                "overlay admission changed after qualified analysis"
+            )
+        if admission.runtime_identity_sha256 != current_sha:
+            raise ScriptMigrationError(
+                "overlay admission runtime identity drifted"
+            )
     if (
-        current_status != "matched"
-        or not isinstance(current_sha, str)
+        not isinstance(current_sha, str)
         or current_sha != qualified_analysis.runtime_identity_sha256
     ):
         raise ScriptMigrationError(
@@ -2031,6 +2166,7 @@ def generate_qualified_script_with_configured_model(
         analysis.scan.source,
         analysis.scan.source_path,
         runtime_identity=current_runtime,
+        overlay_admission=admission,
     )
     if fresh.to_dict() != qualified_analysis.to_dict():
         raise ScriptMigrationError(

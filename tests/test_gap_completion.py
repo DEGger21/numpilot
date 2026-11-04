@@ -1298,7 +1298,7 @@ END_BUNDLE"""
     )
 
     assert len(prompts) == 1
-    assert call_options == [{"max_tokens": 16384}]
+    assert call_options == [{}]
     assert diagnostic in prompts[0][1]
     assert "opp_vendor: custom_math" in prompts[0][1]
     assert "fixture for" in prompts[0][1]

@@ -109,6 +109,21 @@ def test_verify_script_passes_with_explicit_no_pickle_output_contract(
         "json_manifest_and_npy_allow_pickle_false"
     )
     assert payload["contract"]["stdout_is_result_channel"] is False
+    policy = payload["contract"]["comparison_policy"]
+    assert policy["floating_rule"] == (
+        "abs(actual - reference) <= atol + rtol * abs(reference)"
+    )
+    assert policy["non_floating_rule"] == (
+        "exact_equality_after_shape_and_dtype"
+    )
+    assert policy["nan_policy"] == "nan_matches_nan_only"
+    assert policy["infinity_policy"] == "same_signed_infinity_required"
+    assert policy["tolerance_by_reference_dtype"]["float32"] == {
+        "atol": 1e-5,
+        "rtol": 1e-4,
+    }
+    assert payload["comparisons"]["result"]["atol"] == 1e-5
+    assert payload["comparisons"]["result"]["rtol"] == 1e-4
     assert payload["strict_npu_verified"] is False
     assert payload["performance_valid"] is False
     assert payload["claims"]["os_sandbox"] is False

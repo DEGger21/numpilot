@@ -131,6 +131,33 @@ class _FakeSkillBundle:
         return "\n".join(self.files[path] for path in selected)
 
 
+def test_official_exact_edit_repair_prompt_documents_tensor_list_ownership():
+    prompt = provider_module._ASNUMPY_OFFICIAL_EXACT_EDIT_REPAIR_SYSTEM_PROMPT
+    assert "`aclDestroyTensorList` destroys every tensor" in prompt
+    assert "`NPUArray` owns its `tensorPtr`" in prompt
+    assert "input.aclDtype" in prompt
+    assert "`input.device_address()`" in prompt
+    assert "never `input.tensorPtr`" in prompt
+    assert "double-destroys" in prompt
+
+
+def test_official_exact_edit_repair_prompt_documents_python_validation():
+    prompt = provider_module._ASNUMPY_OFFICIAL_EXACT_EDIT_REPAIR_SYSTEM_PROMPT
+    assert "PYTHON VALIDATION INVARIANT" in prompt
+    assert "before it calls native code" in prompt
+    assert "`_concatenate`" in prompt
+    assert "C-contiguous" in prompt
+    assert "operator.index" in prompt
+
+
+def test_official_exact_edit_repair_prompt_documents_pinned_test_api():
+    prompt = provider_module._ASNUMPY_OFFICIAL_EXACT_EDIT_REPAIR_SYSTEM_PROMPT
+    assert "TEST FILE INVARIANT" in prompt
+    assert "`ndarray` subclass that overrides `strides`" in prompt
+    assert "does not provide `transpose`" in prompt
+    assert "do not use `.T`" in prompt
+
+
 def test_exact_edit_mechanically_rebuilds_original_position_order():
     path = "csrc/linalg/product.cpp"
     base = "alpha one\nmiddle two\nomega three\n"
@@ -658,30 +685,10 @@ def test_official_exact_edit_generation_binds_full_rebuilt_files_and_receipts(
     assert hashes == report["files_sha256"]
     assert len(prompts) == len(paths) + 1
     assert [kwargs for _system, _user, kwargs in prompts] == [
-        {
-            "max_tokens": 8192,
-            "thinking_mode": "disabled",
-            "reasoning_effort": "none",
-            "stream": True,
-        },
-        {
-            "max_tokens": 16384,
-            "thinking_mode": "disabled",
-            "reasoning_effort": "none",
-            "stream": True,
-        },
-        {
-            "max_tokens": 16384,
-            "thinking_mode": "disabled",
-            "reasoning_effort": "none",
-            "stream": True,
-        },
-        {
-            "max_tokens": 16384,
-            "thinking_mode": "disabled",
-            "reasoning_effort": "none",
-            "stream": True,
-        },
+        {"stream": True},
+        {"stream": True},
+        {"stream": True},
+        {"stream": True},
     ]
     assert all("NUMPILOT_EXACT_EDIT_V1" in system for system, _, _ in prompts)
     assert all("Never return a complete file" in system for system, _, _ in prompts)

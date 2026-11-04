@@ -119,6 +119,52 @@ def _fully_depends_on_ap(node, tainted, ap_modules):
     return False
 
 
+def _fully_depends_on_device(node, computed, uploaded, ap_modules):
+    """Every returned leaf is device-computed or an uploaded-input passthrough."""
+
+    if _is_direct_ap_call(node, ap_modules):
+        return True
+    if isinstance(node, ast.Name):
+        return node.id in computed or node.id in uploaded
+    if isinstance(node, ast.Attribute) and node.attr in _SAFE_ARRAY_METADATA:
+        return _fully_depends_on_device(
+            node.value, computed, uploaded, ap_modules
+        )
+    if isinstance(node, (ast.Tuple, ast.List, ast.Set)):
+        return bool(node.elts) and all(
+            _fully_depends_on_device(item, computed, uploaded, ap_modules)
+            for item in node.elts
+        )
+    if isinstance(node, ast.Dict):
+        return bool(node.values) and all(
+            _fully_depends_on_device(item, computed, uploaded, ap_modules)
+            for item in node.values
+        )
+    return False
+
+
+def _has_device_derived_leaf(node, computed, ap_modules):
+    """At least one returned leaf must depend on a direct device computation."""
+
+    if _is_direct_ap_call(node, ap_modules):
+        return True
+    if isinstance(node, ast.Name):
+        return node.id in computed
+    if isinstance(node, ast.Attribute) and node.attr in _SAFE_ARRAY_METADATA:
+        return _has_device_derived_leaf(node.value, computed, ap_modules)
+    if isinstance(node, (ast.Tuple, ast.List, ast.Set)):
+        return any(
+            _has_device_derived_leaf(item, computed, ap_modules)
+            for item in node.elts
+        )
+    if isinstance(node, ast.Dict):
+        return any(
+            _has_device_derived_leaf(item, computed, ap_modules)
+            for item in node.values
+        )
+    return False
+
+
 def audit_forward_surface(source: str) -> ForwardSurfaceAudit:
     """Fail-closed 审计迁移后 ``forward`` 的静态执行表面。
 
@@ -261,12 +307,15 @@ def audit_forward_surface(source: str) -> ForwardSurfaceAudit:
             )
 
     # 对当前 straight-line whole-forward MVP 做最小 use-def 证明：所有设备调用都
-    # 必须被消费，且每个返回值至少依赖一个设备调用。这样运行一个 NPU decoy 后
-    # 返回预计算 host 全局或原输入，不能通过数值与 runtime-count 门禁。
+    # 必须被消费，且返回值只能来自设备计算，或来自已上传到设备的输入透传。这样
+    # 运行一个 NPU decoy 后返回预计算 host 全局，不能通过数值与 runtime-count
+    # 门禁；同时允许 benchmark 契约把某个输入原样作为 reference 输出返回。
     tainted = set()
+    uploaded = set()
     returns = 0
     for statement in forward.body:
         if _is_input_upload(statement, ap_modules, np_modules):
+            uploaded.add(statement.test.args[0].id)
             continue
         if isinstance(statement, ast.Expr):
             if isinstance(statement.value, ast.Constant) and isinstance(
@@ -301,12 +350,19 @@ def audit_forward_surface(source: str) -> ForwardSurfaceAudit:
             continue
         if isinstance(statement, ast.Return):
             returns += 1
-            if statement.value is None or not _fully_depends_on_ap(
+            if statement.value is None or not _fully_depends_on_device(
+                statement.value, tainted, uploaded, ap_modules
+            ):
+                violations.append(
+                    f"L{getattr(statement, 'lineno', 0)}: forward 返回值叶子既不来自"
+                    "直接 ap.* 结果，也不是已上传设备的 forward 入参透传"
+                )
+            elif calls and not _has_device_derived_leaf(
                 statement.value, tainted, ap_modules
             ):
                 violations.append(
-                    f"L{getattr(statement, 'lineno', 0)}: forward 每个返回值叶子"
-                    "都必须依赖直接 ap.* 结果，不能存在不依赖设备结果的叶子"
+                    f"L{getattr(statement, 'lineno', 0)}: forward 有 ap.* 计算但所有"
+                    "返回值都只是输入透传，无法排除 NPU decoy"
                 )
             continue
         if isinstance(statement, ast.If):

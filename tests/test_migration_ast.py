@@ -116,7 +116,7 @@ def forward(x):
     audit = audit_forward_surface(source)
 
     assert not audit.ok
-    assert any("每个返回值叶子" in item for item in audit.violations)
+    assert any("返回值叶子既不来自" in item for item in audit.violations)
 
 
 def test_forward_surface_rejects_unknown_attributes_and_destructuring():

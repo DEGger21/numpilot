@@ -6,7 +6,8 @@ CLI 会优先读取以下环境变量，并可通过 ``numpilot configure-llm`` 
   NUMPILOT_LLM_AUTH_TOKEN  鉴权 token(以 Authorization: Bearer 发送)
   NUMPILOT_LLM_MODEL       精确模型名, 例: org/model
   NUMPILOT_LLM_PROVIDER    (可选)仅作标签, 例: pangu | glm | openai | deepseek
-  NUMPILOT_LLM_MAX_TOKENS  (可选)生成上限, 默认 8192(部分网关强制要求此字段)
+  NUMPILOT_LLM_MAX_TOKENS  (可选)显式生成上限; 未设置时不发送该字段,
+                           由所接入模型/网关使用自身默认上限
   NUMPILOT_LLM_INSECURE    (可选)"1"=显式跳过 TLS 证书校验(仅限受信内网), 默认 "0"
   NUMPILOT_LLM_TIMEOUT     (可选)单次请求超时秒, 默认 120
   NUMPILOT_LLM_REQUIRE_PROXY (可选)"1"=强制请求经标准 HTTP(S) 代理, 默认 "0"
@@ -98,12 +99,19 @@ _REQUEST_ID_HEADERS = (
     "x-zhipu-request-id",
     "x-trace-id",
 )
-_MAX_RESPONSE_BODY_BYTES = 3 * 1024 * 1024
+# Optional transport safety ceiling.  ``None`` means no NumPilot-imposed
+# response-body limit: operator reasoning/output can be long and must be
+# bounded by the configured model/gateway, not by a small framework
+# constant.  A deployment may set a positive integer to enforce a ceiling.
+_MAX_RESPONSE_BODY_BYTES: Optional[int] = None
 # Keep individual non-stream reads small enough that the monotonic deadline
 # can be re-checked regularly.  ``HTTPResponse.read(amt)`` may otherwise wait
 # for all requested bytes while a peer slowly dribbles a response body.
 _MAX_RESPONSE_READ_CHUNK_BYTES = 64 * 1024
-_MAX_STREAM_EVENTS = 100_000
+# Transport sanity bound, not a model output limit.  One million SSE
+# events is far beyond any real operator response and still rejects a
+# malicious infinite stream.
+_MAX_STREAM_EVENTS = 1_000_000
 _MIN_PER_CALL_MAX_TOKENS = 1
 _MAX_PER_CALL_MAX_TOKENS = 1_000_000
 _REQUIRE_PROXY_ENV = "NUMPILOT_LLM_REQUIRE_PROXY"
@@ -428,11 +436,17 @@ def _read_response_body(
                 raise LlmTransportError("request_timeout")
             _set_response_socket_timeout(response, remaining_seconds)
 
-        remaining_bytes = _MAX_RESPONSE_BODY_BYTES - len(payload)
-        read_size = min(
-            _MAX_RESPONSE_READ_CHUNK_BYTES,
-            remaining_bytes + 1,
-        )
+        body_limit = _MAX_RESPONSE_BODY_BYTES
+        if body_limit is None:
+            read_size = _MAX_RESPONSE_READ_CHUNK_BYTES
+        else:
+            remaining_bytes = body_limit - len(payload)
+            if remaining_bytes < 0:
+                raise LlmTransportError("response_too_large")
+            read_size = min(
+                _MAX_RESPONSE_READ_CHUNK_BYTES,
+                remaining_bytes + 1,
+            )
         try:
             chunk = response.read(read_size)
         except TimeoutError:
@@ -441,7 +455,10 @@ def _read_response_body(
             raise
         if not isinstance(chunk, bytes):
             raise LlmTransportError("invalid_response_read")
-        if len(chunk) > remaining_bytes:
+        if (
+            body_limit is not None
+            and len(chunk) > body_limit - len(payload)
+        ):
             raise LlmTransportError("response_too_large")
         payload.extend(chunk)
 
@@ -475,9 +492,15 @@ def _read_stream_response_body(
             if remaining_seconds <= 0:
                 raise LlmTransportError("request_timeout")
             _set_response_socket_timeout(response, remaining_seconds)
-        remaining = _MAX_RESPONSE_BODY_BYTES - len(payload)
+        body_limit = _MAX_RESPONSE_BODY_BYTES
         try:
-            line = response.readline(remaining + 1)
+            if body_limit is None:
+                line = response.readline()
+            else:
+                remaining = body_limit - len(payload)
+                if remaining < 0:
+                    raise LlmTransportError("response_too_large")
+                line = response.readline(remaining + 1)
         except TimeoutError:
             if deadline is not None:
                 raise LlmTransportError("request_timeout") from None
@@ -487,7 +510,7 @@ def _read_stream_response_body(
         if not line:
             return bytes(payload)
         payload.extend(line)
-        if len(payload) > _MAX_RESPONSE_BODY_BYTES:
+        if body_limit is not None and len(payload) > body_limit:
             raise LlmTransportError("response_too_large")
         if deadline is not None and time.monotonic() > deadline:
             raise LlmTransportError("request_timeout")
@@ -722,7 +745,10 @@ class LlmEngine(MigrationEngine):
     ) -> Tuple[str, Dict[str, object]]:
         """Perform one real request and return content plus a redacted receipt.
 
-        ``max_tokens`` is a strict per-call override for bounded workflows.
+        ``max_tokens`` is an optional explicit bound.  When it is omitted and
+        ``NUMPILOT_LLM_MAX_TOKENS`` is unset, the request omits ``max_tokens``
+        so the configured model/gateway applies its own output limit;
+        operator generation must not be capped by a small framework default.
         ``thinking_mode`` and ``reasoning_effort`` expose GLM-compatible
         reasoning controls only when a caller deliberately selects them.
         Omitting them preserves the historical request body.  ``stream=True``
@@ -731,9 +757,26 @@ class LlmEngine(MigrationEngine):
         """
 
         if max_tokens is None:
-            request_max_tokens = int(
-                os.getenv("NUMPILOT_LLM_MAX_TOKENS", "8192")
-            )
+            configured_max_tokens = os.getenv(
+                "NUMPILOT_LLM_MAX_TOKENS", ""
+            ).strip()
+            if configured_max_tokens:
+                try:
+                    request_max_tokens = int(configured_max_tokens)
+                except ValueError as exc:
+                    raise LlmConfigError(
+                        "LLM max_tokens 必须是数字"
+                    ) from exc
+                if not (
+                    _MIN_PER_CALL_MAX_TOKENS
+                    <= request_max_tokens
+                    <= _MAX_PER_CALL_MAX_TOKENS
+                ):
+                    raise LlmConfigError(
+                        "LLM max_tokens must be an integer in 1..1000000"
+                    )
+            else:
+                request_max_tokens = None
         elif (
             isinstance(max_tokens, bool)
             or not isinstance(max_tokens, int)
@@ -800,8 +843,9 @@ class LlmEngine(MigrationEngine):
                 {"role": "user", "content": user},
             ],
             "temperature": 0,
-            "max_tokens": request_max_tokens,
         }
+        if request_max_tokens is not None:
+            request_data["max_tokens"] = request_max_tokens
         if thinking_mode is not None:
             request_data["thinking"] = {"type": thinking_mode}
         if reasoning_effort is not None:

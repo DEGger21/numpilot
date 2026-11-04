@@ -39,7 +39,7 @@ from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
-from numpilot.comparison import compare_outputs
+from numpilot.comparison import compare_outputs, tolerance_for
 
 
 _MAX_SCRIPT_BYTES = 4 * 1024 * 1024
@@ -938,6 +938,39 @@ def _verification_id(payload: Mapping[str, Any]) -> str:
     return _sha256(encoded)
 
 
+def _comparison_policy() -> Dict[str, Any]:
+    """Return the explicit, deterministic numerical comparison contract.
+
+    The per-output ``atol``/``rtol`` values remain recorded in
+    ``comparisons``.  This block makes the rule and the NaN/Inf treatment
+    auditable even when the receipt has no floating-point output, so a reader
+    does not have to infer them from the implementation.
+    """
+
+    tolerances: Dict[str, Dict[str, float]] = {}
+    for name in (
+        "float16",
+        "float32",
+        "float64",
+        "complex64",
+        "complex128",
+    ):
+        atol, rtol = tolerance_for(np.dtype(name))
+        tolerances[name] = {"atol": atol, "rtol": rtol}
+    return {
+        "floating_rule": (
+            "abs(actual - reference) <= atol + rtol * abs(reference)"
+        ),
+        "tolerance_source": "reference_dtype",
+        "tolerance_by_reference_dtype": tolerances,
+        "non_floating_rule": "exact_equality_after_shape_and_dtype",
+        "nan_policy": "nan_matches_nan_only",
+        "infinity_policy": "same_signed_infinity_required",
+        "shape_and_dtype_must_match": True,
+        "comparison_unit": "named_output_leaf",
+    }
+
+
 def _base_receipt(
     *,
     status: str,
@@ -976,6 +1009,7 @@ def _base_receipt(
             "max_total_serialized_bytes_per_script": max_output_bytes,
             "transport": "json_manifest_and_npy_allow_pickle_false",
             "stdout_is_result_channel": False,
+            "comparison_policy": _comparison_policy(),
         },
         "executions": dict(executions),
         "comparisons": dict(comparisons),

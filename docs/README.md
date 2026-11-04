@@ -17,6 +17,8 @@ NumPilot 将 NumPy 程序的静态分析、迁移候选生成、数值验证和 
 
 - [系统架构](architecture.md)：ordinary 脚本路径、能力判定和缺口恢复边界；
 - [脚本数值验证](script-verification.md)：隔离 worker、输出比较和回执绑定；
+- [Benchmark 路由与回执](benchmark-routing.zh-CN.md)：150 例的预期路由、输入克隆、
+  等价改写、逐用例 receipt 和当前全量结果；
 - [脚本性能评测](script-benchmark.md)：CPU/NPU 计时口径和 strict-NPU 约束；
 - [Gap 恢复状态](gap-recovery-state.md)：授权 profile、状态机和 write-once 收据；
 - [产物存储策略](artifact-storage.md)：配置、缓存、运行目录和备份边界；
@@ -27,7 +29,7 @@ NumPilot 将 NumPy 程序的静态分析、迁移候选生成、数值验证和 
 - [AsNumpy 内部组件锁定](ASNUMPY-INTERNAL-COMPONENT-LOCK.zh-CN.md)；
 - [AsNumpy 源码基线与缺口扩展流程](asnumpy-source-extension.zh-CN.md)；
 - [AsNumpy 运行时契约审计](asnumpy-contract-audit.zh-CN.md)：固定版本边界语义探针和资格约束；
-- [固定 AsNumpy API 清单与 CANNBot 快照](asnumpy-api-support.zh-CN.md)：当前静态组件的公开计算面、已验证 MatMul 准入和快照身份；
+- [固定 AsNumpy API 清单与 CANNBot 快照](asnumpy-api-support.zh-CN.md)：静态组件公开计算面、已验证 MatMul 准入、official ACLNN overlay 和快照身份；
 - [AsNumpy 接入说明](../integrations/asnumpy/README.md)；
 - [分支治理与发布约定](SUBMISSION.md)；
 - [贡献指南](../CONTRIBUTING.md)；

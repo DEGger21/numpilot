@@ -1,0 +1,160 @@
+{
+  "schema": "numpilot.benchmark-expectations",
+  "version": 1,
+  "notes": [
+    "Routes are assigned from the audited call contract, never from the directory name alone.",
+    "direct: the audited AsNumpy surface (plus documented equivalences) is expected to migrate and verify.",
+    "gap: the program exercises a contract outside the audited surface; a clean gap stop honours it, and closing it is recorded as improved.",
+    "audit: the migration cannot be counted as direct until the listed semantic audit is explicitly resolved.",
+    "reject: the program must be refused statically and never executed."
+  ],
+  "defaults": {
+    "verification": [
+      "named_outputs",
+      "shape_dtype",
+      "numerical_tolerance",
+      "artifact_inputs_executed"
+    ]
+  },
+  "groups": {
+    "A_direct_simple": {
+      "route": "direct",
+      "rationale": "Elementwise, reduction and matmul calls are inside the audited surface."
+    },
+    "B_direct_semantics": {
+      "route": "direct",
+      "verification": [
+        "named_outputs",
+        "shape_dtype",
+        "numerical_tolerance",
+        "artifact_inputs_executed",
+        "layout_and_alias_preserved"
+      ],
+      "rationale": "Semantic traps are direct only when the argument contract is audited; out/where/casting and alias mutation are overridden below."
+    },
+    "C_direct_structure": {
+      "route": "direct",
+      "verification": [
+        "named_outputs",
+        "shape_dtype",
+        "numerical_tolerance",
+        "artifact_inputs_executed",
+        "structural_lowering_receipt"
+      ],
+      "rationale": "Reachable helpers and static control flow are inlined by the deterministic benchmark lowering before analysis."
+    },
+    "D1_partial_low_kernel": {
+      "route": "gap",
+      "gap_kind": "missing_api",
+      "rationale": "A small number of APIs outside the pinned export surface are inserted into an otherwise direct program."
+    },
+    "D2_partial_low_official": {
+      "route": "direct",
+      "verification": [
+        "named_outputs",
+        "shape_dtype",
+        "numerical_tolerance",
+        "artifact_inputs_executed",
+        "documented_equivalence"
+      ],
+      "rationale": "Alias and combination calls are documented equivalences already exercised by the product."
+    },
+    "E_partial_high": {
+      "route": "gap",
+      "gap_kind": "multi_missing_api",
+      "rationale": "Multiple missing APIs and structural constraints require gap filling before any direct claim."
+    },
+    "F_partial_consent": {
+      "route": "gap",
+      "gap_kind": "contract_consent",
+      "verification": [
+        "named_outputs",
+        "shape_dtype",
+        "numerical_tolerance",
+        "signature_contract_consent"
+      ],
+      "rationale": "Keyword signatures differ from the pinned AsNumpy snapshot; rewriting requires explicit consent, not a silent mapping."
+    },
+    "G_partial_dedup": {
+      "route": "gap",
+      "gap_kind": "deduplicated_gap",
+      "rationale": "The same gap contract appears at three static call sites and must be resolved as one contract."
+    },
+    "H_gap_official": {
+      "route": "gap",
+      "gap_kind": "official_composition",
+      "rationale": "Alias and composition cases are gap-class until the documented composition or official overlay is proven for the exact contract."
+    },
+    "I_gap_model": {
+      "route": "gap",
+      "gap_kind": "model_gap",
+      "rationale": "One missing API per case with explicit boundary inputs; model-backed gap filling is required."
+    },
+    "J_out_of_subset": {
+      "route": "reject",
+      "verification": [
+        "static_refusal",
+        "no_execution"
+      ],
+      "rationale": "Dynamic execution, I/O, concurrency, callbacks and special dtypes are outside the supported subset."
+    },
+    "K_gap_all": {
+      "route": "gap",
+      "gap_kind": "multi_stage_gap",
+      "rationale": "Multi-stage programs combine several gap contracts and call sites."
+    }
+  },
+  "cases": {
+    "B001_out_buffer": {
+      "route": "gap",
+      "gap_kind": "contract_consent",
+      "rationale": "The pinned AsNumpy reader rejects the out= keyword; a rewrite needs explicit consent."
+    },
+    "B002_where_preserves": {
+      "route": "gap",
+      "gap_kind": "contract_consent",
+      "rationale": "The pinned AsNumpy reader rejects the out= and where= keywords; masked in-place semantics cannot be silently rewritten."
+    },
+    "B003_unsafe_cast": {
+      "route": "gap",
+      "gap_kind": "contract_consent",
+      "rationale": "casting= changes overflow behaviour; mapping it silently would change semantics."
+    },
+    "B014_overlapping_alias": {
+      "route": "audit",
+      "gap_kind": "alias_semantics",
+      "verification": [
+        "named_outputs",
+        "shape_dtype",
+        "numerical_tolerance",
+        "alias_and_layout_preserved",
+        "input_mutation_audit"
+      ],
+      "rationale": "The source mutates one view of an overlapping pair; a rebinding rewrite loses the observable mutation of the alias output and must not be counted as direct."
+    },
+    "B019_boolean_keepdims": {
+      "route": "direct",
+      "rationale": "Negative axis is normalized to the audited single-element integer tuple contract."
+    },
+    "D1001_signed_compression": {
+      "route": "gap",
+      "gap_kind": "missing_api",
+      "rationale": "cbrt is outside the export surface; the documented copysign/power composition closes the gap and is recorded as improved."
+    },
+    "G004_cbrt_three_channels": {
+      "route": "gap",
+      "gap_kind": "deduplicated_gap",
+      "rationale": "Three cbrt call sites share one contract; the documented composition closes all three at once."
+    },
+    "I001_cube_root": {
+      "route": "gap",
+      "gap_kind": "model_gap",
+      "rationale": "cbrt is absent from the pinned exports; the signed composition closes it without a new kernel."
+    },
+    "I003_nan_classification": {
+      "route": "gap",
+      "gap_kind": "model_gap",
+      "rationale": "isnan is absent from the pinned exports; not_equal(x, x) is an exact composition for real floats."
+    }
+  }
+}

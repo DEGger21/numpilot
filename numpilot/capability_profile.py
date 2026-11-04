@@ -16,9 +16,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 import json
+import re
 from types import MappingProxyType
 from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
 
+from numpilot.capabilities import (
+    OperatorSignature,
+    parse_profile_constraints,
+)
 from numpilot.capability_catalog import (
     ASNUMPY_CAPABILITY_CATALOG,
     CapabilityCatalogError,
@@ -27,9 +32,12 @@ from numpilot.capability_catalog import (
 
 
 QUALIFIED_ROUTE_SCHEMA_VERSION = 1
+OVERLAY_ROUTE_ADMISSION_SCHEMA_VERSION = 1
 OPS_NN_MATMUL_ASNUMPY_AUDIT_ID = (
     "asnumpy-0.1.dev118-g48de2d208-opsnn-matmul-2d-f32-v1"
 )
+_OFFICIAL_QUALIFICATION_ID = re.compile(r"^official-aclnn-[0-9a-f]{20}$")
+_HEX_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
 class ComputationRoute(str, Enum):
@@ -82,6 +90,8 @@ class RouteEntry:
     asnumpy_api: str
     route: ComputationRoute
     evidence: str
+    constraints: Tuple[str, ...] = ()
+    signature_variants: Tuple[OperatorSignature, ...] = ()
 
     def __post_init__(self) -> None:
         validate_canonical_key(self.canonical_key)
@@ -93,14 +103,45 @@ class RouteEntry:
             raise ValueError("route entry computation route is invalid")
         if not isinstance(self.evidence, str) or not self.evidence:
             raise ValueError("route entry evidence is invalid")
+        if (
+            not isinstance(self.constraints, tuple)
+            or len(set(self.constraints)) != len(self.constraints)
+            or any(
+                not isinstance(item, str) or not item
+                for item in self.constraints
+            )
+        ):
+            raise ValueError("route entry constraints are invalid")
+        if (
+            not isinstance(self.signature_variants, tuple)
+            or any(
+                not isinstance(item, OperatorSignature)
+                for item in self.signature_variants
+            )
+            or len(set(self.signature_variants)) != len(self.signature_variants)
+        ):
+            raise ValueError("route entry signature variants are invalid")
+        if self.signature_variants and not self.constraints:
+            raise ValueError("scoped route entry requires profile constraints")
+        if self.constraints:
+            try:
+                parse_profile_constraints(self.constraints)
+            except ValueError as exc:
+                raise ValueError(
+                    "route entry profile constraints are invalid"
+                ) from exc
 
-    def to_dict(self) -> Dict[str, str]:
+    def to_dict(self) -> Dict[str, Any]:
         return {
             "canonical_key": self.canonical_key,
             "source_api": self.source_api,
             "asnumpy_api": self.asnumpy_api,
             "route": self.route.value,
             "evidence": self.evidence,
+            "constraints": list(self.constraints),
+            "signature_variants": [
+                item.to_dict() for item in self.signature_variants
+            ],
         }
 
 
@@ -264,6 +305,152 @@ def build_runtime_route_manifest(
 
 
 @dataclass(frozen=True)
+class OverlayRouteAdmission:
+    """One exact official-overlay admission bound to a live runtime identity.
+
+    Unlike the pinned route manifest, this object is evidence for a *scoped*
+    route: every entry carries the profile constraints and call signatures
+    proven by the official ACLNN qualification.  Possessing a route entry is
+    therefore not enough; :func:`_scoped_admission_issue` must also prove that
+    one call lies inside the admitted profile.
+    """
+
+    qualification_id: str
+    overlay_sha256: str
+    base_manifest_sha256: str
+    audit_id: str
+    runtime_identity_sha256: str
+    entries: Mapping[str, RouteEntry]
+    schema_version: int = OVERLAY_ROUTE_ADMISSION_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        if self.schema_version != OVERLAY_ROUTE_ADMISSION_SCHEMA_VERSION:
+            raise ValueError("unsupported overlay route admission schema")
+        if (
+            not isinstance(self.qualification_id, str)
+            or not _OFFICIAL_QUALIFICATION_ID.fullmatch(self.qualification_id)
+        ):
+            raise ValueError("overlay qualification ID is invalid")
+        for name, value in (
+            ("overlay", self.overlay_sha256),
+            ("base manifest", self.base_manifest_sha256),
+            ("runtime identity", self.runtime_identity_sha256),
+        ):
+            if not isinstance(value, str) or not _HEX_SHA256.fullmatch(value):
+                raise ValueError("overlay %s hash is invalid" % name)
+        if not isinstance(self.audit_id, str) or not self.audit_id:
+            raise ValueError("overlay admitted audit ID is invalid")
+        if (
+            not isinstance(self.entries, Mapping)
+            or not self.entries
+            or any(
+                not isinstance(key, str)
+                or not isinstance(entry, RouteEntry)
+                or entry.canonical_key != key
+                or entry.route is not ComputationRoute.NATIVE_NPU
+                or not entry.constraints
+                for key, entry in self.entries.items()
+            )
+        ):
+            raise ValueError("overlay route entries are invalid")
+        object.__setattr__(
+            self, "entries", MappingProxyType(dict(sorted(self.entries.items())))
+        )
+
+    @property
+    def entry_keys(self) -> Tuple[str, ...]:
+        return tuple(sorted(self.entries))
+
+    def fingerprint(self) -> Dict[str, Any]:
+        """Return the deterministic subset carried by an analysis receipt."""
+
+        return {
+            "schema_version": self.schema_version,
+            "qualification_id": self.qualification_id,
+            "overlay_sha256": self.overlay_sha256,
+            "base_manifest_sha256": self.base_manifest_sha256,
+            "admitted_audit_id": self.audit_id,
+            "runtime_identity_sha256": self.runtime_identity_sha256,
+            "entry_keys": list(self.entry_keys),
+        }
+
+    def to_dict(self) -> Dict[str, Any]:
+        payload = self.fingerprint()
+        payload["entries"] = {
+            key: entry.to_dict() for key, entry in sorted(self.entries.items())
+        }
+        return payload
+
+
+def build_overlay_route_manifest(
+    base: QualifiedRouteManifest,
+    admission: OverlayRouteAdmission,
+) -> QualifiedRouteManifest:
+    """Overlay one exact official admission on the pinned route manifest."""
+
+    if not isinstance(base, QualifiedRouteManifest):
+        raise TypeError("base must be QualifiedRouteManifest")
+    if not isinstance(admission, OverlayRouteAdmission):
+        raise TypeError("admission must be OverlayRouteAdmission")
+    entries = dict(base.entries)
+    entries.update(admission.entries)
+    return QualifiedRouteManifest(
+        repository=base.repository,
+        commit=base.commit,
+        tree=base.tree,
+        entries=entries,
+        schema_version=base.schema_version,
+    )
+
+
+def _scoped_admission_issue(
+    entry: RouteEntry,
+    facts: StaticCallFacts,
+) -> Optional[str]:
+    """Return why one call is outside an official scoped admission."""
+
+    issues = []
+    try:
+        parsed = parse_profile_constraints(entry.constraints)
+    except ValueError as exc:
+        return "scoped profile constraints are invalid: %s" % exc
+    dtype = facts.dtype
+    if dtype in {None, "unknown"}:
+        issues.append("dtype is not statically proven")
+    elif dtype != parsed["dtype"]:
+        issues.append(
+            "dtype=%s does not satisfy dtype=%s" % (dtype, parsed["dtype"])
+        )
+    if facts.rank is None:
+        issues.append("rank is not statically proven")
+    else:
+        if facts.rank < parsed["rank"]:
+            issues.append(
+                "rank=%d does not satisfy rank>=%d"
+                % (facts.rank, parsed["rank"])
+            )
+        if "rank_max" in parsed and facts.rank > parsed["rank_max"]:
+            issues.append(
+                "rank=%d does not satisfy rank<=%d"
+                % (facts.rank, parsed["rank_max"])
+            )
+    if facts.contiguous is not True:
+        if facts.contiguous is False:
+            issues.append("operand is not C-contiguous")
+        else:
+            issues.append("contiguity is not statically proven")
+    if entry.canonical_key == "concatenate":
+        axis = facts.axis
+        if not isinstance(axis, int) or isinstance(axis, bool):
+            issues.append("concatenate axis is not statically proven")
+        elif facts.rank is not None and not _static_axis_in_rank(axis, facts.rank):
+            issues.append(
+                "axis=%d is outside rank=%d" % (axis, facts.rank)
+            )
+    return "; ".join(issues) if issues else None
+
+
+@dataclass(frozen=True)
 class StaticCallFacts:
     """JSON-safe facts inferred without executing the source."""
 
@@ -273,6 +460,7 @@ class StaticCallFacts:
     dtype: Optional[str] = "unknown"
     rank: Optional[int] = None
     shape: Optional[Tuple[int, ...]] = None
+    contiguous: Optional[bool] = None
     axis: Any = "not_applicable"
     equation: Optional[str] = "not_applicable"
     output_use: str = "unknown"
@@ -316,6 +504,8 @@ class StaticCallFacts:
             or (self.rank is not None and len(self.shape) != self.rank)
         ):
             raise ValueError("static call shape is invalid")
+        if self.contiguous not in {True, False, None}:
+            raise ValueError("static call contiguity is invalid")
         valid_axis = (
             self.axis in {None, "unknown", "omitted", "not_applicable"}
             if not isinstance(self.axis, tuple)
@@ -343,6 +533,7 @@ class StaticCallFacts:
             "dtype": self.dtype,
             "rank": self.rank,
             "shape": None if self.shape is None else list(self.shape),
+            "contiguous": self.contiguous,
             "axis": list(self.axis) if isinstance(self.axis, tuple) else self.axis,
             "equation": self.equation,
             "output_use": self.output_use,
@@ -745,6 +936,8 @@ def qualify_call(
         randomness=randomness,
     )
     effective_route = effective_override or route
+    scoped = bool(entry.constraints or entry.signature_variants)
+    scoped_issue = _scoped_admission_issue(entry, facts) if scoped else None
 
     if contract.rejected:
         decision = CapabilityDecision.BLOCKED
@@ -777,7 +970,20 @@ def qualify_call(
         decision = CapabilityDecision.CAPABILITY_AUDIT_REQUIRED
         reason_code = "CALL_PROFILE_AUDIT_REQUIRED"
         reasons = _contract_reasons(key, contract, facts)
+        if scoped_issue is not None:
+            reasons = reasons + (scoped_issue,)
         next_action = "collect an exact source-bound call profile; do not call the migration model"
+    elif scoped_issue is not None:
+        decision = CapabilityDecision.CAPABILITY_AUDIT_REQUIRED
+        reason_code = "CALL_PROFILE_AUDIT_REQUIRED"
+        reasons = (
+            entry.evidence,
+            "call is outside the official scoped admission: " + scoped_issue,
+        )
+        next_action = (
+            "collect a new exact source-bound qualification for this call "
+            "profile; do not call the migration model"
+        )
     else:
         decision = CapabilityDecision.DIRECT
         reason_code = "QUALIFIED_DIRECT"

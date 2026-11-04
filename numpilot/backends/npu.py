@@ -430,6 +430,7 @@ class OverlayRuntimeConfig:
     evidence_root: str
     trusted_producers: Tuple[str, ...] = (
         "numpilot-qualification-harness-v1",
+        "numpilot-official-aclnn-qualification-v1",
     )
 
     def __post_init__(self):
@@ -2133,7 +2134,13 @@ class NpuBackend(ExecutionBackend):
             audit_id=audit_id,
         )
 
-    def _capability_manifest(self, required_ops=None, *, runtime_targets=None):
+    def _capability_manifest(
+        self,
+        required_ops=None,
+        *,
+        runtime_targets=None,
+        runtime_identity=None,
+    ):
         """Resolve runtime APIs and atomically revalidate an explicit overlay."""
 
         if self._overlay_config is None:
@@ -2152,6 +2159,7 @@ class NpuBackend(ExecutionBackend):
             capability_manifest_sha256,
             load_overlay,
         )
+        from numpilot.gaps.official_qualification import is_official_overlay
 
         config = self._overlay_config
         overlay = load_overlay(config.overlay_path)
@@ -2202,11 +2210,15 @@ class NpuBackend(ExecutionBackend):
                 == overlay.base_manifest_sha256
             ):
                 overlay_base = legacy_base
+        official = is_official_overlay(overlay)
+        if official and runtime_identity is None:
+            runtime_identity = self.runtime_identity()
         admitted = apply_overlay(
             overlay_base,
             overlay,
             evidence_root=config.evidence_root,
             trusted_producers=config.trusted_producers,
+            current_identity=runtime_identity if official else None,
         )
 
         operators = {
@@ -2224,8 +2236,70 @@ class NpuBackend(ExecutionBackend):
             audit_id=admitted.audit_id,
         )
 
-    def capability_manifest(self, required_ops=None):
-        return self._capability_manifest(required_ops)
+    def capability_manifest(self, required_ops=None, *, runtime_identity=None):
+        return self._capability_manifest(
+            required_ops,
+            runtime_identity=runtime_identity,
+        )
+
+    def qualified_overlay_admission(self, runtime_identity=None):
+        """Return the exact route admission for one official ACLNN overlay.
+
+        The returned object deliberately carries only public-call facts: the
+        qualification identity, the content hash of the overlay file, the live
+        runtime identity, and one scoped :class:`RouteEntry` per admitted API.
+        Admission re-runs every fail-closed check by rebuilding the capability
+        manifest from the live runtime.
+        """
+
+        if self._overlay_config is None:
+            raise ValueError("no capability overlay is configured")
+        from numpilot.capability_profile import (
+            ComputationRoute,
+            OverlayRouteAdmission,
+            RouteEntry,
+        )
+        from numpilot.gaps.qualification import load_overlay
+        from numpilot.gaps.official_qualification import (
+            is_official_overlay,
+            official_overlay_file_sha256,
+        )
+
+        overlay = load_overlay(self._overlay_config.overlay_path)
+        if not is_official_overlay(overlay):
+            # Custom capability overlays add evidence-backed capabilities but
+            # carry no official route admission.  Returning ``None`` keeps the
+            # pinned route analysis in force instead of inventing one.
+            return None
+        identity = (
+            runtime_identity
+            if runtime_identity is not None
+            else self.runtime_identity()
+        )
+        manifest = self._capability_manifest(
+            tuple(entry.registry_key for entry in overlay.entries),
+            runtime_identity=identity,
+        )
+        entries = {}
+        for entry in overlay.entries:
+            capability = manifest.operators[entry.registry_key]
+            entries[entry.registry_key] = RouteEntry(
+                canonical_key=entry.registry_key,
+                source_api=entry.qualified_api,
+                asnumpy_api=entry.asnumpy_api,
+                route=ComputationRoute.NATIVE_NPU,
+                evidence=capability.evidence,
+                constraints=tuple(capability.constraints),
+                signature_variants=tuple(capability.signature_variants),
+            )
+        return OverlayRouteAdmission(
+            qualification_id=overlay.qualification_id,
+            overlay_sha256=official_overlay_file_sha256(overlay),
+            base_manifest_sha256=overlay.base_manifest_sha256,
+            audit_id=manifest.audit_id,
+            runtime_identity_sha256=identity.identity_sha256,
+            entries=entries,
+        )
 
     def prepare_profile_guard(self, required_ops):
         """Prepare a runtime session that guards every scoped call pre-dispatch."""

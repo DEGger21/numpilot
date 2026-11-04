@@ -45,6 +45,7 @@ REQUIRED_QUALIFICATION_GATES = frozenset({
 })
 DEFAULT_TRUSTED_PRODUCERS = frozenset({
     "numpilot-qualification-harness-v1",
+    "numpilot-official-aclnn-qualification-v1",
 })
 
 _HEX_SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -1528,7 +1529,18 @@ def load_overlay(path: str) -> CapabilityOverlay:
         "overlay",
         max_bytes=_MAX_JSON_BYTES,
     )
-    return CapabilityOverlay.from_dict(_parse_json(payload, "capability overlay"))
+    data = _parse_json(payload, "capability overlay")
+    # Official ACLNN qualification has a different schema and a different
+    # evidence contract.  Dispatch explicitly instead of reinterpreting one
+    # schema as the other.
+    from numpilot.gaps.official_qualification import (
+        is_official_overlay_payload,
+        official_overlay_from_payload,
+    )
+
+    if is_official_overlay_payload(data):
+        return official_overlay_from_payload(data)
+    return CapabilityOverlay.from_dict(data)
 
 
 def apply_overlay(
@@ -1537,9 +1549,31 @@ def apply_overlay(
     *,
     evidence_root: str,
     trusted_producers: Sequence[str] = tuple(DEFAULT_TRUSTED_PRODUCERS),
+    current_identity: Any = None,
 ) -> CapabilityManifest:
     """Validate every entry, then return one all-or-nothing manifest snapshot."""
 
+    from numpilot.gaps.official_qualification import (
+        apply_official_overlay,
+        is_official_overlay,
+    )
+
+    if is_official_overlay(overlay):
+        if current_identity is None:
+            raise QualificationError(
+                "official overlay requires a live runtime identity"
+            )
+        return apply_official_overlay(
+            base,
+            overlay,
+            evidence_root=evidence_root,
+            trusted_producers=trusted_producers,
+            current_identity=current_identity,
+        )
+    if current_identity is not None:
+        raise QualificationError(
+            "custom capability overlay does not accept a runtime identity"
+        )
     overlay = CapabilityOverlay.from_dict(overlay.to_dict())
     if capability_manifest_sha256(base) != overlay.base_manifest_sha256:
         raise QualificationError("capability overlay base manifest drift")

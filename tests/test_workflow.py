@@ -637,3 +637,70 @@ def test_replay_workflow_fails_closed_when_receipt_escapes_run(tmp_path):
 
     assert result["receipt_integrity"]["status"] == "failed"
     assert "escapes the run directory" in result["receipt_integrity"]["errors"][0]
+
+
+def test_replay_failure_path_is_read_only_and_preserves_blocked_status(tmp_path):
+    run = tmp_path / "failed-run"
+    run.mkdir(mode=0o700)
+    analysis = run / "qualified-analysis.json"
+    analysis.write_text(
+        json.dumps({"schema_version": 1, "status": "DIRECT"}) + "\n",
+        encoding="utf-8",
+    )
+    migration = run / "migration" / "script-migration-report.json"
+    migration.parent.mkdir()
+    migration.write_text(
+        json.dumps({"schema_version": 2, "status": "migrated_scoped_npu"})
+        + "\n",
+        encoding="utf-8",
+    )
+    verification = run / "script-verification-report.json"
+    verification.write_text(
+        json.dumps({
+            "schema_version": 1,
+            "status": "failed",
+            "numerically_consistent": False,
+            "strict_npu_verified": False,
+            "performance_valid": False,
+        })
+        + "\n",
+        encoding="utf-8",
+    )
+    report_path = run / "workflow-report.json"
+    report_path.write_text(
+        json.dumps({
+            "schema_version": workflow.WORKFLOW_SCHEMA_VERSION,
+            "record_type": "numpilot_ordinary_workflow",
+            "status": "blocked",
+            "source_path": str(run / "source.py"),
+            "source_sha256": "a" * 64,
+            "stages": [
+                {"name": "01-analyze", "status": "passed"},
+                {"name": "02-migrate", "status": "passed"},
+                {"name": "03-verify", "status": "failed"},
+            ],
+            "receipts": {
+                "analysis": str(analysis),
+                "migration": str(migration),
+                "verification": str(verification),
+                "benchmark": None,
+            },
+            "claims": {"numerically_verified": False},
+        })
+        + "\n",
+        encoding="utf-8",
+    )
+    before = {
+        path: path.read_bytes()
+        for path in (report_path, verification, migration, analysis)
+    }
+
+    result = workflow.replay_workflow(run)
+
+    assert result["workflow_status"] == "blocked"
+    assert result["receipt_integrity"]["status"] == "passed"
+    assert result["receipts"]["verification"]["status"] == "failed"
+    assert result["execution_performed"] is False
+    assert result["actual_remote_call"] is False
+    assert all(path.read_bytes() == payload for path, payload in before.items())
+    assert not (run / "replay.json").exists()

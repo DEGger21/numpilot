@@ -147,18 +147,20 @@ _MAX_ADAPTER_FILES = 8
 _MAX_ADAPTER_TREE_ENTRIES = 64
 _MAX_ADAPTER_FILE_BYTES = 512 * 1024
 _MAX_ADAPTER_TOTAL_BYTES = 2 * 1024 * 1024
-_MAX_OFFICIAL_EXACT_EDIT_RESPONSE_BYTES = 64 * 1024
-_MAX_OFFICIAL_EXACT_EDIT_FRAGMENT_BYTES = 32 * 1024
-_MAX_OFFICIAL_EXACT_EDITS = 16
-_MAX_OFFICIAL_EXACT_EDIT_PROMPT_BYTES = 64 * 1024
+# Exact-edit responses are model output, not a bounded chat answer.  Keep them
+# within the same per-file/total envelope as the resulting overlay instead of
+# imposing a smaller framework-specific completion ceiling.
+_MAX_OFFICIAL_EXACT_EDIT_RESPONSE_BYTES = _MAX_ADAPTER_TOTAL_BYTES
+_MAX_OFFICIAL_EXACT_EDIT_FRAGMENT_BYTES = _MAX_ADAPTER_FILE_BYTES
+_MAX_OFFICIAL_EXACT_EDITS = 256
+_MAX_OFFICIAL_EXACT_EDIT_PROMPT_BYTES = _MAX_ADAPTER_TOTAL_BYTES
 _MAX_OFFICIAL_CONTEXT_FILES = 12
-_OFFICIAL_EXACT_EDIT_INITIAL_MAX_TOKENS = 8192
-_OFFICIAL_EXACT_EDIT_RETRY_MAX_TOKENS = 16384
-# Repair requests carry the complete overlay plus architecture references.
-# A reasoning-capable gateway can consume the default 8192-token completion
-# budget before emitting final content, so repairs use the escalated bound
-# that the official exact-edit path already applies after an empty response.
-_ASNUMPY_ADAPTER_REPAIR_MAX_TOKENS = 16384
+# NumPilot does not impose a completion-token ceiling on operator generation
+# or repair.  The request omits ``max_tokens`` unless the operator explicitly
+# sets NUMPILOT_LLM_MAX_TOKENS, so the connected model/gateway applies its own
+# maximum.  Thinking mode is likewise left at the provider default.
+
+
 _OFFICIAL_MATMUL_LINK_BLOCK = (
     "target_link_libraries(_core\n"
     "    PUBLIC\n"
@@ -530,6 +532,44 @@ must not overlap or leave the supplied target edit windows. Use the smallest
 sufficient OLD/NEW blocks. Do not use Markdown fences, ellipses, line numbers,
 unified diffs, commentary, TODOs, CPU fallbacks, network operations,
 installation, or build/NPU success claims.
+
+FRAMEWORK OWNERSHIP INVARIANT: `aclCreateTensorList` stores the caller's
+`aclTensor*` descriptors, and `aclDestroyTensorList` destroys every tensor in
+the list. An AsNumpy `NPUArray` owns its `tensorPtr` descriptor and its device
+buffer; its destructor calls `aclDestroyTensor` on `tensorPtr` and `aclrtFree`
+on `device_address()`. Passing an input `NPUArray`'s `tensorPtr` into a list
+that is later destroyed therefore double-destroys the input descriptor and can
+crash with SIGSEGV. When ACLNN requires a tensor list, create one disposable
+alias descriptor per input with
+`aclCreateTensor(input.shape.data(), input.shape.size(), input.aclDtype,
+input.strides.data(), 0, ACL_FORMAT_ND, input.shape.data(),
+input.shape.size(), input.device_address())`,
+build the list from those aliases, and destroy only the list. The last
+`aclCreateTensor` argument is the device data pointer, so it must be
+`input.device_address()`, never `input.tensorPtr`; do not use a NumPy/pybind
+dtype or an invented field for the `aclDataType` argument. On a failure before
+list creation, destroy the aliases individually. Do not add redundant null
+checks or unrelated guards.
+
+PYTHON VALIDATION INVARIANT: A Python wrapper must reject every unsupported
+input before it calls native code. The native path is not a validator and may
+crash or corrupt memory on malformed inputs. For `concatenate`, require a
+non-empty sequence of AsNumpy `ndarray` inputs; reject a zero-dimensional
+input; normalize `axis` with `operator.index` (a non-integer, including
+`None`, is a TypeError) and require it in `[-rank, rank)`; require every input
+to have the same rank and dtype and the same extent on every non-axis
+dimension; reject non-positive extents; and reject inputs that are not
+C-contiguous. Compute contiguity from `itemsize`, `shape`, and `strides`,
+treating a dimension of extent 1 as unconstrained. Raise TypeError or
+ValueError before `_concatenate` is entered; do not wrap the native call in a
+fallback that hides validation failures.
+
+TEST FILE INVARIANT (only when the target is a test file): The pinned AsNumpy
+`ndarray` exposes `shape`, `strides`, `ndim`, `itemsize`, `dtype`, and
+`to_numpy()`, but it does not provide NumPy convenience attributes such as
+`.T` and it does not provide `transpose`. A non-C-contiguous test input must
+be a small `ndarray` subclass that overrides `strides`; do not use `.T`,
+delete the case, or weaken the rejection assertion.
 """
 
 _ASNUMPY_ADAPTER_REPAIR_SYSTEM_PROMPT = """You repair exactly one file in an
@@ -2297,7 +2337,7 @@ def _enforce_official_exact_edit_prompt_budget(
     system_prompt: str,
     user_prompt: str,
     model: str,
-    max_tokens: int,
+    max_tokens: Optional[int],
     thinking_mode: Optional[str],
     reasoning_effort: Optional[str],
     stream: bool,
@@ -2311,8 +2351,9 @@ def _enforce_official_exact_edit_prompt_budget(
             {"role": "user", "content": user_prompt},
         ],
         "temperature": 0,
-        "max_tokens": max_tokens,
     }
+    if max_tokens is not None:
+        request_data["max_tokens"] = max_tokens
     if thinking_mode is not None:
         request_data["thinking"] = {"type": thinking_mode}
     if reasoning_effort is not None:
@@ -4255,18 +4296,6 @@ class LlmDraftProvider:
             raise DraftGenerationError(
                 "AsNumpy adapter publication requires a real remote model"
             )
-        official_thinking_mode = (
-            "disabled"
-            if (
-                official_exact_edit
-                and generation_base["provider"] == "glm"
-                and generation_base["model"].lower().startswith("glm-")
-            )
-            else None
-        )
-        official_reasoning_effort = (
-            "none" if official_thinking_mode == "disabled" else None
-        )
         artifact_json = json.dumps(
             operator_artifact, ensure_ascii=False, indent=2, sort_keys=True
         )
@@ -4278,7 +4307,6 @@ class LlmDraftProvider:
         response_hashes = []
         failures = []
         total_attempts = 0
-        official_max_tokens = _OFFICIAL_EXACT_EDIT_INITIAL_MAX_TOKENS
 
         for file_index, path in enumerate(normalized_paths, start=1):
             reference_sections = (
@@ -4368,30 +4396,18 @@ class LlmDraftProvider:
                         system_prompt=system_prompt,
                         user_prompt=prompt,
                         model=generation_base["model"],
-                        max_tokens=official_max_tokens,
-                        thinking_mode=official_thinking_mode,
-                        reasoning_effort=official_reasoning_effort,
+                        max_tokens=None,
+                        thinking_mode=None,
+                        reasoning_effort=None,
                         stream=True,
                     )
                 total_attempts += 1
                 try:
                     if official_exact_edit:
-                        exact_call_options = {
-                            "max_tokens": official_max_tokens,
-                            "stream": True,
-                        }
-                        if official_thinking_mode is not None:
-                            exact_call_options["thinking_mode"] = (
-                                official_thinking_mode
-                            )
-                        if official_reasoning_effort is not None:
-                            exact_call_options["reasoning_effort"] = (
-                                official_reasoning_effort
-                            )
                         result = chat(
                             system_prompt,
                             prompt,
-                            **exact_call_options,
+                            stream=True,
                         )
                     else:
                         # Preserve the historical two-argument callable
@@ -4457,17 +4473,6 @@ class LlmDraftProvider:
                     break
                 except DraftGenerationError as exc:
                     failure = str(exc)
-                    if (
-                        official_exact_edit
-                        and failure == "official exact-edit response is empty"
-                    ):
-                        # A reasoning-capable gateway can exhaust a bounded
-                        # completion budget before emitting final content.
-                        # Escalate only for that observable condition; syntax
-                        # and trust failures keep the smaller request budget.
-                        official_max_tokens = (
-                            _OFFICIAL_EXACT_EDIT_RETRY_MAX_TOKENS
-                        )
                     failures.append(
                         "%s attempt %d: %s"
                         % (path, file_attempt, failure[:500])
@@ -4719,23 +4724,6 @@ class LlmDraftProvider:
             normalized_plan["architecture"]
             == "official_aclnn_existing_module"
         )
-        repair_thinking_mode = (
-            "disabled"
-            if (
-                official_repair
-                and generation_base["provider"] == "glm"
-                and generation_base["model"].lower().startswith("glm-")
-            )
-            else None
-        )
-        repair_reasoning_effort = (
-            "none" if repair_thinking_mode == "disabled" else None
-        )
-        repair_max_tokens = (
-            _OFFICIAL_EXACT_EDIT_INITIAL_MAX_TOKENS
-            if official_repair
-            else _ASNUMPY_ADAPTER_REPAIR_MAX_TOKENS
-        )
         receipts = []
         response_hashes = []
         failures = []
@@ -4808,35 +4796,21 @@ class LlmDraftProvider:
                     system_prompt=system_prompt,
                     user_prompt=prompt,
                     model=generation_base["model"],
-                    max_tokens=repair_max_tokens,
-                    thinking_mode=repair_thinking_mode,
-                    reasoning_effort=repair_reasoning_effort,
+                    max_tokens=None,
+                    thinking_mode=None,
+                    reasoning_effort=None,
                     stream=True,
                 )
             total_attempts += 1
             try:
                 if official_repair:
-                    exact_call_options = {
-                        "max_tokens": repair_max_tokens,
-                        "stream": True,
-                    }
-                    if repair_thinking_mode is not None:
-                        exact_call_options["thinking_mode"] = (
-                            repair_thinking_mode
-                        )
-                    if repair_reasoning_effort is not None:
-                        exact_call_options["reasoning_effort"] = (
-                            repair_reasoning_effort
-                        )
-                    result = chat(
-                        system_prompt, prompt, **exact_call_options
-                    )
-                else:
                     result = chat(
                         system_prompt,
                         prompt,
-                        max_tokens=_ASNUMPY_ADAPTER_REPAIR_MAX_TOKENS,
+                        stream=True,
                     )
+                else:
+                    result = chat(system_prompt, prompt)
                 if not isinstance(result, tuple) or len(result) != 2:
                     raise DraftGenerationError(
                         "remote AsNumpy repair call returned no auditable receipt"
@@ -4882,21 +4856,15 @@ class LlmDraftProvider:
                 break
             except DraftGenerationError as exc:
                 failure = str(exc)
-                if (
-                    official_repair
-                    and failure == "official exact-edit response is empty"
-                ):
-                    # Mirror generation: a reasoning-capable gateway can
-                    # exhaust a bounded completion budget before final content.
-                    repair_max_tokens = (
-                        _OFFICIAL_EXACT_EDIT_RETRY_MAX_TOKENS
-                    )
                 failures.append(
                     "%s attempt %d: %s"
                     % (normalized_path, repair_attempt, failure[:500])
                 )
             except Exception as exc:
-                from numpilot.engines.llm import LlmResponseError
+                from numpilot.engines.llm import (
+                    LlmResponseError,
+                    LlmTransportError,
+                )
 
                 if isinstance(exc, LlmResponseError):
                     failed_receipt = _validate_generation_attempt_receipt(
@@ -4904,11 +4872,14 @@ class LlmDraftProvider:
                     )
                     receipts.append(failed_receipt)
                 status_code = getattr(exc, "status_code", None)
-                failure = (
-                    "remote AsNumpy repair call failed: HTTP status %d" % status_code
-                    if isinstance(status_code, int) and not isinstance(status_code, bool)
-                    else "remote AsNumpy repair call failed: %s" % type(exc).__name__
-                )
+                if isinstance(exc, LlmTransportError):
+                    failure = "remote AsNumpy repair call failed: %s" % exc
+                else:
+                    failure = (
+                        "remote AsNumpy repair call failed: HTTP status %d" % status_code
+                        if isinstance(status_code, int) and not isinstance(status_code, bool)
+                        else "remote AsNumpy repair call failed: %s" % type(exc).__name__
+                    )
                 failures.append(
                     "%s attempt %d: %s"
                     % (normalized_path, repair_attempt, failure[:500])

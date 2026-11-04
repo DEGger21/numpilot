@@ -5467,6 +5467,8 @@ def _cmd_migrate(args):
                 dir=str(default_root),
             )
         qualified_analysis = None
+        overlay_admission = None
+        overlay_admission_provider = None
         runtime_identity_provider = getattr(backend, "runtime_identity", None)
         if callable(runtime_identity_provider):
             from numpilot.qualified_analysis import (
@@ -5476,10 +5478,21 @@ def _cmd_migrate(args):
 
             try:
                 initial_runtime_identity = runtime_identity_provider()
+                overlay_admission_provider = getattr(
+                    backend, "qualified_overlay_admission", None
+                )
+                if (
+                    callable(overlay_admission_provider)
+                    and getattr(backend, "_overlay_config", None) is not None
+                ):
+                    overlay_admission = overlay_admission_provider(
+                        initial_runtime_identity
+                    )
                 qualified_analysis = analyze_qualified_script(
                     source,
                     str(Path(args.file).absolute()),
                     runtime_identity=initial_runtime_identity,
+                    overlay_admission=overlay_admission,
                 )
             except QualifiedAnalysisError as exc:
                 raise ScriptMigrationError(
@@ -5543,6 +5556,16 @@ def _cmd_migrate(args):
                     qualified_analysis.runtime_identity_sha256 or "unavailable",
                 )
             )
+            overlay_qualification = qualified_analysis.overlay_qualification
+            if overlay_qualification is not None:
+                print(
+                    "[资格] overlay=%s admitted_audit=%s entries=%s"
+                    % (
+                        overlay_qualification["qualification_id"],
+                        overlay_qualification["admitted_audit_id"],
+                        ",".join(overlay_qualification["entry_keys"]),
+                    )
+                )
         for decision in analysis.decisions:
             print(
                 "[%s] %s · provenance=%s"
@@ -5812,6 +5835,11 @@ def _cmd_migrate(args):
                         analysis,
                         qualified_analysis=qualified_analysis,
                         runtime_identity_provider=runtime_identity_provider,
+                        overlay_admission_provider=(
+                            overlay_admission_provider
+                            if overlay_admission is not None
+                            else None
+                        ),
                         fallback_accepted=fallback_accepted,
                         **generation_values,
                     )

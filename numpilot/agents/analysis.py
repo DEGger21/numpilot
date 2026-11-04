@@ -61,6 +61,28 @@ _ARRAY_INPUT_CONSTRUCTORS = frozenset({
     "full_like", "geomspace", "identity", "linspace", "logspace", "ones",
     "ones_like", "zeros", "zeros_like",
 })
+_NUMPY_SCALAR_CALLS = frozenset({
+    "can_cast", "dtype", "finfo", "iinfo", "isdtype", "issubdtype",
+    "mintypecode", "promote_types", "result_type",
+})
+_DTYPE_ARGUMENT_POSITION = {
+    "arange": 2,
+    "array": 1,
+    "asarray": 1,
+    "empty": 1,
+    "empty_like": 1,
+    "full": 2,
+    "full_like": 2,
+    "linspace": 5,
+    "ones": 1,
+    "ones_like": 1,
+    "zeros": 1,
+    "zeros_like": 1,
+}
+_UNSUPPORTED_DTYPE_NAMES = frozenset({
+    "bytes", "datetime64", "object", "object_", "str", "str_", "timedelta64",
+    "void",
+})
 
 
 def _build_asnumpy_call_contracts():
@@ -779,6 +801,10 @@ class _OpVisitor(ast.NodeVisitor):
     def _is_static_dtype(self, node):
         if isinstance(node, ast.Constant):
             return isinstance(node.value, str) and node.value in _STATIC_DTYPE_NAMES
+        if isinstance(node, ast.Attribute) and node.attr == "dtype":
+            # ``array.dtype`` is a runtime dtype object accepted by AsNumpy
+            # creators; it is static with respect to the proven array.
+            return self._is_proven_array(node.value)
         if isinstance(node, ast.Name):
             qualified = self.numpy_bindings.get(node.id, "")
             return (
@@ -1077,7 +1103,13 @@ def numpy_bindings_for_forward(tree, forward):
 
 
 def _static_forward_parameter_kinds(tree, forward):
-    """Classify explicit build_inputs leaves without executing user code."""
+    """Classify explicit build_inputs leaves without executing user code.
+
+    Both the tuple contract and the benchmark dict contract are admitted.  A
+    leaf whose dtype is statically outside the audited numeric surface
+    (object/string/datetime/timedelta/structured) is classified ``nonarray``
+    so a migration refuses it instead of executing it.
+    """
 
     builds = [
         node for node in tree.body
@@ -1099,6 +1131,37 @@ def _static_forward_parameter_kinds(tree, forward):
 
     def is_none(node):
         return isinstance(node, ast.Constant) and node.value is None
+
+    def dtype_node(name, node):
+        for item in node.keywords:
+            if item.arg == "dtype":
+                return item.value
+        position = _DTYPE_ARGUMENT_POSITION.get(name)
+        if position is not None and position < len(node.args):
+            return node.args[position]
+        return None
+
+    def dtype_text(node):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return node.value
+        if isinstance(node, ast.Name):
+            return node.id
+        if isinstance(node, ast.Attribute):
+            return node.attr
+        return None
+
+    def dtype_supported(name, node):
+        leaf = dtype_node(name, node)
+        if leaf is None:
+            return True
+        text = dtype_text(leaf)
+        if text is None:
+            # A structured dtype literal is not part of the numeric surface.
+            return False
+        lowered = text.lower()
+        if lowered.startswith("datetime64") or lowered.startswith("timedelta64"):
+            return False
+        return lowered not in _UNSUPPORTED_DTYPE_NAMES
 
     def classify(node):
         if isinstance(node, ast.Name):
@@ -1127,10 +1190,41 @@ def _static_forward_parameter_kinds(tree, forward):
                 and resolved[0] in _STATIC_NUMPY_REAL_CONSTANTS
             ):
                 return "scalar"
+            if node.attr in {
+                "T", "astype", "copy", "flatten", "ravel", "reshape",
+                "squeeze", "transpose",
+            }:
+                return (
+                    "array" if classify(node.value) == "array" else "unknown"
+                )
             return "nonarray"
+        if isinstance(node, ast.Subscript):
+            return "array" if classify(node.value) == "array" else "nonarray"
         if isinstance(node, ast.Call):
             resolved = resolve_numpy_function(node.func, bindings)
             if resolved is None:
+                if isinstance(node.func, ast.Attribute):
+                    receiver = classify(node.func.value)
+                    attribute = node.func.attr
+                    if attribute in {
+                        "integers", "normal", "randint", "random",
+                        "random_sample", "standard_normal", "uniform",
+                    }:
+                        size = bound_argument(node, 0, "size")
+                        if attribute in {"normal", "uniform"}:
+                            size = bound_argument(node, 2, "size")
+                        return (
+                            "array"
+                            if size is not None and not is_none(size)
+                            else "scalar"
+                        )
+                    if attribute in {
+                        "astype", "copy", "flatten", "ravel", "reshape",
+                        "squeeze",
+                    }:
+                        return "array" if receiver == "array" else "unknown"
+                    if attribute == "item":
+                        return "scalar"
                 return "nonarray"
             name, qualified = resolved
             if qualified.startswith("numpy.random."):
@@ -1158,9 +1252,19 @@ def _static_forward_parameter_kinds(tree, forward):
                     )
                 return "nonarray"
             if qualified == "numpy." + name and name in _ARRAY_INPUT_CONSTRUCTORS:
-                return "array"
+                return "array" if dtype_supported(name, node) else "nonarray"
             if qualified == "numpy." + name and name in _STATIC_DTYPE_NAMES:
                 return "scalar"
+            if qualified == "numpy." + name and name in _NUMPY_SCALAR_CALLS:
+                return "nonarray"
+            if qualified.startswith("numpy."):
+                # The benchmark contract requires build_inputs() to return
+                # ndarray leaves.  A NumPy compute call such as exp/roll/
+                # matmul therefore yields an array even when it is not one of
+                # the audited constructors.  Scalar-returning APIs are listed
+                # explicitly above; unknown dtype leaves are still rejected
+                # by the runtime verification gate.
+                return "array"
         return "nonarray"
 
     returned = None
@@ -1179,16 +1283,42 @@ def _static_forward_parameter_kinds(tree, forward):
             kinds[statement.target.id] = classify(statement.value)
         elif isinstance(statement, ast.Return):
             returned = statement.value
-    if not isinstance(returned, ast.Tuple):
-        return None
-    arguments = list(forward.args.posonlyargs) + list(forward.args.args)
-    if len(arguments) != len(returned.elts):
-        return None
-    return {
-        argument.arg: classify(value)
-        for argument, value in zip(arguments, returned.elts)
-    }
 
+    arguments = [
+        argument.arg
+        for argument in (
+            list(forward.args.posonlyargs)
+            + list(forward.args.args)
+            + list(forward.args.kwonlyargs)
+        )
+    ]
+    if isinstance(returned, ast.Tuple):
+        if len(arguments) != len(returned.elts):
+            return None
+        return {
+            argument: classify(value)
+            for argument, value in zip(arguments, returned.elts)
+        }
+    if isinstance(returned, ast.Dict):
+        values = {}
+        for key, value in zip(returned.keys, returned.values):
+            if not (
+                isinstance(key, ast.Constant)
+                and isinstance(key.value, str)
+            ):
+                return None
+            values[key.value] = classify(value)
+        return {
+            argument: values.get(argument, "unknown")
+            for argument in arguments
+        }
+    return None
+
+
+def static_forward_parameter_kinds(tree, forward):
+    """Public wrapper used by the deterministic equivalence lowerer."""
+
+    return _static_forward_parameter_kinds(tree, forward)
 
 class AnalysisAgent:
     def __init__(self, profile_resolver=None):
