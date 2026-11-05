@@ -257,3 +257,117 @@ def forward(x):
         _run_forward(lowered.source)["out"],
         _run_forward(source)["out"],
     )
+
+
+def test_lowers_logspace_to_power_of_linear_ramp():
+    source = """
+import numpy as np
+
+def build_inputs():
+    return {'start': np.array(-2.0), 'stop': np.array(2.0)}
+
+def forward(start, stop):
+    decades = np.logspace(start, stop, 17, base=10.0)
+    octaves = np.logspace(start, stop, 17, base=2.0)
+    return {'decades': decades, 'octaves': octaves}
+"""
+    lowered = lower_benchmark_program(source)
+
+    assert "composition" in _kinds(lowered)
+    assert "np.logspace" not in lowered.source
+    expected = _run_forward(source)
+    actual = _run_forward(lowered.source)
+    for name in expected:
+        np.testing.assert_allclose(
+            actual[name], expected[name], rtol=1e-12, atol=0.0
+        )
+
+    analysis = AnalysisAgent().analyze(
+        lowered.source,
+        "program.py",
+        strict_input_types=True,
+    )
+    assert analysis.migratable, analysis.unsupported
+
+
+def test_lowers_geomspace_to_ratio_power():
+    source = """
+import numpy as np
+
+def build_inputs():
+    return {'start': np.array(0.125), 'stop': np.array(128.0)}
+
+def forward(start, stop):
+    ascending = np.geomspace(start, stop, 21)
+    descending = np.geomspace(stop, start, 21)
+    return {'ascending': ascending, 'descending': descending}
+"""
+    lowered = lower_benchmark_program(source)
+
+    assert "composition" in _kinds(lowered)
+    assert "np.geomspace" not in lowered.source
+    expected = _run_forward(source)
+    actual = _run_forward(lowered.source)
+    for name in expected:
+        np.testing.assert_allclose(
+            actual[name], expected[name], rtol=1e-12, atol=0.0
+        )
+
+    analysis = AnalysisAgent().analyze(
+        lowered.source,
+        "program.py",
+        strict_input_types=True,
+    )
+    assert analysis.migratable, analysis.unsupported
+
+
+def test_array_augassign_fails_closed_instead_of_rebinding():
+    source = """
+import numpy as np
+
+def build_inputs():
+    base = np.array([1, 2, 4, 8, 16, 32], dtype=np.float32)
+    return {'x': base[1:], 'y': base[:-1]}
+
+def forward(x, y):
+    x += y
+    return {'out': x, 'alias': y}
+"""
+    lowered = lower_benchmark_program(source)
+
+    assert lowered.source == source
+    assert any(
+        "augmented assignment on array" in note
+        for note in lowered.notes
+    )
+    analysis = AnalysisAgent().analyze(
+        lowered.source,
+        "program.py",
+        strict_input_types=True,
+    )
+    assert not analysis.migratable
+    assert "python_structure.AugAssign" in analysis.unsupported
+
+
+def test_scalar_augassign_still_unrolls():
+    source = """
+import numpy as np
+
+def build_inputs():
+    return {'x': np.ones((3,), dtype=np.float32)}
+
+def forward(x):
+    total = 0
+    for i in range(4):
+        total += i
+    return {'out': np.multiply(x, total)}
+"""
+    lowered = lower_benchmark_program(source)
+
+    assert lowered.applied
+    assert "for i in range" not in lowered.source
+    np.testing.assert_allclose(
+        _run_forward(lowered.source)["out"],
+        _run_forward(source)["out"],
+    )
+

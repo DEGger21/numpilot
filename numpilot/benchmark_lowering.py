@@ -313,24 +313,17 @@ class _PartialEvaluator:
         right = self._eval(node.value)
         left_scalar = isinstance(current, _Scalar)
         right_scalar = isinstance(right, _Scalar)
-        if left_scalar and right_scalar:
-            function = _BIN_OPS.get(type(node.op))
-            if function is None:
-                raise _CannotLower("augmented operator")
-            self.env[node.target.id] = _Scalar(
-                function(current.value, right.value)
-            )
-            return
-        left = self._as_array_expr(current)
-        right_expr = self._to_expr(right)
-        operation = _binop_from_aug(node.op)
-        temporary = self._fresh("v")
-        self.out.append(ast.Assign(
-            targets=[ast.Name(id=temporary, ctx=ast.Store())],
-            value=ast.BinOp(left=left, op=operation, right=right_expr),
-        ))
-        self.env[node.target.id] = _Array(
-            ast.Name(id=temporary, ctx=ast.Load())
+        if not (left_scalar and right_scalar):
+            # Array augmentation is observable through aliasing and write-back
+            # semantics.  Rebinding the name to a fresh array would silently
+            # drop those semantics, so leave the statement untouched and let
+            # the strict analyzer report ``AugAssign`` as unsupported.
+            raise _CannotLower("augmented assignment on array")
+        function = _BIN_OPS.get(type(node.op))
+        if function is None:
+            raise _CannotLower("augmented operator")
+        self.env[node.target.id] = _Scalar(
+            function(current.value, right.value)
         )
 
     def _exec_for(self, node):
@@ -745,22 +738,6 @@ def _default_values(function):
         if default is not None:
             defaults[argument.arg] = default
     return defaults
-
-
-def _binop_from_aug(operation):
-    return {
-        ast.Add: ast.Add(),
-        ast.Sub: ast.Sub(),
-        ast.Mult: ast.Mult(),
-        ast.Div: ast.Div(),
-        ast.FloorDiv: ast.FloorDiv(),
-        ast.Mod: ast.Mod(),
-        ast.Pow: ast.Pow(),
-    }.get(type(operation), None) or _CannotLowerValue(operation)
-
-
-def _CannotLowerValue(operation):
-    raise _CannotLower("augmented operator %s" % type(operation).__name__)
 
 
 def _module_constants(tree):

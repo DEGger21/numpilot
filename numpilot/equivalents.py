@@ -15,6 +15,8 @@ floating-point inputs:
 ``np.linalg.vecdot(x, y, axis=a)`` → ``sum(multiply(x, y), axis=a)``
 ``np.isnan(x)`` → ``not_equal(x, x)``
 ``np.cbrt(x)`` → ``copysign(power(|x|, full_like(x, 1/3, x.dtype)), x)``
+``np.logspace(a, b, n, base=c)`` → ``power(c, a + (b - a) * linspace(0, 1, n))``
+``np.geomspace(a, b, n)`` → ``a * power(b / a, linspace(0, 1, n))``
 
 It also lowers Python arithmetic dunders on values that are statically proven
 to be arrays (``a - b`` → ``np.subtract(a, b)``), because AsNumpy does not
@@ -97,6 +99,7 @@ _FORBIDDEN_VAR_KEYWORDS = frozenset({
 })
 _FORBIDDEN_PTP_KEYWORDS = frozenset({"out"})
 _FORBIDDEN_VECDOT_KEYWORDS = frozenset()
+_GRID_DEFAULT_KEYWORDS = frozenset({"endpoint", "dtype", "axis"})
 
 _VAR_TEMPLATE = (
     "__np__.mean(__np__.square(__np__.subtract("
@@ -318,6 +321,12 @@ class _FunctionLowerer(ast.NodeTransformer):
         elif qualified == "numpy.cbrt":
             replacement = self._lower_cbrt(node)
             kind = "composition"
+        elif qualified == "numpy.logspace":
+            replacement = self._lower_logspace(node)
+            kind = "composition"
+        elif qualified == "numpy.geomspace":
+            replacement = self._lower_geomspace(node)
+            kind = "composition"
         elif qualified == "numpy.var":
             replacement = self._lower_variance(node)
             kind = "composition"
@@ -515,6 +524,142 @@ class _FunctionLowerer(ast.NodeTransformer):
             keywords=[],
         )
 
+    def _lower_logspace(self, node):
+        """``logspace(a, b, n, base=c)`` as ``c ** (a + (b-a) * i)``.
+
+        Only the audited array-start/array-stop form is lowered.  ``i`` is a
+        static ``linspace(0, 1, n)``; the base is materialized as an array so
+        both ``power`` operands stay arrays on the pinned runtime.
+        """
+
+        parsed = self._grid_arguments(node, allow_base=True)
+        if parsed is None:
+            return None
+        start, stop, num, base = parsed
+        if self._kind(start) != "array" or self._kind(stop) != "array":
+            return None
+        if not _is_static_positive_integer_node(num):
+            return None
+        if base is None:
+            base = ast.Constant(value=10.0)
+        if not self._is_static_real_scalar(base):
+            return None
+        unit = self._grid_unit(num)
+        span = ast.Call(
+            func=self._attr("subtract"),
+            args=[stop, start],
+            keywords=[],
+        )
+        fraction = ast.Call(
+            func=self._attr("multiply"),
+            args=[span, unit],
+            keywords=[],
+        )
+        exponent = ast.Call(
+            func=self._attr("add"),
+            args=[start, fraction],
+            keywords=[],
+        )
+        base_array = ast.Call(
+            func=self._attr("full_like"),
+            args=[unit, base],
+            keywords=[
+                ast.keyword(
+                    arg="dtype",
+                    value=ast.Attribute(
+                        value=unit, attr="dtype", ctx=ast.Load()
+                    ),
+                )
+            ],
+        )
+        return ast.Call(
+            func=self._attr("power"),
+            args=[base_array, exponent],
+            keywords=[],
+        )
+
+    def _lower_geomspace(self, node):
+        """``geomspace(a, b, n)`` as ``a * (b / a) ** linspace(0, 1, n)``."""
+
+        parsed = self._grid_arguments(node, allow_base=False)
+        if parsed is None:
+            return None
+        start, stop, num, _base = parsed
+        if self._kind(start) != "array" or self._kind(stop) != "array":
+            return None
+        if not _is_static_positive_integer_node(num):
+            return None
+        ratio = ast.Call(
+            func=self._attr("divide"),
+            args=[stop, start],
+            keywords=[],
+        )
+        growth = ast.Call(
+            func=self._attr("power"),
+            args=[ratio, self._grid_unit(num)],
+            keywords=[],
+        )
+        return ast.Call(
+            func=self._attr("multiply"),
+            args=[start, growth],
+            keywords=[],
+        )
+
+    def _grid_unit(self, num):
+        """Return ``linspace(0.0, 1.0, num)`` as a proven device array."""
+
+        return ast.Call(
+            func=self._attr("linspace"),
+            args=[
+                ast.Constant(value=0.0),
+                ast.Constant(value=1.0),
+                num,
+            ],
+            keywords=[],
+        )
+
+    def _grid_arguments(self, node, *, allow_base):
+        """Return ``(start, stop, num, base)`` or ``None`` when unsafe."""
+
+        positional_limit = 4 if allow_base else 3
+        if len(node.args) > positional_limit:
+            return None
+        if any(isinstance(argument, ast.Starred) for argument in node.args):
+            return None
+        start = _bound_grid_argument(node, 0, "start")
+        stop = _bound_grid_argument(node, 1, "stop")
+        num = _bound_grid_argument(node, 2, "num")
+        base = _bound_grid_argument(node, 3, "base") if allow_base else None
+        if start is None or stop is None:
+            return None
+        if num is None:
+            num = ast.Constant(value=50)
+        allowed = {"start", "stop", "num", *_GRID_DEFAULT_KEYWORDS}
+        if allow_base:
+            allowed.add("base")
+        for keyword in node.keywords:
+            if keyword.arg is None or keyword.arg not in allowed:
+                return None
+            if keyword.arg == "start" and len(node.args) > 0:
+                return None
+            if keyword.arg == "stop" and len(node.args) > 1:
+                return None
+            if keyword.arg == "num" and len(node.args) > 2:
+                return None
+            if keyword.arg == "base" and len(node.args) > 3:
+                return None
+            if keyword.arg == "endpoint" and not _is_true_constant(
+                keyword.value
+            ):
+                return None
+            if keyword.arg == "dtype" and not _is_none_constant(
+                keyword.value
+            ):
+                return None
+            if keyword.arg == "axis" and not _is_zero_constant(keyword.value):
+                return None
+        return start, stop, num, base
+
     def _lower_scalar_broadcast(self, node, name):
         """Rewrite ``ufunc(array, scalar)`` to two array operands."""
 
@@ -649,6 +794,46 @@ def _is_static_integer_node(node):
         and isinstance(node.operand, ast.Constant)
         and isinstance(node.operand.value, int)
         and not isinstance(node.operand.value, bool)
+    )
+
+
+def _is_static_positive_integer_node(node):
+    if isinstance(node, ast.Constant):
+        return (
+            isinstance(node.value, int)
+            and not isinstance(node.value, bool)
+            and node.value > 0
+        )
+    return (
+        isinstance(node, ast.UnaryOp)
+        and isinstance(node.op, ast.UAdd)
+        and isinstance(node.operand, ast.Constant)
+        and isinstance(node.operand.value, int)
+        and not isinstance(node.operand.value, bool)
+        and node.operand.value > 0
+    )
+
+
+def _bound_grid_argument(node, index, name):
+    if len(node.args) > index:
+        return node.args[index]
+    return _keyword(node, name)
+
+
+def _is_true_constant(node):
+    return isinstance(node, ast.Constant) and node.value is True
+
+
+def _is_none_constant(node):
+    return isinstance(node, ast.Constant) and node.value is None
+
+
+def _is_zero_constant(node):
+    return (
+        isinstance(node, ast.Constant)
+        and isinstance(node.value, int)
+        and not isinstance(node.value, bool)
+        and node.value == 0
     )
 
 
