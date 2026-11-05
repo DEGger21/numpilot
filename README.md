@@ -86,8 +86,8 @@ target design.
 | Code Migrator | In progress | Existing script migration path is being reduced to a single rewrite role |
 | API Gap Filler | Scaffolded | Gap classification exists; candidate generation and API-gate integration remain |
 | Full-program validation | Implemented | Retained as the deterministic program-level gate |
-| Competition direct vertical slice | Planned | Direct source → model candidate → validation receipt → replay |
-| Benchmark adapter | Planned | Added after the direct and gap vertical slices are stable |
+| Competition direct vertical slice | Implemented (scoped) | Direct routing and numerical receipts are recorded; strict-NPU provenance still requires a runtime audit |
+| Benchmark adapter | Implemented | 150 cases: 68 migrated, 15 refused, 66 gap stop, 1 audit failure, 0 unexpected |
 | Diagnostics / Reporter | Scaffolded | Role records exist; validation-driven diagnosis and reporting remain to be unified |
 | Legacy pipelines | To be retired | Moved to `compat/legacy` after parity is established |
 

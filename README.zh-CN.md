@@ -78,8 +78,8 @@ NumPilot 是面向 Ascend NPU 上 AsNumpy 的 NumPy 程序迁移框架，目标�
 | Code Migrator | 进行中 | 现有脚本迁移路径正在收敛为单一改写角色 |
 | API Gap Filler | 已搭骨架 | 缺口分类已存在，候选生成和 API gate 接入仍待完成 |
 | 全程序验证 | 已实现 | 保留为确定性的程序级 gate |
-| 比赛直迁垂直切片 | 计划中 | 源程序 → 模型候选 → 验证回执 → replay |
-| Benchmark adapter | 计划中 | 直迁和缺口垂直切片稳定后再接入 |
+| 比赛直迁垂直切片 | 已实现（受限） | 直迁路由和数值回执已落地；strict-NPU 仍需运行时审计 |
+| Benchmark adapter | 已实现 | 150 例：68 迁移、15 拒绝、66 缺口停止、1 审计失败，unexpected 0 |
 | Diagnostics / Reporter | 已搭骨架 | 角色记录已存在，基于验证结果的诊断和报告仍待统一 |
 | 旧流水线 | 待退役 | 达到行为对等后移入 `compat/legacy` |
 

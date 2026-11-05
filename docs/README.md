@@ -33,6 +33,7 @@ NumPilot 将 NumPy 程序的静态分析、迁移候选生成、数值验证和 
 - [AsNumpy 运行时契约审计](asnumpy-contract-audit.zh-CN.md)：固定版本边界语义探针和资格约束；
 - [固定 AsNumpy API 清单与 CANNBot 快照](asnumpy-api-support.zh-CN.md)：静态组件公开计算面、已验证 MatMul 准入、official ACLNN overlay 和快照身份；
 - [AsNumpy 接入说明](../integrations/asnumpy/README.md)；
+- [比赛交付与作者接管（Phase 10）](delivery.zh-CN.md)：交付物、五条演示路线、clean checkout/离线 replay 验收、发布边界和接管清单；
 - [分支治理与发布约定](SUBMISSION.md)；
 - [贡献指南](../CONTRIBUTING.md)；
 - [安全策略](../SECURITY.md)；
