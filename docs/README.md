@@ -20,6 +20,8 @@ NumPilot 将 NumPy 程序的静态分析、迁移候选生成、数值验证和 
 - [Benchmark 路由与回执](benchmark-routing.zh-CN.md)：150 例的预期路由、输入克隆、
   等价改写、逐用例 receipt 和当前全量结果；
 - [脚本性能评测](script-benchmark.md)：CPU/NPU 计时口径和 strict-NPU 约束；
+- [性能矩阵（Phase 9）](performance-matrix.zh-CN.md)：单核 CPU 对单卡 NPU 的
+  resident/warm/cold 实测、GEMM 数值 gate、交点与 strict-NPU 发布边界；
 - [Gap 恢复状态](gap-recovery-state.md)：授权 profile、状态机和 write-once 收据；
 - [产物存储策略](artifact-storage.md)：配置、缓存、运行目录和备份边界；
 - [质量场景](quality-scenarios.md)：主要质量属性与失败关闭验收。
