@@ -371,3 +371,76 @@ def forward(x):
         _run_forward(source)["out"],
     )
 
+def test_drops_sort_kind_because_values_do_not_depend_on_the_algorithm():
+    source = """
+import numpy as np
+
+def build_inputs():
+    return {'x': np.array([[3, 1, 2, 1], [0, -1, 0, 2]], dtype=np.float32)}
+
+def forward(x):
+    out = np.sort(x, axis=1, kind="stable")
+    return {'out': out}
+"""
+    lowered = lower_benchmark_program(source)
+
+    assert "contract" in _kinds(lowered)
+    assert "kind" not in lowered.source
+    np.testing.assert_array_equal(
+        _run_forward(lowered.source)["out"],
+        _run_forward(source)["out"],
+    )
+
+    analysis = AnalysisAgent().analyze(
+        lowered.source,
+        "program.py",
+        strict_input_types=True,
+    )
+    assert analysis.migratable, analysis.unsupported
+
+
+def test_sort_kind_is_not_dropped_when_it_is_not_a_literal():
+    source = """
+import numpy as np
+
+def build_inputs():
+    return {'x': np.array([3, 1, 2], dtype=np.float32), 'kind': 'stable'}
+
+def forward(x, kind):
+    out = np.sort(x, kind=kind)
+    return {'out': out}
+"""
+    lowered = lower_benchmark_program(source)
+
+    assert "contract" not in _kinds(lowered)
+    analysis = AnalysisAgent().analyze(
+        lowered.source,
+        "program.py",
+        strict_input_types=True,
+    )
+    assert not analysis.migratable
+    assert "sort" in analysis.unsupported
+
+
+def test_sort_kind_drop_rejects_an_unverified_companion_keyword():
+    source = """
+import numpy as np
+
+def build_inputs():
+    return {'x': np.array([3, 1, 2], dtype=np.float32)}
+
+def forward(x):
+    out = np.sort(x, kind="stable", order="field")
+    return {'out': out}
+"""
+    lowered = lower_benchmark_program(source)
+
+    assert "contract" not in _kinds(lowered)
+    analysis = AnalysisAgent().analyze(
+        lowered.source,
+        "program.py",
+        strict_input_types=True,
+    )
+    assert not analysis.migratable
+    assert "sort" in analysis.unsupported
+

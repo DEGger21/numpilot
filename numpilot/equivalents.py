@@ -17,6 +17,7 @@ floating-point inputs:
 ``np.cbrt(x)`` → ``copysign(power(|x|, full_like(x, 1/3, x.dtype)), x)``
 ``np.logspace(a, b, n, base=c)`` → ``power(c, a + (b - a) * linspace(0, 1, n))``
 ``np.geomspace(a, b, n)`` → ``a * power(b / a, linspace(0, 1, n))``
+``np.sort(x, axis=a, kind=k)`` → ``np.sort(x, axis=a)``
 
 It also lowers Python arithmetic dunders on values that are statically proven
 to be arrays (``a - b`` → ``np.subtract(a, b)``), because AsNumpy does not
@@ -100,6 +101,7 @@ _FORBIDDEN_VAR_KEYWORDS = frozenset({
 _FORBIDDEN_PTP_KEYWORDS = frozenset({"out"})
 _FORBIDDEN_VECDOT_KEYWORDS = frozenset()
 _GRID_DEFAULT_KEYWORDS = frozenset({"endpoint", "dtype", "axis"})
+_SORT_KINDS = frozenset({"quicksort", "mergesort", "heapsort", "stable"})
 
 _VAR_TEMPLATE = (
     "__np__.mean(__np__.square(__np__.subtract("
@@ -339,6 +341,9 @@ class _FunctionLowerer(ast.NodeTransformer):
         elif qualified == "numpy.linalg.vecdot":
             replacement = self._lower_vecdot(node)
             kind = "composition"
+        elif qualified == "numpy.sort":
+            replacement = self._lower_sort(node)
+            kind = "contract"
         elif qualified == "numpy." + name and name in _BROADCAST_BINARY_OPS:
             replacement = self._lower_scalar_broadcast(node, name)
             kind = "broadcast"
@@ -469,6 +474,38 @@ class _FunctionLowerer(ast.NodeTransformer):
             ],
         )
         return replacement
+
+    def _lower_sort(self, node):
+        """Drop ``kind=`` from ``numpy.sort`` without changing its values.
+
+        ``kind`` selects the sorting algorithm.  For real numeric arrays it
+        can change the order of equal elements inside the sorted output, never
+        the multiset of values, and ``sort`` returns values only.  The pinned
+        runtime exposes the call without ``kind``, so removing a literal,
+        known algorithm name is value-exact.  Unknown or non-literal kinds
+        stay untouched so the ordinary contract check still rejects them.
+        """
+
+        if len(node.args) > 2:
+            return None
+        kind_value = None
+        keywords = []
+        for keyword in node.keywords:
+            if keyword.arg == "kind":
+                if kind_value is not None or not _is_sort_kind(keyword.value):
+                    return None
+                kind_value = keyword.value
+                continue
+            if keyword.arg != "axis":
+                return None
+            keywords.append(keyword)
+        if kind_value is None:
+            return None
+        return ast.Call(
+            func=node.func,
+            args=list(node.args),
+            keywords=keywords,
+        )
 
     def _lower_isnan(self, node):
         """``isnan(x)`` is exactly ``not_equal(x, x)`` for real floats."""
@@ -783,6 +820,14 @@ class _FunctionLowerer(ast.NodeTransformer):
     # ----------------------------------------------------------------- typing
     def _kind(self, node):
         return _expression_kind(node, self.bindings, self.scope)
+
+
+def _is_sort_kind(node):
+    return (
+        isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and node.value in _SORT_KINDS
+    )
 
 
 def _is_static_integer_node(node):
