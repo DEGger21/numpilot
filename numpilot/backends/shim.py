@@ -85,6 +85,35 @@ def _require_integer_axis(axis, operation):
     return int(axis)
 
 
+def _concatenate(arrays, axis=0):
+    """Offline stand-in for the qualified ``asnumpy.concatenate`` surface."""
+
+    if not isinstance(arrays, (tuple, list)):
+        raise TypeError("concatenate expects a tuple or list of arrays")
+    return _wrap(np.concatenate([_unwrap(item) for item in arrays], axis=axis))
+
+
+# Overlay operators are installed only when a validated official overlay asks
+# for them.  The default shim surface stays exactly as before so an
+# unqualified program cannot execute an op that the pinned surface rejects.
+_OVERLAY_STANDINS = {
+    "concatenate": _concatenate,
+}
+
+
+def install_overlay_ops(module, names):
+    for name in names:
+        if hasattr(module, name):
+            continue
+        factory = _OVERLAY_STANDINS.get(str(name))
+        if factory is None:
+            raise ValueError(
+                "shim backend has no overlay stand-in for %s" % name
+            )
+        setattr(module, name, factory)
+    return module
+
+
 def _make_module():
     m = types.ModuleType("asnumpy")
 
@@ -477,11 +506,26 @@ def _make_module():
 class ShimBackend(ExecutionBackend):
     name = "shim"
 
-    def __init__(self):
-        self._module = _make_module()
+    def __init__(self, extra_ops=(), analysis_profile_resolver=None):
+        self._module = install_overlay_ops(
+            _make_module(), tuple(extra_ops or ())
+        )
+        self._analysis_profile_resolver = analysis_profile_resolver
 
     def get_module(self):
         return self._module
+
+    def prepare_analysis_profile_resolver(self, qualified_names):
+        resolver = self._analysis_profile_resolver
+        if resolver is None:
+            raise RuntimeError("no analysis profile resolver is configured")
+        return resolver.prepare_analysis_profile_resolver(qualified_names)
+
+    def resolve_profile_capability(self, qualified_name, profile):
+        resolver = self._analysis_profile_resolver
+        if resolver is None:
+            raise RuntimeError("no analysis profile resolver is configured")
+        return resolver.resolve_profile_capability(qualified_name, profile)
 
     def to_device(self, np_array):
         return _NDArray.from_numpy(np_array)

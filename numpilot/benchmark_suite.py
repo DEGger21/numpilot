@@ -12,6 +12,13 @@ The runner:
 
 It never treats a gap-route stop as a pass: only numerical verification of the
 original program against the migrated program counts as ``migrated``.
+
+``--capability-overlay`` adds an overlay-scoped admission path: the official
+qualification overlay must validate against the live qualified runtime, every
+overlay callsite needs an exact tensor profile, and the shim executes an
+explicit stand-in for the admitted operator.  Cases that use it record the
+qualification identity in their receipt and are never reported as strict-NPU
+qualified.
 """
 from __future__ import annotations
 
@@ -87,6 +94,9 @@ class CaseOutcome:
     strict_npu_qualified: bool | None = None
     performance_qualified: bool | None = None
     receipt_path: str = ""
+    overlay_ops: list = field(default_factory=list)
+    overlay_profile_callsites: int = 0
+    overlay_notes: list = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -125,6 +135,9 @@ class CaseOutcome:
             "strict_npu_qualified": self.strict_npu_qualified,
             "performance_qualified": self.performance_qualified,
             "receipt_path": self.receipt_path,
+            "overlay_ops": list(self.overlay_ops),
+            "overlay_profile_callsites": self.overlay_profile_callsites,
+            "overlay_notes": list(self.overlay_notes),
         }
 
 
@@ -260,6 +273,9 @@ def _write_receipt(case_out, outcome, expectation):
             "strict_npu_qualified": outcome.strict_npu_qualified,
             "performance_qualified": outcome.performance_qualified,
             "artifact_inputs_executed": outcome.artifact_inputs_executed,
+            "overlay_ops": list(outcome.overlay_ops),
+            "overlay_profile_callsites": outcome.overlay_profile_callsites,
+            "overlay_notes": list(outcome.overlay_notes),
             "reason": outcome.reason,
             "failure_reason": outcome.failure_reason,
             "max_rel_diff": outcome.max_rel_diff,
@@ -303,6 +319,7 @@ def run_suite(
     limit=None,
     on_case=None,
     expectations=None,
+    overlay=None,
 ):
     """Run every selected case and return the sanitized summary dict."""
 
@@ -330,12 +347,15 @@ def run_suite(
             backend=backend,
             engine=engine,
             expectation=resolve_expectation(expectations, group, name),
+            overlay=overlay,
         )
         outcomes.append(outcome)
         if on_case is not None:
             on_case(outcome, index, len(cases))
 
-    summary = build_summary(outcomes, backend=backend, engine=engine)
+    summary = build_summary(
+        outcomes, backend=backend, engine=engine, overlay=overlay
+    )
     summary["elapsed_seconds"] = round(time.time() - started, 3)
     summary["generated_at_utc"] = time.strftime(
         "%Y-%m-%dT%H:%M:%SZ", time.gmtime()
@@ -344,7 +364,10 @@ def run_suite(
     return summary
 
 
-def run_case(group, name, program, *, out_root, backend, engine, expectation=None):
+def run_case(
+    group, name, program, *, out_root, backend, engine, expectation=None,
+    overlay=None,
+):
     program = Path(program)
     try:
         source = program.read_text(encoding="utf-8")
@@ -394,11 +417,25 @@ def run_case(group, name, program, *, out_root, backend, engine, expectation=Non
         encoding="utf-8",
     )
 
+    profiles = None
+    overlay_ops = []
+    overlay_notes = []
+    overlay_profile_callsites = 0
+    if overlay is not None:
+        from numpilot.benchmark_overlay import build_analysis_profiles
+
+        profile_result = build_analysis_profiles(lowered.source, overlay)
+        profiles = profile_result.profiles
+        overlay_ops = list(overlay.operators)
+        overlay_notes = list(profile_result.notes)
+        overlay_profile_callsites = profile_result.matched_callsites
+
     try:
         orchestrator = Orchestrator(
             backend=backend,
             engine=engine,
             threshold=1_000_000,
+            analysis_profiles=profiles,
         )
         result = orchestrator.run_source(
             lowered.source,
@@ -423,6 +460,11 @@ def run_case(group, name, program, *, out_root, backend, engine, expectation=Non
                 exception_type=type(exc).__name__,
                 exception_message=_sanitize(exc),
                 out_dir=relative_out,
+                overlay_ops=overlay_ops,
+                overlay_profile_callsites=overlay_profile_callsites,
+                overlay_notes=[
+                    _sanitize(note) for note in overlay_notes
+                ],
             ),
             case_out,
             expectation,
@@ -484,6 +526,9 @@ def run_case(group, name, program, *, out_root, backend, engine, expectation=Non
             numerical_verified=numerical_verified,
             strict_npu_qualified=strict_npu_qualified,
             performance_qualified=None,
+            overlay_ops=overlay_ops,
+            overlay_profile_callsites=overlay_profile_callsites,
+            overlay_notes=[_sanitize(note) for note in overlay_notes],
         ),
         case_out,
         expectation,
@@ -631,7 +676,7 @@ def _sanitize(value):
     return _PRIVATE_HOME_RE.sub("<private>", str(value))
 
 
-def build_summary(outcomes, *, backend, engine):
+def build_summary(outcomes, *, backend, engine, overlay=None):
     group_counts = {}
     for outcome in outcomes:
         counts = group_counts.setdefault(outcome.group, {
@@ -670,6 +715,7 @@ def build_summary(outcomes, *, backend, engine):
         "status": "pass" if unexpected == 0 else "incomplete",
         "backend": getattr(backend, "name", type(backend).__name__),
         "engine": getattr(engine, "name", type(engine).__name__),
+        "overlay": overlay.to_dict() if overlay is not None else None,
         "total": len(outcomes),
         "expected_total": EXPECTED_TOTAL,
         "expected": expected,
@@ -821,6 +867,16 @@ def main(argv=None):
     )
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument(
+        "--capability-overlay",
+        default=None,
+        help="official capability overlay JSON (requires --backend shim)",
+    )
+    parser.add_argument(
+        "--qualification-evidence-root",
+        default=None,
+        help="evidence root that authenticates --capability-overlay",
+    )
+    parser.add_argument(
         "--expectations",
         default=None,
         help="route manifest (default: benchmark/expectations.json)",
@@ -831,7 +887,37 @@ def main(argv=None):
     )
     args = parser.parse_args(argv)
 
-    backend = select_backend(args.backend)
+    if bool(args.capability_overlay) != bool(args.qualification_evidence_root):
+        parser.error(
+            "--capability-overlay and --qualification-evidence-root "
+            "must be supplied together"
+        )
+    overlay = None
+    if args.capability_overlay:
+        if args.backend != "shim":
+            parser.error(
+                "overlay admission requires --backend shim: the qualified "
+                "overlay wheel has no strict provenance audit for its base "
+                "operators, so a strict NPU run would be rejected"
+            )
+        from numpilot.backends.shim import ShimBackend
+        from numpilot.benchmark_overlay import load_benchmark_overlay
+
+        try:
+            overlay = load_benchmark_overlay(
+                args.capability_overlay,
+                args.qualification_evidence_root,
+            )
+        except Exception as exc:
+            parser.error(
+                "cannot admit capability overlay: %s" % _sanitize(exc)
+            )
+        backend = ShimBackend(
+            extra_ops=overlay.operators,
+            analysis_profile_resolver=overlay.resolver,
+        )
+    else:
+        backend = select_backend(args.backend)
     engine = AstRewriteEngine()
     if args.expectations is not None:
         expectations = load_expectations(Path(args.expectations).parent)
@@ -845,6 +931,7 @@ def main(argv=None):
         groups=args.groups,
         limit=args.limit,
         expectations=expectations,
+        overlay=overlay,
         on_case=lambda outcome, index, total: print(
             "[bench] %d/%d %s/%s -> %s (%s)" % (
                 index, total, outcome.group, outcome.name, outcome.status,

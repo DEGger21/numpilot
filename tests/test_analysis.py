@@ -586,3 +586,68 @@ def test_profile_resolver_integrity_errors_propagate():
             source,
             profiles=_profile_set(source, (_callsite(op),)),
         )
+
+
+def _concatenate_capability():
+    return OperatorCapability(
+        name="concatenate",
+        available=True,
+        provenance=ExecutionProvenance.CUSTOM_NPU,
+        evidence="qualification:concatenate-test",
+        constraints=(
+            "dtype=float32",
+            "rank>=2",
+            "rank<=2",
+            "contiguous=true",
+        ),
+        signature_variants=(
+            OperatorSignature(
+                positional_args=1, keyword_args=("axis",)
+            ),
+        ),
+    )
+
+
+def test_promoted_missing_api_produces_a_proven_array_downstream():
+    source = (
+        "import numpy as np\n"
+        "def build_inputs():\n"
+        "    return {\n"
+        "        'a': np.ones((4, 8), dtype=np.float32),\n"
+        "        'b': np.ones((4, 8), dtype=np.float32),\n"
+        "    }\n"
+        "def forward(a, b):\n"
+        "    joined = np.concatenate((a, b), axis=1)\n"
+        "    return np.add(joined, joined)\n"
+    )
+    baseline = AnalysisAgent().analyze(source, strict_input_types=True)
+    concat = next(op for op in baseline.op_uses if op.name == "concatenate")
+    assert concat.supported is False
+    assert "add" in baseline.unsupported
+
+    resolver = _ProfileResolver(_concatenate_capability())
+    callsite = AnalysisCallsiteProfile(
+        qualified_name="numpy.concatenate",
+        lineno=concat.lineno,
+        col_offset=concat.col_offset,
+        profile=OperatorCallProfile(
+            inputs=(
+                TensorProfile("float32", (4, 8), True),
+                TensorProfile("float32", (4, 8), True),
+            ),
+            positional_args=1,
+            keyword_args=("axis",),
+        ),
+    )
+
+    result = AnalysisAgent(resolver).analyze(
+        source,
+        profiles=_profile_set(source, (callsite,)),
+        strict_input_types=True,
+    )
+
+    assert result.unsupported == []
+    assert result.migratable
+    promoted = next(op for op in result.op_uses if op.name == "concatenate")
+    assert promoted.supported is True
+    assert promoted.reason is None

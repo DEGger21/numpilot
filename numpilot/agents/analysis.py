@@ -341,6 +341,7 @@ class _OpVisitor(ast.NodeVisitor):
         known_scalar_names=(),
         known_non_array_names=(),
         strict_operand_types=False,
+        extra_array_ops=(),
     ):
         # Local name -> canonical NumPy object, e.g. {"np": "numpy",
         # "fft": "numpy.fft.fft"}. Bindings come only from real imports.
@@ -351,6 +352,10 @@ class _OpVisitor(ast.NodeVisitor):
         self.known_scalar_names = set(known_scalar_names)
         self.known_non_array_names = set(known_non_array_names)
         self.strict_operand_types = bool(strict_operand_types)
+        # Top-level API names whose return kind is proven only by an exact
+        # overlay profile match.  They are not part of SUPPORTED_OPS, so the
+        # static surface alone must keep rejecting them.
+        self.extra_array_ops = frozenset(extra_array_ops)
         self._call_argument_depth = 0
         self.op_uses = []
 
@@ -899,7 +904,10 @@ class _OpVisitor(ast.NodeVisitor):
             if (
                 resolved is not None
                 and resolved[1] == "numpy." + resolved[0]
-                and resolved[0] in SUPPORTED_OPS
+                and (
+                    resolved[0] in SUPPORTED_OPS
+                    or resolved[0] in self.extra_array_ops
+                )
             ):
                 return True
             if resolved is not None and resolved[1] == "numpy." + resolved[0]:
@@ -1356,6 +1364,51 @@ class AnalysisAgent:
             if isinstance(node, ast.FunctionDef)
             and node.name == "forward"
         ]
+        op_uses = self._collect_op_uses(
+            tree,
+            forwards,
+            static_specs,
+            strict_input_types=strict_input_types,
+        )
+        # A missing top-level API becomes a proven array producer only when an
+        # exact call profile matched.  The first pass discovers those matches;
+        # the second pass lets downstream operand checks see the promoted
+        # result kind.  One resolver snapshot serves the whole analysis, and
+        # promotion is applied only to the exact callsites that matched.
+        matched_keys = self._profiled_callsite_keys(source, op_uses, profiles)
+        promoted = frozenset(
+            op.name
+            for op in op_uses
+            if not op.supported
+            and op.reason == _MISSING_API_REASON
+            and self._callsite_key(op) in matched_keys
+        )
+        if promoted:
+            op_uses = self._collect_op_uses(
+                tree,
+                forwards,
+                static_specs,
+                strict_input_types=strict_input_types,
+                extra_array_ops=promoted,
+            )
+            self._apply_matched_profiles(op_uses, matched_keys)
+        unsupported = sorted({op.name for op in op_uses if not op.supported})
+        return AnalysisResult(
+            source_path=source_path,
+            op_uses=op_uses,
+            unsupported=unsupported,
+            migratable=(len(forwards) == 1 and not unsupported and bool(op_uses)),
+        )
+
+    def _collect_op_uses(
+        self,
+        tree,
+        forwards,
+        static_specs,
+        *,
+        strict_input_types,
+        extra_array_ops=(),
+    ):
         op_uses = []
         for forward in forwards:
             numpy_bindings = self._numpy_bindings_for_forward(tree, forward)
@@ -1394,31 +1447,25 @@ class AnalysisAgent:
                     if kind == "nonarray"
                 ) if parameter_kinds is not None else (),
                 strict_operand_types=parameter_kinds is not None,
+                extra_array_ops=extra_array_ops,
             )
             for statement in forward.body:
                 visitor.visit(statement)
             op_uses.extend(visitor.op_uses)
-        self._apply_profile_capabilities(source, op_uses, profiles)
-        unsupported = sorted({op.name for op in op_uses if not op.supported})
-        return AnalysisResult(
-            source_path=source_path,
-            op_uses=op_uses,
-            unsupported=unsupported,
-            migratable=(len(forwards) == 1 and not unsupported and bool(op_uses)),
-        )
+        return op_uses
 
     @staticmethod
     def _numpy_bindings_for_forward(tree, forward):
         return numpy_bindings_for_forward(tree, forward)
 
-    def _apply_profile_capabilities(self, source, op_uses, profiles):
-        """Promote only exact missing top-level APIs with exact source profiles."""
+    def _profile_resolver_session(self, source, op_uses, profiles):
+        """Return one resolver session for the exact missing-API candidates."""
 
         if self.profile_resolver is None or profiles is None:
-            return
+            return None
         source_sha256 = hashlib.sha256(source.encode("utf-8")).hexdigest()
         if profiles.source_sha256 != source_sha256:
-            return
+            return None
         candidates = []
         for op in op_uses:
             if (
@@ -1428,7 +1475,7 @@ class AnalysisAgent:
             ):
                 candidates.append(op)
         if not candidates:
-            return
+            return None
         session_factory = getattr(
             self.profile_resolver,
             "prepare_analysis_profile_resolver",
@@ -1450,23 +1497,57 @@ class AnalysisAgent:
             raise TypeError(
                 "analysis profile resolver session is invalid"
             )
-        for op in candidates:
-            if op.supported:
-                continue
-            profile = profiles.find(
-                op.qualified_name,
-                op.lineno,
-                op.col_offset,
-                op.positional_args,
-                op.keyword_args,
+        return resolver, candidates
+
+    def _match_profile(self, resolver, profiles, op):
+        profile = profiles.find(
+            op.qualified_name,
+            op.lineno,
+            op.col_offset,
+            op.positional_args,
+            op.keyword_args,
+        )
+        if profile is None:
+            return None
+        match = resolver(op.qualified_name, profile)
+        if not isinstance(match, CapabilityMatch):
+            raise TypeError(
+                "profile resolver must return CapabilityMatch"
             )
-            if profile is None:
-                continue
-            match = resolver(op.qualified_name, profile)
-            if not isinstance(match, CapabilityMatch):
-                raise TypeError(
-                    "profile resolver must return CapabilityMatch"
-                )
-            if match.matched:
+        return match
+
+    @staticmethod
+    def _callsite_key(op):
+        return (
+            op.qualified_name,
+            op.lineno,
+            op.col_offset,
+            op.positional_args,
+            op.keyword_args,
+        )
+
+    def _profiled_callsite_keys(self, source, op_uses, profiles):
+        """Callsites proven by one resolver snapshot for this exact source."""
+
+        session = self._profile_resolver_session(source, op_uses, profiles)
+        if session is None:
+            return frozenset()
+        resolver, candidates = session
+        keys = set()
+        for op in candidates:
+            match = self._match_profile(resolver, profiles, op)
+            if match is not None and match.matched:
+                keys.add(self._callsite_key(op))
+        return frozenset(keys)
+
+    def _apply_matched_profiles(self, op_uses, matched_keys):
+        """Promote only the exact missing-API callsites that matched."""
+
+        for op in op_uses:
+            if (
+                not op.supported
+                and op.reason == _MISSING_API_REASON
+                and self._callsite_key(op) in matched_keys
+            ):
                 op.supported = True
                 op.reason = None
