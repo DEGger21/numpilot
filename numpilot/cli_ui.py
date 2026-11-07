@@ -336,6 +336,154 @@ def flow_print(message="", *, stream=None, tone=None, end="\n", flush=False):
     return True
 
 
+class OperatorGenerationTimeline:
+    """Render a bounded, human-readable operator-generation timeline.
+
+    The timeline is presentation-only. It never changes the workflow state or
+    writes receipts, and it degrades to stable plain text when Rich or a TTY
+    is unavailable. Each update is a durable snapshot so a user can see the
+    CANNBot route, skill verification, prompt assembly, model generation,
+    validation, and artifact write as separate facts.
+    """
+
+    _STEPS = (
+        ("route", "缺口路由"),
+        ("skill", "CANNBot Skill"),
+        ("context", "官方上下文"),
+        ("generation", "模型写算子"),
+        ("validation", "候选校验"),
+        ("artifact", "草稿落盘"),
+    )
+    _STATE = {
+        "pending": ("○", "dim"),
+        "running": ("◉", "yellow"),
+        "done": ("✓", "green"),
+        "blocked": ("!", "red"),
+        "failed": ("✗", "red"),
+        "skipped": ("–", "dim"),
+    }
+    _ALLOWED_TRANSITIONS = {
+        "pending": {"pending", "running", "done", "blocked", "failed", "skipped"},
+        "running": {"running", "done", "blocked", "failed", "skipped"},
+        "done": {"done"},
+        "blocked": {"blocked"},
+        "failed": {"failed"},
+        "skipped": {"skipped"},
+    }
+
+    def __init__(self, operator, *, route="CANNBot", stream=None, enabled=None):
+        self.operator = _terminal_safe(operator)
+        self.route = _terminal_safe(route)
+        self.stream = sys.stdout if stream is None else stream
+        self.enabled = (
+            is_interactive(self.stream) if enabled is None else bool(enabled)
+        )
+        self._states = {key: "pending" for key, _label in self._STEPS}
+        self._details = {}
+        self._started = False
+
+    @property
+    def states(self):
+        return dict(self._states)
+
+    def start(self):
+        self._started = True
+        self._render("开始生成")
+
+    def update(self, step, state="running", detail=""):
+        keys = {key for key, _label in self._STEPS}
+        if step not in keys:
+            raise ValueError("unknown operator generation step")
+        if state not in self._STATE:
+            raise ValueError("unknown operator generation state")
+        previous = self._states[step]
+        if state not in self._ALLOWED_TRANSITIONS[previous]:
+            raise ValueError(
+                "invalid operator generation transition: %s -> %s"
+                % (previous, state)
+            )
+        self._states[step] = state
+        if detail:
+            self._details[step] = _terminal_safe(detail)
+        headline = self._step_summary(step, state)
+        if detail:
+            headline += " · " + self._details[step]
+        self._render(headline)
+
+    def finish(self, detail=""):
+        # Finalization is presentation-only.  Preserve blocked/pending states
+        # so a fail-closed gate can never be rendered as a false success.
+        if detail:
+            self._details["artifact"] = _terminal_safe(detail)
+        states = set(self._states.values())
+        if states & {"blocked", "failed"}:
+            self._render("生成流程阻止")
+            return
+        if states & {"pending", "running"}:
+            self._render("生成流程收口（仍有未执行阶段）")
+            return
+        self._render("生成流程完成")
+
+    def fail(self, step="generation", detail=""):
+        self.update(step, "blocked", detail or "流程被门禁阻止")
+
+    def _step_summary(self, step, state):
+        label = dict(self._STEPS)[step]
+        marker, _style = self._STATE[state]
+        return "%s %s" % (marker, label)
+
+    def _render(self, headline):
+        if not self._started:
+            self._started = True
+        if not self.enabled or not _RICH_AVAILABLE:
+            flow_print(
+                "[算子流程] %s · operator=%s · route=%s"
+                % (headline, self.operator, self.route),
+                stream=self.stream,
+                tone="progress",
+                flush=True,
+            )
+            return
+        console = _console(self.stream)
+        table = Table(
+            box=box.SIMPLE_HEAVY,
+            expand=False,
+            show_header=False,
+            padding=(0, 1),
+        )
+        table.add_column("state", width=2, justify="center")
+        table.add_column("stage", style="bold cyan", min_width=14)
+        table.add_column("detail", style="white", no_wrap=False)
+        for key, label in self._STEPS:
+            state = self._states[key]
+            marker, style = self._STATE[state]
+            detail = self._details.get(key, {
+                "pending": "等待",
+                "running": "正在处理",
+                "done": "已完成",
+                "blocked": "已阻止",
+                "failed": "失败",
+                "skipped": "跳过",
+            }[state])
+            table.add_row(
+                Text(marker, style=style),
+                Text(label, style="bold cyan"),
+                Text(_terminal_safe(detail), style="white"),
+            )
+        title = "NumPilot · 算子生成 · %s" % self.operator
+        subtitle = "%s  |  %s" % (self.route, _terminal_safe(headline))
+        console.print(
+            Panel(
+                table,
+                title=title,
+                subtitle=subtitle,
+                border_style="magenta",
+                box=box.ROUNDED,
+                expand=False,
+            )
+        )
+
+
 @contextmanager
 def terminal_status(message, *, enabled=True):
     """Show a durable spinner/result pair on stderr only for a real TTY."""

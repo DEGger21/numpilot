@@ -30,7 +30,13 @@ from rich.console import Console
 from numpilot import __version__
 from numpilot import __main__ as cli
 from numpilot import cli_ui
-from numpilot.cli_ui import flow_print, is_interactive, render_home, terminal_status
+from numpilot.cli_ui import (
+    OperatorGenerationTimeline,
+    flow_print,
+    is_interactive,
+    render_home,
+    terminal_status,
+)
 from numpilot.env_check import ERROR, OK, WARN, EnvReport
 from numpilot.paths import state_home
 
@@ -135,6 +141,55 @@ def test_flow_print_sanitizes_terminal_control_in_tty(monkeypatch):
     assert "safe" in rendered
     assert "forged" in rendered
     assert "�" in rendered
+
+
+def test_operator_generation_timeline_plain_fallback_is_stable():
+    output = io.StringIO()
+    timeline = OperatorGenerationTimeline(
+        "add_one", route="CANNBot Skill → Ascend C", stream=output, enabled=False
+    )
+
+    timeline.start()
+    timeline.update("route", "done", "official-first resolution accepted")
+    timeline.update("generation", "running", "model is writing candidate")
+    timeline.fail("generation", "candidate gate blocked")
+    timeline.finish("candidate remains blocked")
+
+    rendered = output.getvalue()
+    assert "[算子流程]" in rendered
+    assert "CANNBot Skill → Ascend C" in rendered
+    assert "模型写算子" in rendered
+    assert "candidate gate blocked" in rendered
+    assert "\x1b" not in rendered
+    assert timeline.states["route"] == "done"
+    assert timeline.states["generation"] == "blocked"
+    with pytest.raises(ValueError, match="invalid operator generation transition"):
+        timeline.update("route", "running")
+    with pytest.raises(ValueError, match="invalid operator generation transition"):
+        timeline.update("generation", "done")
+
+
+def test_operator_generation_timeline_rich_panel_shows_all_gates(monkeypatch):
+    _enable_rich_terminal(monkeypatch)
+    output = TtyBuffer()
+    _force_console_width(monkeypatch, 110)
+    timeline = OperatorGenerationTimeline(
+        "add_one", route="CANNBot Skill → Ascend C", stream=output, enabled=True
+    )
+
+    timeline.start()
+    timeline.update("route", "done", "official-first resolution accepted")
+    timeline.update("skill", "done", "bundle verified")
+    timeline.update("context", "done", "bounded official context")
+    timeline.update("generation", "running", "model is writing candidate")
+
+    rendered = _ANSI.sub("", output.getvalue())
+    assert "NumPilot · 算子生成 · add_one" in rendered
+    assert "CANNBot Skill → Ascend C" in rendered
+    for stage in ("缺口路由", "CANNBot Skill", "官方上下文", "模型写算子", "候选校验", "草稿落盘"):
+        assert stage in rendered
+    assert "model is writing candidate" in rendered
+    assert "\x1b" not in rendered
 
 
 def test_empty_argv_renders_product_home_only_on_tty(monkeypatch):

@@ -44,7 +44,7 @@ import threading
 import time
 from typing import Any, Mapping
 
-from numpilot.cli_ui import flow_print
+from numpilot.cli_ui import OperatorGenerationTimeline, flow_print
 
 
 MAX_SKILL_BYTES = 1024 * 1024
@@ -568,6 +568,7 @@ def main(argv: list[str] | None = None) -> int:
         ],
     }
     started = time.monotonic()
+    timeline = None
     try:
         license_accepted, license_source = _license_acceptance(
             args.accept_cannbot_license
@@ -627,6 +628,17 @@ def main(argv: list[str] | None = None) -> int:
         )
         cannbot_context = ""
         if cannbot_mode:
+            timeline = OperatorGenerationTimeline(
+                "add_one",
+                route="CANNBot Skill → Ascend C",
+                stream=sys.stdout,
+            )
+            timeline.start()
+            timeline.update(
+                "route",
+                "running",
+                "checking official gap and resolution receipts",
+            )
             if not license_accepted:
                 raise ValueError(
                     "CANNBot mini route requires explicit license acceptance; "
@@ -653,6 +665,11 @@ def main(argv: list[str] | None = None) -> int:
                     official_resolution=resolution_path,
                 )
             )
+            timeline.update(
+                "route",
+                "done",
+                "官方 resolution 已通过",
+            )
             cannbot_gate, cannbot_context = _load_cannbot_context(
                 Path(args.cannbot_skill_root).expanduser()
             )
@@ -662,6 +679,16 @@ def main(argv: list[str] | None = None) -> int:
             # consent.
             cannbot_gate = dict(cannbot_gate)
             cannbot_gate["license_accepted"] = True
+            timeline.update(
+                "skill",
+                "done",
+                "CANNBot Skill bundle、许可证和哈希已校验",
+            )
+            timeline.update(
+                "context",
+                "done",
+                "bounded 官方上下文已组装",
+            )
             report.update({
                 "generation_route": "cannbot_registry_invoke_mini_gap",
                 "cannbot_route": True,
@@ -746,6 +773,11 @@ def main(argv: list[str] | None = None) -> int:
         heartbeat_stop = None
         heartbeat_thread = None
         if cannbot_mode:
+            timeline.update(
+                "generation",
+                "running",
+                "正在等待模型回执；显示过程不代表成功",
+            )
             flow_print(
                 "[CANNBot] remote generation started · route=cannbot_registry_invoke_mini_gap "
                 "· target=ascendc_kernel_fragment · budget=%s · timeout=%ss"
@@ -807,6 +839,17 @@ def main(argv: list[str] | None = None) -> int:
             report["error_type"] = "ModelContractError"
             report["remote_receipt"] = _receipt_metadata(receipt)
             raise
+        if timeline is not None:
+            timeline.update(
+                "generation",
+                "done",
+                "已收到模型回执；候选代码围栏存在",
+            )
+            timeline.update(
+                "validation",
+                "running",
+                "正在校验模型回执与 CANNBot 输出契约",
+            )
         code = _extract_cpp(response, cann_bot_mini=cannbot_mode)
         code_bytes = code.encode("utf-8")
         code_path = output / "operator-draft.cpp"
@@ -828,6 +871,18 @@ def main(argv: list[str] | None = None) -> int:
             "claims": {**report["claims"], "model_generated": True},
         })
         report_path = _write_report(output, report)
+        if timeline is not None:
+            timeline.update(
+                "validation",
+                "done",
+                "候选已记录为 generated_unverified",
+            )
+            timeline.update(
+                "artifact",
+                "done",
+                "operator-draft.cpp 与报告已原子写入",
+            )
+            timeline.finish("候选仍未编译、未激活")
         flow_print(
             "[算子草稿] status=generated_unverified remote_call=yes model=%s http=%s elapsed=%sms"
             % (
@@ -862,6 +917,16 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
     except Exception as exc:
+        if timeline is not None:
+            active_step = next(
+                (key for key, state in timeline.states.items() if state == "running"),
+                None,
+            )
+            timeline.fail(
+                active_step
+                or ("generation" if cannbot_mode else "route"),
+                "生成在门禁处停止：%s" % type(exc).__name__,
+            )
         report["elapsed_ms"] = int((time.monotonic() - started) * 1000)
         report.setdefault("error_type", type(exc).__name__)
         # Error details are deliberately reduced to a short, locally-defined
