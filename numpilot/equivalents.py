@@ -101,7 +101,9 @@ _FORBIDDEN_VAR_KEYWORDS = frozenset({
 _FORBIDDEN_PTP_KEYWORDS = frozenset({"out"})
 _FORBIDDEN_VECDOT_KEYWORDS = frozenset()
 _GRID_DEFAULT_KEYWORDS = frozenset({"endpoint", "dtype", "axis"})
-_SORT_KINDS = frozenset({"quicksort", "mergesort", "heapsort", "stable"})
+# Removing kind is value/bit-pattern exact only for NumPy default quicksort.
+# Other algorithms can reorder signed zeros and NaNs.
+_SORT_KINDS = frozenset({"quicksort"})
 
 _VAR_TEMPLATE = (
     "__np__.mean(__np__.square(__np__.subtract("
@@ -180,6 +182,7 @@ def lower_equivalents(source: str) -> EquivalentLowering:
         return EquivalentLowering(source, (), ("missing_forward",))
 
     build_kinds = static_forward_parameter_kinds(tree, forward) or {}
+    grid_contracts = _static_grid_parameter_contracts(tree, forward)
     arguments = _forward_arguments(forward)
     forward_scope = {
         argument: build_kinds.get(argument, "unknown") for argument in arguments
@@ -192,7 +195,11 @@ def lower_equivalents(source: str) -> EquivalentLowering:
             scope = dict(forward_scope)
         else:
             scope = {argument: "unknown" for argument in _forward_arguments(function)}
-        lowerer = _FunctionLowerer(bindings, scope)
+        lowerer = _FunctionLowerer(
+            bindings,
+            scope,
+            grid_contracts=grid_contracts if function is forward else {},
+        )
         function.body = [lowerer.visit(statement) for statement in function.body]
         rewrites.extend(lowerer.rewrites)
 
@@ -237,9 +244,10 @@ def _reachable_functions(tree, functions, forward):
 class _FunctionLowerer(ast.NodeTransformer):
     """Lower one function body while tracking array/scalar names in program order."""
 
-    def __init__(self, bindings, scope):
+    def __init__(self, bindings, scope, *, grid_contracts=None):
         self.bindings = dict(bindings)
         self.scope = dict(scope)
+        self.grid_contracts = dict(grid_contracts or {})
         self.np_alias = next(
             (name for name, qualified in self.bindings.items() if qualified == "numpy"),
             None,
@@ -476,14 +484,12 @@ class _FunctionLowerer(ast.NodeTransformer):
         return replacement
 
     def _lower_sort(self, node):
-        """Drop ``kind=`` from ``numpy.sort`` without changing its values.
+        """Drop only the default kind=quicksort from numpy.sort.
 
-        ``kind`` selects the sorting algorithm.  For real numeric arrays it
-        can change the order of equal elements inside the sorted output, never
-        the multiset of values, and ``sort`` returns values only.  The pinned
-        runtime exposes the call without ``kind``, so removing a literal,
-        known algorithm name is value-exact.  Unknown or non-literal kinds
-        stay untouched so the ordinary contract check still rejects them.
+        Other algorithms can change the order of equal elements, including
+        the sign of zero and the placement of NaNs. They stay untouched so
+        the ordinary contract check rejects them instead of claiming a
+        value-only equivalence.
         """
 
         if len(node.args) > 2:
@@ -573,7 +579,12 @@ class _FunctionLowerer(ast.NodeTransformer):
         if parsed is None:
             return None
         start, stop, num, base = parsed
-        if self._kind(start) != "array" or self._kind(stop) != "array":
+        if (
+            self._kind(start) != "array"
+            or self._kind(stop) != "array"
+            or not self._safe_grid_operand(start)
+            or not self._safe_grid_operand(stop)
+        ):
             return None
         if not _is_static_positive_integer_node(num):
             return None
@@ -622,7 +633,15 @@ class _FunctionLowerer(ast.NodeTransformer):
         if parsed is None:
             return None
         start, stop, num, _base = parsed
-        if self._kind(start) != "array" or self._kind(stop) != "array":
+        if (
+            self._kind(start) != "array"
+            or self._kind(stop) != "array"
+            or not self._safe_grid_operand(start)
+            or not self._safe_grid_operand(stop)
+            or not self._grid_is_nonzero(start)
+            or not self._grid_is_nonzero(stop)
+            or self._grid_value(start) * self._grid_value(stop) < 0
+        ):
             return None
         if not _is_static_positive_integer_node(num):
             return None
@@ -820,6 +839,119 @@ class _FunctionLowerer(ast.NodeTransformer):
     # ----------------------------------------------------------------- typing
     def _kind(self, node):
         return _expression_kind(node, self.bindings, self.scope)
+
+    def _safe_grid_operand(self, node):
+        return isinstance(node, ast.Name) and node.id in self.grid_contracts
+
+    def _grid_is_nonzero(self, node):
+        return bool(self.grid_contracts[node.id]["nonzero"])
+
+    def _grid_value(self, node):
+        return self.grid_contracts[node.id]["value"]
+
+
+def _static_grid_parameter_contracts(tree, forward):
+    """Prove the narrow scalar grid profile used by logspace/geomspace.
+
+    The lowerings use a one-dimensional linspace unit vector. That is exact
+    only for 0-D float64 endpoints with statically known non-zero geomspace
+    values. This helper intentionally recognizes a tiny AST-only subset of
+    build_inputs and returns no proof for every other form.
+    """
+
+    builds = [
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "build_inputs"
+    ]
+    if len(builds) != 1:
+        return {}
+    build = builds[0]
+    bindings = numpy_bindings_for_forward(tree, build)
+    assigned = {}
+
+    def numeric_literal(node):
+        if isinstance(node, ast.Constant) and isinstance(
+            node.value, (int, float)
+        ) and not isinstance(node.value, bool):
+            return node.value
+        if isinstance(node, ast.UnaryOp) and isinstance(
+            node.op, (ast.UAdd, ast.USub)
+        ):
+            value = numeric_literal(node.operand)
+            if value is None:
+                return None
+            return value if isinstance(node.op, ast.UAdd) else -value
+        return None
+
+    def is_float64(node):
+        if isinstance(node, ast.Constant) and node.value == "float64":
+            return True
+        if isinstance(node, ast.Name) and node.id == "float64":
+            return True
+        return isinstance(node, ast.Attribute) and node.attr == "float64"
+
+    def resolve(expression):
+        if isinstance(expression, ast.Name):
+            return assigned.get(expression.id)
+        if not isinstance(expression, ast.Call):
+            return None
+        resolved = resolve_numpy_function(expression.func, bindings)
+        if resolved is None or resolved[1] not in {
+            "numpy.array", "numpy.asarray",
+        }:
+            return None
+        if len(expression.args) != 1:
+            return None
+        value = numeric_literal(expression.args[0])
+        if value is None:
+            return None
+        dtype = None
+        for keyword in expression.keywords:
+            if keyword.arg != "dtype" or dtype is not None:
+                return None
+            dtype = keyword.value
+        if dtype is None:
+            if not isinstance(value, float):
+                return None
+        elif not is_float64(dtype):
+            return None
+        return {
+            "ndim": 0,
+            "dtype": "float64",
+            "value": value,
+            "nonzero": value != 0,
+        }
+
+    returned = None
+    for statement in build.body:
+        if (
+            isinstance(statement, ast.Assign)
+            and len(statement.targets) == 1
+            and isinstance(statement.targets[0], ast.Name)
+        ):
+            assigned[statement.targets[0].id] = resolve(statement.value)
+        elif (
+            isinstance(statement, ast.AnnAssign)
+            and isinstance(statement.target, ast.Name)
+            and statement.value is not None
+        ):
+            assigned[statement.target.id] = resolve(statement.value)
+        elif isinstance(statement, ast.Return):
+            returned = statement.value
+    if not isinstance(returned, ast.Dict):
+        return {}
+    values = {}
+    for key, expression in zip(returned.keys, returned.values):
+        if not isinstance(key, ast.Constant) or not isinstance(key.value, str):
+            return {}
+        values[key.value] = resolve(expression)
+    argument_names = _forward_arguments(forward)
+    contracts = {}
+    for argument in argument_names:
+        contract = values.get(argument)
+        if contract is not None:
+            contracts[argument] = contract
+    return contracts
 
 
 def _is_sort_kind(node):

@@ -371,7 +371,7 @@ def forward(x):
         _run_forward(source)["out"],
     )
 
-def test_drops_sort_kind_because_values_do_not_depend_on_the_algorithm():
+def test_drops_default_sort_kind_without_changing_values():
     source = """
 import numpy as np
 
@@ -379,7 +379,7 @@ def build_inputs():
     return {'x': np.array([[3, 1, 2, 1], [0, -1, 0, 2]], dtype=np.float32)}
 
 def forward(x):
-    out = np.sort(x, axis=1, kind="stable")
+    out = np.sort(x, axis=1, kind="quicksort")
     return {'out': out}
 """
     lowered = lower_benchmark_program(source)

@@ -160,6 +160,31 @@ summary.tsv   c77376239fe4bfe2ceee53071f82a3d7eec8280cc2933ac6194f712edd31b7e8
 run log       acb80a686558eed540357ddbf19b9e2d0a218157bbc17d38fe304b048bfc8ebf
 ```
 
+### 5.3 Phase 14 安全等价审计（2026-11-07）
+
+本阶段收紧了确定性等价改写，优先保证异常、形状、dtype、NaN 和有符号零语义：
+
+- sort(kind=...) 只有字面量 kind=quicksort（NumPy 默认算法）允许去除；
+  stable、mergesort 和 heapsort 保持 unsupported，因为它们可能改变
+  +0/-0 的位序或 NaN 排序位置。
+- logspace/geomspace 只在 build_inputs() 能静态证明 start/stop 是
+  0 维 float64 数值数组时降级；向量输入、float32、动态构造和未知 dtype 保持
+  原调用。
+- geomspace 还要求两个端点都是静态已知非零且同号，保留 NumPy 对零端点和
+  不安全符号组合的异常边界。
+- 新增四个语义回归测试，覆盖 signed zero、向量 shape、float32 dtype 和
+  geomspace(0, ...) 异常语义。
+
+在没有 overlay 的 shim 全量 sweep 中，150 例结果为 70 migrated、65 unsupported、
+15 refused、0 failed、0 unexpected。F007 sort kind 回到 unsupported，属于预期的
+contract consent 路径。该结果只代表 NumPy/shim 语义验证，不代表 strict-NPU。
+
+本轮尝试重新加载 Phase 12 official overlay 时，运行时缺少与 qualification
+绑定的私有 bootstrap receipt，观测 identity 2b3dd1b0... 与 overlay 绑定的
+identity 50ff6221... 不一致，因此 overlay admission fail-closed；没有使用
+旧 overlay 结果冒充本轮证据。待恢复同一 qualification runtime 和 receipt 后，
+再单独重跑 overlay-scoped sweep。
+
 ### 5.1 别名审计样例 B014
 
 `B014_overlapping_alias` 的原始程序对 `base[1:]` 做原地 `+=`，同时返回
@@ -182,7 +207,7 @@ backend npu@0.4.1.post0+numpilot.bee27ba2 cannot satisfy required APIs
 
 ## 6. 已知缺口
 
-当前 66 个 gap stop 主要来自：
+在 Phase 14 无 overlay sweep 中当前有 65 个 unsupported/gap stop；历史 Phase 8 数字仍保留在 §5，下面列出主要原因：
 
 - 缺失 API：`spacing`、`nextafter`、`diff`、`pad`、`repeat`、`tile`、`roll`、
   `median`、`quantile`、`argmax`、`take`、`convolve`、`searchsorted`、
