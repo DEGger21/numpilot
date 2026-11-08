@@ -39,6 +39,7 @@ from numpilot.benchmark_lowering import lower_benchmark_program
 from numpilot.engines.ast_rewrite import AstRewriteEngine
 from numpilot.orchestrator import Orchestrator
 from numpilot.operator_artifacts import OperatorArtifactStore
+from numpilot.performance_evidence import PerformanceEvidenceCatalog
 
 REFUSAL_GROUP = "J_out_of_subset"
 GROUP_ORDER = (
@@ -94,6 +95,7 @@ class CaseOutcome:
     numerical_verified: bool = False
     strict_npu_qualified: bool | None = None
     performance_qualified: bool | None = None
+    performance_evidence: dict | None = None
     runtime_identity_status: str | None = None
     runtime_identity_sha256: str | None = None
     runtime_audit_id: str | None = None
@@ -140,6 +142,7 @@ class CaseOutcome:
             "numerical_verified": self.numerical_verified,
             "strict_npu_qualified": self.strict_npu_qualified,
             "performance_qualified": self.performance_qualified,
+            "performance_evidence": self.performance_evidence,
             "runtime_identity_status": self.runtime_identity_status,
             "runtime_identity_sha256": self.runtime_identity_sha256,
             "runtime_audit_id": self.runtime_audit_id,
@@ -381,6 +384,7 @@ def _record_operator_ref(store, out_root, outcome, *, backend, runtime_identity)
         "strict_npu_qualified": strict,
         "numerical_verified": bool(outcome.numerical_verified),
         "performance_qualified": outcome.performance_qualified,
+        "performance_evidence": outcome.performance_evidence,
         "reason": outcome.reason or "runtime qualification gate completed",
     }
     runtime_ref = store.put_runtime_qualification(sample_id, runtime_receipt)
@@ -453,6 +457,7 @@ def run_suite(
     on_case=None,
     expectations=None,
     overlay=None,
+    performance_evidence_root=None,
 ):
     """Run every selected case and return the sanitized summary dict."""
 
@@ -471,6 +476,11 @@ def run_suite(
     out_root.mkdir(parents=True, exist_ok=True)
     artifact_store = OperatorArtifactStore(out_root / "operator-artifacts")
     runtime_identity = _runtime_identity_snapshot(backend)
+    performance_catalog = (
+        PerformanceEvidenceCatalog(performance_evidence_root)
+        if performance_evidence_root is not None
+        else None
+    )
     outcomes = []
     started = time.time()
     for index, (group, name, program) in enumerate(cases, 1):
@@ -484,6 +494,23 @@ def run_suite(
             expectation=resolve_expectation(expectations, group, name),
             overlay=overlay,
         )
+        if performance_catalog is not None:
+            resolution = performance_catalog.resolve(
+                "%s/%s" % (outcome.group, outcome.name),
+                source_sha256=outcome.source_sha256,
+                backend=getattr(backend, "name", type(backend).__name__),
+                strict_npu_qualified=outcome.strict_npu_qualified,
+                numerical_verified=outcome.numerical_verified,
+                runtime_identity_sha256=runtime_identity.get("identity_sha256"),
+            )
+            outcome.performance_qualified = resolution.qualified
+            outcome.performance_evidence = resolution.ref
+            if outcome.out_dir:
+                _write_receipt(
+                    out_root / outcome.out_dir,
+                    outcome,
+                    resolve_expectation(expectations, outcome.group, outcome.name),
+                )
         _record_operator_ref(artifact_store, out_root, outcome, backend=backend, runtime_identity=runtime_identity)
         outcomes.append(outcome)
         if on_case is not None:
@@ -862,6 +889,9 @@ def build_summary(outcomes, *, backend, engine, overlay=None):
         "status_counts": dict(sorted(status_counts.items())),
         "route_counts": route_counts,
         "group_counts": group_counts,
+        "performance_qualified": sum(
+            outcome.performance_qualified is True for outcome in outcomes
+        ),
         "cases": [outcome.to_dict() for outcome in outcomes],
     }
 
@@ -1016,6 +1046,11 @@ def main(argv=None):
         help="evidence root that authenticates --capability-overlay",
     )
     parser.add_argument(
+        "--performance-evidence-root",
+        default=None,
+        help="manifest root of hash-bound per-case script benchmark receipts",
+    )
+    parser.add_argument(
         "--expectations",
         default=None,
         help="route manifest (default: benchmark/expectations.json)",
@@ -1071,6 +1106,7 @@ def main(argv=None):
         limit=args.limit,
         expectations=expectations,
         overlay=overlay,
+        performance_evidence_root=args.performance_evidence_root,
         on_case=lambda outcome, index, total: print(
             "[bench] %d/%d %s/%s -> %s (%s)" % (
                 index, total, outcome.group, outcome.name, outcome.status,

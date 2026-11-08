@@ -105,6 +105,8 @@ provider 协议可以不同：SLAI 示例使用 Anthropic 兼容协议，NumPilo
 - 没有匹配的 AsNumpy native runtime、bootstrap receipt 和数值证据时，不能声明
   `strict_npu_qualified`；shim 结果不能冒充 NPU 结果。
 - 性能结论必须绑定单逻辑 CPU 对单卡 NPU、固定 dtype/shape/contiguity、预热与
-  冷启动口径，并单独保存 performance receipt。
+  冷启动口径，并单独保存 performance receipt。`--performance-evidence-root` 使用
+  显式 manifest 将 receipt 绑定到 sample；无条目保持 `performance_qualified=null`，
+  shim 或 hash 不匹配不能升级资格。
 - 任何真实模型调用都必须在开发日志中记录用途、模型身份、请求次数、回执哈希、
   通过的本地门禁和失败原因；不得记录 token、endpoint 或原始响应。
