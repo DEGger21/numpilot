@@ -27,6 +27,10 @@ from numpilot import model_contract as _model_contract
 from numpilot.llm_config import (
     OPENAI_CHAT_COMPLETIONS_PROTOCOL,
 )
+from numpilot.gaps.generated_adapter import (
+    CUSTOM_OPAPI_SONAME,
+    SYMBOL_RESOLUTION_STRATEGY,
+)
 
 
 class DraftGenerationError(RuntimeError):
@@ -882,6 +886,17 @@ def _validate_asc_two_stage_manifest_payload(payload: str, label: str) -> None:
         raise DraftGenerationError(
             "ASC implementation manifest must declare distinct ACLNN "
             "GetWorkspaceSize/execute symbols: %s" % label
+        )
+    symbol_resolution = aclnn_mapping.get("symbol_resolution")
+    if (
+        not isinstance(symbol_resolution, dict)
+        or symbol_resolution.get("strategy") != SYMBOL_RESOLUTION_STRATEGY
+        or symbol_resolution.get("library_soname") != CUSTOM_OPAPI_SONAME
+        or symbol_resolution.get("global_symbol_call") is not False
+    ):
+        raise DraftGenerationError(
+            "ASC implementation manifest must use explicit-handle-dlsym "
+            "for custom ACLNN symbols: %s" % label
         )
     cpp_mapping = name_mapping.get("cpp_api")
     if isinstance(cpp_mapping, dict):

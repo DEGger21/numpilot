@@ -103,6 +103,22 @@ from numpilot.gaps.adapter_recovery import (
     ingest_official_adapter_candidate,
     ingest_repaired_adapter_candidate,
 )
+from numpilot.gaps.generated_adapter import (
+    GeneratedAdapterContract,
+    GeneratedAdapterContractError,
+    INTEGRATION_ARCHITECTURE,
+    SYMBOL_RESOLUTION_STRATEGY,
+    CUSTOM_OPAPI_SONAME,
+    SCHEMA as GENERATED_ADAPTER_SCHEMA,
+    validate_generated_adapter_manifest,
+)
+from numpilot.custom_opp_provenance import (
+    CustomOppProvenance,
+    CustomOppProvenanceError,
+    SCHEMA as CUSTOM_OPP_PROVENANCE_SCHEMA,
+    SCHEMA_VERSION as CUSTOM_OPP_PROVENANCE_SCHEMA_VERSION,
+    inspect_custom_opp,
+)
 from numpilot.gaps.integration import (
     IntegrationError,
     IntegrationTransactionResult,
@@ -187,6 +203,18 @@ __all__ = [
     "validate_qualification",
     "validate_operator_candidate_binding",
     "write_official_resolution_report",
+    "inspect_custom_opp",
+    "CUSTOM_OPP_PROVENANCE_SCHEMA_VERSION",
+    "CUSTOM_OPP_PROVENANCE_SCHEMA",
+    "CustomOppProvenanceError",
+    "CustomOppProvenance",
+    "validate_generated_adapter_manifest",
+    "SYMBOL_RESOLUTION_STRATEGY",
+    "CUSTOM_OPAPI_SONAME",
+    "GENERATED_ADAPTER_SCHEMA",
+    "INTEGRATION_ARCHITECTURE",
+    "GeneratedAdapterContractError",
+    "GeneratedAdapterContract",
     "AdapterRecoveryError",
     "CandidateMaterializationError",
     "CandidateMaterializationResult",

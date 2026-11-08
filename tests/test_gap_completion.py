@@ -4073,6 +4073,11 @@ def _valid_asc_manifest():
                 "call_style": "two-stage",
                 "get_workspace_size": "aclnnSoftplusGetWorkspaceSize",
                 "execute": "aclnnSoftplus",
+                "symbol_resolution": {
+                    "strategy": "explicit-handle-dlsym",
+                    "library_soname": "libcust_opapi.so",
+                    "global_symbol_call": False,
+                },
             },
             "cpp_api": {
                 "l2_get_workspace_size": "aclnnSoftplusGetWorkspaceSize",
@@ -4118,6 +4123,26 @@ def test_validate_bundle_rejects_asc_without_acl_nn_two_stage_contract():
         ],
     })
     with pytest.raises(DraftGenerationError, match="ACLNN two-stage ASC interface"):
+        _validate_bundle(payload)
+
+
+def test_validate_bundle_rejects_asc_without_explicit_symbol_resolution():
+    manifest = json.loads(_valid_asc_manifest())
+    del manifest["name_mapping"]["aclnn"]["symbol_resolution"]
+    payload = json.dumps({
+        "summary": "ASC implementation without symbol isolation.",
+        "files": [
+            {"path": "CMakeLists.txt", "content": "cmake_minimum_required(VERSION 3.16)\n"},
+            {"path": "build.sh", "content": "#!/usr/bin/env bash\nset -euo pipefail\n"},
+            {"path": "op_kernel/softplus.asc", "content": "// ASC source\n"},
+            {"path": "tests/test_softplus.py", "content": "# NumPy oracle\n"},
+            {"path": "asnumpy_adapter/softplus.json", "content": json.dumps(manifest)},
+        ],
+    })
+    with pytest.raises(
+        DraftGenerationError,
+        match="no AsNumpy manifest declares a valid ACLNN two-stage ASC interface",
+    ):
         _validate_bundle(payload)
 
 
