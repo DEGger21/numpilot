@@ -4119,3 +4119,51 @@ def test_validate_bundle_rejects_asc_without_acl_nn_two_stage_contract():
     })
     with pytest.raises(DraftGenerationError, match="ACLNN two-stage ASC interface"):
         _validate_bundle(payload)
+
+
+def test_validate_bundle_rejects_asc_when_cpp_acl_nn_mapping_drifts():
+    manifest = json.loads(_valid_asc_manifest())
+    manifest["name_mapping"]["cpp_api"] = {
+        "l2_get_workspace_size": "aclnnSoftplusGetWorkspaceSize",
+        "l2_execute": "aclnnOther",
+    }
+    payload = json.dumps({
+        "summary": "ASC implementation with a drifted C++ mapping.",
+        "files": [
+            {"path": "CMakeLists.txt", "content": "cmake_minimum_required(VERSION 3.16)\n"},
+            {"path": "build.sh", "content": "#!/usr/bin/env bash\nset -euo pipefail\n"},
+            {"path": "op_kernel/softplus.asc", "content": "// ASC source\n"},
+            {"path": "tests/test_softplus.py", "content": "# NumPy oracle\n"},
+            {"path": "asnumpy_adapter/softplus.json", "content": json.dumps(manifest)},
+        ],
+    })
+    with pytest.raises(
+        DraftGenerationError,
+        match="no AsNumpy manifest declares a valid ACLNN two-stage ASC interface",
+    ):
+        _validate_bundle(payload)
+
+
+def test_validate_bundle_rejects_asc_with_multiple_manifests():
+    payload = json.dumps({
+        "summary": "ASC implementation with ambiguous manifests.",
+        "files": [
+            {"path": "CMakeLists.txt", "content": "cmake_minimum_required(VERSION 3.16)\n"},
+            {"path": "build.sh", "content": "#!/usr/bin/env bash\nset -euo pipefail\n"},
+            {"path": "op_kernel/softplus.asc", "content": "// ASC source\n"},
+            {"path": "tests/test_softplus.py", "content": "# NumPy oracle\n"},
+            {
+                "path": "asnumpy_adapter/softplus.json",
+                "content": _valid_asc_manifest(),
+            },
+            {
+                "path": "asnumpy_adapter/other.json",
+                "content": _valid_asc_manifest(),
+            },
+        ],
+    })
+    with pytest.raises(
+        DraftGenerationError,
+        match="requires exactly one AsNumpy manifest",
+    ):
+        _validate_bundle(payload)

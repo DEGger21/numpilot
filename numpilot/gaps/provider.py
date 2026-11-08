@@ -929,6 +929,10 @@ def _validate_asc_two_stage_layout(
         raise DraftGenerationError(
             "ASC implementation layout requires an AsNumpy manifest"
         )
+    if len(manifest_paths) != 1:
+        raise DraftGenerationError(
+            "ASC implementation layout requires exactly one AsNumpy manifest"
+        )
     for manifest_path in manifest_paths:
         if file_contents is not None and manifest_path in file_contents:
             payload = file_contents[manifest_path]
