@@ -24,6 +24,7 @@ NumPilot 将 NumPy 程序的静态分析、迁移候选生成、数值验证和 
   resident/warm/cold 实测、GEMM 数值 gate、交点与 strict-NPU 发布边界；
 - [Gap 恢复状态](gap-recovery-state.md)：授权 profile、状态机和 write-once 收据；
 - [产物存储策略](artifact-storage.md)：配置、缓存、运行目录和备份边界；
+- [Benchmark 算子产物存储](operator-artifact-storage.zh-CN.md)：150 例共享候选、资格化和 run-scoped 激活引用；
 - [质量场景](quality-scenarios.md)：主要质量属性与失败关闭验收。
 
 ## 组件、集成与发布

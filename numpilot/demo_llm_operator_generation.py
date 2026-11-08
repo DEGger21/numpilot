@@ -493,6 +493,10 @@ def _build_parser() -> argparse.ArgumentParser:
         description="Make one real configured-model call for a tiny unverified operator draft."
     )
     parser.add_argument("--out", required=True, help="fresh absolute private output directory")
+    parser.add_argument(
+        "--artifact-store",
+        help="optional benchmark/run operator-artifacts directory for candidate storage",
+    )
     parser.add_argument("--llm-config", help="private llm.json path (optional when env is configured)")
     parser.add_argument(
         "--skill-path",
@@ -870,6 +874,44 @@ def main(argv: list[str] | None = None) -> int:
             "response_content_sha256": validated.get("content_sha256"),
             "claims": {**report["claims"], "model_generated": True},
         })
+        if args.artifact_store:
+            from numpilot.operator_artifacts import OperatorArtifactStore, OperatorKey
+
+            store = OperatorArtifactStore(Path(args.artifact_store).expanduser())
+            semantic_signature = (
+                "gap_source=%s;resolution=%s;dtype=float32;rank>=1;contiguous=true"
+                % (report.get("gap_source_sha256", ""), report.get("official_resolution_id", ""))
+            )
+            artifact_ref = store.put_candidate(
+                OperatorKey(
+                    operator_name=str(report.get("operator_name") or OPERATOR_NAME),
+                    semantic_signature=semantic_signature,
+                    gap_kind=str(report.get("generation_route") or "cannbot"),
+                    target_soc=str(report.get("target_soc") or "unknown"),
+                    cann_version=str(report.get("cann_version") or "unknown"),
+                    cannbot_bundle_sha256=str(report.get("skill_bundle_sha256") or ""),
+                ),
+                code_bytes,
+                {
+                    "artifact_id": report.get("generated_file_sha256"),
+                    "status": "generated_unverified",
+                    "generation_route": report.get("generation_route"),
+                    "gap_source_sha256": report.get("gap_source_sha256"),
+                    "official_resolution_id": report.get("official_resolution_id"),
+                    "skill_bundle_sha256": report.get("skill_bundle_sha256"),
+                    "provider": report.get("provider"),
+                    "configured_model": report.get("configured_model"),
+                    "compiled": False,
+                    "activated": False,
+                },
+            )
+            report["operator_artifact_ref"] = {
+                "kind": artifact_ref.kind,
+                "operator_id": artifact_ref.operator_id,
+                "candidate_id": artifact_ref.artifact_id,
+                "source_sha256": artifact_ref.source_sha256,
+                "store": "operator-artifacts",
+            }
         report_path = _write_report(output, report)
         if timeline is not None:
             timeline.update(

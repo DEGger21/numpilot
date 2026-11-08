@@ -38,6 +38,7 @@ from numpilot.backends.base import select_backend
 from numpilot.benchmark_lowering import lower_benchmark_program
 from numpilot.engines.ast_rewrite import AstRewriteEngine
 from numpilot.orchestrator import Orchestrator
+from numpilot.operator_artifacts import OperatorArtifactStore
 
 REFUSAL_GROUP = "J_out_of_subset"
 GROUP_ORDER = (
@@ -94,6 +95,7 @@ class CaseOutcome:
     strict_npu_qualified: bool | None = None
     performance_qualified: bool | None = None
     receipt_path: str = ""
+    operator_ref_path: str = ""
     overlay_ops: list = field(default_factory=list)
     overlay_profile_callsites: int = 0
     overlay_notes: list = field(default_factory=list)
@@ -135,6 +137,7 @@ class CaseOutcome:
             "strict_npu_qualified": self.strict_npu_qualified,
             "performance_qualified": self.performance_qualified,
             "receipt_path": self.receipt_path,
+            "operator_ref_path": self.operator_ref_path,
             "overlay_ops": list(self.overlay_ops),
             "overlay_profile_callsites": self.overlay_profile_callsites,
             "overlay_notes": list(self.overlay_notes),
@@ -309,6 +312,55 @@ def _finish(outcome, case_out, expectation):
     return outcome
 
 
+def _operator_ref_status(outcome):
+    if outcome.status == "refused":
+        return "rejected"
+    if outcome.status == "unsupported":
+        return "unsupported"
+    if outcome.status in {"failed", "error", "invalid_contract"}:
+        return "failed"
+    return "not_applicable"
+
+
+def _record_operator_ref(store, out_root, outcome):
+    """Record a truthful per-case reference without inventing a candidate.
+
+    The current benchmark backend does not invoke the model.  Gap candidates
+    produced by a future CANNBot-enabled backend will be attached here; until
+    then every case receives an explicit no-operator binding so the 150-case
+    summary remains complete and replayable.
+    """
+    if not outcome.out_dir:
+        return
+    case_out = Path(out_root) / outcome.out_dir
+    sample_id = "%s/%s" % (outcome.group, outcome.name)
+    binding = store.record_sample_without_operator(
+        sample_id,
+        status=_operator_ref_status(outcome),
+        route=outcome.route or outcome.expected_route,
+        reason=outcome.reason or "no generated operator artifact in this run",
+    )
+    ref = {
+        "schema": "numpilot.operator-sample-ref",
+        "schema_version": 1,
+        "sample_id": sample_id,
+        "status": _operator_ref_status(outcome),
+        "operator_store": "operator-artifacts",
+        "sample_binding": str(binding.relative_to(Path(out_root))),
+        "operator_id": None,
+        "candidate_id": None,
+        "qualification_id": None,
+        "activation_id": None,
+        "reason": outcome.reason or "no generated operator artifact in this run",
+    }
+    case_out.mkdir(parents=True, exist_ok=True)
+    (case_out / "operator-ref.json").write_text(
+        json.dumps(ref, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    outcome.operator_ref_path = "operator-ref.json"
+
+
 def run_suite(
     cases_root,
     out_dir,
@@ -336,6 +388,7 @@ def run_suite(
 
     out_root = Path(out_dir)
     out_root.mkdir(parents=True, exist_ok=True)
+    artifact_store = OperatorArtifactStore(out_root / "operator-artifacts")
     outcomes = []
     started = time.time()
     for index, (group, name, program) in enumerate(cases, 1):
@@ -349,6 +402,7 @@ def run_suite(
             expectation=resolve_expectation(expectations, group, name),
             overlay=overlay,
         )
+        _record_operator_ref(artifact_store, out_root, outcome)
         outcomes.append(outcome)
         if on_case is not None:
             on_case(outcome, index, len(cases))
@@ -360,6 +414,8 @@ def run_suite(
     summary["generated_at_utc"] = time.strftime(
         "%Y-%m-%dT%H:%M:%SZ", time.gmtime()
     )
+    summary["operator_artifact_store"] = "operator-artifacts"
+    summary["operator_artifacts"] = artifact_store.summary()
     write_summary(out_root, summary)
     return summary
 
@@ -768,6 +824,7 @@ def _render_markdown(summary):
             summary["unexpected"],
         ),
         "- generated: %s" % summary.get("generated_at_utc", ""),
+        "- operator artifacts: %s" % json.dumps(summary.get("operator_artifacts", {}), ensure_ascii=False, sort_keys=True),
         "",
         "## Expected-route conformance",
         "",

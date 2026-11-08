@@ -1639,6 +1639,7 @@ def _interactive_cannbot_route(snapshot, gap_request, args, session_root):
             sys.executable,
             "-m", "numpilot.demo_llm_operator_generation",
             "--out", str(output),
+            "--artifact-store", str(session_root / "operator-artifacts"),
             "--llm-config", str(getattr(args, "llm_config", None) or os.getenv("NUMPILOT_LLM_CONFIG_FILE", "")),
             "--skill-path", str(migration_skill.skill_path),
             "--skill-sha256", migration_skill.files_sha256["SKILL.md"],
@@ -1691,6 +1692,11 @@ def _interactive_cannbot_route(snapshot, gap_request, args, session_root):
                 and report_payload.get("actual_remote_call") is True
             ),
             "report": str(report) if report.is_file() else None,
+            "operator_artifact_ref": (
+                report_payload.get("operator_artifact_ref")
+                if isinstance(report_payload, Mapping)
+                else None
+            ),
             "generated_file": (
                 str(report.parent / str(report_payload.get("generated_file")))
                 if isinstance(report_payload, Mapping)
