@@ -3728,8 +3728,8 @@ class LlmDraftProvider:
                 "origin_action": "injected_test_double",
                 "remote_receipts": [],
             }
-        from numpilot.engines.llm import LlmEngine
         from numpilot.llm_config import load_llm_config
+        from numpilot.model_gateway import ModelGateway
 
         status = self._configuration_status
         if status is None:
@@ -3754,7 +3754,32 @@ class LlmDraftProvider:
                 status, "response_model_aliases", ()
             ),
         )
-        return LlmEngine._chat_with_receipt, {
+        # All production gap-generation traffic goes through the typed gateway.
+        # The gateway still uses LlmEngine as its transport, while keeping task,
+        # role, request-hash and receipt validation at one boundary. Injected
+        # test-doubles continue to return from the early branch above.
+        gateway = ModelGateway(configuration_loader=lambda: status)
+        gateway_chat = gateway.as_chat(
+            task="gap_generation", role="operator-generator"
+        )
+
+        def chat_with_legacy_generation_errors(system, user, **options):
+            try:
+                return gateway_chat(system, user, **options)
+            except Exception as exc:
+                # Keep the provider's existing retry/receipt behavior while the
+                # production request itself is owned by ModelGateway.
+                cause = getattr(exc, "__cause__", None)
+                if cause is not None:
+                    from numpilot.engines.llm import LlmResponseError
+                    from numpilot.model_contract import ModelContractError
+                    if isinstance(cause, LlmResponseError):
+                        raise cause
+                    if isinstance(cause, ModelContractError):
+                        raise DraftGenerationError(str(cause)) from None
+                raise
+
+        return chat_with_legacy_generation_errors, {
             "mode": "remote_llm",
             "provider": identity.provider,
             "protocol": identity.protocol,

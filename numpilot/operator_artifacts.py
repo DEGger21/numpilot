@@ -29,6 +29,7 @@ CANDIDATE_SCHEMA = "numpilot.operator-candidate"
 QUALIFICATION_SCHEMA = "numpilot.operator-qualification"
 ACTIVATION_SCHEMA = "numpilot.operator-activation"
 BINDING_SCHEMA = "numpilot.operator-sample-binding"
+RUNTIME_QUALIFICATION_SCHEMA = "numpilot.runtime-qualification"
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _SAFE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 _SOURCE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")
@@ -211,8 +212,10 @@ class OperatorArtifactStore:
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.operators = self.root / "operators"
         self.samples = self.root / "samples"
+        self.runtime_qualifications = self.root / "runtime-qualifications"
         self.operators.mkdir(mode=0o700, exist_ok=True)
         self.samples.mkdir(mode=0o700, exist_ok=True)
+        self.runtime_qualifications.mkdir(mode=0o700, exist_ok=True)
         self.store_path = self.root / "store.json"
         self.lock_path = self.root / ".store.lock"
         initial = {
@@ -323,7 +326,19 @@ class OperatorArtifactStore:
             "receipt": stable,
         }
         receipt_path = directory / "candidate.json"
-        _atomic_bytes(receipt_path, _json(stored))
+        if receipt_path.exists():
+            existing = self._read_json(receipt_path)
+            comparable_existing = dict(existing)
+            comparable_stored = dict(stored)
+            comparable_existing.pop("stored_at", None)
+            comparable_stored.pop("stored_at", None)
+            if comparable_existing != comparable_stored:
+                raise OperatorArtifactStoreError(
+                    f"immutable artifact already exists with different content: {receipt_path}"
+                )
+            stored = existing
+        else:
+            _atomic_bytes(receipt_path, _json(stored))
         self._append_operator(operator_id, "candidates", candidate_id, "candidate", candidate_id)
         return ArtifactRef("candidate", operator_id, candidate_id, str(receipt_path), str(source_path), source_sha, source_artifact_id)
 
@@ -404,7 +419,19 @@ class OperatorArtifactStore:
             "receipt": stable,
         }
         receipt_path = directory / "candidate.json"
-        _atomic_bytes(receipt_path, _json(stored))
+        if receipt_path.exists():
+            existing = self._read_json(receipt_path)
+            comparable_existing = dict(existing)
+            comparable_stored = dict(stored)
+            comparable_existing.pop("stored_at", None)
+            comparable_stored.pop("stored_at", None)
+            if comparable_existing != comparable_stored:
+                raise OperatorArtifactStoreError(
+                    f"immutable artifact already exists with different content: {receipt_path}"
+                )
+            stored = existing
+        else:
+            _atomic_bytes(receipt_path, _json(stored))
         self._append_operator(operator_id, "candidates", candidate_id, "candidate", candidate_id)
         return ArtifactRef(
             "candidate",
@@ -512,6 +539,107 @@ class OperatorArtifactStore:
             source_artifact_id=source_artifact_id,
         )
 
+    def put_runtime_qualification(
+        self, sample_id: str, receipt: Mapping[str, Any]
+    ) -> ArtifactRef:
+        """Store one case-scoped runtime qualification gate.
+
+        Direct AsNumpy calls do not have a generated operator candidate, so
+        their strict-NPU evidence is stored separately from candidate/
+        qualification/activation artifacts.  The receipt remains content
+        addressed and is safe to replay offline.
+        """
+        if not isinstance(sample_id, str) or not sample_id:
+            raise OperatorArtifactStoreError("sample_id is invalid")
+        stable = _stable_receipt(receipt)
+        backend = stable.get("backend")
+        strict = stable.get("strict_npu_qualified")
+        numerical = stable.get("numerical_verified")
+        runtime_status = stable.get("runtime_identity_status")
+        runtime_sha = stable.get("runtime_identity_sha256")
+        if strict is True:
+            if backend != "npu" or runtime_status != "matched":
+                raise OperatorArtifactStoreError(
+                    "strict runtime qualification requires matched NPU identity"
+                )
+            _validate_sha(runtime_sha, "runtime_identity_sha256")
+            if numerical is not True:
+                raise OperatorArtifactStoreError(
+                    "strict runtime qualification requires numerical verification"
+                )
+        if runtime_sha is not None:
+            _validate_sha(runtime_sha, "runtime_identity_sha256")
+        performance = stable.get("performance_qualified")
+        if performance is True:
+            if (
+                strict is not True
+                or numerical is not True
+                or backend != "npu"
+                or runtime_status != "matched"
+            ):
+                raise OperatorArtifactStoreError(
+                    "performance qualification requires strict NPU and numerical verification"
+                )
+            evidence = stable.get("performance_evidence")
+            if not isinstance(evidence, Mapping):
+                raise OperatorArtifactStoreError(
+                    "performance qualification requires evidence reference"
+                )
+            if evidence.get("schema") != "numpilot.performance-evidence-ref":
+                raise OperatorArtifactStoreError(
+                    "performance evidence schema is invalid"
+                )
+            if evidence.get("schema_version") != 1:
+                raise OperatorArtifactStoreError(
+                    "performance evidence schema version is invalid"
+                )
+            if evidence.get("status") != "passed" or evidence.get("performance_valid") is not True:
+                raise OperatorArtifactStoreError(
+                    "performance evidence is not a passed receipt"
+                )
+            _validate_sha(evidence.get("receipt_sha256"), "performance receipt_sha256")
+            if evidence.get("runtime_identity_sha256") != runtime_sha:
+                raise OperatorArtifactStoreError(
+                    "performance evidence runtime identity does not match"
+                )
+            if stable.get("source_sha256") is not None and evidence.get("source_sha256") != stable.get("source_sha256"):
+                raise OperatorArtifactStoreError(
+                    "performance evidence source does not match sample"
+                )
+        gate_status = (
+            "qualified"
+            if strict is True and numerical is True
+            else "failed"
+            if backend == "npu"
+            else "not_applicable"
+        )
+        qualification_id = _sha256(_canonical({
+            "sample_id": sample_id,
+            "receipt": stable,
+        }))
+        stored = {
+            "schema": RUNTIME_QUALIFICATION_SCHEMA,
+            "schema_version": SCHEMA_VERSION,
+            "runtime_qualification_id": qualification_id,
+            "sample_id": sample_id,
+            "status": gate_status,
+            "strict_npu_qualified": strict,
+            "numerical_verified": numerical,
+            "performance_qualified": stable.get("performance_qualified"),
+            "runtime_identity_status": runtime_status,
+            "runtime_identity_sha256": runtime_sha,
+            "stored_at": _now(),
+            "receipt": stable,
+        }
+        path = self.runtime_qualifications / f"{qualification_id}.json"
+        _atomic_bytes(path, _json(stored))
+        return ArtifactRef(
+            "runtime_qualification",
+            "",
+            qualification_id,
+            str(path),
+        )
+
     def bind_sample(
         self,
         sample_id: str,
@@ -522,9 +650,23 @@ class OperatorArtifactStore:
         activation_id: Optional[str] = None,
         status: str = "candidate",
         callsite: str = "",
+        runtime_qualification_id: Optional[str] = None,
+        strict_npu_qualified: Optional[bool] = None,
+        performance_qualified: Optional[bool] = None,
     ) -> Path:
         if status not in {"candidate", "qualified", "activated", "blocked", "rejected"}:
             raise OperatorArtifactStoreError("sample binding status is invalid")
+        runtime_payload = None
+        if runtime_qualification_id is not None:
+            _validate_sha(runtime_qualification_id, "runtime_qualification_id")
+            runtime_path = self.runtime_qualifications / f"{runtime_qualification_id}.json"
+            runtime_payload = self._read_json(runtime_path)
+        if performance_qualified is True and (
+            runtime_payload is None or runtime_payload.get("performance_qualified") is not True
+        ):
+            raise OperatorArtifactStoreError(
+                "performance sample binding requires a qualified runtime receipt"
+            )
         candidate = self._find_artifact(operator_id, "candidates", candidate_id, "candidate.json")
         qualification = None
         if qualification_id is not None:
@@ -556,6 +698,9 @@ class OperatorArtifactStore:
             "candidate_id": candidate_id,
             "qualification_id": qualification_id,
             "activation_id": activation_id,
+            "runtime_qualification_id": runtime_qualification_id,
+            "strict_npu_qualified": strict_npu_qualified,
+            "performance_qualified": performance_qualified,
             "status": status,
             "callsite": callsite,
             "candidate_source_sha256": candidate.get("source_sha256"),
@@ -565,7 +710,15 @@ class OperatorArtifactStore:
         return path
 
     def record_sample_without_operator(
-        self, sample_id: str, *, status: str, reason: str = "", route: str = ""
+        self,
+        sample_id: str,
+        *,
+        status: str,
+        reason: str = "",
+        route: str = "",
+        runtime_qualification_id: Optional[str] = None,
+        strict_npu_qualified: Optional[bool] = None,
+        performance_qualified: Optional[bool] = None,
     ) -> Path:
         """Record a benchmark sample that did not need a generated operator.
 
@@ -577,6 +730,17 @@ class OperatorArtifactStore:
         allowed = {"not_applicable", "blocked", "rejected", "unsupported", "failed"}
         if status not in allowed:
             raise OperatorArtifactStoreError("sample status is invalid")
+        runtime_payload = None
+        if runtime_qualification_id is not None:
+            _validate_sha(runtime_qualification_id, "runtime_qualification_id")
+            runtime_path = self.runtime_qualifications / f"{runtime_qualification_id}.json"
+            runtime_payload = self._read_json(runtime_path)
+        if performance_qualified is True and (
+            runtime_payload is None or runtime_payload.get("performance_qualified") is not True
+        ):
+            raise OperatorArtifactStoreError(
+                "performance sample binding requires a qualified runtime receipt"
+            )
         sample_safe = _safe_component(sample_id, "sample_id")
         path = self.samples / f"{sample_safe}-none.json"
         payload = {
@@ -587,6 +751,9 @@ class OperatorArtifactStore:
             "candidate_id": None,
             "qualification_id": None,
             "activation_id": None,
+            "runtime_qualification_id": runtime_qualification_id,
+            "strict_npu_qualified": strict_npu_qualified,
+            "performance_qualified": performance_qualified,
             "status": status,
             "route": route,
             "reason": reason[:512],
@@ -623,6 +790,16 @@ class OperatorArtifactStore:
                 qualifications.add(binding["qualification_id"])
             if binding.get("activation_id"):
                 activations.add(binding["activation_id"])
+        runtime_files = sorted(self.runtime_qualifications.glob("*.json"))
+        runtime_qualified = 0
+        performance_valid = 0
+        for path in runtime_files:
+            try:
+                runtime = self._read_json(path)
+            except OperatorArtifactStoreError:
+                continue
+            runtime_qualified += runtime.get("status") == "qualified"
+            performance_valid += runtime.get("performance_qualified") is True
         return {
             "schema": "numpilot.operator-artifact-summary",
             "schema_version": SCHEMA_VERSION,
@@ -631,6 +808,9 @@ class OperatorArtifactStore:
             "unique_candidates": len(candidates),
             "unique_qualifications": len(qualifications),
             "unique_activations": len(activations),
+            "runtime_qualifications": len(runtime_files),
+            "strict_npu_qualified": runtime_qualified,
+            "performance_valid": performance_valid,
             "statuses": dict(sorted(statuses.items())),
         }
 

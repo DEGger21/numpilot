@@ -94,6 +94,10 @@ class CaseOutcome:
     numerical_verified: bool = False
     strict_npu_qualified: bool | None = None
     performance_qualified: bool | None = None
+    runtime_identity_status: str | None = None
+    runtime_identity_sha256: str | None = None
+    runtime_audit_id: str | None = None
+    runtime_qualification_id: str = ""
     receipt_path: str = ""
     operator_ref_path: str = ""
     overlay_ops: list = field(default_factory=list)
@@ -136,6 +140,10 @@ class CaseOutcome:
             "numerical_verified": self.numerical_verified,
             "strict_npu_qualified": self.strict_npu_qualified,
             "performance_qualified": self.performance_qualified,
+            "runtime_identity_status": self.runtime_identity_status,
+            "runtime_identity_sha256": self.runtime_identity_sha256,
+            "runtime_audit_id": self.runtime_audit_id,
+            "runtime_qualification_id": self.runtime_qualification_id,
             "receipt_path": self.receipt_path,
             "operator_ref_path": self.operator_ref_path,
             "overlay_ops": list(self.overlay_ops),
@@ -322,23 +330,93 @@ def _operator_ref_status(outcome):
     return "not_applicable"
 
 
-def _record_operator_ref(store, out_root, outcome):
-    """Record a truthful per-case reference without inventing a candidate.
+def _runtime_identity_snapshot(backend):
+    if getattr(backend, "name", "") != "npu":
+        return {
+            "status": "not_applicable",
+            "identity_sha256": None,
+            "audit_id": None,
+        }
+    try:
+        identity = backend.runtime_identity()
+        payload = identity.to_dict() if hasattr(identity, "to_dict") else {}
+        return {
+            "status": payload.get("status"),
+            "identity_sha256": payload.get("identity_sha256"),
+            "audit_id": payload.get("audit_id"),
+            "asnumpy_version": payload.get("asnumpy_version"),
+            "cann_version": payload.get("cann_version"),
+            "soc_model": payload.get("soc_model"),
+            "python_version": payload.get("python_version"),
+        }
+    except Exception as exc:
+        return {
+            "status": "error",
+            "identity_sha256": None,
+            "audit_id": type(exc).__name__,
+        }
 
-    The current benchmark backend does not invoke the model.  Gap candidates
-    produced by a future CANNBot-enabled backend will be attached here; until
-    then every case receives an explicit no-operator binding so the 150-case
-    summary remains complete and replayable.
-    """
+
+def _record_operator_ref(store, out_root, outcome, *, backend, runtime_identity):
+    """Record case and runtime qualification references without inventing a candidate."""
     if not outcome.out_dir:
         return
     case_out = Path(out_root) / outcome.out_dir
     sample_id = "%s/%s" % (outcome.group, outcome.name)
+    backend_name = getattr(backend, "name", type(backend).__name__)
+    strict = outcome.strict_npu_qualified
+    if backend_name != "npu":
+        strict = None
+    runtime_receipt = {
+        "sample_id": sample_id,
+        "source_sha256": outcome.source_sha256,
+        "backend": backend_name,
+        "runtime_identity_status": runtime_identity.get("status"),
+        "runtime_identity_sha256": runtime_identity.get("identity_sha256"),
+        "audit_id": runtime_identity.get("audit_id"),
+        "asnumpy_version": runtime_identity.get("asnumpy_version"),
+        "cann_version": runtime_identity.get("cann_version"),
+        "soc_model": runtime_identity.get("soc_model"),
+        "python_version": runtime_identity.get("python_version"),
+        "strict_npu_qualified": strict,
+        "numerical_verified": bool(outcome.numerical_verified),
+        "performance_qualified": outcome.performance_qualified,
+        "reason": outcome.reason or "runtime qualification gate completed",
+    }
+    runtime_ref = store.put_runtime_qualification(sample_id, runtime_receipt)
+    outcome.runtime_identity_status = runtime_identity.get("status")
+    outcome.runtime_identity_sha256 = runtime_identity.get("identity_sha256")
+    outcome.runtime_audit_id = runtime_identity.get("audit_id")
+    outcome.runtime_qualification_id = runtime_ref.artifact_id
+    runtime_case_ref = {
+        "schema": "numpilot.benchmark-runtime-qualification-ref",
+        "schema_version": 1,
+        "sample_id": sample_id,
+        "runtime_qualification_id": runtime_ref.artifact_id,
+        "store": "operator-artifacts",
+        "receipt": str(
+            Path("operator-artifacts")
+            / "runtime-qualifications"
+            / (runtime_ref.artifact_id + ".json")
+        ),
+        "strict_npu_qualified": strict,
+        "numerical_verified": bool(outcome.numerical_verified),
+        "performance_qualified": outcome.performance_qualified,
+    }
+    case_out.mkdir(parents=True, exist_ok=True)
+    (case_out / "runtime-qualification.json").write_text(
+        json.dumps(runtime_case_ref, ensure_ascii=False, indent=2, sort_keys=True)
+        + "\n",
+        encoding="utf-8",
+    )
     binding = store.record_sample_without_operator(
         sample_id,
         status=_operator_ref_status(outcome),
         route=outcome.route or outcome.expected_route,
         reason=outcome.reason or "no generated operator artifact in this run",
+        runtime_qualification_id=runtime_ref.artifact_id,
+        strict_npu_qualified=strict,
+        performance_qualified=outcome.performance_qualified,
     )
     ref = {
         "schema": "numpilot.operator-sample-ref",
@@ -347,13 +425,16 @@ def _record_operator_ref(store, out_root, outcome):
         "status": _operator_ref_status(outcome),
         "operator_store": "operator-artifacts",
         "sample_binding": str(binding.relative_to(Path(out_root))),
+        "runtime_qualification_ref": "runtime-qualification.json",
+        "runtime_qualification_id": runtime_ref.artifact_id,
+        "strict_npu_qualified": strict,
+        "performance_qualified": outcome.performance_qualified,
         "operator_id": None,
         "candidate_id": None,
         "qualification_id": None,
         "activation_id": None,
         "reason": outcome.reason or "no generated operator artifact in this run",
     }
-    case_out.mkdir(parents=True, exist_ok=True)
     (case_out / "operator-ref.json").write_text(
         json.dumps(ref, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -389,6 +470,7 @@ def run_suite(
     out_root = Path(out_dir)
     out_root.mkdir(parents=True, exist_ok=True)
     artifact_store = OperatorArtifactStore(out_root / "operator-artifacts")
+    runtime_identity = _runtime_identity_snapshot(backend)
     outcomes = []
     started = time.time()
     for index, (group, name, program) in enumerate(cases, 1):
@@ -402,7 +484,7 @@ def run_suite(
             expectation=resolve_expectation(expectations, group, name),
             overlay=overlay,
         )
-        _record_operator_ref(artifact_store, out_root, outcome)
+        _record_operator_ref(artifact_store, out_root, outcome, backend=backend, runtime_identity=runtime_identity)
         outcomes.append(outcome)
         if on_case is not None:
             on_case(outcome, index, len(cases))

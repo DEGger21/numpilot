@@ -128,3 +128,102 @@ def test_store_verify_and_gc_report_unreferenced_candidate_without_deleting(tmp_
     assert gc["dry_run"] is True
     assert gc["delete_performed"] is False
     assert any(item["artifact_id"] == candidate.artifact_id for item in gc["orphaned"])
+
+
+def test_store_records_runtime_qualification_without_fake_operator(tmp_path):
+    store = OperatorArtifactStore(tmp_path / "run")
+    failed = store.put_runtime_qualification(
+        "A_direct_simple/A001",
+        {
+            "backend": "npu",
+            "runtime_identity_status": "matched",
+            "runtime_identity_sha256": "a" * 64,
+            "strict_npu_qualified": False,
+            "numerical_verified": False,
+            "performance_qualified": None,
+            "reason": "capability gate failed",
+        },
+    )
+    store.record_sample_without_operator(
+        "A_direct_simple/A001",
+        status="failed",
+        runtime_qualification_id=failed.artifact_id,
+        strict_npu_qualified=False,
+        performance_qualified=None,
+    )
+    summary = store.summary()
+    assert summary["runtime_qualifications"] == 1
+    assert summary["strict_npu_qualified"] == 0
+    assert summary["performance_valid"] == 0
+    assert store.verify()["ok"] is True
+
+
+
+def test_store_rejects_unbound_strict_runtime_qualification(tmp_path):
+    store = OperatorArtifactStore(tmp_path / "run")
+    with pytest.raises(OperatorArtifactStoreError, match="matched NPU identity"):
+        store.put_runtime_qualification(
+            "A_direct_simple/A001",
+            {
+                "backend": "npu",
+                "runtime_identity_status": "audit_required",
+                "strict_npu_qualified": True,
+                "numerical_verified": True,
+            },
+        )
+
+
+
+def test_store_rejects_performance_without_strict_npu_and_evidence(tmp_path):
+    store = OperatorArtifactStore(tmp_path / "run")
+    base = {
+        "backend": "npu",
+        "runtime_identity_status": "matched",
+        "runtime_identity_sha256": "a" * 64,
+        "strict_npu_qualified": False,
+        "numerical_verified": True,
+        "performance_qualified": True,
+    }
+    with pytest.raises(OperatorArtifactStoreError, match="strict NPU"):
+        store.put_runtime_qualification("A_direct_simple/A001", base)
+
+    base["strict_npu_qualified"] = True
+    with pytest.raises(OperatorArtifactStoreError, match="evidence reference"):
+        store.put_runtime_qualification("A_direct_simple/A001", base)
+
+
+def test_store_accepts_hash_bound_performance_evidence_only_after_strict_gate(tmp_path):
+    store = OperatorArtifactStore(tmp_path / "run")
+    source_sha = "b" * 64
+    runtime_sha = "a" * 64
+    receipt = store.put_runtime_qualification(
+        "A_direct_simple/A001",
+        {
+            "backend": "npu",
+            "source_sha256": source_sha,
+            "runtime_identity_status": "matched",
+            "runtime_identity_sha256": runtime_sha,
+            "strict_npu_qualified": True,
+            "numerical_verified": True,
+            "performance_qualified": True,
+            "performance_evidence": {
+                "schema": "numpilot.performance-evidence-ref",
+                "schema_version": 1,
+                "status": "passed",
+                "performance_valid": True,
+                "receipt_sha256": "c" * 64,
+                "source_sha256": source_sha,
+                "runtime_identity_sha256": runtime_sha,
+            },
+        },
+    )
+    store.record_sample_without_operator(
+        "A_direct_simple/A001",
+        status="not_applicable",
+        runtime_qualification_id=receipt.artifact_id,
+        strict_npu_qualified=True,
+        performance_qualified=True,
+    )
+    summary = store.summary()
+    assert summary["performance_valid"] == 1
+    assert store.verify()["ok"] is True

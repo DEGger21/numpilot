@@ -10,6 +10,7 @@ NumPilot 将 NumPy 程序的静态分析、迁移候选生成、数值验证和 
 - [English installation guide](installation.md) / [中文安装指南](installation.zh-CN.md)：安装、
   AsNumpy 组件激活和分层验收；
 - [模型与回执合同](model-contract.md)：`llm.json`、OpenAI-compatible 接口、隐私和来源边界；
+- [外部模型与算子生成架构](llm-provider-architecture.zh-CN.md)：DeepSeek/ModelGateway、CANNBot 编排、候选门禁和 SLAI 对照；
 - [CodeArts 接入](codearts-integration.md)：终端、侧边栏 Agent 和 hybrid 协作方式；
 - [NumPilot Agent Skill](../skill/README.md)：供侧边栏 AI 阅读的迁移工作流入口。
 

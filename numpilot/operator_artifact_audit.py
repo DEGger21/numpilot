@@ -14,6 +14,7 @@ from numpilot.operator_artifacts import (
     OperatorKey,
     QUALIFICATION_SCHEMA,
     STORE_SCHEMA,
+    RUNTIME_QUALIFICATION_SCHEMA,
 )
 
 
@@ -53,7 +54,7 @@ def audit_store(root: str | Path) -> dict[str, Any]:
     """Return a deterministic, read-only integrity report for one store."""
     root = Path(root).expanduser().absolute()
     errors: list[str] = []
-    counts = {"operators": 0, "candidates": 0, "qualifications": 0, "activations": 0, "samples": 0}
+    counts = {"operators": 0, "candidates": 0, "qualifications": 0, "activations": 0, "runtime_qualifications": 0, "samples": 0}
     if root.is_symlink() or not root.is_dir():
         return {"schema": "numpilot.operator-artifact-audit", "schema_version": 1, "ok": False, "root": str(root), "errors": ["store root is missing or symlinked"], "counts": counts}
     try:
@@ -172,6 +173,54 @@ def audit_store(root: str | Path) -> dict[str, Any]:
                     except Exception as exc:
                         _add(errors, str(exc))
 
+    runtime_ids: set[str] = set()
+    runtime_root = root / "runtime-qualifications"
+    if runtime_root.exists() and (runtime_root.is_symlink() or not runtime_root.is_dir()):
+        _add(errors, "runtime qualification directory is invalid")
+    elif runtime_root.is_dir():
+        for path in sorted(runtime_root.glob("*.json")):
+            try:
+                payload = _read(path)
+                runtime_id = payload.get("runtime_qualification_id")
+                if runtime_id != path.stem:
+                    _add(errors, f"runtime qualification id mismatch: {path.name}")
+                if payload.get("schema") != RUNTIME_QUALIFICATION_SCHEMA:
+                    _add(errors, f"runtime qualification schema mismatch: {path.name}")
+                sample_id = payload.get("sample_id")
+                if not isinstance(sample_id, str) or not sample_id:
+                    _add(errors, f"runtime qualification sample missing: {path.name}")
+                if payload.get("strict_npu_qualified") is True:
+                    if payload.get("status") != "qualified":
+                        _add(errors, f"strict runtime qualification not qualified: {path.name}")
+                    runtime_sha = payload.get("runtime_identity_sha256")
+                    if not isinstance(runtime_sha, str) or len(runtime_sha) != 64 or any(
+                        char not in "0123456789abcdef" for char in runtime_sha
+                    ):
+                        _add(errors, f"runtime identity hash invalid: {path.name}")
+                if payload.get("performance_qualified") is True:
+                    receipt = payload.get("receipt")
+                    evidence = receipt.get("performance_evidence") if isinstance(receipt, dict) else None
+                    if payload.get("strict_npu_qualified") is not True or payload.get("numerical_verified") is not True:
+                        _add(errors, f"performance runtime gate is not strict and numerical: {path.name}")
+                    if payload.get("status") != "qualified":
+                        _add(errors, f"performance runtime qualification not qualified: {path.name}")
+                    if not isinstance(evidence, dict) or evidence.get("schema") != "numpilot.performance-evidence-ref":
+                        _add(errors, f"performance evidence missing or invalid: {path.name}")
+                    else:
+                        receipt_sha = evidence.get("receipt_sha256")
+                        if not isinstance(receipt_sha, str) or len(receipt_sha) != 64 or any(char not in "0123456789abcdef" for char in receipt_sha):
+                            _add(errors, f"performance receipt hash invalid: {path.name}")
+                        if evidence.get("status") != "passed" or evidence.get("performance_valid") is not True:
+                            _add(errors, f"performance evidence is not passed: {path.name}")
+                        if evidence.get("runtime_identity_sha256") != payload.get("runtime_identity_sha256"):
+                            _add(errors, f"performance runtime identity mismatch: {path.name}")
+                        if isinstance(receipt, dict) and receipt.get("source_sha256") is not None and evidence.get("source_sha256") != receipt.get("source_sha256"):
+                            _add(errors, f"performance source mismatch: {path.name}")
+                runtime_ids.add(path.stem)
+                counts["runtime_qualifications"] += 1
+            except Exception as exc:
+                _add(errors, str(exc))
+
     bindings: dict[str, dict[str, Any]] = {}
     if samples_root.is_dir() and not samples_root.is_symlink():
         for sample in sorted(samples_root.glob("*.json")):
@@ -191,6 +240,19 @@ def audit_store(root: str | Path) -> dict[str, Any]:
                 candidate_id = binding.get("candidate_id")
                 qualification_id = binding.get("qualification_id")
                 activation_id = binding.get("activation_id")
+                runtime_id = binding.get("runtime_qualification_id")
+                if runtime_id is not None and runtime_id not in runtime_ids:
+                    _add(errors, f"sample runtime qualification ref missing: {sample.name}")
+                if binding.get("performance_qualified") is True:
+                    runtime_payload = None
+                    if runtime_id in runtime_ids:
+                        runtime_path = runtime_root / f"{runtime_id}.json"
+                        try:
+                            runtime_payload = _read(runtime_path)
+                        except Exception as exc:
+                            _add(errors, str(exc))
+                    if not isinstance(runtime_payload, dict) or runtime_payload.get("performance_qualified") is not True:
+                        _add(errors, f"sample performance binding lacks qualified runtime: {sample.name}")
                 status = binding.get("status")
                 if operator_id is None:
                     if any(value is not None for value in (candidate_id, qualification_id, activation_id)):
@@ -276,7 +338,7 @@ def audit_run(root: str | Path, *, expected_total: int = 150) -> dict[str, Any]:
                 errors.append(str(exc)); continue
             if ref.get("operator_store") != "operator-artifacts":
                 errors.append(f"operator ref store mismatch: {path}")
-            for field in ("sample_id", "status", "operator_id", "candidate_id", "qualification_id", "activation_id"):
+            for field in ("sample_id", "status", "operator_id", "candidate_id", "qualification_id", "activation_id", "runtime_qualification_id", "strict_npu_qualified", "performance_qualified"):
                 if ref.get(field) != binding.get(field):
                     errors.append(f"operator ref/binding mismatch {field}: {path}")
             if binding.get("sample_id") not in bindings:

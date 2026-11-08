@@ -254,7 +254,7 @@ class ModelGateway:
                 raise ModelGatewayError(
                     "response", "remote model response is invalid",
                     receipt=safe_receipt,
-                ) from None
+                ) from exc
             if name == "LlmConfigError":
                 raise ModelGatewayError(
                     "config", "remote model configuration is invalid"
@@ -273,11 +273,11 @@ class ModelGateway:
             )
         try:
             receipt = validate_remote_receipt(raw_receipt, content)
-        except Exception:
+        except Exception as exc:
             raise ModelGatewayError(
                 "contract", "remote model receipt violates the contract",
                 receipt=raw_receipt,
-            ) from None
+            ) from exc
         return ModelResult(
             content=content,
             receipt=receipt,

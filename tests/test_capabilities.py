@@ -279,6 +279,11 @@ def test_p0_core_identity_rejects_utils_drift(tmp_path, monkeypatch):
 def _write_runtime_fixture(tmp_path, relative_payloads, monkeypatch, digest_name):
     from numpilot.backends import npu
 
+    # Isolate generic hash fixtures from a machine-level bootstrap receipt.
+    monkeypatch.setenv(
+        "NUMPILOT_BOOTSTRAP_RECEIPT",
+        str(tmp_path / "missing-bootstrap-receipt.json"),
+    )
     root = tmp_path / "asnumpy"
     for relative, payload in relative_payloads.items():
         target = root / relative

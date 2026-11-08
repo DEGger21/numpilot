@@ -98,3 +98,71 @@ def test_audit_run_detects_operator_ref_binding_mismatch(tmp_path):
     report = audit_run(run, expected_total=2)
     assert report["ok"] is False
     assert any("ref/binding mismatch status" in item for item in report["errors"])
+
+
+def test_audit_run_accepts_runtime_qualification_ref(tmp_path):
+    run = _make_run(tmp_path, count=1)
+    store = OperatorArtifactStore(run / "operator-artifacts")
+    runtime = store.put_runtime_qualification(
+        "A_direct_simple/A000",
+        {
+            "backend": "npu",
+            "runtime_identity_status": "matched",
+            "runtime_identity_sha256": "b" * 64,
+            "strict_npu_qualified": True,
+            "numerical_verified": True,
+            "performance_qualified": None,
+        },
+    )
+    binding_path = next((run / "operator-artifacts" / "samples").glob("*.json"))
+    binding = json.loads(binding_path.read_text())
+    binding["runtime_qualification_id"] = runtime.artifact_id
+    binding["strict_npu_qualified"] = True
+    binding["performance_qualified"] = None
+    binding_path.write_text(json.dumps(binding), encoding="utf-8")
+    ref_path = next((run / "cases").rglob("operator-ref.json"))
+    ref = json.loads(ref_path.read_text())
+    ref["runtime_qualification_id"] = runtime.artifact_id
+    ref["strict_npu_qualified"] = True
+    ref["performance_qualified"] = None
+    ref_path.write_text(json.dumps(ref), encoding="utf-8")
+    report = audit_run(run, expected_total=1)
+    assert report["ok"] is True
+    assert report["store"]["counts"]["runtime_qualifications"] == 1
+
+
+
+def test_audit_rejects_forged_performance_flag(tmp_path):
+    run = _make_run(tmp_path, count=1)
+    store = OperatorArtifactStore(run / "operator-artifacts")
+    runtime = store.put_runtime_qualification(
+        "A_direct_simple/A000",
+        {
+            "backend": "npu",
+            "runtime_identity_status": "matched",
+            "runtime_identity_sha256": "b" * 64,
+            "strict_npu_qualified": True,
+            "numerical_verified": True,
+            "performance_qualified": None,
+        },
+    )
+    runtime_path = run / "operator-artifacts" / "runtime-qualifications" / f"{runtime.artifact_id}.json"
+    payload = json.loads(runtime_path.read_text())
+    payload["performance_qualified"] = True
+    payload["receipt"]["performance_qualified"] = True
+    runtime_path.write_text(json.dumps(payload), encoding="utf-8")
+    binding_path = next((run / "operator-artifacts" / "samples").glob("*.json"))
+    binding = json.loads(binding_path.read_text())
+    binding["runtime_qualification_id"] = runtime.artifact_id
+    binding["strict_npu_qualified"] = True
+    binding["performance_qualified"] = True
+    binding_path.write_text(json.dumps(binding), encoding="utf-8")
+    ref_path = next((run / "cases").rglob("operator-ref.json"))
+    ref = json.loads(ref_path.read_text())
+    ref["runtime_qualification_id"] = runtime.artifact_id
+    ref["strict_npu_qualified"] = True
+    ref["performance_qualified"] = True
+    ref_path.write_text(json.dumps(ref), encoding="utf-8")
+    report = audit_run(run, expected_total=1)
+    assert report["ok"] is False
+    assert any("performance evidence" in item for item in report["errors"])
