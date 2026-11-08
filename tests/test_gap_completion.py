@@ -37,6 +37,7 @@ from numpilot.cannbot_skills import (
 )
 from numpilot.engines.llm import LlmEngine, LlmHttpError, LlmResponseError
 from numpilot.gaps.models import GapSpec
+from numpilot.operator_artifact_audit import audit_store
 from numpilot.gaps.pipeline import (
     GapCompletionError,
     GapCompletionPipeline,
@@ -481,6 +482,17 @@ def test_llm_provider_writes_hashed_unverified_draft_idempotently(tmp_path):
     assert artifact["generation"]["attempt_count"] == 1
     assert len(artifact["generation"]["response_sha256"][0]) == 64
     assert len(artifact["files"]) == 7
+    artifact_store_report = audit_store(out / "operator-artifacts")
+    assert artifact_store_report["ok"] is True
+    assert artifact_store_report["counts"]["operators"] == 1
+    assert artifact_store_report["counts"]["candidates"] == 1
+    assert artifact_store_report["errors"] == []
+    stored_candidate = next(
+        (out / "operator-artifacts").glob("operators/*/candidates/*/candidate.json")
+    )
+    stored = json.loads(stored_candidate.read_text(encoding="utf-8"))
+    assert stored["source_artifact_id"] == artifact["artifact_id"]
+    assert (draft.parent / "operator-artifact-store-ref.json").is_file()
     report = json.loads((out / "gap-report.json").read_text(encoding="utf-8"))
     assert report["integrated_count"] == 0
     assert report["qualified_count"] == 0

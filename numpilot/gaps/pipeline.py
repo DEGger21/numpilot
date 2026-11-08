@@ -33,6 +33,7 @@ from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 
 from numpilot.agents.analysis import AnalysisAgent
 from numpilot.gaps.models import GapSpec, OperatorDraft
+from numpilot.operator_artifacts import OperatorArtifactStore, OperatorKey
 from numpilot.gaps.provider import DraftGenerationError, LlmDraftProvider
 from numpilot.gaps.spec import (
     blocked_unsupported,
@@ -844,6 +845,7 @@ class GapCompletionPipeline:
         _ensure_directory(output, private=True)
         gaps_dir = output / "gaps"
         _ensure_directory(gaps_dir, private=True)
+        artifact_store = OperatorArtifactStore(output / "operator-artifacts")
         if self.skill_bundle is not None:
             _write_json(
                 output / "skill-bundle.json",
@@ -902,11 +904,56 @@ class GapCompletionPipeline:
                 _atomic_write(request_path, request, replace=False)
             if self.provider is not None:
                 try:
-                    drafts.append(self.provider.generate(
+                    draft = self.provider.generate(
                         spec,
                         workspace,
                         generation_request=request.decode("utf-8"),
-                    ))
+                    )
+                    drafts.append(draft)
+                    artifact_ref = artifact_store.put_candidate_tree(
+                        OperatorKey(
+                            operator_name=spec.asnumpy_api,
+                            semantic_signature=(
+                                "gap_id=%s;api=%s;source=%s;signature=%s"
+                                % (
+                                    spec.gap_id,
+                                    spec.qualified_api,
+                                    spec.source_sha256,
+                                    json.dumps(
+                                        spec.signature_variants,
+                                        ensure_ascii=False,
+                                        sort_keys=True,
+                                        separators=(",", ":"),
+                                    ),
+                                )
+                            ),
+                            gap_kind=spec.route,
+                            target_soc=spec.target_soc,
+                            cann_version=spec.cann_version,
+                        ),
+                        draft.workspace,
+                        {
+                            "artifact_id": draft.artifact_id,
+                            "gap_id": spec.gap_id,
+                            "qualified_api": spec.qualified_api,
+                            "asnumpy_api": spec.asnumpy_api,
+                            "source_sha256": spec.source_sha256,
+                            "status": "generated_unverified",
+                            "compiled": False,
+                            "activated": False,
+                        },
+                    )
+                    _write_json(
+                        workspace / "operator-artifact-store-ref.json",
+                        {
+                            "schema": "numpilot.operator-artifact-ref",
+                            "operator_id": artifact_ref.operator_id,
+                            "candidate_id": artifact_ref.artifact_id,
+                            "source_artifact_id": artifact_ref.source_artifact_id,
+                            "store": "../operator-artifacts",
+                        },
+                        replace=False,
+                    )
                 except DraftGenerationError as exc:
                     if not continue_on_error:
                         raise GapCompletionError(

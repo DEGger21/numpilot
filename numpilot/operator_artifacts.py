@@ -31,6 +31,7 @@ ACTIVATION_SCHEMA = "numpilot.operator-activation"
 BINDING_SCHEMA = "numpilot.operator-sample-binding"
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _SAFE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
+_SOURCE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")
 _SECRET_KEYS = {
     "token", "api_key", "apikey", "authorization", "secret", "password",
     "endpoint", "base_url", "raw_response", "response_text", "prompt",
@@ -131,6 +132,14 @@ def _safe_component(value: str, label: str) -> str:
 def _validate_sha(value: str, label: str) -> str:
     if not isinstance(value, str) or not _SHA256.fullmatch(value):
         raise OperatorArtifactStoreError(f"{label} must be a lowercase SHA-256")
+    return value
+
+
+def _validate_source_id(value: Any, label: str) -> Optional[str]:
+    if value is None:
+        return None
+    if not isinstance(value, str) or not _SOURCE_ID.fullmatch(value):
+        raise OperatorArtifactStoreError(f"{label} is invalid")
     return value
 
 
@@ -318,6 +327,95 @@ class OperatorArtifactStore:
         self._append_operator(operator_id, "candidates", candidate_id, "candidate", candidate_id)
         return ArtifactRef("candidate", operator_id, candidate_id, str(receipt_path), str(source_path), source_sha, source_artifact_id)
 
+    def put_candidate_tree(
+        self, key: OperatorKey, root: os.PathLike[str] | str, receipt: Mapping[str, Any]
+    ) -> ArtifactRef:
+        """Import an immutable generated-draft workspace into the store.
+
+        The signed provider manifest remains outside the imported payload, while
+        its stable artifact id is preserved as ``source_artifact_id``.  This
+        keeps the store content-addressed without rewriting the provider's
+        immutable draft identity.
+        """
+        workspace = Path(root).expanduser().absolute()
+        if workspace.is_symlink() or not workspace.is_dir():
+            raise OperatorArtifactStoreError("candidate workspace must be a regular directory")
+        files: dict[str, bytes] = {}
+        total = 0
+        for path in sorted(workspace.rglob("*")):
+            if path.is_symlink():
+                raise OperatorArtifactStoreError("candidate workspace contains a symlink")
+            if not path.is_file():
+                continue
+            relative = path.relative_to(workspace)
+            if relative.is_absolute() or ".." in relative.parts:
+                raise OperatorArtifactStoreError("candidate workspace path escapes root")
+            rel = relative.as_posix()
+            if rel == "operator-artifact.json" or any(part.startswith(".") for part in relative.parts):
+                continue
+            payload = path.read_bytes()
+            if len(files) >= 256 or total + len(payload) > 2 * 1024 * 1024:
+                raise OperatorArtifactStoreError("candidate workspace exceeds storage limits")
+            total += len(payload)
+            files[rel] = payload
+        if not files:
+            raise OperatorArtifactStoreError("candidate workspace has no importable files")
+
+        operator_id = self.ensure_operator(key)
+        stable = _stable_receipt(receipt)
+        file_hashes = {name: _sha256(payload) for name, payload in files.items()}
+        source_artifact_id = stable.get("artifact_id") or stable.get("source_artifact_id")
+        if source_artifact_id is not None and (
+            not isinstance(source_artifact_id, str)
+            or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}", source_artifact_id)
+        ):
+            raise OperatorArtifactStoreError("source artifact_id is invalid")
+        candidate_id = _sha256(_canonical({
+            "operator_id": operator_id,
+            "files": file_hashes,
+            "receipt": stable,
+        }))
+        directory = self._operator_dir(operator_id) / "candidates" / candidate_id
+        files_dir = directory / "files"
+        for rel, payload in files.items():
+            target = files_dir / rel
+            if target.is_symlink():
+                raise OperatorArtifactStoreError("refusing symlink candidate file")
+            _atomic_bytes(target, payload)
+
+        manifest_payload = _json(file_hashes)
+        manifest_path = directory / "files-manifest.json"
+        _atomic_bytes(manifest_path, manifest_payload)
+        stored = {
+            "schema": CANDIDATE_SCHEMA,
+            "schema_version": SCHEMA_VERSION,
+            "operator_id": operator_id,
+            "candidate_id": candidate_id,
+            "status": "generated_unverified",
+            "compiled": False,
+            "activated": False,
+            "source_kind": "workspace",
+            "source_name": "files-manifest.json",
+            "source_sha256": _sha256(manifest_payload),
+            "source_bytes": total,
+            "source_artifact_id": source_artifact_id,
+            "files_sha256": file_hashes,
+            "stored_at": _now(),
+            "receipt": stable,
+        }
+        receipt_path = directory / "candidate.json"
+        _atomic_bytes(receipt_path, _json(stored))
+        self._append_operator(operator_id, "candidates", candidate_id, "candidate", candidate_id)
+        return ArtifactRef(
+            "candidate",
+            operator_id,
+            candidate_id,
+            str(receipt_path),
+            str(files_dir),
+            _sha256(manifest_payload),
+            source_artifact_id,
+        )
+
     def put_qualification(
         self,
         operator_id: str,
@@ -335,6 +433,10 @@ class OperatorArtifactStore:
             raise OperatorArtifactStoreError("interface_available requires qualified status")
         if status == "qualified" and stable.get("interface_available") is not True:
             raise OperatorArtifactStoreError("qualified status requires interface_available=true")
+        source_artifact_id = _validate_source_id(
+            stable.get("qualification_id") or stable.get("source_artifact_id"),
+            "source qualification id",
+        )
         qualification_id = _sha256(_canonical({
             "operator_id": operator_id,
             "candidate_id": candidate_id,
@@ -348,6 +450,7 @@ class OperatorArtifactStore:
             "operator_id": operator_id,
             "candidate_id": candidate_id,
             "qualification_id": qualification_id,
+            "source_artifact_id": source_artifact_id,
             "status": status,
             "stored_at": _now(),
             "receipt": stable,
@@ -355,7 +458,10 @@ class OperatorArtifactStore:
         receipt_path = directory / "qualification.json"
         _atomic_bytes(receipt_path, _json(stored))
         self._append_operator(operator_id, "qualifications", qualification_id, "qualification", qualification_id)
-        return ArtifactRef("qualification", operator_id, qualification_id, str(receipt_path))
+        return ArtifactRef(
+            "qualification", operator_id, qualification_id, str(receipt_path),
+            source_artifact_id=source_artifact_id,
+        )
 
     def put_activation(
         self,
@@ -375,6 +481,10 @@ class OperatorArtifactStore:
         if status == "activated":
             if stable.get("activated") is not True or stable.get("upstream_modified") is not False:
                 raise OperatorArtifactStoreError("activation must be explicit and upstream_modified=false")
+        source_artifact_id = _validate_source_id(
+            stable.get("activation_id") or stable.get("source_artifact_id"),
+            "source activation id",
+        )
         activation_id = _sha256(_canonical({
             "operator_id": operator_id,
             "qualification_id": qualification_id,
@@ -388,6 +498,7 @@ class OperatorArtifactStore:
             "operator_id": operator_id,
             "qualification_id": qualification_id,
             "activation_id": activation_id,
+            "source_artifact_id": source_artifact_id,
             "scope": "run",
             "status": status,
             "stored_at": _now(),
@@ -396,7 +507,10 @@ class OperatorArtifactStore:
         receipt_path = directory / "activation.json"
         _atomic_bytes(receipt_path, _json(stored))
         self._append_operator(operator_id, "activations", activation_id, "activation", activation_id)
-        return ArtifactRef("activation", operator_id, activation_id, str(receipt_path))
+        return ArtifactRef(
+            "activation", operator_id, activation_id, str(receipt_path),
+            source_artifact_id=source_artifact_id,
+        )
 
     def bind_sample(
         self,
@@ -518,6 +632,119 @@ class OperatorArtifactStore:
             "unique_qualifications": len(qualifications),
             "unique_activations": len(activations),
             "statuses": dict(sorted(statuses.items())),
+        }
+
+    def verify(self) -> dict[str, Any]:
+        """Validate hashes, references, and lifecycle dependencies offline."""
+        errors: list[str] = []
+        operators = candidates = qualifications = activations = 0
+        try:
+            root_record = self._read_json(self.store_path)
+            if root_record.get("schema") != STORE_SCHEMA:
+                errors.append("store_schema_mismatch")
+        except OperatorArtifactStoreError as exc:
+            errors.append(str(exc))
+        for operator_dir in sorted(self.operators.iterdir() if self.operators.exists() else ()):
+            if operator_dir.is_symlink() or not operator_dir.is_dir():
+                errors.append("invalid_operator_directory:%s" % operator_dir.name)
+                continue
+            operator_path = operator_dir / "operator.json"
+            try:
+                record = self._read_json(operator_path)
+                key = OperatorKey(**record["key"])
+                if record.get("operator_id") != key.operator_id or operator_dir.name != key.operator_id:
+                    errors.append("operator_id_mismatch:%s" % operator_dir.name)
+                operators += 1
+            except Exception as exc:
+                errors.append("invalid_operator:%s:%s" % (operator_dir.name, type(exc).__name__))
+                continue
+            for group, filename, counter in (("candidates", "candidate.json", "candidate"), ("qualifications", "qualification.json", "qualification"), ("activations", "activation.json", "activation")):
+                directory = operator_dir / group
+                if not directory.exists():
+                    continue
+                for artifact_dir in sorted(directory.iterdir()):
+                    if artifact_dir.is_symlink() or not artifact_dir.is_dir():
+                        errors.append("invalid_artifact_directory:%s" % artifact_dir)
+                        continue
+                    try:
+                        payload = self._read_json(artifact_dir / filename)
+                        artifact_id = payload.get({"candidate": "candidate_id", "qualification": "qualification_id", "activation": "activation_id"}[counter])
+                        if artifact_id != artifact_dir.name:
+                            errors.append("artifact_id_mismatch:%s" % artifact_dir)
+                        if counter == "candidate":
+                            source = artifact_dir / str(payload.get("source_name", ""))
+                            if source.is_symlink() or not source.is_file() or _sha256(source.read_bytes()) != payload.get("source_sha256"):
+                                errors.append("candidate_source_hash_mismatch:%s" % artifact_dir)
+                        elif counter == "qualification":
+                            candidate_id = payload.get("candidate_id")
+                            if not (operator_dir / "candidates" / str(candidate_id) / "candidate.json").is_file():
+                                errors.append("qualification_candidate_missing:%s" % artifact_dir)
+                        else:
+                            qualification_id = payload.get("qualification_id")
+                            qualification = operator_dir / "qualifications" / str(qualification_id) / "qualification.json"
+                            if not qualification.is_file() or self._read_json(qualification).get("status") != "qualified":
+                                errors.append("activation_qualification_invalid:%s" % artifact_dir)
+                        if counter == "candidate": candidates += 1
+                        elif counter == "qualification": qualifications += 1
+                        else: activations += 1
+                    except Exception as exc:
+                        errors.append("invalid_%s:%s:%s" % (counter, artifact_dir.name, type(exc).__name__))
+        try:
+            bindings = self.list_bindings()
+            for binding in bindings:
+                operator_id = binding.get("operator_id")
+                if operator_id is None:
+                    if any(binding.get(key) is not None for key in ("candidate_id", "qualification_id", "activation_id")):
+                        errors.append("empty_binding_has_artifact:%s" % binding.get("sample_id"))
+                    continue
+                candidate_id = binding.get("candidate_id")
+                self._find_artifact(operator_id, "candidates", candidate_id, "candidate.json")
+                if binding.get("qualification_id") is not None:
+                    self._find_artifact(operator_id, "qualifications", binding["qualification_id"], "qualification.json")
+                if binding.get("activation_id") is not None:
+                    self._find_artifact(operator_id, "activations", binding["activation_id"], "activation.json")
+        except Exception as exc:
+            errors.append("binding_validation:%s" % type(exc).__name__)
+            bindings = ()
+        return {
+            "schema": "numpilot.operator-artifact-verification",
+            "schema_version": SCHEMA_VERSION,
+            "ok": not errors,
+            "operators": operators,
+            "candidates": candidates,
+            "qualifications": qualifications,
+            "activations": activations,
+            "sample_bindings": len(bindings),
+            "errors": sorted(set(errors)),
+        }
+
+    def gc_dry_run(self) -> dict[str, Any]:
+        """Mark unreferenced objects without deleting anything."""
+        referenced = {"candidates": set(), "qualifications": set(), "activations": set()}
+        for binding in self.list_bindings():
+            if binding.get("operator_id") is None:
+                continue
+            for group, key in (("candidates", "candidate_id"), ("qualifications", "qualification_id"), ("activations", "activation_id")):
+                if binding.get(key):
+                    referenced[group].add((str(binding["operator_id"]), str(binding[key])))
+        orphaned: list[dict[str, str]] = []
+        for operator_dir in sorted(self.operators.iterdir() if self.operators.exists() else ()):
+            if not operator_dir.is_dir() or operator_dir.is_symlink():
+                continue
+            for group in referenced:
+                directory = operator_dir / group
+                if not directory.exists():
+                    continue
+                for artifact_dir in sorted(directory.iterdir()):
+                    if artifact_dir.is_dir() and not artifact_dir.is_symlink() and (operator_dir.name, artifact_dir.name) not in referenced[group]:
+                        orphaned.append({"group": group, "operator_id": operator_dir.name, "artifact_id": artifact_dir.name})
+        return {
+            "schema": "numpilot.operator-artifact-gc",
+            "schema_version": SCHEMA_VERSION,
+            "dry_run": True,
+            "delete_performed": False,
+            "referenced": {key: len(value) for key, value in referenced.items()},
+            "orphaned": orphaned,
         }
 
     def _find_artifact(self, operator_id: str, group: str, artifact_id: str, filename: str) -> dict[str, Any]:

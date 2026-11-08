@@ -52,6 +52,7 @@ def test_store_preserves_candidate_qualification_activation_and_sample_binding(t
         candidate.artifact_id,
         {
             "candidate_id": candidate.artifact_id,
+            "qualification_id": "qualification-legacy",
             "status": "qualified",
             "interface_available": True,
             "compiled": True,
@@ -63,6 +64,7 @@ def test_store_preserves_candidate_qualification_activation_and_sample_binding(t
         qualification.artifact_id,
         {
             "qualification_id": qualification.artifact_id,
+            "activation_id": "activation-legacy",
             "status": "activated",
             "activated": True,
             "upstream_modified": False,
@@ -85,6 +87,14 @@ def test_store_preserves_candidate_qualification_activation_and_sample_binding(t
     assert summary["sample_bindings"] == 1
     assert summary["unique_operators"] == 1
     assert summary["statuses"] == {"activated": 1}
+    assert qualification.source_artifact_id == "qualification-legacy"
+    assert activation.source_artifact_id == "activation-legacy"
+    verification = store.verify()
+    assert verification["ok"] is True
+    assert verification["sample_bindings"] == 1
+    gc = store.gc_dry_run()
+    assert any(item["artifact_id"] == replay.artifact_id for item in gc["orphaned"])
+    assert gc["delete_performed"] is False
     assert (tmp_path / "run" / "store.json").is_file()
 
 
@@ -107,3 +117,14 @@ def test_store_rejects_sensitive_receipt_fields(tmp_path):
     store = OperatorArtifactStore(tmp_path)
     with pytest.raises(OperatorArtifactStoreError, match="sensitive field"):
         store.put_candidate(_key(), "candidate", {"status": "generated_unverified", "api_token": "secret"})
+
+
+def test_store_verify_and_gc_report_unreferenced_candidate_without_deleting(tmp_path):
+    store = OperatorArtifactStore(tmp_path)
+    candidate = store.put_candidate(_key(), "candidate", {"status": "generated_unverified"})
+    verification = store.verify()
+    assert verification["ok"] is True
+    gc = store.gc_dry_run()
+    assert gc["dry_run"] is True
+    assert gc["delete_performed"] is False
+    assert any(item["artifact_id"] == candidate.artifact_id for item in gc["orphaned"])
