@@ -103,6 +103,10 @@ from numpilot.gaps.adapter_recovery import (
     ingest_official_adapter_candidate,
     ingest_repaired_adapter_candidate,
 )
+from numpilot.gaps.dlsym_template import (
+    DlsymTemplateError,
+    DlsymTemplateSpec,
+)
 from numpilot.gaps.generated_adapter import (
     GeneratedAdapterContract,
     GeneratedAdapterContractError,
@@ -214,6 +218,8 @@ __all__ = [
     "GENERATED_ADAPTER_SCHEMA",
     "INTEGRATION_ARCHITECTURE",
     "GeneratedAdapterContractError",
+    "DlsymTemplateError",
+    "DlsymTemplateSpec",
     "GeneratedAdapterContract",
     "AdapterRecoveryError",
     "CandidateMaterializationError",

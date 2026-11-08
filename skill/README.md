@@ -6,6 +6,11 @@ CLI 是 NumPilot 唯一的正式执行契约；本 Skill 是可选的 IDE/CodeAr
 元数据在 [`agents/openai.yaml`](agents/openai.yaml)，按需读取的终端与 CodeArts 参考在
 [`references/`](references/)。
 
+AsNumpy 缺口补全另有独立 Skill：[`skill/asnumpy-gap-completion/`](asnumpy-gap-completion/)。它只负责
+GapSpec 到 `_core` 增量 custom-op overlay 的合同、custom OPP provenance、显式 dlsym 隔离和
+数值/性能门禁；CANNBot 仍负责算子内核生成。CodeArts 发现副本位于
+`.codeartsdoer/skills/asnumpy-gap-completion/`。
+
 CodeArts 的标准发现路径仍是
 `.codeartsdoer/skills/numpilot-migration-gate/`；该目录保留逐字节相同的 Skill 内容，便于
 CodeArts 加载；不要只修改其中一份。

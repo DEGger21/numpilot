@@ -1,0 +1,6 @@
+interface:
+  display_name: "AsNumpy 缺口补全"
+  short_description: "按 _core 增量绑定和 NPU 门禁补全 AsNumpy API 缺口"
+  default_prompt: "Use $asnumpy-gap-completion to qualify this AsNumpy API gap with hash-bound evidence."
+policy:
+  allow_implicit_invocation: true
