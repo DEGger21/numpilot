@@ -9,8 +9,8 @@ CANN 的头文件和动态库，不读取 `llm.json`、不调用模型、不联�
 - 目标 SoC：Ascend910B3
 - CANN 版本：9.2.0-beta.2
 - 已安装 CANN 根：由 `--cann-root` 显式指定；本文不记录私有绝对路径
-- 固定 AsNumpy 组件：`0.4.1.dev12+gc9115e8ce.d20261031`，wheel SHA-256
-  `a8c47cfe71994f3bfd4180d7354df3904d2bc96c476c3119083fefac747a2138`
+- 固定 AsNumpy 组件：`0.3.1.dev70+g60d139c54.d20261108`，wheel SHA-256
+  `d3ea03b2fd8c6eace56f532e2b30a917d63a138abe654c0020c14499898ed682`
 
 ## 只读证据
 

@@ -27,28 +27,28 @@ AsNumpy 是 NumPilot 的锁定运行时组件，不是可由依赖解析器自�
 
 | 字段 | 锁定值 |
 |---|---|
-| Component ID | `asnumpy-0.4.1.dev12+gc9115e8ce.d20261031-cp312-cp312-linux_aarch64` |
+| Component ID | `asnumpy-0.3.1.dev70+g60d139c54.d20261108-cp312-cp312-linux_aarch64` |
 | 上游仓库 | `https://gitcode.com/cann/asnumpy.git` |
-| Git commit | `1e7177f12039b2d87e3cdff6693459d895744f68` |
-| Git tree | `a5fb1f3a70be9fc17ecf0dd928776924d4c78e1e` |
-| 包版本 | `0.4.1.dev12+gc9115e8ce.d20261031` |
+| Git commit | `60d139c54d9e181b8ae101dcbd1479d6b2a86439` |
+| Git tree | `f1c17d947a165c587a1b1d618d11d03fc5f5b183` |
+| 包版本 | `0.3.1.dev70+g60d139c54.d20261108` |
 | 许可证 | `Apache-2.0` |
-| 构建方式 | `source-commit-with-aclnn-matmul-overlay` |
+| 构建方式 | `source-commit-with-fp32-aclnn-matmul-dispatch-overlay` |
 | 构建工具链 | `GCC 11.4.0`、CANN `9.2.0-beta.2`、CPython `3.12.14` |
-| 目标 wheel | `asnumpy-0.4.1.dev12+gc9115e8ce.d20261031-cp312-cp312-linux_aarch64.whl` |
+| 目标 wheel | `asnumpy-0.3.1.dev70+g60d139c54.d20261108-cp312-cp312-linux_aarch64.whl` |
 | Wheel tag | `cp312-cp312-linux_aarch64` |
-| Wheel SHA-256 | `a8c47cfe71994f3bfd4180d7354df3904d2bc96c476c3119083fefac747a2138` |
-| 源码归档 | `asnumpy-source-1e7177f12039b2d87e3cdff6693459d895744f68.tar.gz` |
-| 源码归档 SHA-256 | `9a484272ad540879a93751e415c8adb10b52edfaab50e050672d3abd9cc6544d` |
-| source-manifest SHA-256 | `f697292d223bee0b6030a32ccc5bc0f2ba1d096d59b9e5a7efc148df6b0079b4` |
-| 源码清单 | 198 个文件，1,691,974 bytes |
-| Wheel `METADATA` SHA-256 | `c07bcf35a9923e07f908d984dd220c6adccb0d9670260b1f3fd1c8b3d6a925e0` |
-| Wheel `RECORD` SHA-256 | `7baf091897058f1107dd17bbb213c33c49cdc64a75196d88176298f2160a99e6` |
-| `asnumpy/__init__.py` SHA-256 | `7061af131970ef158c87dfbf36261404ec9e1d682c3945f87d55c35fb22e8d1d` |
-| `asnumpy/_core.cpython-312-aarch64-linux-gnu.so` SHA-256 | `02f38dfae1cef5b0e995ab0cd5922ae66923c3d76d49b61e9482901f577f8f8a` |
+| Wheel SHA-256 | `d3ea03b2fd8c6eace56f532e2b30a917d63a138abe654c0020c14499898ed682` |
+| 源码归档 | `asnumpy-source-60d139c54d9e181b8ae101dcbd1479d6b2a86439.tar.gz` |
+| 源码归档 SHA-256 | `f8b487cce5706b9c50e4e2492330cdf1e3a0857a4d2fc2e065f21c6bb207d9c1` |
+| source-manifest SHA-256 | `408337443482fb9b614a83b8933d640192de15937ce7ccd440bf7b00218a7fa8` |
+| 源码清单 | 211 个文件，1,803,983 bytes |
+| Wheel `METADATA` SHA-256 | `3dc7649033a9820a14f48372b77e38c5d5c48e7c094645d004b8530a0b4994c5` |
+| Wheel `RECORD` SHA-256 | `628ee08761514a6aa7c7eca39184ce66dfa99456b3c60d0278757b9c58556f16` |
+| `asnumpy/__init__.py` SHA-256 | `295976c53a4fccc2807f9a3ef81821c063f839e6b32e4150d19288ee7af9224c` |
+| `asnumpy/_core.cpython-312-aarch64-linux-gnu.so` SHA-256 | `44c5b349b3f8ce16b4d45157a3c39b19ec4a3edfba3aa1687d43081077b9e511` |
 | 组件 LICENSE SHA-256 | `1eb85fc97224598dad1852b5d6483bbcf0aa8608790dcc657a5a2a761ae9c8c6` |
-| 组件 SBOM SHA-256 | `2257e349c8fa9000d069760b5e1d4e779dba11e50017be6071b8a41f4bbde4dc` |
-| 组件 manifest SHA-256 | `9b4e95fea4db4ce897c229f0f8b92e04c0cfc9dad9863275730a3f6edaf39db5` |
+| 组件 SBOM SHA-256 | `1603bed4cf56e23f94e462e8b7fc25343212d60ce62d9a4b5748914900dc534f` |
+| 组件 manifest SHA-256 | `ff21a9842bb18897a760a5088e46f7710b3f3f0ed10f4b215079355417a7694b` |
 
 Manifest 的运行约束为 Linux/AArch64、CPython 3.12、CANN 9.2.0-beta.2、NumPy 2.5.4 和 Loguru 0.7.3。
 NumPilot 当前严格画像进一步绑定 Ascend 910B3、CPython 3.12.14 和精确 CANN 身份。画像外环境
@@ -59,7 +59,7 @@ NumPilot 当前严格画像进一步绑定 Ascend 910B3、CPython 3.12.14 和精
 ```text
 CMakeLists.txt                  e5da3e46e13e2e5936c4e3e03af526b1638f13ae6c73462829abaff1ade1b956
 LICENSE                         1eb85fc97224598dad1852b5d6483bbcf0aa8608790dcc657a5a2a761ae9c8c6
-README.md                       a5cfdbeab3539b55e4852760f06e9768fdf48399e10ffead4f984853abc65a86
+README.md                       3a395536661cc2286937baa50aad68033e77748bb9c5c30ba5a8bd1d110cce9a
 bindings/python/CMakeLists.txt  6a39bb565d5a4762daaa48217198b3f40296b6a431fa37e924f9784b31f7d1d5
 csrc/CMakeLists.txt             3f5ca526867de88dbefc8912d9563053ad78b6e3bc0b58630baacbc37ae281b6
 pyproject.toml                  ed92ce53169bcd819dadc34658be54ff778919f277b9a83392d91110a818d6ac

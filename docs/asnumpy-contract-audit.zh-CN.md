@@ -4,11 +4,11 @@
 
 ## 固定身份
 
-- AsNumpy version：0.4.1.dev12+gc9115e8ce.d20261031
-- source commit：1e7177f12039b2d87e3cdff6693459d895744f68
-- source tree：a5fb1f3a70be9fc17ecf0dd928776924d4c78e1e
-- wheel SHA-256：a8c47cfe71994f3bfd4180d7354df3904d2bc96c476c3119083fefac747a2138
-- manifest SHA-256：9b4e95fea4db4ce897c229f0f8b92e04c0cfc9dad9863275730a3f6edaf39db5
+- AsNumpy version：0.3.1.dev70+g60d139c54.d20261108
+- source commit：60d139c54d9e181b8ae101dcbd1479d6b2a86439
+- source tree：f1c17d947a165c587a1b1d618d11d03fc5f5b183
+- wheel SHA-256：d3ea03b2fd8c6eace56f532e2b30a917d63a138abe654c0020c14499898ed682
+- manifest SHA-256：ff21a9842bb18897a760a5088e46f7710b3f3f0ed10f4b215079355417a7694b
 - 运行时：CPython 3.12.14、NumPy 2.5.4、CANN 9.2.0-beta.2、Ascend910B3
 
 ## 复现命令

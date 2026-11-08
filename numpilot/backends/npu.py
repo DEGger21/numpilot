@@ -63,41 +63,38 @@ from numpilot.capability_profile import OPS_NN_MATMUL_ASNUMPY_AUDIT_ID
 # This is deliberately an exact version match.  A different wheel may change a
 # Python wrapper without changing whether its public name exists, so version
 # drift must be re-audited before it can make a strict-NPU performance claim.
-AUDITED_ASNUMPY_VERSION = "0.4.1.dev12+gc9115e8ce.d20261031"
+AUDITED_ASNUMPY_VERSION = '0.3.1.dev70+g60d139c54.d20261108'
 AUDITED_CANN_HOME = "/usr/local/Ascend/cann-9.2.0-beta.2"
 AUDITED_CANN_VERSION = "9.2.0-beta.2"
 AUDITED_SOC_MODEL = "Ascend910B3"
 AUDITED_PYTHON_VERSION = "3.12.14"
 ASNUMPY_AUDIT_ID = (
-    "asnumpy-0.4.1.dev12-gc9115e8ce-runtime-"
-    "init7061af13-cannac907b3a-linalg68ba1971-"
+    "asnumpy-0.3.1-dev70-g60d139c54-runtime-"
+    "init295976c5-cannac907b3a-linalg4e7d1c7e-"
     "random6c9c7891-math32a64a3f-logice03f3b0f-"
-    "core02f38dfa-v5"
+    "core44c5b349-v6"
 )
 ASNUMPY_SOURCE_BUILD_AUDIT_ID = (
-    "asnumpy-0.4.1.dev12-gc9115e8ce-"
-    "init7061af13-cannac907b3a-linalg68ba1971-"
-    "random6c9c7891-pinned-source-receipt-v3"
+    "asnumpy-0.3.1-dev70-g60d139c54-"
+    "init295976c5-cannac907b3a-linalg4e7d1c7e-"
+    "random6c9c7891-pinned-source-receipt-v4"
 )
 ASNUMPY_INTERNAL_COMPONENT_AUDIT_ID = (
-    "asnumpy-0.4.1.dev12-gc9115e8ce-internal-component-"
-    "manifest9b4e95fe-wheel-a8c47cfe-core02f38dfa-v2"
+    "asnumpy-0.3.1-dev70-g60d139c54-internal-component-"
+    "manifestff21a984-wheel-d3ea03b2-core44c5b349-v3"
 )
-_ASNUMPY_INTERNAL_COMPONENT_ID = (
-    "asnumpy-0.4.1.dev12+gc9115e8ce.d20261031-cp312-cp312-linux_aarch64"
-)
-_ASNUMPY_INTERNAL_COMPONENT_MANIFEST_SHA256 = (
-    "9b4e95fea4db4ce897c229f0f8b92e04c0cfc9dad9863275730a3f6edaf39db5"
-)
+_ASNUMPY_INTERNAL_COMPONENT_ID = 'asnumpy-0.3.1.dev70+g60d139c54.d20261108-cp312-cp312-linux_aarch64'
+_ASNUMPY_INTERNAL_COMPONENT_MANIFEST_SHA256 = 'ff21a9842bb18897a760a5088e46f7710b3f3f0ed10f4b215079355417a7694b'
 _AUDITED_RUNTIME_FILE_SHA256 = {
-    "__init__.py": "7061af131970ef158c87dfbf36261404ec9e1d682c3945f87d55c35fb22e8d1d",
+    "__init__.py": "295976c53a4fccc2807f9a3ef81821c063f839e6b32e4150d19288ee7af9224c",
+    "_core": "44c5b349b3f8ce16b4d45157a3c39b19ec4a3edfba3aa1687d43081077b9e511",
     "_types.py": "cae6a7d7c1180dde6329b7fff0a840eee57bbd15e5cc6acafaae2e79294eb3b7",
-    "_version.py": "1ff0b219853210f736cec2f7c791274ec3b4464bc679eaecce3db5a8c70e5302",
-    "array.py": "16c901f5937027d2ce6ae6f9d58813d389d20252315333c954ec5ccb9a3b4cc3",
+    "_version.py": "9b068dc0b9540bfdab873e630dcffc344b70bc9830aa048e395befbf9dbe72ab",
+    "array.py": "63cc6edc57c5ff904b4f6fc33ac43c6982430b6d915635d5046cca7c44a887e3",
     "cann.py": "ac907b3a294e597e5429629387b9615abed963026a879ef411ba4a4ddecbcc3e",
     "linalg/__init__.py": "bae3efa81d9840d622c3f29ed677dfd834e7e2c2769b9a35daea0b9b55e52a83",
     "linalg/_linalg.py": "c5ddcc4f890588690882b927cb50854999dfabd95ea8082a68274500cbc71240",
-    "linalg/direct.py": "68ba1971ebee2b837ef0aa3e636b6dc015f0b1516a9a9e3c9c9eb8d3ff3f89b6",
+    "linalg/direct.py": "4e7d1c7e24a2955a7926127fe5a6f259dc067a03d55e23fbf7b94782335e41a8",
     "logic.py": "e03f3b0f77458c40e94f4c8785e5ac3ecfb1b4c7b2a744e463c8b5da6ea6cf4a",
     "math.py": "32a64a3f246d8e44f8b6abe9dc23fda447e6835f494df52f68f638e3ff1bb71e",
     "nn.py": "c0b2ed95d70fa15e92e2939d76cc93da116b64b2b94579aeb684b03e1cf07748",
@@ -105,8 +102,7 @@ _AUDITED_RUNTIME_FILE_SHA256 = {
     "random/_random.py": "6c9c7891bd44892caad282c16bfd469f0ffee54f5616576777f8416d4a547b65",
     "sorting.py": "bc206227bbb2709cef9242db9b3de32e4eec15c58a9b83d568e9181729d9cf2c",
     "statistics.py": "175315eec27c8fa2875e236b3c88cb047d5e9d3cbc7735a3f1fae6231a14d3cd",
-    "utils.py": "26f2fc481afca839628f940f08eb06aa39016d93835d0f3c8b89c7465d6f054b",
-    "_core": "02f38dfae1cef5b0e995ab0cd5922ae66923c3d76d49b61e9482901f577f8f8a",
+    "utils.py": "b3d6cb4e6c1d6cfec8a48f72d14ffd175c82867cc8ca8d8cfccac0eea91229b1"
 }
 
 # Narrow official-operator integration used by the ops-nn MatMul case.  The

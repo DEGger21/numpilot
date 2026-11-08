@@ -7,11 +7,11 @@
 | 字段 | 值 |
 |---|---|
 | AsNumpy repository | https://gitcode.com/cann/asnumpy.git |
-| source commit | 1e7177f12039b2d87e3cdff6693459d895744f68 |
-| source tree | a5fb1f3a70be9fc17ecf0dd928776924d4c78e1e |
-| version | 0.4.1.dev12+gc9115e8ce.d20261031 |
-| wheel | asnumpy-0.4.1.dev12+gc9115e8ce.d20261031-cp312-cp312-linux_aarch64.whl |
-| wheel SHA-256 | a8c47cfe71994f3bfd4180d7354df3904d2bc96c476c3119083fefac747a2138 |
+| source commit | 60d139c54d9e181b8ae101dcbd1479d6b2a86439 |
+| source tree | f1c17d947a165c587a1b1d618d11d03fc5f5b183 |
+| version | 0.3.1.dev70+g60d139c54.d20261108 |
+| wheel | asnumpy-0.3.1.dev70+g60d139c54.d20261108-cp312-cp312-linux_aarch64.whl |
+| wheel SHA-256 | d3ea03b2fd8c6eace56f532e2b30a917d63a138abe654c0020c14499898ed682 |
 | build target | Linux AArch64 / CPython 3.12 / CANN 9.2.0-beta.2 |
 | license | Apache-2.0 |
 
@@ -62,7 +62,7 @@ inner、outer 以及 matmul 的非 admitted 情形当前仍走 Python host compa
 ## 2026-11-04 official ACLNN qualification overlay
 
 本节记录一个**独立于静态组件**的 run-scoped overlay。静态组件仍是上表中的
-`0.4.1.dev12+gc9115e8ce.d20261031`；overlay 不修改该 wheel、manifest 或 API catalog，
+`0.3.1.dev70+g60d139c54.d20261108`；overlay 不修改该 wheel、manifest 或 API catalog，
 而是把一次隔离集成和六门 qualification 的证据绑定到一个显式证据根目录。只有调用方同时
 提供 `--capability-overlay` 与 `--qualification-evidence-root` 时，`migrate` 才能使用它；
 NumPilot 不自动发现、不联网拉取、不把 overlay 写成全局能力。

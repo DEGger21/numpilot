@@ -144,6 +144,104 @@ def _load_cannbot_api():
     return cannbot_skills
 
 
+_ASNUMPY_ADAPTER_MANIFEST_SCHEMA = "asnumpy.adapter.manifest.v1"
+_ASNUMPY_ADAPTER_API_NAME_RE = re.compile(r"[a-z][a-z0-9_]{0,63}")
+
+
+def _resolve_asnumpy_adapter_api_name(adapter_data, spec):
+    """Validate an adapter contract and return its canonical API name.
+
+    Older locally signed artifacts expose ``api_name`` at the top level.  The
+    generated AsNumpy adapter manifest uses the versioned v1 contract instead:
+    the source/public qualified APIs live under ``operator`` and the Python
+    public symbol lives under ``name_mapping.python``.  Both forms remain
+    accepted, but every identity field that is present must agree with the
+    requested gap.  Returning ``None`` keeps the caller's existing fail-closed
+    error message and prevents a valid-looking manifest for another operator
+    from being submitted to the model.
+    """
+
+    if not isinstance(adapter_data, Mapping):
+        return None
+    expected_api_name = getattr(spec, "api_name", None)
+    expected_source_api = getattr(spec, "qualified_api", None)
+    expected_public_api = getattr(spec, "asnumpy_api", None)
+    if (
+        not isinstance(expected_api_name, str)
+        or not _ASNUMPY_ADAPTER_API_NAME_RE.fullmatch(expected_api_name)
+        or not isinstance(expected_source_api, str)
+        or not isinstance(expected_public_api, str)
+    ):
+        return None
+
+    # Preserve the legacy contract exactly.  If a producer includes the old
+    # field alongside a v1 manifest, it must still agree with the requested
+    # gap rather than silently overriding a conflicting nested identity.
+    if "api_name" in adapter_data:
+        legacy_api_name = adapter_data.get("api_name")
+        if (
+            not isinstance(legacy_api_name, str)
+            or not _ASNUMPY_ADAPTER_API_NAME_RE.fullmatch(legacy_api_name)
+            or legacy_api_name != expected_api_name
+        ):
+            return None
+
+    # A legacy object may carry unrelated metadata, so only enter the v1 path
+    # when its nested identity fields are present.  This leaves the
+    # pre-existing top-level ``api_name`` acceptance backward compatible even
+    # if an older producer added unrelated top-level keys.
+    has_nested_identity = any(
+        key in adapter_data for key in ("operator", "name_mapping")
+    )
+    if not has_nested_identity:
+        return expected_api_name if "api_name" in adapter_data else None
+    if adapter_data.get("schema") != _ASNUMPY_ADAPTER_MANIFEST_SCHEMA:
+        return None
+
+    operator = adapter_data.get("operator")
+    if not isinstance(operator, Mapping):
+        return None
+    if (
+        operator.get("source_api") != expected_source_api
+        or operator.get("public_api") != expected_public_api
+    ):
+        return None
+
+    # The current producer emits name_mapping at the manifest root.  Accept
+    # the equivalent operator.name_mapping spelling as well because both are
+    # unambiguous v1 identities; if both are present, validate both so a
+    # conflicting duplicate cannot bypass the check.
+    name_mappings = [
+        value
+        for value in (adapter_data.get("name_mapping"), operator.get("name_mapping"))
+        if value is not None
+    ]
+    if not name_mappings:
+        return None
+    for name_mapping in name_mappings:
+        if not isinstance(name_mapping, Mapping):
+            return None
+        python_mapping = name_mapping.get("python")
+        if not isinstance(python_mapping, Mapping):
+            return None
+        if python_mapping.get("public_symbol") != expected_api_name:
+            return None
+        # These fields are part of the v1 producer output.  Treat optional
+        # qualified/private spellings as consistency checks when present,
+        # while keeping the required identity to the three fields above.
+        if (
+            "public_qualified_name" in python_mapping
+            and python_mapping.get("public_qualified_name") != expected_public_api
+        ):
+            return None
+        if (
+            "private_extension_symbol" in python_mapping
+            and python_mapping.get("private_extension_symbol") != expected_api_name
+        ):
+            return None
+    return expected_api_name
+
+
 def resolve_skill_bundle(*args, **kwargs):
     """Lazy compatibility wrapper retained for callers and test doubles."""
 
@@ -4972,12 +5070,8 @@ def _cmd_generate_asnumpy_adapter(args):
             ):
                 raise DraftGenerationError("AsNumpy adapter contract hash mismatch")
             adapter_data = json.loads(adapter_contract)
-            api_name = adapter_data.get("api_name") if isinstance(adapter_data, dict) else None
-            if (
-                not isinstance(api_name, str)
-                or not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", api_name)
-                or api_name != spec.api_name
-            ):
+            api_name = _resolve_asnumpy_adapter_api_name(adapter_data, spec)
+            if api_name is None:
                 raise DraftGenerationError("AsNumpy adapter API identity mismatch")
             context_plan = plan_asnumpy_adapter_context(
                 args.asnumpy_reference, api_name

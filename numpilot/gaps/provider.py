@@ -818,23 +818,153 @@ def _validate_bundle_files(
     return summary.strip(), tuple(files)
 
 
+_ASC_TWO_STAGE_MANIFEST_SCHEMA = "asnumpy.adapter.manifest.v1"
+_ASC_TWO_STAGE_SYMBOL = re.compile(r"^aclnn[A-Za-z0-9_]{1,127}$")
+_ASNUMPY_PUBLIC_SYMBOL = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+
+
+def _validate_asc_two_stage_manifest_payload(payload: str, label: str) -> None:
+    """Validate the semantic contract for a layout-independent ASC artifact.
+
+    An ASC implementation is accepted only when its adjacent AsNumpy manifest
+    proves the ACLNN two-stage entry points and public AsNumpy mapping.  This
+    keeps the file layout flexible while preventing arbitrary ``.asc`` files
+    from bypassing the operator contract.
+    """
+
+    try:
+        data = json.loads(payload)
+    except (json.JSONDecodeError, RecursionError) as exc:
+        raise DraftGenerationError(
+            "ASC implementation manifest is not valid JSON: %s" % label
+        ) from exc
+    if not isinstance(data, dict) or data.get("schema") != _ASC_TWO_STAGE_MANIFEST_SCHEMA:
+        raise DraftGenerationError(
+            "ASC implementation requires %s: %s"
+            % (_ASC_TWO_STAGE_MANIFEST_SCHEMA, label)
+        )
+    name_mapping = data.get("name_mapping")
+    if not isinstance(name_mapping, dict):
+        raise DraftGenerationError(
+            "ASC implementation manifest name_mapping is invalid: %s" % label
+        )
+    python_mapping = name_mapping.get("python")
+    if not isinstance(python_mapping, dict):
+        raise DraftGenerationError(
+            "ASC implementation manifest Python mapping is invalid: %s" % label
+        )
+    public_symbol = python_mapping.get("public_symbol")
+    if (
+        python_mapping.get("module") != "asnumpy"
+        or not isinstance(public_symbol, str)
+        or _ASNUMPY_PUBLIC_SYMBOL.fullmatch(public_symbol) is None
+        or python_mapping.get("public_qualified_name") != "asnumpy.%s" % public_symbol
+    ):
+        raise DraftGenerationError(
+            "ASC implementation manifest AsNumpy mapping is invalid: %s" % label
+        )
+    aclnn_mapping = name_mapping.get("aclnn")
+    if not isinstance(aclnn_mapping, dict):
+        raise DraftGenerationError(
+            "ASC implementation manifest ACLNN mapping is invalid: %s" % label
+        )
+    get_workspace = aclnn_mapping.get("get_workspace_size")
+    execute = aclnn_mapping.get("execute")
+    if (
+        aclnn_mapping.get("call_style") != "two-stage"
+        or not isinstance(get_workspace, str)
+        or _ASC_TWO_STAGE_SYMBOL.fullmatch(get_workspace) is None
+        or not isinstance(execute, str)
+        or _ASC_TWO_STAGE_SYMBOL.fullmatch(execute) is None
+        or get_workspace == execute
+        or not get_workspace.endswith("GetWorkspaceSize")
+    ):
+        raise DraftGenerationError(
+            "ASC implementation manifest must declare distinct ACLNN "
+            "GetWorkspaceSize/execute symbols: %s" % label
+        )
+    cpp_mapping = name_mapping.get("cpp_api")
+    if isinstance(cpp_mapping, dict):
+        if (
+            cpp_mapping.get("l2_get_workspace_size") != get_workspace
+            or cpp_mapping.get("l2_execute") != execute
+        ):
+            raise DraftGenerationError(
+                "ASC implementation manifest C++/ACLNN mapping differs: %s"
+                % label
+            )
+
+
+def _validate_asc_two_stage_layout(
+    names,
+    *,
+    file_contents: Optional[Dict[str, str]] = None,
+    root: Optional[Path] = None,
+) -> bool:
+    """Return whether files form the explicit ASC two-stage layout.
+
+    This is an additive escape hatch for cannbot-skill outputs.  The existing
+    17-file registry layout remains the default; ASC is admitted only with an
+    AsNumpy manifest and tests, and only after the manifest's interface
+    contract passes the checks above.
+    """
+
+    normalized = {str(name) for name in names}
+    asc_paths = sorted(
+        name for name in normalized if PurePosixPath(name).suffix == ".asc"
+    )
+    if not asc_paths:
+        return False
+    if not any(PurePosixPath(name).parts[:1] == ("tests",) for name in normalized):
+        raise DraftGenerationError(
+            "ASC implementation layout requires tests/"
+        )
+    manifest_paths = sorted(
+        name
+        for name in normalized
+        if PurePosixPath(name).parts[:1] == ("asnumpy_adapter",)
+        and PurePosixPath(name).suffix == ".json"
+    )
+    if not manifest_paths:
+        raise DraftGenerationError(
+            "ASC implementation layout requires an AsNumpy manifest"
+        )
+    for manifest_path in manifest_paths:
+        if file_contents is not None and manifest_path in file_contents:
+            payload = file_contents[manifest_path]
+        elif root is not None:
+            try:
+                payload, _ = _read_bounded_text(
+                    root / _safe_relative_path(manifest_path),
+                    _MAX_METADATA_BYTES,
+                    "ASC implementation manifest",
+                )
+            except OSError as exc:
+                raise DraftGenerationError(
+                    "cannot read ASC implementation manifest: %s" % manifest_path
+                ) from exc
+        else:
+            raise DraftGenerationError(
+                "ASC implementation manifest contents are unavailable"
+            )
+        try:
+            _validate_asc_two_stage_manifest_payload(payload, manifest_path)
+        except DraftGenerationError:
+            continue
+        return True
+    raise DraftGenerationError(
+        "no AsNumpy manifest declares a valid ACLNN two-stage ASC interface"
+    )
+
+
 def _validate_bundle(payload: str) -> Tuple[str, Tuple[Tuple[PurePosixPath, str], ...]]:
     summary, files = _validate_bundle_files(payload)
-    names = {str(path) for path, _ in files}
+    file_contents = {str(path): content for path, content in files}
+    names = set(file_contents)
     for required in ("CMakeLists.txt", "build.sh"):
         if required not in names:
             raise DraftGenerationError("generated draft is missing %s" % required)
-    for required_dir in (
-        "op_host",
-        "op_kernel",
-        "op_api",
-        "tests",
-        "asnumpy_adapter",
-    ):
-        if not any(path.parts[0] == required_dir for path, _ in files):
-            raise DraftGenerationError(
-                "generated draft is missing %s/" % required_dir
-            )
+    _require_project_layout(file_contents, file_contents=file_contents)
     return summary, files
 
 
@@ -2983,27 +3113,49 @@ def _validate_generation(
     return normalized
 
 
-def _require_project_layout(names) -> None:
+def _require_project_layout(
+    names,
+    *,
+    file_contents: Optional[Dict[str, str]] = None,
+    root: Optional[Path] = None,
+) -> None:
     names = set(names)
     for required in ("CMakeLists.txt", "build.sh"):
         if required not in names:
             raise DraftGenerationError(
                 "draft manifest is missing %s" % required
             )
-    for required_dir in (
+    required_dirs = (
         "op_host",
         "op_kernel",
         "op_api",
         "tests",
         "asnumpy_adapter",
+    )
+    if all(
+        any(PurePosixPath(name).parts[:1] == (required_dir,) for name in names)
+        for required_dir in required_dirs
     ):
-        if not any(
-            PurePosixPath(name).parts[0] == required_dir
-            for name in names
-        ):
-            raise DraftGenerationError(
-                "draft manifest is missing %s/" % required_dir
+        return
+    # A cannbot-skill ASC result is valid when its manifest proves the same
+    # ACLNN two-stage boundary.  The helper is deliberately strict and cannot
+    # be reached without concrete file contents or a sealed workspace.
+    if _validate_asc_two_stage_layout(
+        names, file_contents=file_contents, root=root
+    ):
+        return
+    missing = next(
+        (
+            required_dir
+            for required_dir in required_dirs
+            if not any(
+                PurePosixPath(name).parts[:1] == (required_dir,)
+                for name in names
             )
+        ),
+        required_dirs[0],
+    )
+    raise DraftGenerationError("draft manifest is missing %s/" % missing)
 
 
 def _draft_artifact_id(
@@ -3101,7 +3253,7 @@ def _load_existing_draft(draft_dir: Path, spec: GapSpec) -> OperatorDraft:
         raise DraftGenerationError(
             "existing draft file set differs from its manifest"
         )
-    _require_project_layout(normalized_files)
+    _require_project_layout(normalized_files, root=draft_dir)
 
     for relative, expected in normalized_files.items():
         if actual_files[relative] != expected:
@@ -3905,7 +4057,8 @@ class LlmDraftProvider:
         )
         if total_bytes > _MAX_TOTAL_BYTES:
             raise DraftGenerationError("staged generation exceeds the size limit")
-        _require_project_layout({name: "" for name in names})
+        project_files = {str(path): content for path, content in collected}
+        _require_project_layout(project_files, file_contents=project_files)
         return (
             "; ".join(summaries)[:_MAX_SUMMARY_CHARS],
             tuple(collected),
@@ -5181,7 +5334,8 @@ class LlmDraftProvider:
         )
         if total_bytes > _MAX_TOTAL_BYTES or len(files) > _MAX_FILES:
             raise DraftGenerationError("sealed repair artifact exceeds size limits")
-        _require_project_layout(str(path) for path, _content in files)
+        project_files = {str(path): content for path, content in files}
+        _require_project_layout(project_files, file_contents=project_files)
 
         draft = self._publish_draft(
             spec,

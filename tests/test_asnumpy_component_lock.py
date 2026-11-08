@@ -149,7 +149,7 @@ def test_component_receipt_uses_digest_of_the_same_payload_that_was_parsed(
 ):
     trusted = (ROOT / "components/asnumpy/manifest.json").read_bytes()
     replacement = trusted.replace(
-        b'"sha256": "a8c47cfe',
+        b'"sha256": "d3ea03b2',
         b'"sha256": "00000000',
         1,
     )
@@ -183,8 +183,8 @@ def test_bundled_asnumpy_source_snapshot_is_verified_and_receipted():
     component = load_component_manifest(COMPONENT_MANIFEST)
     verified = verify_component_attachments(component)
 
-    assert source['file_count'] == 198
-    assert source['total_file_bytes'] == 1691974
+    assert source['file_count'] == 211
+    assert source['total_file_bytes'] == 1803983
     assert verified['source_bundle']['filename'] == source['filename']
     assert verified['source_bundle']['manifest_sha256'] == source['manifest_sha256']
     assert verified['source_bundle']['file_count'] == source['file_count']

@@ -62,6 +62,7 @@ from numpilot.gaps.provider import (
     _render_official_exact_edit_repair_dependencies,
     _should_use_staged_direct,
     _validate_adapter_context_plan,
+    _validate_bundle,
     _validate_stage_bundle,
 )
 from numpilot.gaps.spec import build_gap_specs
@@ -3357,6 +3358,88 @@ def test_generate_asnumpy_adapter_cli_uses_legacy_context_plan_without_real_mode
     assert len(preflight["asnumpy_adapter_context_plan"]["plan_sha256"]) == 64
 
 
+def test_asnumpy_adapter_manifest_v1_identity_is_accepted():
+    from numpilot import __main__ as cli
+
+    spec = SimpleNamespace(
+        api_name="softplus",
+        qualified_api="operator.softplus",
+        asnumpy_api="asnumpy.softplus",
+    )
+    manifest = {
+        "schema": "asnumpy.adapter.manifest.v1",
+        "operator": {
+            "source_api": "operator.softplus",
+            "public_api": "asnumpy.softplus",
+        },
+        "name_mapping": {
+            "python": {
+                "public_symbol": "softplus",
+                "public_qualified_name": "asnumpy.softplus",
+                "private_extension_symbol": "softplus",
+            },
+        },
+    }
+
+    assert cli._resolve_asnumpy_adapter_api_name(manifest, spec) == "softplus"
+
+
+def test_asnumpy_adapter_manifest_v1_operator_nested_mapping_is_accepted():
+    from numpilot import __main__ as cli
+
+    spec = SimpleNamespace(
+        api_name="softplus",
+        qualified_api="operator.softplus",
+        asnumpy_api="asnumpy.softplus",
+    )
+    manifest = {
+        "schema": "asnumpy.adapter.manifest.v1",
+        "operator": {
+            "source_api": "operator.softplus",
+            "public_api": "asnumpy.softplus",
+            "name_mapping": {
+                "python": {"public_symbol": "softplus"},
+            },
+        },
+    }
+
+    assert cli._resolve_asnumpy_adapter_api_name(manifest, spec) == "softplus"
+
+
+def test_asnumpy_adapter_manifest_identity_rejects_conflicting_nested_fields():
+    from numpilot import __main__ as cli
+
+    spec = SimpleNamespace(
+        api_name="softplus",
+        qualified_api="operator.softplus",
+        asnumpy_api="asnumpy.softplus",
+    )
+    manifest = {
+        "schema": "asnumpy.adapter.manifest.v1",
+        "operator": {
+            "source_api": "operator.other",
+            "public_api": "asnumpy.softplus",
+        },
+        "name_mapping": {"python": {"public_symbol": "softplus"}},
+    }
+
+    assert cli._resolve_asnumpy_adapter_api_name(manifest, spec) is None
+
+
+def test_asnumpy_adapter_legacy_top_level_identity_remains_accepted():
+    from numpilot import __main__ as cli
+
+    spec = SimpleNamespace(
+        api_name="cbrt",
+        qualified_api="numpy.cbrt",
+        asnumpy_api="asnumpy.cbrt",
+    )
+
+    assert cli._resolve_asnumpy_adapter_api_name(
+        {"api_name": "cbrt", "producer_note": "legacy"}, spec
+    ) == "cbrt"
+
+
 def test_generate_asnumpy_adapter_cli_reports_http_request_without_receipt(
     tmp_path, monkeypatch, capsys
 ):
@@ -3974,3 +4057,65 @@ def test_continue_on_error_extracts_only_redacted_http_status(tmp_path):
     # still a local test-double call rather than evidence of a remote request.
     assert failure["actual_remote_call"] is False
     assert "remote LLM HTTP status" not in json.dumps(failure)
+
+
+
+def _valid_asc_manifest():
+    return json.dumps({
+        "schema": "asnumpy.adapter.manifest.v1",
+        "name_mapping": {
+            "python": {
+                "module": "asnumpy",
+                "public_symbol": "softplus",
+                "public_qualified_name": "asnumpy.softplus",
+            },
+            "aclnn": {
+                "call_style": "two-stage",
+                "get_workspace_size": "aclnnSoftplusGetWorkspaceSize",
+                "execute": "aclnnSoftplus",
+            },
+            "cpp_api": {
+                "l2_get_workspace_size": "aclnnSoftplusGetWorkspaceSize",
+                "l2_execute": "aclnnSoftplus",
+            },
+        },
+    })
+
+
+def test_validate_bundle_accepts_asc_two_stage_manifest():
+    payload = json.dumps({
+        "summary": "ASC implementation with ACLNN two-stage adapter.",
+        "files": [
+            {"path": "CMakeLists.txt", "content": "cmake_minimum_required(VERSION 3.16)\n"},
+            {"path": "build.sh", "content": "#!/usr/bin/env bash\nset -euo pipefail\n"},
+            {"path": "op_kernel/softplus.asc", "content": "// ASC source\n"},
+            {"path": "tests/test_softplus.py", "content": "# NumPy oracle\n"},
+            {"path": "asnumpy_adapter/softplus.json", "content": _valid_asc_manifest()},
+        ],
+    })
+    summary, files = _validate_bundle(payload)
+    assert "ASC implementation" in summary
+    assert {str(path) for path, _content in files} == {
+        "CMakeLists.txt",
+        "build.sh",
+        "op_kernel/softplus.asc",
+        "tests/test_softplus.py",
+        "asnumpy_adapter/softplus.json",
+    }
+
+
+def test_validate_bundle_rejects_asc_without_acl_nn_two_stage_contract():
+    manifest = json.loads(_valid_asc_manifest())
+    manifest["name_mapping"]["aclnn"]["call_style"] = "single-stage"
+    payload = json.dumps({
+        "summary": "Invalid ASC implementation.",
+        "files": [
+            {"path": "CMakeLists.txt", "content": "cmake_minimum_required(VERSION 3.16)\n"},
+            {"path": "build.sh", "content": "#!/usr/bin/env bash\nset -euo pipefail\n"},
+            {"path": "op_kernel/softplus.asc", "content": "// ASC source\n"},
+            {"path": "tests/test_softplus.py", "content": "# NumPy oracle\n"},
+            {"path": "asnumpy_adapter/softplus.json", "content": json.dumps(manifest)},
+        ],
+    })
+    with pytest.raises(DraftGenerationError, match="ACLNN two-stage ASC interface"):
+        _validate_bundle(payload)

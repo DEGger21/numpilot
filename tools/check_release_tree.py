@@ -53,7 +53,7 @@ REQUIRED_FILES = {
     "CHANGELOG.md",
     "components/asnumpy/manifest.json",
     "components/asnumpy/source-manifest.json",
-    "components/asnumpy/asnumpy-source-1e7177f12039b2d87e3cdff6693459d895744f68.tar.gz",
+    "components/asnumpy/asnumpy-source-60d139c54d9e181b8ae101dcbd1479d6b2a86439.tar.gz",
     "components/cannbot-skills/39919e2c995e1cd9e193f11ac2e3fcb3cbd1d26c/manifest.json",
     "components/cannbot-skills/39919e2c995e1cd9e193f11ac2e3fcb3cbd1d26c/bundle.json",
     "docs/asnumpy-api-support.zh-CN.md",

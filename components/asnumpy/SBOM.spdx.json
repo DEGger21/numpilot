@@ -1,7 +1,7 @@
 {
   "SPDXID": "SPDXRef-DOCUMENT",
   "creationInfo": {
-    "created": "2026-10-31T00:00:00Z",
+    "created": "2026-11-08T00:00:00Z",
     "creators": [
       "Organization: NumPilot Contributors",
       "Tool: NumPilot component release audit v2"
@@ -11,7 +11,7 @@
   "documentDescribes": [
     "SPDXRef-Package-AsNumpy"
   ],
-  "documentNamespace": "https://gitcode.com/li-xingHIT/numpilot/sbom/asnumpy/0.4.1.dev12+gc9115e8ce.d20261031",
+  "documentNamespace": "https://gitcode.com/li-xingHIT/numpilot/sbom/asnumpy/0.3.1.dev70+g60d139c54.d20261108",
   "hasExtractedLicensingInfos": [
     {
       "licenseId": "LicenseRef-CANN-Open-Software-License-Agreement-2.0",
@@ -21,23 +21,24 @@
       ]
     }
   ],
-  "name": "numpilot-asnumpy-component-0.4.1.dev12+gc9115e8ce.d20261031",
+  "name": "numpilot-asnumpy-component-0.3.1.dev70+g60d139c54.d20261108",
   "packages": [
     {
       "SPDXID": "SPDXRef-Package-AsNumpy",
       "checksums": [
         {
           "algorithm": "SHA256",
-          "checksumValue": "a8c47cfe71994f3bfd4180d7354df3904d2bc96c476c3119083fefac747a2138"
+          "checksumValue": "d3ea03b2fd8c6eace56f532e2b30a917d63a138abe654c0020c14499898ed682"
         }
       ],
       "copyrightText": "NOASSERTION",
-      "downloadLocation": "https://gitcode.com/cann/asnumpy.git@1e7177f12039b2d87e3cdff6693459d895744f68",
+      "downloadLocation": "https://gitcode.com/cann/asnumpy.git@60d139c54d9e181b8ae101dcbd1479d6b2a86439",
       "filesAnalyzed": false,
       "licenseConcluded": "Apache-2.0",
       "licenseDeclared": "Apache-2.0",
       "name": "asnumpy",
-      "versionInfo": "0.4.1.dev12+gc9115e8ce.d20261031"
+      "versionInfo": "0.3.1.dev70+g60d139c54.d20261108",
+      "comment": "NumPilot working-tree overlay: f1c17d947a165c587a1b1d618d11d03fc5f5b183; native FP32 ACLNN MatMul dispatch."
     },
     {
       "SPDXID": "SPDXRef-Package-NumPy",

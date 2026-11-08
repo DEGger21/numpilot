@@ -2,15 +2,17 @@
   "artifact_required": true,
   "artifact_status": "bundled-and-verified",
   "build": {
+    "base_tree": "79e34b217f2e77c7d7b911105a1b56e24fd46898",
     "cann_version": "9.2.0-beta.2",
     "compiler": "GCC 11.4.0",
-    "method": "source-commit-with-aclnn-matmul-overlay",
+    "method": "source-commit-with-fp32-aclnn-matmul-dispatch-overlay",
+    "overlay": "native-fp32-aclnn-matmul-dispatch",
     "python": "CPython 3.12.14",
-    "source_commit": "1e7177f12039b2d87e3cdff6693459d895744f68",
-    "source_tree": "a5fb1f3a70be9fc17ecf0dd928776924d4c78e1e"
+    "source_commit": "60d139c54d9e181b8ae101dcbd1479d6b2a86439",
+    "source_tree": "f1c17d947a165c587a1b1d618d11d03fc5f5b183"
   },
-  "commit": "1e7177f12039b2d87e3cdff6693459d895744f68",
-  "component_id": "asnumpy-0.4.1.dev12+gc9115e8ce.d20261031-cp312-cp312-linux_aarch64",
+  "commit": "60d139c54d9e181b8ae101dcbd1479d6b2a86439",
+  "component_id": "asnumpy-0.3.1.dev70+g60d139c54.d20261108-cp312-cp312-linux_aarch64",
   "distribution": "asnumpy",
   "license": "Apache-2.0",
   "license_file": {
@@ -29,51 +31,63 @@
   "sbom": {
     "filename": "SBOM.spdx.json",
     "format": "SPDX-2.3",
-    "sha256": "2257e349c8fa9000d069760b5e1d4e779dba11e50017be6071b8a41f4bbde4dc"
+    "sha256": "1603bed4cf56e23f94e462e8b7fc25343212d60ce62d9a4b5748914900dc534f"
   },
   "schema": "numpilot.asnumpy-component",
   "schema_version": 1,
   "source_bundle": {
-    "bytes": 643555,
-    "commit": "1e7177f12039b2d87e3cdff6693459d895744f68",
-    "file_count": 198,
-    "filename": "asnumpy-source-1e7177f12039b2d87e3cdff6693459d895744f68.tar.gz",
+    "bytes": 665576,
+    "commit": "60d139c54d9e181b8ae101dcbd1479d6b2a86439",
+    "file_count": 211,
+    "filename": "asnumpy-source-60d139c54d9e181b8ae101dcbd1479d6b2a86439.tar.gz",
     "format": "tar.gz",
     "license": "Apache-2.0",
     "manifest_filename": "source-manifest.json",
-    "manifest_sha256": "f697292d223bee0b6030a32ccc5bc0f2ba1d096d59b9e5a7efc148df6b0079b4",
-    "prefix": "asnumpy-source-1e7177f12039b2d87e3cdff6693459d895744f68/",
-    "sha256": "9a484272ad540879a93751e415c8adb10b52edfaab50e050672d3abd9cc6544d",
-    "total_file_bytes": 1691974,
-    "tree": "a5fb1f3a70be9fc17ecf0dd928776924d4c78e1e"
+    "manifest_sha256": "408337443482fb9b614a83b8933d640192de15937ce7ccd440bf7b00218a7fa8",
+    "prefix": "asnumpy-source-60d139c54d9e181b8ae101dcbd1479d6b2a86439/",
+    "sha256": "f8b487cce5706b9c50e4e2492330cdf1e3a0857a4d2fc2e065f21c6bb207d9c1",
+    "total_file_bytes": 1803983,
+    "tree": "f1c17d947a165c587a1b1d618d11d03fc5f5b183"
   },
   "source_files_sha256": {
     "CMakeLists.txt": "e5da3e46e13e2e5936c4e3e03af526b1638f13ae6c73462829abaff1ade1b956",
     "LICENSE": "1eb85fc97224598dad1852b5d6483bbcf0aa8608790dcc657a5a2a761ae9c8c6",
-    "README.md": "a5cfdbeab3539b55e4852760f06e9768fdf48399e10ffead4f984853abc65a86",
+    "README.md": "3a395536661cc2286937baa50aad68033e77748bb9c5c30ba5a8bd1d110cce9a",
     "bindings/python/CMakeLists.txt": "6a39bb565d5a4762daaa48217198b3f40296b6a431fa37e924f9784b31f7d1d5",
     "csrc/CMakeLists.txt": "3f5ca526867de88dbefc8912d9563053ad78b6e3bc0b58630baacbc37ae281b6",
     "pyproject.toml": "ed92ce53169bcd819dadc34658be54ff778919f277b9a83392d91110a818d6ac"
   },
-  "tree": "a5fb1f3a70be9fc17ecf0dd928776924d4c78e1e",
-  "version": "0.4.1.dev12+gc9115e8ce.d20261031",
+  "source_patch": {
+    "base_commit": "60d139c54d9e181b8ae101dcbd1479d6b2a86439",
+    "base_tree": "79e34b217f2e77c7d7b911105a1b56e24fd46898",
+    "content_tree": "f1c17d947a165c587a1b1d618d11d03fc5f5b183",
+    "files": [
+      "csrc/linalg/product.cpp",
+      "src/asnumpy/linalg/direct.py",
+      "tests/asnumpy_tests/linalg_tests/test_product.py"
+    ],
+    "kind": "working-tree-overlay",
+    "validation": "native-fp32-aclnn-matmul-dispatch"
+  },
+  "tree": "f1c17d947a165c587a1b1d618d11d03fc5f5b183",
+  "version": "0.3.1.dev70+g60d139c54.d20261108",
   "wheel": {
-    "filename": "asnumpy-0.4.1.dev12+gc9115e8ce.d20261031-cp312-cp312-linux_aarch64.whl",
+    "filename": "asnumpy-0.3.1.dev70+g60d139c54.d20261108-cp312-cp312-linux_aarch64.whl",
     "installed_files": {
       "module": {
         "path": "asnumpy/__init__.py",
-        "sha256": "7061af131970ef158c87dfbf36261404ec9e1d682c3945f87d55c35fb22e8d1d"
+        "sha256": "295976c53a4fccc2807f9a3ef81821c063f839e6b32e4150d19288ee7af9224c"
       },
       "native_modules": [
         {
           "path": "asnumpy/_core.cpython-312-aarch64-linux-gnu.so",
-          "sha256": "02f38dfae1cef5b0e995ab0cd5922ae66923c3d76d49b61e9482901f577f8f8a"
+          "sha256": "44c5b349b3f8ce16b4d45157a3c39b19ec4a3edfba3aa1687d43081077b9e511"
         }
       ]
     },
-    "metadata_sha256": "c07bcf35a9923e07f908d984dd220c6adccb0d9670260b1f3fd1c8b3d6a925e0",
-    "record_sha256": "7baf091897058f1107dd17bbb213c33c49cdc64a75196d88176298f2160a99e6",
-    "sha256": "a8c47cfe71994f3bfd4180d7354df3904d2bc96c476c3119083fefac747a2138",
+    "metadata_sha256": "3dc7649033a9820a14f48372b77e38c5d5c48e7c094645d004b8530a0b4994c5",
+    "record_sha256": "628ee08761514a6aa7c7eca39184ce66dfa99456b3c60d0278757b9c58556f16",
+    "sha256": "d3ea03b2fd8c6eace56f532e2b30a917d63a138abe654c0020c14499898ed682",
     "tags": [
       "cp312-cp312-linux_aarch64"
     ]

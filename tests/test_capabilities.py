@@ -210,21 +210,21 @@ def test_runtime_identity_rejects_single_field_drift_against_canonical_hash(fiel
 
 
 def test_p0_audit_ids_bind_wrapper_dependencies():
-    assert "init7061af13" in npu_module.ASNUMPY_AUDIT_ID
+    assert "init295976c5" in npu_module.ASNUMPY_AUDIT_ID
     assert "cannac907b3a" in npu_module.ASNUMPY_AUDIT_ID
-    assert "linalg68ba1971" in npu_module.ASNUMPY_AUDIT_ID
+    assert "linalg4e7d1c7e" in npu_module.ASNUMPY_AUDIT_ID
     assert "random6c9c7891" in npu_module.ASNUMPY_AUDIT_ID
-    assert "core02f38dfa" in npu_module.ASNUMPY_AUDIT_ID
-    assert npu_module.ASNUMPY_AUDIT_ID.endswith("-v5")
+    assert "core44c5b349" in npu_module.ASNUMPY_AUDIT_ID
+    assert npu_module.ASNUMPY_AUDIT_ID.endswith("-v6")
     assert "cannac907b3a" in ASNUMPY_SOURCE_BUILD_AUDIT_ID
-    assert "linalg68ba1971" in ASNUMPY_SOURCE_BUILD_AUDIT_ID
+    assert "linalg4e7d1c7e" in ASNUMPY_SOURCE_BUILD_AUDIT_ID
     assert "random6c9c7891" in ASNUMPY_SOURCE_BUILD_AUDIT_ID
-    assert ASNUMPY_SOURCE_BUILD_AUDIT_ID.endswith("-receipt-v3")
+    assert ASNUMPY_SOURCE_BUILD_AUDIT_ID.endswith("-receipt-v4")
     assert "internal-component" in ASNUMPY_INTERNAL_COMPONENT_AUDIT_ID
-    assert "manifest9b4e95fe" in ASNUMPY_INTERNAL_COMPONENT_AUDIT_ID
-    assert "wheel-a8c47cfe" in ASNUMPY_INTERNAL_COMPONENT_AUDIT_ID
-    assert "core02f38dfa" in ASNUMPY_INTERNAL_COMPONENT_AUDIT_ID
-    assert ASNUMPY_INTERNAL_COMPONENT_AUDIT_ID.endswith("-v2")
+    assert "manifestff21a984" in ASNUMPY_INTERNAL_COMPONENT_AUDIT_ID
+    assert "wheel-d3ea03b2" in ASNUMPY_INTERNAL_COMPONENT_AUDIT_ID
+    assert "core44c5b349" in ASNUMPY_INTERNAL_COMPONENT_AUDIT_ID
+    assert ASNUMPY_INTERNAL_COMPONENT_AUDIT_ID.endswith("-v3")
     assert "utilsfd94c025" in P0_ASNUMPY_AUDIT_ID
     assert P0_ASNUMPY_AUDIT_ID.endswith("-v2")
     assert "array16c901f5" in P0_LINALG_ASNUMPY_AUDIT_ID
@@ -889,8 +889,8 @@ def test_pinned_source_runtime_identity_is_complete_hash_bound_and_matched(
     assert identity.status == "matched"
     assert identity.issues == ()
     assert identity.audit_id == ASNUMPY_SOURCE_BUILD_AUDIT_ID
-    assert identity.asnumpy_commit == "1e7177f12039b2d87e3cdff6693459d895744f68"
-    assert identity.asnumpy_tree == "a5fb1f3a70be9fc17ecf0dd928776924d4c78e1e"
+    assert identity.asnumpy_commit == "60d139c54d9e181b8ae101dcbd1479d6b2a86439"
+    assert identity.asnumpy_tree == "f1c17d947a165c587a1b1d618d11d03fc5f5b183"
     assert identity.soc_model == "Ascend910B3"
     assert identity.cann_version == "9.2.0-beta.2"
     assert identity.bootstrap_receipt_path == str(receipt_path.resolve())
