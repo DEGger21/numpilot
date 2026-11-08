@@ -595,6 +595,61 @@ def test_remote_provider_accepts_generic_identity_and_binds_model_receipt(
     assert generation["model"] == model
 
 
+def test_complete_gaps_injected_response_is_local_and_contract_bound(tmp_path, capsys):
+    from numpilot import __main__ as cli
+
+    source = _write_gap_source(tmp_path)
+    response = tmp_path / "codex-response.txt"
+    response.write_text(_valid_line_bundle(), encoding="utf-8")
+    out = tmp_path / "injected-out"
+
+    rc = cli.main([
+        "complete-gaps",
+        str(source),
+        "--out", str(out),
+        "--provider", "injected",
+        "--response-file", str(response),
+        "--target-soc", "Ascend910B4",
+        "--cann-version", "9.0.0",
+        "--max-attempts", "1",
+    ])
+
+    assert rc == 0
+    terminal = capsys.readouterr()
+    assert "actual_remote_generation_call=no" in terminal.out
+    report = json.loads((out / "gap-report.json").read_text(encoding="utf-8"))
+    assert report["status"] == "generated_unverified"
+    draft = report["drafts"][0]
+    assert draft["generation"]["mode"] == "injected_test_double"
+    assert draft["generation"]["provider"] == "codex-self"
+    assert draft["generation"]["model"] == "codex-local"
+    assert draft["generation"]["remote_receipts"] == []
+    assert draft["generation"]["fallback"] == "disabled"
+    assert report["claim_boundary"]["level"] == "generated_unverified"
+    assert report["claim_boundary"]["activation_performed"] is False
+
+
+def test_complete_gaps_injected_requires_response_file_before_output(tmp_path, capsys):
+    from numpilot import __main__ as cli
+
+    source = _write_gap_source(tmp_path)
+    out = tmp_path / "must-not-exist"
+    rc = cli.main([
+        "complete-gaps",
+        str(source),
+        "--out", str(out),
+        "--provider", "injected",
+        "--target-soc", "Ascend910B4",
+        "--cann-version", "9.0.0",
+    ])
+
+    assert rc == 2
+    assert not out.exists()
+    terminal = capsys.readouterr()
+    assert "--provider injected" in terminal.err
+    assert "不会读取 llm.json" in terminal.err
+
+
 def test_provider_rejects_unimplemented_performance_goal_before_model_access():
     calls = []
 

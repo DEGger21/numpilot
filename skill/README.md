@@ -34,3 +34,5 @@ python -m numpilot --llm-config /absolute/private/llm.json \
 Skill 是路由和证据合同，不是模型本身。代理地址是现场环境细节，不能写死；`llm.json`、Token
 和 endpoint 由终端用户在私有配置中提供。agent/no-llm 模式则完全不读取该配置，由交互模型自行
 承担解读、补全、算子/接入和迁移候选生成。
+
+Codex CLI / 外部 AI 也可以直接作为候选生成角色：先执行 complete-gaps --provider prepare 获取 GapSpec，再把 AI 生成的 JSON 或 NUMPILOT_BUNDLE_V1 写入本地文件，通过 --provider injected --response-file 送入同一套合同和 artifact store。该通道不读取 llm.json，结果固定为 generated_unverified，不会自动编译、激活或更新 150 例统计。详细 hand-off 见 asnumpy-gap-completion/references/codex-cli.md。

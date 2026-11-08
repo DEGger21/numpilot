@@ -4189,8 +4189,10 @@ def _cmd_complete_gaps(args):
         return 2
 
     llm_enabled = args.provider == "llm" and bool(preparation.specs)
+    injected_enabled = args.provider == "injected" and bool(preparation.specs)
+    provider_enabled = llm_enabled or injected_enabled
     operator_goal = None
-    if llm_enabled:
+    if provider_enabled:
         # Reject an unimplemented local mode before asking the user to produce
         # any official-resolution receipt.  This remains before model, Skill,
         # network, and output access.
@@ -4291,6 +4293,48 @@ def _cmd_complete_gaps(args):
     configuration_status = None
     llm_gate = None
     timeout_seconds = None
+    if injected_enabled:
+        response_path = Path(args.response_file).expanduser() if args.response_file else None
+        if response_path is None:
+            print(
+                "[注入模型门禁] fail · --provider injected 必须提供 --response-file；"
+                "不会读取 llm.json，也不会发起网络请求",
+                file=sys.stderr,
+            )
+            return 2
+        if response_path.is_symlink() or not response_path.is_file():
+            print(
+                "[注入模型门禁] fail · response-file 必须是本地普通文件",
+                file=sys.stderr,
+            )
+            return 2
+        try:
+            response_bytes = response_path.read_bytes()
+        except OSError as exc:
+            print(
+                "[注入模型门禁] fail · 无法读取 response-file: %s" % type(exc).__name__,
+                file=sys.stderr,
+            )
+            return 2
+        if not response_bytes or len(response_bytes) > 3 * 1024 * 1024:
+            print(
+                "[注入模型门禁] fail · response-file 为空或超过 3 MiB",
+                file=sys.stderr,
+            )
+            return 2
+        try:
+            injected_response = response_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+            print(
+                "[注入模型门禁] fail · response-file 必须是 UTF-8 文本",
+                file=sys.stderr,
+            )
+            return 2
+        print(
+            "[注入模型门禁] pass · local response=%s · bytes=%d · "
+            "actual_remote_generation_call=no" % (response_path, len(response_bytes))
+        )
+
     if llm_enabled:
         if str(args.cann_version).strip().lower() in {"", "unknown", "auto"}:
             print(
@@ -4425,6 +4469,23 @@ def _cmd_complete_gaps(args):
             skill_bundle=bundle,
             staged_direct=True,
             operator_goal=operator_goal,
+        )
+    elif injected_enabled:
+        # Codex/other host agents can submit one locally generated bundle without
+        # exposing credentials or allowing the CLI to silently call llm.json.
+        # The normal NumPilot validator, artifact store and fail-closed gates still
+        # own the candidate; the response is explicitly recorded as an injected
+        # test-double rather than a remote model result.
+        provider = LlmDraftProvider(
+            chat=lambda _system, _user: injected_response,
+            max_attempts=args.max_attempts,
+            provider_label="codex-self",
+            model_name="codex-local",
+            operator_goal=operator_goal,
+        )
+        print(
+            "[注入模型] 使用本地候选响应；provider=codex-self model=codex-local "
+            "· 不读取 llm.json · 不联网 · 仍执行完整本地合同校验"
         )
 
     pipeline = GapCompletionPipeline(
@@ -7096,9 +7157,19 @@ def main(argv=None):
     )
     gaps.add_argument(
         "--provider",
-        choices=["prepare", "llm"],
+        choices=["prepare", "llm", "injected"],
         default="prepare",
-        help="prepare 只写规格；llm 另生成隔离且未验证的源码草稿",
+        help=(
+            "prepare 只写规格；llm 通过 llm.json 生成远程草稿；"
+            "injected 读取 --response-file 的本地模型候选，不联网且不读取 llm.json"
+        ),
+    )
+    gaps.add_argument(
+        "--response-file",
+        help=(
+            "provider=injected 时的 UTF-8 本地模型响应（JSON 或 NUMPILOT_BUNDLE_V1）；"
+            "只读普通文件，最大 3 MiB，候选仍标记为 generated_unverified"
+        ),
     )
     gaps.add_argument(
         "--operator-goal",
