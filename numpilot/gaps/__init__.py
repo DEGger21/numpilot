@@ -149,6 +149,11 @@ from numpilot.gaps.official_adapter_context_gate import (
     OfficialAdapterContextGateError,
     validate_official_adapter_context,
 )
+from numpilot.gaps.official_candidate_recovery import (
+    OfficialCandidateRecoveryError,
+    OfficialCandidateRecoveryResult,
+    materialize_official_candidate_recovery,
+)
 
 from numpilot.gaps.integration import (
     IntegrationError,
@@ -251,6 +256,9 @@ __all__ = [
     "OfficialAdapterContextGateError",
     "validate_official_adapter_context",
     "OfficialCandidatePreflightError",
+    "OfficialCandidateRecoveryError",
+    "OfficialCandidateRecoveryResult",
+    "materialize_official_candidate_recovery",
     "prepare_official_candidate_handoff",
     "load_official_candidate_handoff",
     "OFFICIAL_CANDIDATE_HANDOFF_SCHEMA",

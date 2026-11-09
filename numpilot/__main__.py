@@ -4198,6 +4198,42 @@ def _cmd_validate_official_adapter_context(args):
     return 0
 
 
+def _cmd_materialize_official_candidate_recovery(args):
+    """Advance an official candidate hand-off to CANDIDATE_READY only."""
+    from numpilot.gaps.official_candidate_recovery import (
+        OfficialCandidateRecoveryError,
+        materialize_official_candidate_recovery,
+    )
+    try:
+        result = materialize_official_candidate_recovery(
+            args.handoff,
+            args.preflight,
+            args.source,
+            args.official_resolution_report,
+            args.context_gate,
+            args.state_dir,
+            runtime_backend=args.runtime_backend,
+            runtime_audit_id=args.runtime_audit_id,
+            runtime_identity_sha256=args.runtime_identity_sha256,
+            run_id=args.run_id,
+            profile=args.profile,
+            output_dir=args.output_dir,
+        )
+    except (OfficialCandidateRecoveryError, OSError, TypeError, ValueError) as exc:
+        print("[官方候选 recovery] 失败: %s" % exc, file=sys.stderr)
+        print("[模型调用] actual_remote_call=no · build=no · activation=no", file=sys.stderr)
+        return 2
+    payload = result.to_dict()
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, allow_nan=False, sort_keys=True))
+    else:
+        print("[官方候选 recovery] status=%s · phase=%s · appended=%d" % (
+            payload["status"], payload["recovery"]["state"]["phase"], payload["appended_revisions"]
+        ))
+        print("[官方候选 recovery] output=%s · model_call=no · activation=no" % payload["output_dir"])
+    return 0
+
+
 def _cmd_resolve_gaps(args):
     """Resolve canonical gaps locally before selecting any model workflow."""
 
@@ -7183,6 +7219,25 @@ def main(argv=None):
     official_adapter_generate.add_argument("--out", required=True, help="新的 write-once gate receipt")
     official_adapter_generate.add_argument("--json", action="store_true", help="只输出机器可读回执")
 
+    official_recovery = sub.add_parser(
+        "materialize-official-candidate-recovery",
+        help="消费 official_candidate_gap 并安全推进到 CANDIDATE_READY，不调用模型",
+        description="消费 official_candidate_gap，推进到 CANDIDATE_READY；本命令不调用模型、不联网、不生成或激活 adapter。",
+    )
+    official_recovery.add_argument("--handoff", required=True, help="official candidate hand-off")
+    official_recovery.add_argument("--preflight", required=True, help="official candidate preflight")
+    official_recovery.add_argument("--source", required=True, help="原始 NumPy 源文件")
+    official_recovery.add_argument("--official-resolution-report", required=True, help="官方解析回执")
+    official_recovery.add_argument("--context-gate", required=True, help="context-bound official adapter gate receipt")
+    official_recovery.add_argument("--state-dir", required=True, help="私有 RecoveryStore 目录")
+    official_recovery.add_argument("--output-dir", help="私有官方候选 artifact 目录")
+    official_recovery.add_argument("--runtime-backend", required=True, help="显式 runtime backend")
+    official_recovery.add_argument("--runtime-audit-id", required=True, help="显式 runtime audit id")
+    official_recovery.add_argument("--runtime-identity-sha256", required=True, help="显式 runtime identity SHA-256")
+    official_recovery.add_argument("--run-id", help="可选 recovery run id")
+    official_recovery.add_argument("--profile", default="receipt-only", choices=["receipt-only"], help="本阶段固定为 receipt-only")
+    official_recovery.add_argument("--json", action="store_true", help="只输出机器可读回执")
+
     recover_gaps = sub.add_parser(
         "recover-gaps",
         help="导入可信官方回执并查询可续接的缺口恢复状态",
@@ -7725,6 +7780,8 @@ def main(argv=None):
             return _cmd_prepare_official_adapter_input(args)
         if args.cmd in {"validate-official-adapter-context", "official-adapter-generate"}:
             return _cmd_validate_official_adapter_context(args)
+        if args.cmd == "materialize-official-candidate-recovery":
+            return _cmd_materialize_official_candidate_recovery(args)
         if args.cmd == "recover-gaps":
             return _cmd_recover_gaps(args)
         if args.cmd == "paths":
