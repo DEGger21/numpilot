@@ -239,6 +239,30 @@ def _resolve_asnumpy_adapter_api_name(adapter_data, spec):
             and python_mapping.get("private_extension_symbol") != expected_api_name
         ):
             return None
+
+    # CANNBot operator manifests produced for an injected/local candidate may
+    # already carry the target toolchain and ACLNN boundary.  When those fields
+    # are present, bind them before the adapter generator sees the artifact.
+    # Minimal legacy v1 identity manifests remain accepted for compatibility.
+    operator = adapter_data.get("operator")
+    if (
+        isinstance(operator, Mapping)
+        and "target_soc" in operator
+        and "cann_version" in operator
+    ):
+        try:
+            from numpilot.gaps.generated_adapter import (
+                validate_operator_manifest_for_overlay,
+            )
+            validate_operator_manifest_for_overlay(
+                adapter_data,
+                expected_source_api=expected_source_api,
+                expected_public_api=expected_public_api,
+                expected_target_soc=getattr(spec, "target_soc", None),
+                expected_cann_version=getattr(spec, "cann_version", None),
+            )
+        except (ImportError, ValueError):
+            return None
     return expected_api_name
 
 
@@ -4051,6 +4075,54 @@ def _cmd_recover_gaps(args):
         return 2
 
 
+def _cmd_prepare_official_candidate(args):
+    """Publish a hash-bound installed ACLNN candidate hand-off only."""
+
+    from numpilot.gaps.official_candidate_handoff import (
+        OfficialCandidateHandoffError,
+        prepare_official_candidate_handoff,
+    )
+
+    try:
+        handoff = prepare_official_candidate_handoff(
+            args.file, args.official_resolution_report, args.out
+        )
+    except OfficialCandidateHandoffError as exc:
+        flow_print("[官方候选 hand-off] 失败: %s" % exc, stream=sys.stderr, tone="error")
+        flow_print("[模型调用] actual_remote_call=no · 未读取 Skill、未构建、未激活")
+        return 2
+    if args.json:
+        print(json.dumps(handoff.to_dict(), ensure_ascii=False, allow_nan=False, sort_keys=True))
+    else:
+        flow_print("[官方候选 hand-off] status=candidate_adapter_required · model_call=no · activation=no")
+        flow_print("[官方候选 hand-off] receipt=%s id=%s" % (args.out, handoff.handoff_id))
+    return 0
+
+
+def _cmd_preflight_official_candidate(args):
+    """Recheck an official candidate hand-off without model/build side effects."""
+    from numpilot.gaps.official_candidate_preflight import (
+        OfficialCandidatePreflightError,
+        preflight_official_candidate,
+    )
+    try:
+        receipt = preflight_official_candidate(
+            args.handoff,
+            args.file,
+            args.official_resolution_report,
+            args.out,
+        )
+    except OfficialCandidatePreflightError as exc:
+        print("[官方候选 preflight] 失败: %s" % exc, file=sys.stderr)
+        print("[模型调用] actual_remote_call=no · build=no · activation=no", file=sys.stderr)
+        return 2
+    if args.json:
+        print(json.dumps(receipt, ensure_ascii=False, allow_nan=False, sort_keys=True))
+    else:
+        print("[官方候选 preflight] status=%s · model_call=no · build=no · activation=no" % receipt["status"])
+        print("[官方候选 preflight] receipt=%s" % args.out)
+    return 0
+
 def _cmd_resolve_gaps(args):
     """Resolve canonical gaps locally before selecting any model workflow."""
 
@@ -6956,6 +7028,44 @@ def main(argv=None):
         ),
     )
 
+    official_candidate = sub.add_parser(
+        "prepare-official-candidate",
+        help=(
+            "验证已发现的 installed ACLNN candidate，并发布独立的"
+            " official_candidate_gap hand-off（不调用模型、不构建）"
+        ),
+    )
+    official_candidate.add_argument(
+        "file", help="原始 NumPy 源文件"
+    )
+    official_candidate.add_argument(
+        "--official-resolution-report", required=True,
+        help="resolve-gaps 生成的官方解析回执",
+    )
+    official_candidate.add_argument(
+        "--out", required=True,
+        help="新的 write-once official_candidate_gap JSON 回执",
+    )
+    official_candidate.add_argument(
+        "--json", action="store_true",
+        help="只输出机器可读回执",
+    )
+
+    official_preflight = sub.add_parser(
+        "preflight-official-candidate",
+        help="重新盘点官方候选并发布只读 adapter materialization preflight",
+    )
+    official_preflight.add_argument("file", help="原始 NumPy 源文件")
+    official_preflight.add_argument(
+        "--handoff", required=True, help="prepare-official-candidate 生成的 hand-off"
+    )
+    official_preflight.add_argument(
+        "--official-resolution-report", required=True,
+        help="resolve-gaps 生成的官方解析回执",
+    )
+    official_preflight.add_argument("--out", required=True, help="新的 preflight 回执")
+    official_preflight.add_argument("--json", action="store_true", help="只输出机器可读回执")
+
     recover_gaps = sub.add_parser(
         "recover-gaps",
         help="导入可信官方回执并查询可续接的缺口恢复状态",
@@ -7490,6 +7600,10 @@ def main(argv=None):
             return _cmd_setup_skills(args)
         if args.cmd == "resolve-gaps":
             return _cmd_resolve_gaps(args)
+        if args.cmd == "prepare-official-candidate":
+            return _cmd_prepare_official_candidate(args)
+        if args.cmd == "preflight-official-candidate":
+            return _cmd_preflight_official_candidate(args)
         if args.cmd == "recover-gaps":
             return _cmd_recover_gaps(args)
         if args.cmd == "paths":

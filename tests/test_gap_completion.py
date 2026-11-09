@@ -4181,6 +4181,26 @@ def test_validate_bundle_rejects_asc_without_acl_nn_two_stage_contract():
         _validate_bundle(payload)
 
 
+def test_validate_bundle_rejects_asc_operator_manifest_without_toolchain_binding():
+    manifest = json.loads(_valid_asc_manifest())
+    manifest["operator"] = {
+        "source_api": "numpy.softplus",
+        "public_api": "asnumpy.softplus",
+    }
+    payload = json.dumps({
+        "summary": "ASC implementation without target binding.",
+        "files": [
+            {"path": "CMakeLists.txt", "content": "cmake_minimum_required(VERSION 3.16)\n"},
+            {"path": "build.sh", "content": "#!/usr/bin/env bash\nset -euo pipefail\n"},
+            {"path": "op_kernel/softplus.asc", "content": "// ASC source\n"},
+            {"path": "tests/test_softplus.py", "content": "# NumPy oracle\n"},
+            {"path": "asnumpy_adapter/softplus.json", "content": json.dumps(manifest)},
+        ],
+    })
+    with pytest.raises(DraftGenerationError, match="operator.target_soc"):
+        _validate_bundle(payload)
+
+
 def test_validate_bundle_rejects_asc_without_explicit_symbol_resolution():
     manifest = json.loads(_valid_asc_manifest())
     del manifest["name_mapping"]["aclnn"]["symbol_resolution"]

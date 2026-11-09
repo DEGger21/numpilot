@@ -30,6 +30,8 @@ from numpilot.llm_config import (
 from numpilot.gaps.generated_adapter import (
     CUSTOM_OPAPI_SONAME,
     SYMBOL_RESOLUTION_STRATEGY,
+    GeneratedAdapterContractError,
+    validate_operator_manifest_for_overlay,
 )
 
 
@@ -847,6 +849,15 @@ def _validate_asc_two_stage_manifest_payload(payload: str, label: str) -> None:
             "ASC implementation requires %s: %s"
             % (_ASC_TWO_STAGE_MANIFEST_SCHEMA, label)
         )
+    # When the CANNBot manifest carries an operator identity, bind the target
+    # toolchain and ACLNN boundary before accepting the ASC candidate. Older
+    # fixtures without an operator object remain supported by the narrow
+    # layout contract; injected/generated manifests must carry these fields.
+    if "operator" in data:
+        try:
+            validate_operator_manifest_for_overlay(data)
+        except GeneratedAdapterContractError as exc:
+            raise DraftGenerationError(str(exc)) from exc
     name_mapping = data.get("name_mapping")
     if not isinstance(name_mapping, dict):
         raise DraftGenerationError(
@@ -969,6 +980,16 @@ def _validate_asc_two_stage_layout(
         try:
             _validate_asc_two_stage_manifest_payload(payload, manifest_path)
         except DraftGenerationError:
+            # A modern operator manifest carries target/toolchain identity and
+            # must fail with its concrete contract error. Legacy manifests
+            # without an operator object retain the historical generic ASC
+            # rejection so older diagnostics remain stable.
+            try:
+                manifest_data = json.loads(payload)
+            except (json.JSONDecodeError, RecursionError):
+                manifest_data = {}
+            if isinstance(manifest_data, dict) and "operator" in manifest_data:
+                raise
             continue
         return True
     raise DraftGenerationError(

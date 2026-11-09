@@ -1,0 +1,85 @@
+{
+  "cases": {
+    "B001_out_buffer": {
+      "category": "contract_limited",
+      "rationale": "np.add(out=...) requires an explicit output-buffer contract."
+    },
+    "B002_where_preserves": {
+      "category": "contract_limited",
+      "rationale": "np.multiply(where=...) requires an explicit masked-write contract."
+    },
+    "B003_unsafe_cast": {
+      "category": "contract_limited",
+      "rationale": "np.add(casting=...) requires an explicit casting contract."
+    },
+    "B014_overlapping_alias": {
+      "category": "contract_limited",
+      "rationale": "Overlapping in-place aliasing is not equivalent to allocating a fresh result."
+    },
+    "B011_nan_inf_extrema": {
+      "category": "contract_limited",
+      "rationale": "AsNumpy exposes both APIs, but fmax follows aclnnMaximum NaN propagation instead of NumPy fmax ignore-NaN semantics; contract review is required."
+    },
+    "B016_reverse_strides": {
+      "category": "contract_limited",
+      "rationale": "signbit is host-assisted and not strict-NPU qualified; negative-stride execution remains a runtime contract limitation."
+    },
+    "B018_signed_zero": {
+      "category": "contract_limited",
+      "rationale": "signbit is host-assisted and copysign does not preserve NumPy signed-zero semantics on the pinned runtime."
+    }
+  },
+  "categories": {
+    "contract_limited": "The compute API exists, but keyword/signature, aliasing, or in-place semantics require an explicit contract decision.",
+    "covered_compute": "All compute calls are on the pinned AsNumpy public catalog or a documented D2 equivalence.",
+    "multi_gap": "Multiple missing compute APIs or multi-stage dataflow make this unsuitable for the first single-gap sweep.",
+    "official_gap": "An official alias/composition or exact-call contract is not yet admitted by the pinned catalog/overlay.",
+    "out_of_scope": "Dynamic execution, I/O, callbacks, special/object dtypes, threading, or external code; retained only for static refusal regression.",
+    "single_gap": "One primary missing compute API is isolated in an otherwise small program; G retains the same category while testing deduplication."
+  },
+  "corpus": {
+    "excluded_total": 15,
+    "expected_total": 150,
+    "included_total": 135,
+    "root": "benchmark/cases"
+  },
+  "description": "NumPy compute-only view of the immutable 150-case benchmark corpus.",
+  "group_rationales": {
+    "A_direct_simple": "Elementwise, reduction, and matmul compute calls are covered by the pinned catalog.",
+    "B_direct_semantics": "Compute calls are covered; selected cases are overridden below when the argument contract is not equivalent.",
+    "C_direct_structure": "Structure/control flow is the variable; compute calls remain on the covered surface.",
+    "D1_partial_low_kernel": "One named compute API is outside the pinned catalog.",
+    "D2_partial_low_official": "Documented alias/composition equivalents are already part of the accepted covered tranche.",
+    "E_partial_high": "Several missing compute APIs occur in one program.",
+    "F_partial_consent": "Compute APIs are present but semantics require explicit consent for the signature contract.",
+    "G_partial_dedup": "One gap contract is repeated across multiple call sites.",
+    "H_gap_official": "Alias/composition cases remain gap-class until the exact contract is proven.",
+    "I_gap_model": "One missing compute API with boundary inputs is reserved for model-backed gap filling.",
+    "J_out_of_subset": "Static refusal regression only; never included in compute migration/performance totals.",
+    "K_gap_all": "Several missing compute APIs form a multi-stage pipeline."
+  },
+  "groups": {
+    "A_direct_simple": "covered_compute",
+    "B_direct_semantics": "covered_compute",
+    "C_direct_structure": "covered_compute",
+    "D1_partial_low_kernel": "single_gap",
+    "D2_partial_low_official": "covered_compute",
+    "E_partial_high": "multi_gap",
+    "F_partial_consent": "contract_limited",
+    "G_partial_dedup": "single_gap",
+    "H_gap_official": "official_gap",
+    "I_gap_model": "single_gap",
+    "J_out_of_subset": "out_of_scope",
+    "K_gap_all": "multi_gap"
+  },
+  "include_categories": [
+    "covered_compute",
+    "contract_limited",
+    "single_gap",
+    "official_gap",
+    "multi_gap"
+  ],
+  "name": "numpy_compute_only",
+  "schema": "numpilot.benchmark-scope",
+  "version": 1
+}

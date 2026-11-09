@@ -109,12 +109,17 @@ from numpilot.gaps.dlsym_template import (
 )
 from numpilot.gaps.generated_adapter import (
     GeneratedAdapterContract,
+    OperatorManifestContract,
     GeneratedAdapterContractError,
     INTEGRATION_ARCHITECTURE,
+    OVERLAY_PREFLIGHT_SCHEMA,
     SYMBOL_RESOLUTION_STRATEGY,
     CUSTOM_OPAPI_SONAME,
     SCHEMA as GENERATED_ADAPTER_SCHEMA,
     validate_generated_adapter_manifest,
+    validate_operator_manifest_for_overlay,
+    prepare_overlay_materializer_preflight,
+    prepare_source_compatible_workspace_contract,
 )
 from numpilot.custom_opp_provenance import (
     CustomOppProvenance,
@@ -123,6 +128,23 @@ from numpilot.custom_opp_provenance import (
     SCHEMA_VERSION as CUSTOM_OPP_PROVENANCE_SCHEMA_VERSION,
     inspect_custom_opp,
 )
+from numpilot.gaps.workspace_materializer import (
+    MATERIALIZATION_SCHEMA,
+    WorkspaceMaterializationError,
+    materialize_source_compatible_workspace,
+)
+from numpilot.gaps.official_candidate_handoff import (
+    OfficialCandidateHandoff,
+    OfficialCandidateHandoffError,
+    prepare_official_candidate_handoff,
+    load_official_candidate_handoff,
+    SCHEMA as OFFICIAL_CANDIDATE_HANDOFF_SCHEMA,
+)
+from numpilot.gaps.official_candidate_preflight import (
+    OfficialCandidatePreflightError,
+    preflight_official_candidate,
+)
+
 from numpilot.gaps.integration import (
     IntegrationError,
     IntegrationTransactionResult,
@@ -213,6 +235,19 @@ __all__ = [
     "CustomOppProvenanceError",
     "CustomOppProvenance",
     "validate_generated_adapter_manifest",
+    "validate_operator_manifest_for_overlay",
+    "prepare_overlay_materializer_preflight",
+    "prepare_source_compatible_workspace_contract",
+    "materialize_source_compatible_workspace",
+    "OfficialCandidateHandoff",
+    "OfficialCandidateHandoffError",
+    "preflight_official_candidate",
+    "OfficialCandidatePreflightError",
+    "prepare_official_candidate_handoff",
+    "load_official_candidate_handoff",
+    "OFFICIAL_CANDIDATE_HANDOFF_SCHEMA",
+    "WorkspaceMaterializationError",
+    "MATERIALIZATION_SCHEMA",
     "SYMBOL_RESOLUTION_STRATEGY",
     "CUSTOM_OPAPI_SONAME",
     "GENERATED_ADAPTER_SCHEMA",
@@ -221,6 +256,8 @@ __all__ = [
     "DlsymTemplateError",
     "DlsymTemplateSpec",
     "GeneratedAdapterContract",
+    "OperatorManifestContract",
+    "OVERLAY_PREFLIGHT_SCHEMA",
     "AdapterRecoveryError",
     "CandidateMaterializationError",
     "CandidateMaterializationResult",

@@ -1,10 +1,36 @@
+## Scope manifests
+
+The original 150 programs under `benchmark/cases/` are immutable benchmark
+inputs. Use `benchmark/scopes/numpy_compute_only.json` to select the 135-case
+NumPy compute-only view without deleting or renumbering the corpus:
+
+```bash
+python -m numpilot.benchmark_suite \
+  --root benchmark/cases \
+  --scope benchmark/scopes/numpy_compute_only.json \
+  --out runs/numpy-compute-only \
+  --backend shim
+```
+
+The manifest assigns every discovered case to one auditable category:
+`covered_compute`, `contract_limited`, `single_gap`, `official_gap`,
+`multi_gap`, or `out_of_scope`. The default include list excludes only
+`out_of_scope` (the 15 `J_out_of_subset` cases). Case-level overrides keep
+`B001`/`B002`/`B003` contract consent and `B014` overlapping alias semantics
+visible instead of treating them as ordinary direct cases.
+
+The runner records the scope name, category, source, rationale, and category
+counts in `summary.json`, `SUMMARY.md`, and each case `receipt.json`. A scope
+run changes selection only; it never changes the source programs or the
+underlying route expectations.
+
 # NumPilot NumPy 程序迁移测试集
 
 本目录为 `numpilot` 仓库的 `benchmark/`，包含 **150 个独立 NumPy 程序**，用于开发和评估将 NumPy 程序自动迁移为 AsNumpy 程序的框架。设计参考《NumPilot 测试集设计规范》。
 
 **当前定位：v0 开发测试集。** 源码已完成 NumPy 端检查，但尚未完成全部迁移预期的独立审定，也没有完成真实 AsNumpy/NPU 环境下的全量迁移验证。目录名称代表设计意图，不能直接作为已验证的迁移分类标签。
 
-本目录包含程序源码和使用说明。当前没有 manifest、持久化 oracle、预注册记录、迁移报告或 L 组验证器变异用例。
+本目录包含程序源码和使用说明。`scopes/numpy_compute_only.json` 提供不修改原始样例的可审计筛选视图；持久化 oracle、预注册记录、迁移报告或 L 组验证器变异用例仍不属于本目录。
 
 ## 1. 可以测试什么
 

@@ -57,6 +57,16 @@ GROUP_ORDER = (
     "K_gap_all",
 )
 EXPECTED_TOTAL = 150
+SCOPE_SCHEMA = "numpilot.benchmark-scope"
+SCOPE_VERSION = 1
+SCOPE_CATEGORIES = (
+    "covered_compute",
+    "contract_limited",
+    "single_gap",
+    "official_gap",
+    "multi_gap",
+    "out_of_scope",
+)
 
 
 @dataclass
@@ -105,6 +115,10 @@ class CaseOutcome:
     overlay_ops: list = field(default_factory=list)
     overlay_profile_callsites: int = 0
     overlay_notes: list = field(default_factory=list)
+    scope_name: str = ""
+    scope_category: str = ""
+    scope_source: str = ""
+    scope_reason: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -152,6 +166,12 @@ class CaseOutcome:
             "overlay_ops": list(self.overlay_ops),
             "overlay_profile_callsites": self.overlay_profile_callsites,
             "overlay_notes": list(self.overlay_notes),
+            "scope": {
+                "name": self.scope_name,
+                "category": self.scope_category,
+                "source": self.scope_source,
+                "rationale": self.scope_reason,
+            },
         }
 
 
@@ -192,6 +212,73 @@ def load_expectations(cases_root):
         payload["__path__"] = str(candidate)
         return payload
     return None
+
+
+def load_scope(scope):
+    """Load and validate an auditable view over the immutable case corpus."""
+
+    if scope is None:
+        return None
+    if isinstance(scope, (str, Path)):
+        path = Path(scope)
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["__path__"] = str(path)
+    elif isinstance(scope, dict):
+        payload = dict(scope)
+    else:
+        raise TypeError("benchmark scope must be a path or mapping")
+    if payload.get("schema") != SCOPE_SCHEMA:
+        raise ValueError("unexpected benchmark scope schema")
+    if payload.get("version") != SCOPE_VERSION:
+        raise ValueError("unsupported benchmark scope version")
+    if not isinstance(payload.get("name"), str) or not payload["name"].strip():
+        raise ValueError("benchmark scope name is required")
+    groups = payload.get("groups")
+    if not isinstance(groups, dict) or not groups:
+        raise ValueError("benchmark scope groups must be a non-empty mapping")
+    invalid = {
+        group: category
+        for group, category in groups.items()
+        if category not in SCOPE_CATEGORIES
+    }
+    if invalid:
+        raise ValueError("benchmark scope has invalid group categories: %r" % invalid)
+    cases = payload.get("cases", {})
+    if not isinstance(cases, dict):
+        raise ValueError("benchmark scope cases must be a mapping")
+    for case, entry in cases.items():
+        if not isinstance(entry, dict) or entry.get("category") not in SCOPE_CATEGORIES:
+            raise ValueError("benchmark scope case category is invalid: %s" % case)
+    include = payload.get("include_categories")
+    if include is None:
+        include = [category for category in SCOPE_CATEGORIES if category != "out_of_scope"]
+    if (
+        not isinstance(include, list)
+        or not include
+        or any(category not in SCOPE_CATEGORIES for category in include)
+    ):
+        raise ValueError("benchmark scope include_categories is invalid")
+    payload["include_categories"] = list(dict.fromkeys(include))
+    return payload
+
+
+def resolve_scope(scope, group, name):
+    """Return the scope category binding for one discovered case."""
+
+    if scope is None:
+        return {}
+    case_entry = scope.get("cases", {}).get(name, {})
+    category = case_entry.get("category", scope.get("groups", {}).get(group))
+    if category not in SCOPE_CATEGORIES:
+        raise ValueError("benchmark scope has no category for %s/%s" % (group, name))
+    return {
+        "name": scope["name"],
+        "category": category,
+        "source": "case_override" if "category" in case_entry else "group_default",
+        "rationale": case_entry.get(
+            "rationale", scope.get("group_rationales", {}).get(group, "")
+        ),
+    }
 
 
 def resolve_expectation(expectations, group, name):
@@ -270,6 +357,12 @@ def _write_receipt(case_out, outcome, expectation):
         "version": 1,
         "group": outcome.group,
         "case": outcome.name,
+        "scope": {
+            "name": outcome.scope_name,
+            "category": outcome.scope_category,
+            "source": outcome.scope_source,
+            "rationale": outcome.scope_reason,
+        },
         "expected": {
             "route": outcome.expected_route,
             "gap_kind": outcome.expected_gap_kind,
@@ -312,6 +405,10 @@ def _write_receipt(case_out, outcome, expectation):
 
 def _finish(outcome, case_out, expectation):
     expectation = expectation or {}
+    outcome.scope_name = expectation.get("scope_name", "")
+    outcome.scope_category = expectation.get("scope_category", "")
+    outcome.scope_source = expectation.get("scope_source", "")
+    outcome.scope_reason = expectation.get("scope_reason", "")
     outcome.expected_route = expectation.get("route", "")
     outcome.expected_gap_kind = expectation.get("gap_kind", "")
     outcome.expected_source = expectation.get("source", "")
@@ -458,13 +555,36 @@ def run_suite(
     expectations=None,
     overlay=None,
     performance_evidence_root=None,
+    scope=None,
+    scope_categories=None,
 ):
     """Run every selected case and return the sanitized summary dict."""
 
+    scope = load_scope(scope) if scope is not None else None
+    if scope_categories is not None:
+        if scope is None:
+            raise ValueError("scope_categories requires a benchmark scope")
+        categories = list(dict.fromkeys(scope_categories))
+        if not categories or any(category not in SCOPE_CATEGORIES for category in categories):
+            raise ValueError("scope_categories contains an unknown category")
+        scope = dict(scope)
+        scope["include_categories"] = categories
     selected = set(groups) if groups else None
+    discovered = discover_cases(cases_root)
+    scope_entries = {}
+    if scope is not None:
+        for group, name, _program in discovered:
+            scope_entries[(group, name)] = resolve_scope(scope, group, name)
+        include_categories = set(scope["include_categories"])
+    else:
+        include_categories = None
     cases = [
-        case for case in discover_cases(cases_root)
-        if selected is None or case[0] in selected
+        case for case in discovered
+        if (selected is None or case[0] in selected)
+        and (
+            include_categories is None
+            or scope_entries[(case[0], case[1])]["category"] in include_categories
+        )
     ]
     if limit is not None:
         cases = cases[:limit]
@@ -484,6 +604,16 @@ def run_suite(
     outcomes = []
     started = time.time()
     for index, (group, name, program) in enumerate(cases, 1):
+        expectation = resolve_expectation(expectations, group, name)
+        if scope is not None:
+            scope_entry = scope_entries[(group, name)]
+            expectation = dict(expectation)
+            expectation.update({
+                "scope_name": scope_entry["name"],
+                "scope_category": scope_entry["category"],
+                "scope_source": scope_entry["source"],
+                "scope_reason": scope_entry["rationale"],
+            })
         outcome = run_case(
             group,
             name,
@@ -491,7 +621,7 @@ def run_suite(
             out_root=out_root,
             backend=backend,
             engine=engine,
-            expectation=resolve_expectation(expectations, group, name),
+            expectation=expectation,
             overlay=overlay,
         )
         if performance_catalog is not None:
@@ -509,7 +639,7 @@ def run_suite(
                 _write_receipt(
                     out_root / outcome.out_dir,
                     outcome,
-                    resolve_expectation(expectations, outcome.group, outcome.name),
+                    expectation,
                 )
         _record_operator_ref(artifact_store, out_root, outcome, backend=backend, runtime_identity=runtime_identity)
         outcomes.append(outcome)
@@ -517,7 +647,7 @@ def run_suite(
             on_case(outcome, index, len(cases))
 
     summary = build_summary(
-        outcomes, backend=backend, engine=engine, overlay=overlay
+        outcomes, backend=backend, engine=engine, overlay=overlay, scope=scope
     )
     summary["elapsed_seconds"] = round(time.time() - started, 3)
     summary["generated_at_utc"] = time.strftime(
@@ -841,7 +971,7 @@ def _sanitize(value):
     return _PRIVATE_HOME_RE.sub("<private>", str(value))
 
 
-def build_summary(outcomes, *, backend, engine, overlay=None):
+def build_summary(outcomes, *, backend, engine, overlay=None, scope=None):
     group_counts = {}
     for outcome in outcomes:
         counts = group_counts.setdefault(outcome.group, {
@@ -876,13 +1006,28 @@ def build_summary(outcomes, *, backend, engine, overlay=None):
             unexpected += 1
             counts["unexpected"] += 1
 
+    scope_summary = None
+    if scope is not None:
+        category_counts = {}
+        for outcome in outcomes:
+            category = outcome.scope_category or "<unknown>"
+            category_counts[category] = category_counts.get(category, 0) + 1
+        scope_summary = {
+            "schema": scope["schema"],
+            "version": scope["version"],
+            "name": scope["name"],
+            "path": scope.get("__path__"),
+            "include_categories": list(scope["include_categories"]),
+            "category_counts": dict(sorted(category_counts.items())),
+        }
     return {
         "status": "pass" if unexpected == 0 else "incomplete",
         "backend": getattr(backend, "name", type(backend).__name__),
         "engine": getattr(engine, "name", type(engine).__name__),
         "overlay": overlay.to_dict() if overlay is not None else None,
+        "scope": scope_summary,
         "total": len(outcomes),
-        "expected_total": EXPECTED_TOTAL,
+        "expected_total": len(outcomes) if scope is not None else EXPECTED_TOTAL,
         "expected": expected,
         "improved": improved,
         "unexpected": unexpected,
@@ -1036,6 +1181,18 @@ def main(argv=None):
     )
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument(
+        "--scope",
+        default=None,
+        help="auditable benchmark scope manifest (default: all discovered cases)",
+    )
+    parser.add_argument(
+        "--scope-categories",
+        nargs="+",
+        choices=SCOPE_CATEGORIES,
+        default=None,
+        help="run only selected categories from --scope",
+    )
+    parser.add_argument(
         "--capability-overlay",
         default=None,
         help="official capability overlay JSON (requires --backend shim)",
@@ -1097,6 +1254,12 @@ def main(argv=None):
         expectations = load_expectations(Path(args.expectations).parent)
     else:
         expectations = load_expectations(args.root)
+    if args.scope_categories and args.scope is None:
+        parser.error("--scope-categories requires --scope")
+    try:
+        scope = load_scope(args.scope) if args.scope is not None else None
+    except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+        parser.error("cannot load benchmark scope: %s" % _sanitize(exc))
     summary = run_suite(
         args.root,
         args.out,
@@ -1107,6 +1270,8 @@ def main(argv=None):
         expectations=expectations,
         overlay=overlay,
         performance_evidence_root=args.performance_evidence_root,
+        scope=scope,
+        scope_categories=args.scope_categories,
         on_case=lambda outcome, index, total: print(
             "[bench] %d/%d %s/%s -> %s (%s)" % (
                 index, total, outcome.group, outcome.name, outcome.status,
