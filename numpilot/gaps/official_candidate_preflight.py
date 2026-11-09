@@ -182,4 +182,193 @@ def preflight_official_candidate(
     return payload
 
 
-__all__ = ["SCHEMA", "STATUS", "OfficialCandidatePreflightError", "preflight_official_candidate"]
+def prepare_official_adapter_input_from_preflight(
+    handoff_path: str,
+    preflight_path: str,
+    source_path: str,
+    official_resolution_path: str,
+):
+    """Create an inert official adapter input from a validated preflight.
+
+    This is an in-memory bridge only. It does not create a RecoveryStore state,
+    publish a candidate artifact, open the model gate, import AsNumpy, or write
+    an overlay. A future recovery stage must persist the typed candidate and
+    advance the state machine before any adapter generation is allowed.
+    """
+
+    from numpilot.gaps.official_adapter import (
+        OFFICIAL_CANDIDATE_MAPPING_REF,
+        OFFICIAL_REQUIRED_SYMBOLS_REF,
+        OFFICIAL_SELECTED_HEADER_REF,
+        OFFICIAL_SELECTED_LIBRARY_REF,
+        OFFICIAL_SEMANTIC_REVIEW_REF,
+        OfficialCandidateAdapterInput,
+        prepare_official_candidate_adapter_input,
+    )
+    from numpilot.gaps.official_resolution import gap_spec_sha256
+    from numpilot.gaps.recovery import (
+        EvidenceRef,
+        LicenseBinding,
+        OperatorCandidateOrigin,
+        create_operator_candidate,
+    )
+
+    def canonical_sha(value: Any) -> str:
+        return hashlib.sha256(
+            json.dumps(
+                value,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                allow_nan=False,
+            ).encode("utf-8")
+        ).hexdigest()
+
+    try:
+        handoff = load_official_candidate_handoff(
+            handoff_path, source_path, official_resolution_path
+        )
+        report = load_official_resolution_report(official_resolution_path)
+        preparation = prepare_gap_completion(
+            source_path,
+            target_soc=report.target_soc,
+            cann_version=report.cann_version,
+        )
+        report.validate_preparation(preparation)
+        preflight_file = Path(preflight_path).absolute()
+        preflight = json.loads(preflight_file.read_text(encoding="utf-8"))
+    except (OfficialCandidateHandoffError, OfficialResolutionError, GapCompletionError,
+            OSError, UnicodeError, ValueError, TypeError) as exc:
+        raise OfficialCandidatePreflightError("cannot load adapter preflight inputs") from exc
+
+    if not isinstance(preflight, Mapping):
+        raise OfficialCandidatePreflightError("adapter preflight must be a JSON object")
+    if (
+        preflight.get("schema") != SCHEMA
+        or preflight.get("schema_version") != 1
+        or preflight.get("status") != STATUS
+        or preflight.get("handoff_id") != handoff.handoff_id
+        or preflight.get("resolution_id") != report.resolution_id
+        or preflight.get("source_path") != str(Path(source_path).absolute())
+        or preflight.get("source_sha256") != handoff.payload["source_sha256"]
+        or preflight.get("target_soc") != report.target_soc
+        or preflight.get("cann_version") != report.cann_version
+        or preflight.get("required_next_gate") != "materialize_candidate_recovery"
+    ):
+        raise OfficialCandidatePreflightError("adapter preflight binding is stale")
+    for name in (
+        "model_invocation_performed", "network_access_performed",
+        "system_write_performed", "asnumpy_import_performed", "build_performed",
+        "execution_performed", "activation_performed",
+    ):
+        if preflight.get(name) is not False:
+            raise OfficialCandidatePreflightError("unsafe preflight flag: %s" % name)
+
+    if len(preparation.specs) != 1 or len(report.decisions) != 1:
+        raise OfficialCandidatePreflightError(
+            "adapter input bridge currently requires exactly one official candidate"
+        )
+    spec = preparation.specs[0]
+    decision = report.decisions[0]
+    if decision.route != INSTALLED_ADAPTER_ROUTE or decision.gap_spec_sha256 != gap_spec_sha256(spec):
+        raise OfficialCandidatePreflightError("official candidate is not bound to the current GapSpec")
+    installed = decision.installed_cann
+    candidate_mapping = installed.get("candidate")
+    if not isinstance(candidate_mapping, Mapping):
+        raise OfficialCandidatePreflightError("official candidate mapping is missing")
+    required_symbols = installed.get("required_symbols")
+    header = installed.get("selected_header")
+    library = installed.get("selected_library")
+    if not isinstance(required_symbols, list) or not isinstance(header, Mapping) or not isinstance(library, Mapping):
+        raise OfficialCandidatePreflightError("official candidate ABI evidence is incomplete")
+
+    candidate_refs = (
+        EvidenceRef(
+            OFFICIAL_CANDIDATE_MAPPING_REF,
+            str(Path(official_resolution_path).absolute()) + "#decisions/%s/installed_cann/candidate" % decision.gap_id,
+            str(installed["candidate_mapping_sha256"]),
+        ),
+        EvidenceRef(
+            OFFICIAL_SELECTED_HEADER_REF,
+            str(Path(official_resolution_path).absolute()) + "#decisions/%s/installed_cann/selected_header" % decision.gap_id,
+            str(header["sha256"]),
+        ),
+        EvidenceRef(
+            OFFICIAL_SELECTED_LIBRARY_REF,
+            str(Path(official_resolution_path).absolute()) + "#decisions/%s/installed_cann/selected_library" % decision.gap_id,
+            str(library["sha256"]),
+        ),
+        EvidenceRef(
+            OFFICIAL_REQUIRED_SYMBOLS_REF,
+            str(Path(official_resolution_path).absolute()) + "#decisions/%s/installed_cann/required_symbols" % decision.gap_id,
+            canonical_sha({"required_symbols": list(required_symbols)}),
+        ),
+        EvidenceRef(
+            OFFICIAL_SEMANTIC_REVIEW_REF,
+            str(Path(official_resolution_path).absolute()) + "#decisions/%s/installed_cann/candidate/semantic_review" % decision.gap_id,
+            canonical_sha({"semantic_review": list(candidate_mapping.get("semantic_review", []))}),
+        ),
+    )
+    provenance_refs = (
+        EvidenceRef(
+            "official_resolution",
+            str(Path(official_resolution_path).absolute()),
+            canonical_sha(report.to_dict()),
+        ),
+        EvidenceRef(
+            "official_candidate_preflight",
+            str(Path(preflight_file).absolute()),
+            _sha256_file(preflight_file, _MAX_RECEIPT_BYTES, "preflight")[0],
+        ),
+    )
+    license_ref = EvidenceRef(
+        "external_installed_cann_terms",
+        str(Path(official_resolution_path).absolute()) + "#external-installed-cann-terms",
+        canonical_sha({
+            "identifier": "LicenseRef-External-Installed-CANN-Terms",
+            "accepted": False,
+            "cann_root": report.cann_root,
+            "cann_version": report.cann_version,
+            "target_soc": report.target_soc,
+            "gap_id": decision.gap_id,
+            "qualified_api": decision.qualified_api,
+        }),
+    )
+    candidate = create_operator_candidate(
+        origin_kind=OperatorCandidateOrigin.OFFICIAL_BINARY,
+        gap_id=spec.gap_id,
+        qualified_api=spec.qualified_api,
+        gap_spec_ref=EvidenceRef(
+            "gap_spec",
+            str(Path(handoff_path).absolute()) + "#gap_specs/%s" % spec.gap_id,
+            gap_spec_sha256(spec),
+        ),
+        resolution_decision_ref=EvidenceRef(
+            "resolution_decision",
+            str(Path(official_resolution_path).absolute()) + "#decisions/%s" % decision.gap_id,
+            canonical_sha(decision.to_dict()),
+        ),
+        target_soc=spec.target_soc,
+        cann_version=spec.cann_version,
+        license=LicenseBinding(
+            "LicenseRef-External-Installed-CANN-Terms", False, license_ref
+        ),
+        provenance_refs=provenance_refs,
+        candidate_refs=candidate_refs,
+    )
+    try:
+        prepared = prepare_official_candidate_adapter_input(candidate, spec, decision)
+    except Exception as exc:
+        raise OfficialCandidatePreflightError("official adapter input contract failed") from exc
+    if not isinstance(prepared, OfficialCandidateAdapterInput) or prepared.model_invocation_allowed:
+        raise OfficialCandidatePreflightError("adapter input bridge opened the model gate")
+    return prepared
+
+
+__all__ = [
+    "SCHEMA",
+    "STATUS",
+    "OfficialCandidatePreflightError",
+    "preflight_official_candidate",
+    "prepare_official_adapter_input_from_preflight",
+]

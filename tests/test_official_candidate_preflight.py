@@ -45,3 +45,29 @@ def test_preflight_receipt_is_write_once(tmp_path):
     with pytest.raises(OfficialCandidatePreflightError):
         preflight_official_candidate(str(handoff), str(source), str(resolution), str(out))
     assert out.read_text(encoding="utf-8") == "sentinel\n"
+from pathlib import Path
+
+import pytest
+
+from numpilot.gaps.official_candidate_preflight import (
+    OfficialCandidatePreflightError,
+    prepare_official_adapter_input_from_preflight,
+)
+
+
+def test_adapter_bridge_rejects_missing_or_tampered_inputs(tmp_path):
+    handoff = tmp_path / "handoff.json"
+    preflight = tmp_path / "preflight.json"
+    source = tmp_path / "source.py"
+    resolution = tmp_path / "resolution.json"
+    for path, text in (
+        (handoff, "{}\n"),
+        (preflight, "{}\n"),
+        (source, "import numpy as np\n"),
+        (resolution, "{}\n"),
+    ):
+        path.write_text(text, encoding="utf-8")
+    with pytest.raises(OfficialCandidatePreflightError):
+        prepare_official_adapter_input_from_preflight(
+            str(handoff), str(preflight), str(source), str(resolution)
+        )

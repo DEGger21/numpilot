@@ -143,6 +143,11 @@ from numpilot.gaps.official_candidate_handoff import (
 from numpilot.gaps.official_candidate_preflight import (
     OfficialCandidatePreflightError,
     preflight_official_candidate,
+    prepare_official_adapter_input_from_preflight,
+)
+from numpilot.gaps.official_adapter_context_gate import (
+    OfficialAdapterContextGateError,
+    validate_official_adapter_context,
 )
 
 from numpilot.gaps.integration import (
@@ -242,6 +247,9 @@ __all__ = [
     "OfficialCandidateHandoff",
     "OfficialCandidateHandoffError",
     "preflight_official_candidate",
+    "prepare_official_adapter_input_from_preflight",
+    "OfficialAdapterContextGateError",
+    "validate_official_adapter_context",
     "OfficialCandidatePreflightError",
     "prepare_official_candidate_handoff",
     "load_official_candidate_handoff",

@@ -4123,6 +4123,81 @@ def _cmd_preflight_official_candidate(args):
         print("[官方候选 preflight] receipt=%s" % args.out)
     return 0
 
+def _cmd_prepare_official_adapter_input(args):
+    """Prepare an inert official adapter input from a validated preflight."""
+    from numpilot.gaps.official_candidate_preflight import (
+        OfficialCandidatePreflightError,
+        prepare_official_adapter_input_from_preflight,
+    )
+    try:
+        prepared = prepare_official_adapter_input_from_preflight(
+            args.handoff, args.preflight, args.file, args.official_resolution_report
+        )
+        payload = prepared.to_dict()
+        output = os.path.abspath(args.out)
+        os.makedirs(os.path.dirname(output) or ".", mode=0o700, exist_ok=True)
+        encoded = (json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode("utf-8")
+        fd = os.open(output, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                fd = -1
+                handle.write(encoded)
+                handle.flush()
+                os.fsync(handle.fileno())
+        finally:
+            if fd >= 0:
+                os.close(fd)
+    except (OfficialCandidatePreflightError, OSError, TypeError, ValueError) as exc:
+        print("[官方 adapter input] 失败: %s" % exc, file=sys.stderr)
+        print("[模型调用] actual_remote_call=no · build=no · activation=no", file=sys.stderr)
+        return 2
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, allow_nan=False, sort_keys=True))
+    else:
+        print("[官方 adapter input] status=inert · strategy=%s · model_call=no · activation=no" % payload["operator_manifest"]["strategy"])
+        print("[官方 adapter input] receipt=%s" % args.out)
+    return 0
+
+
+def _cmd_validate_official_adapter_context(args):
+    """Validate the official adapter model gate without invoking it."""
+    from numpilot.gaps.official_adapter_context_gate import (
+        OfficialAdapterContextGateError,
+        validate_official_adapter_context,
+    )
+    try:
+        payload = validate_official_adapter_context(
+            args.bound,
+            args.handoff,
+            args.preflight,
+            args.source,
+            args.official_resolution_report,
+        )
+        output = os.path.abspath(args.out)
+        os.makedirs(os.path.dirname(output) or ".", mode=0o700, exist_ok=True)
+        encoded = (json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode("utf-8")
+        fd = os.open(output, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                fd = -1
+                handle.write(encoded)
+                handle.flush()
+                os.fsync(handle.fileno())
+        finally:
+            if fd >= 0:
+                os.close(fd)
+    except (OfficialAdapterContextGateError, OSError, TypeError, ValueError) as exc:
+        print("[官方 adapter gate] 失败: %s" % exc, file=sys.stderr)
+        print("[模型调用] actual_remote_call=no · build=no · activation=no", file=sys.stderr)
+        return 2
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, allow_nan=False, sort_keys=True))
+    else:
+        print("[官方 adapter gate] status=%s · model_call=no · activation=no" % payload["status"])
+        print("[官方 adapter gate] receipt=%s" % args.out)
+    return 0
+
+
 def _cmd_resolve_gaps(args):
     """Resolve canonical gaps locally before selecting any model workflow."""
 
@@ -7066,6 +7141,48 @@ def main(argv=None):
     official_preflight.add_argument("--out", required=True, help="新的 preflight 回执")
     official_preflight.add_argument("--json", action="store_true", help="只输出机器可读回执")
 
+    adapter_input = sub.add_parser(
+        "prepare-official-adapter-input",
+        help="从 official candidate preflight 生成 inert AsNumpy adapter input",
+    )
+    adapter_input.add_argument("file", help="原始 NumPy 源文件")
+    adapter_input.add_argument("--handoff", required=True, help="official candidate hand-off 回执")
+    adapter_input.add_argument("--preflight", required=True, help="official candidate preflight 回执")
+    adapter_input.add_argument("--official-resolution-report", required=True, help="官方解析回执")
+    adapter_input.add_argument("--out", required=True, help="新的 write-once adapter input")
+    adapter_input.add_argument("--json", action="store_true", help="只输出机器可读回执")
+
+    adapter_gate = sub.add_parser(
+        "validate-official-adapter-context",
+        help="校验 context-bound official adapter model gate，不调用模型",
+    )
+    adapter_gate.add_argument("bound", help="context-bound adapter receipt")
+    adapter_gate.add_argument("--handoff", required=True, help="official candidate hand-off")
+    adapter_gate.add_argument("--preflight", required=True, help="official candidate preflight")
+    adapter_gate.add_argument("--source", required=True, help="原始 NumPy 源文件")
+    adapter_gate.add_argument("--official-resolution-report", required=True, help="官方解析回执")
+    adapter_gate.add_argument("--out", required=True, help="新的 write-once gate receipt")
+    adapter_gate.add_argument("--json", action="store_true", help="只输出机器可读回执")
+
+    official_adapter_generate = sub.add_parser(
+        "official-adapter-generate",
+        help=(
+            "官方 adapter 生成前的只读 contract preflight；仅校验绑定，"
+            "不调用模型、不生成 overlay、不写 RecoveryStore"
+        ),
+        description=(
+            "官方 adapter 生成前的只读 contract preflight。仅校验绑定，"
+            "不调用模型、不生成 overlay、不写 RecoveryStore。"
+        ),
+    )
+    official_adapter_generate.add_argument("bound", help="context-bound adapter receipt")
+    official_adapter_generate.add_argument("--handoff", required=True, help="official candidate hand-off")
+    official_adapter_generate.add_argument("--preflight", required=True, help="official candidate preflight")
+    official_adapter_generate.add_argument("--source", required=True, help="原始 NumPy 源文件")
+    official_adapter_generate.add_argument("--official-resolution-report", required=True, help="官方解析回执")
+    official_adapter_generate.add_argument("--out", required=True, help="新的 write-once gate receipt")
+    official_adapter_generate.add_argument("--json", action="store_true", help="只输出机器可读回执")
+
     recover_gaps = sub.add_parser(
         "recover-gaps",
         help="导入可信官方回执并查询可续接的缺口恢复状态",
@@ -7604,6 +7721,10 @@ def main(argv=None):
             return _cmd_prepare_official_candidate(args)
         if args.cmd == "preflight-official-candidate":
             return _cmd_preflight_official_candidate(args)
+        if args.cmd == "prepare-official-adapter-input":
+            return _cmd_prepare_official_adapter_input(args)
+        if args.cmd in {"validate-official-adapter-context", "official-adapter-generate"}:
+            return _cmd_validate_official_adapter_context(args)
         if args.cmd == "recover-gaps":
             return _cmd_recover_gaps(args)
         if args.cmd == "paths":
