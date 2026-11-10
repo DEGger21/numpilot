@@ -316,14 +316,10 @@ def materialize_official_candidate_recovery(
         selected_profile = RecoveryPolicyProfile(profile)
     except ValueError as exc:
         raise OfficialCandidateRecoveryError("invalid_profile", "unsupported recovery policy profile") from exc
-    if selected_profile not in {
-        RecoveryPolicyProfile.RECEIPT_ONLY,
-        RecoveryPolicyProfile.CANDIDATE_GENERATION,
-    }:
-        raise OfficialCandidateRecoveryError(
-            "unsafe_profile",
-            "official candidate recovery accepts only receipt-only or candidate-generation policy",
-        )
+    # Policy is chosen only when creating this run. Full local recovery grants
+    # later integration permission; materialization itself performs no build,
+    # model invocation, execution or activation. Existing bindings are compared
+    # below, so a receipt-only history can never be upgraded in place.
     source_file = Path(source_path).absolute()
     handoff_file = Path(handoff_path).absolute()
     preflight_file = Path(preflight_path).absolute()

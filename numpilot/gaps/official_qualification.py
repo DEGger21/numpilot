@@ -1350,6 +1350,97 @@ def _verify_integration(
     return transaction
 
 
+def validate_official_handoff_evidence(
+    request: Mapping[str, Any],
+    source_payload: bytes,
+    resolution_payload: bytes,
+) -> None:
+    """Reconstruct a native official handoff from portable, hash-bound bytes.
+
+    Original absolute paths remain identity labels, never locations to read.
+    This permits an archived qualification bundle to be checked without its
+    creator's /tmp files, while retaining the complete GapSpec and official
+    decision bindings. No model, import, build or device execution occurs.
+    """
+    from numpilot.agents.analysis import AnalysisAgent
+    from numpilot.gaps.official_candidate_handoff import (
+        SCHEMA, SCHEMA_VERSION, REQUEST_TYPE, STATUS,
+        OfficialCandidateHandoffError, _candidate_evidence,
+    )
+    from numpilot.gaps.official_resolution import (
+        OfficialOperatorResolutionReport, OfficialResolutionError,
+    )
+    from numpilot.gaps.pipeline import GapPreparation
+    from numpilot.gaps.spec import blocked_unsupported, build_gap_specs
+
+    expected_fields = frozenset({
+        "schema", "schema_version", "request_type", "status", "source_path",
+        "source_sha256", "target_soc", "cann_version", "official_resolution_path",
+        "official_resolution_sha256", "resolution_id", "gap_specs", "decisions",
+        "generated_code", "qualification_performed", "activation_performed",
+        "network_access_performed", "system_write_performed", "handoff_id",
+    })
+    _require_exact_fields(request, expected_fields, "official candidate handoff")
+    if (
+        request.get("schema") != SCHEMA
+        or type(request.get("schema_version")) is not int
+        or request.get("schema_version") != SCHEMA_VERSION
+        or request.get("request_type") != REQUEST_TYPE
+        or request.get("status") != STATUS
+    ):
+        raise QualificationError("official handoff schema or status is invalid")
+    for key in ("generated_code", "qualification_performed", "activation_performed",
+                "network_access_performed", "system_write_performed"):
+        if request.get(key) is not False:
+            raise QualificationError("official handoff has unsafe flag: " + key)
+    source_label = request.get("source_path")
+    resolution_label = request.get("official_resolution_path")
+    for value in (source_label, resolution_label):
+        if not isinstance(value, str) or not value or not Path(value).is_absolute():
+            raise QualificationError("official handoff identity path must be absolute")
+    if _sha256_bytes(source_payload) != request.get("source_sha256"):
+        raise QualificationError("official handoff source hash mismatch")
+    if _sha256_bytes(resolution_payload) != request.get("official_resolution_sha256"):
+        raise QualificationError("official handoff resolution hash mismatch")
+    body = {key: value for key, value in request.items() if key != "handoff_id"}
+    if _sha256_bytes(_canonical_json(body)) != request.get("handoff_id"):
+        raise QualificationError("official handoff canonical identity mismatch")
+    try:
+        report = OfficialOperatorResolutionReport.from_dict(
+            _parse_json(resolution_payload, "official resolution")
+        )
+        if (
+            report.status != "official_candidate_found"
+            or report.resolution_id != request.get("resolution_id")
+            or report.target_soc != request.get("target_soc")
+            or report.cann_version != request.get("cann_version")
+        ):
+            raise QualificationError("official handoff resolution identity mismatch")
+        source = source_payload.decode("utf-8")
+        analysis = AnalysisAgent().analyze(source, source_label)
+        specs = build_gap_specs(
+            source, analysis, target_soc=report.target_soc, cann_version=report.cann_version,
+        )
+        blocked = tuple(blocked_unsupported(analysis))
+        if blocked:
+            raise QualificationError("official handoff source has blocked calls")
+        preparation = GapPreparation(
+            source_path=source_label, source=source, specs=tuple(specs),
+            unsupported=tuple(analysis.unsupported), blocked=blocked,
+        )
+        report.validate_preparation(preparation)
+        if request.get("gap_specs") != [spec.to_dict() for spec in specs]:
+            raise QualificationError("official handoff GapSpec content mismatch")
+        expected_decisions = [_candidate_evidence(item) for item in report.decisions]
+        if not expected_decisions or request.get("decisions") != expected_decisions:
+            raise QualificationError("official handoff candidate decisions mismatch")
+    except QualificationError:
+        raise
+    except (UnicodeError, SyntaxError, TypeError, ValueError,
+            OfficialCandidateHandoffError, OfficialResolutionError) as exc:
+        raise QualificationError("official handoff evidence is invalid: %s" % exc) from exc
+
+
 def _verify_gap(
     overlay: OfficialCapabilityOverlay,
     evidence_root: str,
@@ -1359,7 +1450,26 @@ def _verify_gap(
         overlay.gap_spec.request,
         "gap request",
     )
-    if request.get("request_type") != "script_api_gap":
+    request_type = request.get("request_type")
+    if request_type == "official_candidate_gap":
+        resolution_ref = OfficialFileRef(
+            path="official-resolution.json",
+            sha256=_require_sha256(request.get("official_resolution_sha256"), "official resolution"),
+        )
+        resolution_payload = _load_bound_file(evidence_root, resolution_ref, "official resolution")
+        source_payload = _load_bound_file(
+            evidence_root,
+            OfficialFileRef(path=overlay.source.bundle_path, sha256=overlay.source.sha256),
+            "official source binding",
+        )
+        validate_official_handoff_evidence(request, source_payload, resolution_payload)
+        normalize_soc = lambda value: "".join(ch for ch in str(value).casefold() if ch.isalnum())
+        if (
+            request.get("cann_version") != overlay.runtime.cann_version
+            or normalize_soc(request.get("target_soc")) != normalize_soc(overlay.runtime.soc_model)
+        ):
+            raise QualificationError("official handoff target and live runtime disagree")
+    elif request_type != "script_api_gap":
         raise QualificationError("bound gap request has an unexpected type")
     if request.get("source_sha256") != overlay.gap_spec.source_sha256:
         raise QualificationError("bound gap request source hash mismatch")
@@ -1706,6 +1816,214 @@ def _verify_gate_evidence_files(
             )
 
 
+def _verify_extended_concat_ranks(
+    overlay: OfficialCapabilityOverlay,
+    target_report: OfficialGateTarget,
+    evidence_root: str,
+) -> None:
+    """Admit ranks beyond the historic rank-2 profile only from raw oracles."""
+    entry = next(item for item in overlay.entries if item.registry_key == "concatenate")
+    profile = parse_profile_constraints(entry.constraints)
+    lower, upper = profile["rank"], profile.get("rank_max")
+    if lower == upper == 2:
+        return  # Preserve the already-published rank-2 evidence contract.
+    if upper is None or lower < 1 or upper > 3:
+        raise QualificationError("concatenate rank range exceeds the reviewed oracle profile")
+    claimed = target_report.claims.get("tested_ranks")
+    if (
+        not isinstance(claimed, (tuple, list))
+        or any(type(rank) is not int for rank in claimed)
+        or sorted(set(claimed)) != list(claimed)
+        or not set(range(lower, upper + 1)).issubset(claimed)
+    ):
+        raise QualificationError("concatenate rank admission lacks tested-rank claims")
+    expected_name = "numerical_validation.concatenate.json"
+    refs = [
+        OfficialFileRef.from_dict(item)
+        for item in target_report.evidence.get("files", ())
+        if isinstance(item, Mapping) and PurePosixPath(str(item.get("path", ""))).name == expected_name
+    ]
+    if len(refs) != 1:
+        raise QualificationError("concatenate rank admission requires one raw oracle receipt")
+    raw = _load_bound_json(evidence_root, refs[0], "concatenate raw oracle evidence")
+    if (
+        raw.get("schema") != "numpilot.official-aclnn-gate-evidence"
+        or type(raw.get("schema_version")) is not int or raw.get("schema_version") != 1
+        or raw.get("gate") != "numerical_validation"
+        or raw.get("target") != "concatenate" or raw.get("oracle") != "numpy"
+    ):
+        raise QualificationError("concatenate raw oracle schema is invalid")
+    cases = raw.get("cases")
+    if not isinstance(cases, list) or not cases:
+        raise QualificationError("concatenate rank admission has no raw cases")
+    observed = set()
+    comparisons = 0
+    for case in cases:
+        if not isinstance(case, Mapping):
+            raise QualificationError("concatenate raw oracle case is invalid")
+        shape = case.get("shape")
+        count = case.get("comparisons")
+        if (
+            case.get("ok") is not True or case.get("dtype") != "float32"
+            or not isinstance(shape, list) or not shape
+            or any(type(extent) is not int or extent <= 0 for extent in shape)
+            or type(count) is not int or count < 3
+        ):
+            raise QualificationError("concatenate raw oracle case did not pass")
+        observed.add(len(shape))
+        comparisons += count
+    if sorted(observed) != list(claimed):
+        raise QualificationError("concatenate tested ranks disagree with raw oracle cases")
+    totals = raw.get("totals")
+    if not isinstance(totals, Mapping):
+        raise QualificationError("concatenate raw oracle totals are missing")
+    for key, value in (("cases", len(cases)), ("oracle_comparisons", comparisons), ("mismatches", 0)):
+        if totals.get(key) != value or target_report.claims.get(key) != value:
+            raise QualificationError("concatenate raw oracle totals disagree: " + key)
+    if totals.get("tested_ranks") != list(claimed):
+        raise QualificationError("concatenate raw oracle rank totals disagree")
+
+
+def _verify_integrated_cat_kernel_profile(
+    overlay: OfficialCapabilityOverlay,
+    target_report: OfficialGateTarget,
+    evidence_root: str,
+) -> None:
+    """Recount observed Cat kernels; Python dispatch counts are not kernels."""
+    import csv
+    import io
+    import math
+
+    entry = next(item for item in overlay.entries if item.registry_key == "concatenate")
+    parsed = parse_profile_constraints(entry.constraints)
+    if parsed["rank"] == parsed.get("rank_max") == 2 and not target_report.claims.get("execution_profile"):
+        return  # Historic producer contract; do not reinterpret archived reports.
+    claims = target_report.claims
+    if (
+        claims.get("execution_profile") != "official_concat_rank1_3_aclnn_v1"
+        or claims.get("kernel_evidence_scope") != "independent_profile"
+        or type(claims.get("device_count")) is not int or claims.get("device_count") != 1
+    ):
+        raise QualificationError("integrated concatenate requires an independent single-NPU profile")
+    refs = [OfficialFileRef.from_dict(item) for item in target_report.evidence.get("files", ())]
+    manifests = [ref for ref in refs if PurePosixPath(ref.path).name == "kernel-profile.json"]
+    if len(manifests) != 1:
+        raise QualificationError("integrated concatenate requires one kernel profile manifest")
+    manifest_ref = manifests[0]
+    profile = _load_bound_json(evidence_root, manifest_ref, "Cat kernel profile")
+    if (
+        profile.get("schema") != "numpilot.concatenate-kernel-profile.v1"
+        or profile.get("api") != "numpy.concatenate" or profile.get("status") != "passed"
+        or profile.get("performance_claim") is not False
+    ):
+        raise QualificationError("Cat kernel profile schema or status is invalid")
+    expected = {
+        "transaction_sha256": overlay.integration.transaction_sha256,
+        "transaction_file_sha256": overlay.integration.transaction.sha256,
+        "runtime_core_sha256": overlay.integration.runtime_core_sha256,
+        "runtime_module_sha256": overlay.runtime.module_sha256,
+        "runtime_array_sha256": overlay.runtime.wrapper_sha256["array.py"],
+    }
+    for key, value in expected.items():
+        if profile.get(key) != value:
+            raise QualificationError("Cat kernel profile binding mismatch: " + key)
+    by_path = {ref.path: ref.sha256 for ref in refs}
+    profile_root = PurePosixPath(manifest_ref.path).parent
+
+    def load_member(raw):
+        if not isinstance(raw, Mapping):
+            raise QualificationError("Cat profile member reference is invalid")
+        relative = _safe_relative_path(raw.get("path"), "Cat profile member")
+        ref = OfficialFileRef(str(profile_root / relative), raw.get("sha256"))
+        if by_path.get(ref.path) != ref.sha256:
+            raise QualificationError("Cat profile member is not bound by the gate report")
+        return _load_bound_file(evidence_root, ref, "Cat profile member")
+
+    worker_ref = profile.get("worker")
+    load_member(worker_ref)
+    execution = _parse_json(load_member(profile.get("execution")), "Cat execution receipt")
+    if (
+        execution.get("schema") != "numpilot.cat-profile-worker.v1"
+        or execution.get("status") != "passed"
+        or execution.get("worker_sha256") != worker_ref.get("sha256")
+        or execution.get("transaction_sha256") != overlay.integration.transaction.sha256
+    ):
+        raise QualificationError("Cat worker identity mismatch")
+    runtime = execution.get("runtime")
+    if not isinstance(runtime, Mapping):
+        raise QualificationError("Cat worker runtime is missing")
+    for key, digest in (
+        ("core", overlay.integration.runtime_core_sha256),
+        ("module", overlay.runtime.module_sha256),
+        ("array", overlay.runtime.wrapper_sha256["array.py"]),
+    ):
+        item = runtime.get(key)
+        if not isinstance(item, Mapping) or item.get("sha256") != digest:
+            raise QualificationError("Cat worker runtime binding mismatch")
+    cases = execution.get("cases")
+    if not isinstance(cases, list) or not cases:
+        raise QualificationError("Cat worker has no numerical cases")
+    observed_ranks = []
+    for case in cases:
+        if not isinstance(case, Mapping):
+            raise QualificationError("Cat worker case is invalid")
+        rank, shape, axis = case.get("rank"), case.get("shape"), case.get("axis")
+        if (
+            type(rank) is not int or rank not in (2, 3)
+            or not isinstance(shape, list) or len(shape) != rank
+            or any(type(n) is not int or n <= 0 for n in shape)
+            or type(axis) is not int or not -rank <= axis < rank
+            or case.get("dtype") != "float32" or case.get("exact_equal") is not True
+        ):
+            raise QualificationError("Cat worker numerical profile did not pass")
+        observed_ranks.append(rank)
+    if any(observed_ranks.count(rank) < 2 for rank in (2, 3)) or profile.get("tested_ranks") != [2, 3]:
+        raise QualificationError("Cat profile must repeat rank-2 and rank-3 cases")
+    dispatch = execution.get("dispatch")
+    if not isinstance(dispatch, Mapping):
+        raise QualificationError("Cat worker dispatch is missing")
+    if (
+        type(dispatch.get("legacy_calls")) is not int or dispatch.get("legacy_calls") != 0
+        or type(dispatch.get("native_calls")) is not int
+        or dispatch.get("native_calls") != len(cases)
+        or profile.get("native_calls") != len(cases)
+    ):
+        raise QualificationError("Cat worker native dispatch count is invalid")
+    traces = profile.get("traces")
+    if not isinstance(traces, list) or not traces:
+        raise QualificationError("Cat profile raw traces are missing")
+    seen, count, type_counts = set(), 0, {}
+    for trace in traces:
+        if not isinstance(trace, Mapping) or trace.get("path") in seen:
+            raise QualificationError("Cat profile repeats or omits a trace path")
+        seen.add(trace.get("path"))
+        try:
+            rows = list(csv.DictReader(io.StringIO(load_member(trace).decode("utf-8-sig"))))
+        except (UnicodeError, csv.Error) as exc:
+            raise QualificationError("Cat profile raw trace is unreadable") from exc
+        if type(trace.get("rows")) is not int or trace.get("rows") != len(rows):
+            raise QualificationError("Cat profile raw trace row count mismatch")
+        for row in rows:
+            op_type = row.get("OP Type", "")
+            type_counts[op_type] = type_counts.get(op_type, 0) + 1
+            if op_type == "ConcatD" and row.get("Op Name", "").startswith("aclnnCat_ConcatD_"):
+                if row.get("Task Type") != "AI_VECTOR_CORE" or row.get("Device_id") != "0":
+                    raise QualificationError("Cat kernel profile task or device is invalid")
+                try:
+                    duration = float(row.get("Task Duration(us)", ""))
+                except (TypeError, ValueError) as exc:
+                    raise QualificationError("Cat kernel profile duration is invalid") from exc
+                if not math.isfinite(duration) or duration <= 0:
+                    raise QualificationError("Cat kernel profile duration must be finite and positive")
+                count += 1
+    if (
+        count < 1 or type(profile.get("cat_kernel_rows")) is not int
+        or count != profile.get("cat_kernel_rows") or count != claims.get("kernel_launches")
+        or profile.get("op_type_counts") != type_counts
+    ):
+        raise QualificationError("Cat kernel launch claims disagree with raw trace rows")
+
+
 def _load_and_verify_gates(
     overlay: OfficialCapabilityOverlay,
     evidence_root: str,
@@ -1742,6 +2060,10 @@ def _load_and_verify_gates(
             _verify_gate_evidence_files(
                 evidence_root, gate, target, target_report
             )
+            if gate == "numerical_validation" and target == "concatenate":
+                _verify_extended_concat_ranks(overlay, target_report, evidence_root)
+            if gate == "npu_execution" and target == "concatenate":
+                _verify_integrated_cat_kernel_profile(overlay, target_report, evidence_root)
         reports[gate] = report
     return reports
 

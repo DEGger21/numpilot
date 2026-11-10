@@ -1054,6 +1054,7 @@ def _apply_official_window_replace_response(
     expected_path: str,
     base_content: str,
     allowed_intervals: Optional[Tuple[Tuple[int, int], ...]] = None,
+    allow_unchanged: bool = False,
 ) -> str:
     """Parse and apply the bounded reviewed-window protocol.
 
@@ -1225,7 +1226,7 @@ def _apply_official_window_replace_response(
     original_windows = [
         base_content[start:end] for start, end in normalized_intervals
     ]
-    if replacements == original_windows:
+    if replacements == original_windows and not allow_unchanged:
         raise DraftGenerationError("official window-replace response is a no-op")
     rebuilt = []
     cursor = 0
@@ -4939,6 +4940,10 @@ class LlmDraftProvider:
                             expected_path=path,
                             base_content=base_content,
                             allowed_intervals=target_window_intervals,
+                            # A required lazy export may already be present in
+                            # the pinned baseline. Preserve it byte-for-byte.
+                            # An entirely unchanged candidate is rejected below.
+                            allow_unchanged=(path == "src/asnumpy/__init__.py"),
                         )
                     else:
                         _summary, files = _validate_stage_bundle(
@@ -5015,6 +5020,11 @@ class LlmDraftProvider:
                     generation=dict(generation_base),
                     actual_remote_call=(generation_base["mode"] == "remote_llm"),
                 )
+
+        if official_exact_edit and all(
+            content == asnumpy_context.get(path) for path, content in collected.items()
+        ):
+            raise DraftGenerationError("official adapter candidate is a no-op")
 
         file_hashes = {
             path: _sha256_bytes(content.encode("utf-8"))

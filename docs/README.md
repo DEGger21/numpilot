@@ -16,6 +16,7 @@ NumPilot 将 NumPy 程序的静态分析、迁移候选生成、数值验证和 
 
 ## 工作流与验证
 
+- [本地 Codex adapter 真机接入](codex-adapter-walkthrough.zh-CN.md)：生成、隔离构建、路由验证、I006 诊断与下一步；
 - [系统架构](architecture.md)：ordinary 脚本路径、能力判定和缺口恢复边界；
 - [脚本数值验证](script-verification.md)：隔离 worker、输出比较和回执绑定；
 - [Benchmark 路由与回执](benchmark-routing.zh-CN.md)：150 例的预期路由、输入克隆、

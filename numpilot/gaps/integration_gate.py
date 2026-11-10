@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import importlib
 import os
 import resource
 import sys
@@ -43,6 +44,31 @@ def _write_result(path, payload):
 def _detail(exc):
     text = "%s: %s" % (type(exc).__name__, exc)
     return text[:MAX_DETAIL_CHARS]
+
+
+def _install_dispatch_probe(array_module, native_module):
+    """Require the reviewed binding and trap the pre-existing D2D route.
+
+    Numerical equivalence alone cannot distinguish the old copy implementation
+    from the new ACLNN adapter. Keep this check NumPilot-owned, independent of
+    tests supplied by the generating agent.
+    """
+    native = getattr(native_module, "concatenate_aclnn", None)
+    if not callable(native) or getattr(array_module, "_concatenate", None) is not native:
+        raise RuntimeError("public concatenate does not select the reviewed ACLNN binding")
+    observed = {"native_calls": 0, "legacy_calls": 0}
+
+    def checked_native(*args, **kwargs):
+        observed["native_calls"] += 1
+        return native(*args, **kwargs)
+
+    def forbidden_legacy(*args, **kwargs):
+        observed["legacy_calls"] += 1
+        raise RuntimeError("public concatenate entered the legacy copy route")
+
+    array_module._concatenate = checked_native
+    array_module._concatenate_legacy = forbidden_legacy
+    return observed
 
 
 def main(argv=None):
@@ -101,6 +127,10 @@ def main(argv=None):
             )
         if not callable(getattr(ap, "concatenate", None)):
             raise RuntimeError("asnumpy.concatenate is not available")
+
+        array_module = importlib.import_module("asnumpy.array")
+        native_module = importlib.import_module("asnumpy._core").array
+        dispatch = _install_dispatch_probe(array_module, native_module)
 
         def _compare(name, arrays, axis, expected):
             try:
@@ -277,6 +307,13 @@ def main(argv=None):
         else:
             record("repeated_calls_stable", "passed")
 
+        result["dispatch_observation"] = dict(dispatch)
+        dispatch_passed = (
+            dispatch["native_calls"] >= result["oracle_comparisons"] > 0
+            and dispatch["legacy_calls"] == 0
+        )
+        record("official_aclnn_dispatch", "passed" if dispatch_passed else "failed",
+               "native=%d legacy=%d" % (dispatch["native_calls"], dispatch["legacy_calls"]))
         failed = [case for case in result["cases"] if case["status"] != "passed"]
         if failed:
             result["status"] = "failed"

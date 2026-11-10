@@ -36,6 +36,7 @@ from numpilot.capabilities import (
     AnalysisCallsiteProfile,
     AnalysisProfileSet,
     OperatorCallProfile,
+    profile_concatenate_call,
     tensor_profile_from_value,
 )
 
@@ -218,7 +219,12 @@ def _record_callsite(site, args, kwargs):
         return None
     if tuple(sorted(kwargs)) != site.keyword_args:
         return None
-    profile = _profile_call(args, kwargs)
+    if site.name == "concatenate":
+        profile = profile_concatenate_call(args, kwargs)
+        if profile.sequence_axis is None or profile.unprofiled_operands or not profile.inputs:
+            return None
+    else:
+        profile = _profile_call(args, kwargs)
     if profile is None:
         return None
     site.used = True

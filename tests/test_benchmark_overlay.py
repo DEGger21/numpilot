@@ -106,7 +106,7 @@ def test_shim_rejects_unknown_overlay_operator():
         ShimBackend(extra_ops=("take",))
 
 
-def test_sequence_operand_without_axis_keyword_is_not_profiled():
+def test_sequence_operand_without_axis_keyword_profiles_explicit_default_axis():
     source = SOURCE.replace(
         "np.concatenate((a, b), axis=1)",
         "np.concatenate((a, b))",
@@ -114,6 +114,7 @@ def test_sequence_operand_without_axis_keyword_is_not_profiled():
 
     result = build_analysis_profiles(source, _overlay())
 
-    assert result.profiles is None
+    assert result.profiles is not None
     assert result.attempted_callsites == 1
-    assert result.matched_callsites == 0
+    assert result.matched_callsites == 1
+    assert result.profiles.callsites[0].profile.sequence_axis == 0

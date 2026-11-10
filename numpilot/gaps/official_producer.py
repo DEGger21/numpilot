@@ -21,9 +21,14 @@ modifies the integrated source tree or the candidate wheel.
 from __future__ import annotations
 
 import argparse
+import ast
+import csv
+import ctypes
 import hashlib
 import importlib.metadata
+import io
 import json
+import math
 import os
 import shutil
 import subprocess
@@ -174,6 +179,106 @@ class _Context:
     gap_request_sha256: str
     candidate_test_file: Path
     candidate_test_sha256: str
+    runtime_site: Optional[Path] = None
+    kernel_profile_root: Optional[Path] = None
+
+
+
+_INTEGRATED_CONCAT_PROFILE = "official_concat_rank1_3_aclnn_v1"
+
+
+def _entry_spec(context: _Context, key: str) -> _EntrySpec:
+    old = _ENTRY_SPECS[key]
+    if context.runtime_site is None or key != "concatenate":
+        return old
+    return _EntrySpec(key, ("dtype=float32", "rank>=1", "rank<=3", "contiguous=true"),
+                      old.signatures, old.test_marker)
+
+
+def _verify_integrated_source(attempt_dir: Path, transaction: Mapping[str, Any]) -> None:
+    from numpilot.gaps.integration import _tree_hashes, _tree_digest
+
+    source = transaction["source"]
+    manifest_path = Path(__file__).resolve().parents[2] / "components/asnumpy/source-manifest.json"
+    if _sha256_file(manifest_path) != source.get("binding", {}).get("source_manifest_sha256"):
+        raise OfficialProducerError("bound source manifest hash does not match the component")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    baseline = manifest["files"]
+    if _tree_digest(baseline) != source["tree_sha256"] or len(baseline) != source["file_count"]:
+        raise OfficialProducerError("bound baseline source tree does not match the transaction")
+    hashes, _, _ = _tree_hashes(attempt_dir / "source", "qualification source")
+    overlay = source["overlay_sha256"]
+    before = source["overlay_before_sha256"]
+    if set(before) != set(overlay) or any(baseline.get(k) != v for k, v in before.items()):
+        raise OfficialProducerError("source overlay baseline hash mismatch")
+    expected = dict(baseline)
+    expected.update(overlay)
+    if any(hashes.get(k) != v for k, v in expected.items()):
+        raise OfficialProducerError("integrated source hash drifted")
+    # scikit-build generates the version module; AsNumpy logging writes this log.
+    if set(hashes) - set(expected) - {"src/asnumpy/_version.py", "asnumpy_cpp.log"}:
+        raise OfficialProducerError("unexpected file in the integrated source tree")
+
+
+def _validate_transaction_runtime_site(attempt_dir, transaction, wheel_path, runtime_site, identity):
+    runtime_site = Path(runtime_site).resolve(strict=True)
+    bound_site = attempt_dir / _relative_path(transaction["runtime"]["site_relative"], "runtime site")
+    if runtime_site != bound_site.resolve(strict=True) or bound_site.is_symlink():
+        raise OfficialProducerError("runtime site is not the transaction-bound installation")
+    runtime = transaction["runtime"]
+    module_path = Path(identity.module_path).resolve(strict=True)
+    if module_path != runtime_site / "asnumpy/__init__.py":
+        raise OfficialProducerError("runtime module escaped transaction-bound site")
+    core_relative = _relative_path(runtime["core_relative"], "runtime native module")
+    core_path = runtime_site / core_relative
+    if core_path.is_symlink() or core_path.resolve(strict=True).parent != module_path.parent:
+        raise OfficialProducerError("runtime native module escaped transaction-bound site")
+    if _sha256_file(Path(sys.executable)) != runtime["python_sha256"]:
+        raise OfficialProducerError("runtime interpreter hash does not match the transaction")
+    if (_sha256_file(core_path) != runtime["core_sha256"]
+            or identity.native_module_sha256 != runtime["core_sha256"]):
+        raise OfficialProducerError("runtime native core hash mismatch")
+    if _sha256_file(wheel_path) != transaction["build"]["wheel_sha256"]:
+        raise OfficialProducerError("runtime wheel hash mismatch")
+    members = _wheel_members(wheel_path)
+    for name in ("asnumpy/__init__.py", "asnumpy/array.py", core_relative):
+        target = runtime_site / name
+        if target.is_symlink() or _sha256_file(target) != members.get(name):
+            raise OfficialProducerError("runtime member does not match bound wheel: " + name)
+    if _sha256_file(module_path) != identity.module_sha256:
+        raise OfficialProducerError("runtime module identity hash mismatch")
+    for relative in ("array.py", "__init__.py"):
+        if members["asnumpy/" + relative] != dict(identity.wrapper_sha256).get(relative):
+            raise OfficialProducerError("runtime wrapper identity hash mismatch")
+    generated_version = attempt_dir / "source/src/asnumpy/_version.py"
+    if generated_version.exists() and _sha256_file(generated_version) != members.get("asnumpy/_version.py"):
+        raise OfficialProducerError("generated source version differs from bound wheel")
+    _verify_integrated_source(attempt_dir, transaction)
+
+
+def _public_concat_host_markers(wrapper_text: str) -> int:
+    """Audit only public concatenate, allowing NumPy metadata checks, not compute."""
+    tree = ast.parse(wrapper_text)
+    functions = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "concatenate"]
+    if len(functions) != 1:
+        raise OfficialProducerError("expected one public concatenate wrapper")
+    problems = 0
+    for node in ast.walk(functions[0]):
+        if not isinstance(node, ast.Call):
+            continue
+        target = node.func
+        if isinstance(target, ast.Attribute):
+            if target.attr in {"to_numpy", "__array__", "asnumpy", "cpu", "numpy"}:
+                problems += 1
+            root = target.value
+            while isinstance(root, ast.Attribute):
+                root = root.value
+            if isinstance(root, ast.Name) and root.id in {"np", "numpy"}:
+                if not (isinstance(target.value, ast.Name) and target.attr == "dtype"):
+                    problems += 1
+        elif isinstance(target, ast.Name) and target.id in {"_concatenate_legacy", "eval", "exec", "__import__"}:
+            problems += 1
+    return problems
 
 
 def _relative_path(value: str, label: str) -> str:
@@ -311,11 +416,21 @@ def _load_transaction(attempt_dir: Path) -> Tuple[Mapping[str, Any], str]:
 
 def _load_gap_request(
     path: Path,
+    source_file: Optional[Path] = None,
+    official_resolution: Optional[Path] = None,
 ) -> Tuple[Mapping[str, Any], str]:
     payload = _read_private_file(path, "gap request", max_bytes=_MAX_JSON_BYTES)
     digest = _sha256_bytes(payload)
     request = _parse_json(payload, "gap request")
-    if request.get("request_type") != "script_api_gap":
+    if request.get("request_type") == "official_candidate_gap":
+        from numpilot.gaps.official_qualification import validate_official_handoff_evidence
+        if source_file is None or official_resolution is None:
+            raise OfficialProducerError("official handoff requires explicit source and resolution evidence")
+        validate_official_handoff_evidence(
+            request, _read_private_file(source_file, "official source", max_bytes=_MAX_EVIDENCE_FILE_BYTES),
+            _read_private_file(official_resolution, "official resolution", max_bytes=_MAX_JSON_BYTES),
+        )
+    elif request.get("request_type") != "script_api_gap":
         raise OfficialProducerError("gap request type is invalid")
     if not isinstance(request.get("source_sha256"), str):
         raise OfficialProducerError("gap request source hash is invalid")
@@ -339,7 +454,7 @@ def _matching_gap_spec(
     return matches[0]
 
 
-def _collect_runtime_identity():
+def _collect_runtime_identity(*, attempt_dir=None, transaction=None, wheel_path=None, runtime_site=None):
     from numpilot.backends.npu import NpuBackend
 
     backend = NpuBackend()
@@ -355,7 +470,11 @@ def _collect_runtime_identity():
         module_path = Path(identity.module_path).resolve()
     except (OSError, RuntimeError) as exc:
         raise OfficialProducerError("runtime module path is unavailable") from exc
-    if not module_path.is_relative_to(prefix):
+    if runtime_site is not None:
+        if attempt_dir is None or transaction is None or wheel_path is None:
+            raise OfficialProducerError("explicit runtime site requires its integration transaction")
+        _validate_transaction_runtime_site(attempt_dir, transaction, wheel_path, runtime_site, identity)
+    elif not module_path.is_relative_to(prefix):
         raise OfficialProducerError(
             "the producer is not running under the qualification runtime"
         )
@@ -511,6 +630,12 @@ def _run_pytest(
         environment = dict(os.environ)
         environment["PYTHONDONTWRITEBYTECODE"] = "1"
         environment["PYTEST_ADDOPTS"] = ""
+        if context.runtime_site is not None:
+            dependency_site = Path(sys.executable).parent.parent / "lib" / ("python%d.%d" % sys.version_info[:2]) / "site-packages"
+            if not dependency_site.is_dir():
+                raise OfficialProducerError("qualification Python dependencies are unavailable")
+            environment["PYTHONPATH"] = os.pathsep.join((str(context.runtime_site), str(dependency_site)))
+            environment["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
         descriptor = os.open(
             str(log_path),
             os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_CLOEXEC", 0),
@@ -522,6 +647,7 @@ def _run_pytest(
                     completed = subprocess.run(
                         [
                             sys.executable,
+                            *(["-S"] if context.runtime_site is not None else []),
                             "-m",
                             "pytest",
                             "-q",
@@ -648,7 +774,7 @@ def _compare_arrays(actual: Any, expected: Any) -> Tuple[int, bool]:
     return comparisons, okay
 
 
-def _numerical_cases(key: str):
+def _numerical_cases(key: str, integrated: bool = False):
     import asnumpy
     import numpy
 
@@ -659,7 +785,7 @@ def _numerical_cases(key: str):
         third = asnumpy.full((2, 2), 3.0, dtype=dtype)
         fourth = asnumpy.full((2, 4), 4.0, dtype=dtype)
         single = asnumpy.full((2, 3), 5.0, dtype=dtype)
-        return [
+        cases = [
             (
                 "axis_zero",
                 lambda: asnumpy.concatenate([first, second], axis=0),
@@ -699,6 +825,21 @@ def _numerical_cases(key: str):
                 lambda: numpy.full((2, 3), 5.0, dtype=dtype),
             ),
         ]
+        if integrated:
+            for name, left_shape, right_shape, axis in (
+                ("rank_one_axis_zero", (7,), (3,), 0),
+                ("rank_three_axis_one", (3, 4, 5), (3, 2, 5), 1),
+                ("rank_three_axis_negative", (3, 4, 5), (3, 2, 5), -2),
+            ):
+                a = numpy.arange(numpy.prod(left_shape), dtype=dtype).reshape(left_shape)
+                b = -numpy.arange(numpy.prod(right_shape), dtype=dtype).reshape(right_shape)
+                da, db = asnumpy.ndarray.from_numpy(a), asnumpy.ndarray.from_numpy(b)
+                cases.append((name, lambda a=da, b=db, axis=axis: asnumpy.concatenate([a, b], axis=axis),
+                              lambda a=a, b=b, axis=axis: numpy.concatenate([a, b], axis=axis)))
+            host = numpy.arange(60, dtype=dtype).reshape(3, 4, 5)
+            device = asnumpy.ndarray.from_numpy(host)
+            cases.append(("rank_three_single_input", lambda: asnumpy.concatenate([device], axis=-1), lambda: host))
+        return cases
     creation = getattr(asnumpy, key)
     return [
         (
@@ -730,7 +871,7 @@ def _run_numerical_gate(context: _Context) -> Dict[str, Dict[str, Any]]:
         comparisons = 0
         mismatches = 0
         elements = 0
-        for name, call, oracle in _numerical_cases(key):
+        for name, call, oracle in _numerical_cases(key, context.runtime_site is not None):
             record = {
                 "name": name,
                 "ok": False,
@@ -754,6 +895,7 @@ def _run_numerical_gate(context: _Context) -> Dict[str, Dict[str, Any]]:
                 mismatches += 1
                 record["detail"] = "%s: %s" % (type(exc).__name__, str(exc)[:200])
             records.append(record)
+        tested_ranks = sorted({len(record["shape"]) for record in records if record.get("ok") and "shape" in record})
         evidence_path = context.gates_dir / (
             "numerical_validation.%s.json" % key
         )
@@ -771,6 +913,7 @@ def _run_numerical_gate(context: _Context) -> Dict[str, Dict[str, Any]]:
                     "oracle_comparisons": comparisons,
                     "mismatches": mismatches,
                     "elements_compared": elements,
+                    "tested_ranks": tested_ranks,
                 },
             },
         )
@@ -781,6 +924,8 @@ def _run_numerical_gate(context: _Context) -> Dict[str, Dict[str, Any]]:
             "elements_compared": elements,
             "oracle": "numpy",
         }
+        if context.runtime_site is not None:
+            claims["tested_ranks"] = tested_ranks
         target_passed = bool(records and mismatches == 0 and comparisons > 0)
         targets[key] = {
             "status": "passed" if target_passed else "failed",
@@ -806,7 +951,7 @@ def _assert_public_output(value: Any, shape: Tuple[int, ...], key: str) -> None:
         raise OfficialProducerError("%s signature variant returned wrong dtype" % key)
 
 
-def _public_api_cases(key: str):
+def _public_api_cases(key: str, integrated: bool = False):
     import asnumpy
     import numpy
 
@@ -861,6 +1006,33 @@ def _public_api_cases(key: str):
                 (TypeError,),
             ),
         ]
+        if integrated:
+            first3 = asnumpy.ndarray.from_numpy(numpy.arange(60, dtype=dtype).reshape(3, 4, 5))
+            second3 = asnumpy.ndarray.from_numpy(numpy.arange(30, dtype=dtype).reshape(3, 2, 5))
+            variants = [
+                ((1, ("axis",)), lambda: asnumpy.concatenate([first3, second3], axis=1), (3, 6, 5)),
+                ((2, ()), lambda: asnumpy.concatenate([first3, second3], -2), (3, 6, 5)),
+                ((1, ()), lambda: asnumpy.concatenate([first3, first3]), (6, 4, 5)),
+            ]
+            class NonContiguous(asnumpy.ndarray):
+                @property
+                def strides(self):
+                    return (4, 12, 48)
+
+            class EmptyExtent(asnumpy.ndarray):
+                @property
+                def shape(self):
+                    return (3, 0, 5)
+
+            rejections.extend([
+                ("non_contiguous", lambda: asnumpy.concatenate([NonContiguous(first3)], axis=1), (ValueError,)),
+                ("empty_extent", lambda: asnumpy.concatenate([EmptyExtent(first3)], axis=1), (ValueError,)),
+                ("empty_sequence", lambda: asnumpy.concatenate([], axis=1), (ValueError,)),
+                ("rank3_shape_mismatch", lambda: asnumpy.concatenate([first3, second3], axis=0), (ValueError,)),
+                ("rank_mismatch", lambda: asnumpy.concatenate([first3, first], axis=1), (ValueError,)),
+                ("axis_boolean", lambda: asnumpy.concatenate([first3], axis=True), (TypeError,)),
+                ("dtype_keyword", lambda: asnumpy.concatenate([first3], axis=1, dtype=dtype), (TypeError,)),
+            ])
         return variants, rejections
     creation = getattr(asnumpy, key)
     variants = [
@@ -905,18 +1077,19 @@ def _run_public_api_gate(context: _Context) -> Dict[str, Dict[str, Any]]:
     except (OSError, UnicodeError) as exc:
         raise OfficialProducerError("live concatenate wrapper is unreadable") from exc
     lowered = wrapper_text.lower()
-    marker_count = sum(lowered.count(marker) for marker in _HOST_FALLBACK_MARKERS)
+    marker_count = (_public_concat_host_markers(wrapper_text) if context.runtime_site is not None
+                    else sum(lowered.count(marker) for marker in _HOST_FALLBACK_MARKERS))
 
     targets = {}
     for key in context.entries:
         api = getattr(asnumpy, key, None)
         callable_value = callable(api)
-        variants, rejections = _public_api_cases(key)
+        variants, rejections = _public_api_cases(key, context.runtime_site is not None)
         verified = 0
         failures = []
         admitted_signatures = {
             (item.positional_args, tuple(item.keyword_args))
-            for item in _ENTRY_SPECS[key].signatures
+            for item in _entry_spec(context, key).signatures
         }
         for signature, call, shape in variants:
             try:
@@ -976,7 +1149,7 @@ def _run_public_api_gate(context: _Context) -> Dict[str, Dict[str, Any]]:
             callable_value
             and not failures
             and marker_count == 0
-            and verified == len(_ENTRY_SPECS[key].signatures)
+            and verified == len(_entry_spec(context, key).signatures)
             and rejection_count == len(rejections)
         )
         targets[key] = {
@@ -1010,23 +1183,151 @@ def _device_count() -> int:
     return count
 
 
-def _npu_call(key: str):
+def _npu_call(key: str, integrated: bool = False):
     import asnumpy
     import numpy
 
     dtype = numpy.float32
     if key == "concatenate":
+        if integrated:
+            first = asnumpy.ndarray.from_numpy(numpy.arange(60, dtype=dtype).reshape(3, 4, 5))
+            second = asnumpy.ndarray.from_numpy(numpy.arange(30, dtype=dtype).reshape(3, 2, 5))
+            return lambda: asnumpy.concatenate([first, second], axis=1)
         first = asnumpy.full((2, 3), 1.0, dtype=dtype)
         second = asnumpy.full((1, 3), 2.0, dtype=dtype)
         return lambda: asnumpy.concatenate([first, second], axis=0)
     return lambda: getattr(asnumpy, key)((2, 3), dtype)
 
 
+
+def _validate_kernel_profile(context: _Context) -> Tuple[int, list]:
+    root = context.kernel_profile_root
+    if root is None:
+        raise OfficialProducerError("integrated concatenate requires real kernel profile evidence")
+    profile_path = root / "kernel-profile.json"
+    profile = _read_json(profile_path, "kernel profile")
+    if (profile.get("schema") != "numpilot.concatenate-kernel-profile.v1"
+            or profile.get("status") != "passed" or profile.get("api") != "numpy.concatenate"
+            or profile.get("performance_claim") is not False):
+        raise OfficialProducerError("kernel profile schema/status is invalid")
+    for field, expected in {
+        "transaction_sha256": context.transaction["transaction_sha256"],
+        "transaction_file_sha256": context.transaction_file_sha256,
+        "runtime_core_sha256": context.runtime_core_sha256,
+        "runtime_module_sha256": context.identity.module_sha256,
+        "runtime_array_sha256": dict(context.identity.wrapper_sha256)["array.py"],
+    }.items():
+        if profile.get(field) != expected:
+            raise OfficialProducerError("kernel profile binding mismatch: " + field)
+    destination = context.gates_dir / "kernel-profile"
+    _ensure_private_directory(destination)
+    refs = []
+
+    def bound_file(ref):
+        if not isinstance(ref, Mapping):
+            raise OfficialProducerError("kernel profile file reference is invalid")
+        relative = _relative_path(ref.get("path"), "kernel evidence")
+        source = root / relative
+        if not source.resolve(strict=True).is_relative_to(root.resolve(strict=True)):
+            raise OfficialProducerError("kernel evidence escaped profile root")
+        payload = _read_private_file(source, "kernel evidence", max_bytes=_MAX_EVIDENCE_FILE_BYTES)
+        if _sha256_bytes(payload) != ref.get("sha256"):
+            raise OfficialProducerError("kernel evidence hash mismatch")
+        target = destination / relative
+        current = destination
+        for part in PurePosixPath(relative).parts[:-1]:
+            current = current / part
+            _ensure_private_directory(current)
+        _copy_verified(source, target, ref["sha256"], "kernel evidence")
+        refs.append(_evidence_ref(target, context.bundle))
+        return payload
+
+    worker = profile.get("worker")
+    bound_file(worker)
+    execution = _parse_json(bound_file(profile.get("execution")), "kernel execution")
+    cases = execution.get("cases", [])
+    if (execution.get("status") != "passed" or execution.get("worker_sha256") != worker.get("sha256")
+            or execution.get("transaction_sha256") != context.transaction_file_sha256
+            or execution.get("dispatch", {}).get("legacy_calls") != 0
+            or not cases or any(case.get("exact_equal") is not True or case.get("dtype") != "float32" for case in cases)):
+        raise OfficialProducerError("kernel execution receipt does not prove native correctness")
+    for case in cases:
+        rank, shape, axis = case.get("rank"), case.get("shape"), case.get("axis")
+        if (type(rank) is not int or rank not in (2, 3)
+                or not isinstance(shape, list) or len(shape) != rank
+                or any(type(extent) is not int or extent <= 0 for extent in shape)
+                or type(axis) is not int or not -rank <= axis < rank):
+            raise OfficialProducerError("kernel execution shape/axis evidence is invalid")
+    ranks = sorted({case["rank"] for case in cases})
+    if (ranks != [2, 3] or profile.get("tested_ranks") != ranks
+            or any(sum(case["rank"] == rank for case in cases) < 2 for rank in ranks)):
+        raise OfficialProducerError("kernel profile did not observe rank two and three")
+    native_calls = execution["dispatch"].get("native_calls")
+    if type(native_calls) is not int or native_calls < 2 or native_calls != len(cases) or native_calls != profile.get("native_calls"):
+        raise OfficialProducerError("kernel profile native-call evidence is inconsistent")
+    for name, digest in (("core", context.runtime_core_sha256), ("module", context.identity.module_sha256),
+                         ("array", dict(context.identity.wrapper_sha256)["array.py"])):
+        if execution.get("runtime", {}).get(name, {}).get("sha256") != digest:
+            raise OfficialProducerError("kernel worker runtime identity mismatch")
+    count = 0
+    op_type_counts = {}
+    traces = profile.get("traces")
+    if not isinstance(traces, list) or not traces:
+        raise OfficialProducerError("kernel profile has no raw CSV traces")
+    seen = set()
+    for ref in traces:
+        if ref.get("path") in seen:
+            raise OfficialProducerError("kernel profile repeats a trace")
+        seen.add(ref.get("path"))
+        text = bound_file(ref).decode("utf-8-sig")
+        rows = list(csv.DictReader(io.StringIO(text)))
+        if ref.get("rows") != len(rows):
+            raise OfficialProducerError("kernel profile CSV row count mismatch")
+        for row in rows:
+            op_type = row.get("OP Type", "")
+            op_type_counts[op_type] = op_type_counts.get(op_type, 0) + 1
+            if row.get("OP Type") == "ConcatD" and row.get("Op Name", "").startswith("aclnnCat_ConcatD_"):
+                if row.get("Task Type") != "AI_VECTOR_CORE" or row.get("Device_id") != "0":
+                    raise OfficialProducerError("kernel profile has an unsupported task/device")
+                try:
+                    duration = float(row["Task Duration(us)"])
+                except (KeyError, TypeError, ValueError) as exc:
+                    raise OfficialProducerError("kernel profile task duration is invalid") from exc
+                if not math.isfinite(duration) or duration <= 0:
+                    raise OfficialProducerError("kernel profile task duration must be finite and positive")
+                count += 1
+    if op_type_counts != profile.get("op_type_counts"):
+        raise OfficialProducerError("kernel profile operator counts disagree with raw traces")
+    if count < 1 or count != profile.get("cat_kernel_rows"):
+        raise OfficialProducerError("kernel profile Cat count does not match raw traces")
+    _copy_verified(profile_path, destination / "kernel-profile.json", _sha256_file(profile_path), "kernel profile")
+    refs.append(_evidence_ref(destination / "kernel-profile.json", context.bundle))
+    return count, refs
+
+
+def _ctypes_device_count() -> int:
+    library = ctypes.CDLL("libascendcl.so")
+    call = library.aclrtGetDeviceCount
+    call.argtypes = [ctypes.POINTER(ctypes.c_uint32)]
+    call.restype = ctypes.c_int
+    count = ctypes.c_uint32()
+    if call(ctypes.byref(count)) != 0 or count.value != 1:
+        raise OfficialProducerError("integrated qualification requires exactly one visible NPU")
+    return count.value
+
+
 def _run_npu_execution_gate(context: _Context) -> Dict[str, Dict[str, Any]]:
+    if context.runtime_site is None or context.entries != ("concatenate",):
+        raise OfficialProducerError(
+            "new NPU qualification requires independently measured kernels; "
+            "only the transaction-bound concatenate profiler route is supported"
+        )
     import numpy
     import asnumpy.array as array_module
 
-    device_count = _device_count()
+    integrated = context.runtime_site is not None
+    kernel_count, kernel_refs = _validate_kernel_profile(context)
+    device_count = _ctypes_device_count()
     if device_count < 1:
         raise OfficialProducerError("no NPU device is visible to the producer")
     native_names = {
@@ -1044,13 +1345,26 @@ def _run_npu_execution_gate(context: _Context) -> Dict[str, Dict[str, Any]]:
             _counts["value"] += 1
             return _original(*args, **kwargs)
 
-        call = _npu_call(key)
+        legacy = None
+        if integrated:
+            import asnumpy._core as core
+            if key != "concatenate" or original is not core.array.concatenate_aclnn:
+                raise OfficialProducerError("native dispatch does not identify integrated ACLNN concatenate")
+            legacy = getattr(array_module, "_concatenate_legacy", None)
+            if legacy is None:
+                raise OfficialProducerError("expected separately bound legacy concatenate")
+            def forbidden_legacy(*args, **kwargs):
+                raise OfficialProducerError("public concatenate entered the legacy D2D path")
+            array_module._concatenate_legacy = forbidden_legacy
+        call = _npu_call(key, integrated)
         setattr(array_module, native_name, counted)
         try:
             first = call()
             second = call()
         finally:
             setattr(array_module, native_name, original)
+            if legacy is not None:
+                array_module._concatenate_legacy = legacy
         first_host = numpy.asarray(first.to_numpy())
         second_host = numpy.asarray(second.to_numpy())
         try:
@@ -1073,7 +1387,7 @@ def _run_npu_execution_gate(context: _Context) -> Dict[str, Dict[str, Any]]:
                 "device_count": device_count,
                 "soc_model": context.identity.soc_model,
                 "native_calls": native_calls,
-                "kernel_launches": native_calls,
+                "kernel_launches": kernel_count,
                 "repeated_calls": _REPEATED_CALLS_PER_TARGET,
                 "repeated_stable": stable,
                 "host_fallback_calls": host_fallback_calls,
@@ -1084,11 +1398,14 @@ def _run_npu_execution_gate(context: _Context) -> Dict[str, Dict[str, Any]]:
             "device_count": device_count,
             "soc_model": context.identity.soc_model,
             "native_calls": native_calls,
-            "kernel_launches": native_calls,
+            "kernel_launches": kernel_count,
             "repeated_calls": _REPEATED_CALLS_PER_TARGET,
             "repeated_stable": stable,
             "host_fallback_calls": host_fallback_calls,
         }
+        if integrated:
+            claims["kernel_evidence_scope"] = "independent_profile"
+            claims["execution_profile"] = _INTEGRATED_CONCAT_PROFILE
         target_passed = bool(
             device_count >= 1
             and native_calls == _NATIVE_CALLS_PER_TARGET
@@ -1100,7 +1417,7 @@ def _run_npu_execution_gate(context: _Context) -> Dict[str, Dict[str, Any]]:
             "status": "passed" if target_passed else "failed",
             "claims": claims,
             "evidence": {
-                "files": [_evidence_ref(evidence_path, context.bundle)],
+                "files": [_evidence_ref(evidence_path, context.bundle), *kernel_refs],
                 "detail": detail,
             },
         }
@@ -1151,8 +1468,8 @@ def _build_overlay(
             qualified_api="numpy." + key,
             asnumpy_api="asnumpy." + key,
             provenance=OFFICIAL_PROVENANCE,
-            constraints=_ENTRY_SPECS[key].constraints,
-            signature_variants=_ENTRY_SPECS[key].signatures,
+            constraints=_entry_spec(context, key).constraints,
+            signature_variants=_entry_spec(context, key).signatures,
         )
         for key in context.entries
     )
@@ -1372,6 +1689,9 @@ def produce(
     bundle_dir: str,
     entries: Sequence[str],
     candidate_test_file: Optional[Path] = None,
+    runtime_site: Optional[Path] = None,
+    official_resolution: Optional[Path] = None,
+    kernel_profile_root: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """Produce, validate and publish one official qualification overlay."""
 
@@ -1396,7 +1716,12 @@ def produce(
         raise OfficialProducerError("source file does not exist")
 
     transaction, transaction_file_sha256 = _load_transaction(attempt_dir)
-    gap_request, gap_request_sha256 = _load_gap_request(gap_request_path)
+    gap_request, gap_request_sha256 = _load_gap_request(gap_request_path, source_file, official_resolution)
+    is_official = gap_request.get("request_type") == "official_candidate_gap"
+    if is_official and (runtime_site is None or kernel_profile_root is None or entries != ("concatenate",)):
+        raise OfficialProducerError("official handoff qualification requires bound runtime, kernel profile and concatenate-only entries")
+    if not is_official and runtime_site is not None:
+        raise OfficialProducerError("explicit transaction runtime is only admitted for an official handoff")
     gap_id = transaction.get("gap_id")
     if not isinstance(gap_id, str) or not gap_id:
         raise OfficialProducerError("integration transaction has no gap ID")
@@ -1467,6 +1792,7 @@ def produce(
     _ensure_private_directory(bundle / "integration")
     _ensure_private_directory(bundle / "integration" / PurePosixPath(attempt).name)
     attempt_bundle = bundle / attempt
+    _ensure_private_directory(attempt_bundle)
     for directory in (
         attempt_bundle / "dist",
         attempt_bundle / "gate",
@@ -1516,7 +1842,13 @@ def produce(
         "official source binding",
     )
 
-    backend, identity = _collect_runtime_identity()
+    if is_official:
+        _copy_verified(official_resolution, bundle / "official-resolution.json",
+                       gap_request["official_resolution_sha256"], "official resolution")
+        backend, identity = _collect_runtime_identity(attempt_dir=attempt_dir, transaction=transaction,
+                                                     wheel_path=wheel_path, runtime_site=runtime_site)
+    else:
+        backend, identity = _collect_runtime_identity()
     base_manifest_sha256 = _base_manifest_sha256(backend, entries, identity)
     context = _Context(
         run_root=run_root,
@@ -1542,6 +1874,8 @@ def produce(
         gap_request_sha256=gap_request_sha256,
         candidate_test_file=candidate_test_file,
         candidate_test_sha256=candidate_test_sha256,
+        runtime_site=Path(runtime_site).resolve() if runtime_site is not None else None,
+        kernel_profile_root=Path(kernel_profile_root).resolve() if kernel_profile_root is not None else None,
     )
 
     produced = {
@@ -1652,6 +1986,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--bundle-dir", default="qualification")
     parser.add_argument("--entries", default=",".join(_ENTRY_ORDER))
     parser.add_argument("--candidate-test-file")
+    parser.add_argument("--runtime-site", help="explicit transaction-bound isolated runtime installation")
+    parser.add_argument("--official-resolution", help="unaltered official resolution receipt bound by the handoff")
+    parser.add_argument("--kernel-profile-root", help="hash-bound real CANN kernel trace bundle")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
 
@@ -1668,6 +2005,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             source_logical_path=args.source_logical_path,
             bundle_dir=args.bundle_dir,
             entries=tuple(part for part in args.entries.split(",")),
+            runtime_site=Path(args.runtime_site) if args.runtime_site else None,
+            official_resolution=Path(args.official_resolution) if args.official_resolution else None,
+            kernel_profile_root=Path(args.kernel_profile_root) if args.kernel_profile_root else None,
             candidate_test_file=(
                 Path(args.candidate_test_file)
                 if args.candidate_test_file

@@ -559,6 +559,9 @@ class OperatorCallProfile:
     positional_args: int
     keyword_args: Tuple[str, ...]
     unprofiled_operands: Tuple[str, ...] = ()
+    # Explicit concatenate sequence + integer axis contract. None preserves the
+    # legacy one-tensor-per-operand representation for every other API.
+    sequence_axis: Optional[int] = None
 
     def __post_init__(self) -> None:
         try:
@@ -584,28 +587,41 @@ class OperatorCallProfile:
         ):
             raise ValueError("operator call profile unprofiled operands are invalid")
         operand_count = signature.positional_args + len(signature.keyword_args)
-        if len(self.inputs) + len(self.unprofiled_operands) != operand_count:
+        if self.sequence_axis is not None:
+            if (
+                isinstance(self.sequence_axis, bool)
+                or not isinstance(self.sequence_axis, int)
+                or not -(2 ** 63) <= self.sequence_axis < 2 ** 63
+                or not self.inputs
+                or self.unprofiled_operands
+                or (self.positional_args, self.keyword_args) not in {
+                    (1, ()), (1, ("axis",)), (2, ()),
+                }
+            ):
+                raise ValueError("concatenate sequence profile is invalid")
+        elif len(self.inputs) + len(self.unprofiled_operands) != operand_count:
             raise ValueError("operator call profile operand count is inconsistent")
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        result = {
             "inputs": [profile.to_dict() for profile in self.inputs],
             "positional_args": self.positional_args,
             "keyword_args": list(self.keyword_args),
             "unprofiled_operands": list(self.unprofiled_operands),
         }
+        if self.sequence_axis is not None:
+            result["sequence_axis"] = self.sequence_axis
+        return result
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "OperatorCallProfile":
         if not isinstance(data, Mapping):
             raise ValueError("operator call profile must be an object")
-        if frozenset(data) != {
-            "inputs",
-            "positional_args",
-            "keyword_args",
-            "unprofiled_operands",
-        }:
+        fields = {"inputs", "positional_args", "keyword_args", "unprofiled_operands"}
+        if set(data) not in (fields, fields | {"sequence_axis"}):
             raise ValueError("operator call profile fields are invalid")
+        if "sequence_axis" in data and data["sequence_axis"] is None:
+            raise ValueError("concatenate sequence axis may not be null")
         inputs = data["inputs"]
         keywords = data["keyword_args"]
         unprofiled = data["unprofiled_operands"]
@@ -622,6 +638,7 @@ class OperatorCallProfile:
             positional_args=data["positional_args"],
             keyword_args=tuple(keywords),
             unprofiled_operands=tuple(unprofiled),
+            sequence_axis=data.get("sequence_axis"),
         )
 
 
@@ -987,6 +1004,58 @@ def profile_operator_call(
     )
 
 
+def profile_concatenate_call(
+    args: Sequence[Any],
+    kwargs: Mapping[str, Any],
+    *,
+    tensor_profile_extractor=tensor_profile_from_value,
+) -> OperatorCallProfile:
+    """Profile the reviewed tensor sequence and axis without host conversion.
+
+    Unsupported calling conventions mark every public operand unprofiled;
+    extracting ordinary tensor metadata must not turn an invalid sequence or
+    tensor-valued axis into a valid concatenate call. Other APIs keep their
+    existing one-tensor-per-public-operand contract.
+    """
+    def rejected():
+        return OperatorCallProfile(
+            inputs=(), positional_args=len(args),
+            keyword_args=tuple(sorted(kwargs)),
+            unprofiled_operands=tuple(
+                ["arg[%d]" % index for index in range(len(args))]
+                + ["kwarg[%s]" % name for name in sorted(kwargs)]
+            ),
+        )
+
+    signature = (len(args), tuple(sorted(kwargs)))
+    if signature not in {(1, ()), (1, ("axis",)), (2, ())}:
+        return rejected()
+    sequence = args[0]
+    if type(sequence) not in (list, tuple) or not 1 <= len(sequence) <= 128:
+        return rejected()
+    axis = args[1] if len(args) == 2 else kwargs.get("axis", 0)
+    import numpy as np
+
+    if isinstance(axis, (bool, np.bool_)) or not isinstance(axis, (int, np.integer)):
+        return rejected()
+    axis = int(axis)
+    if not -(2 ** 63) <= axis < 2 ** 63:
+        return rejected()
+    profiles = []
+    for value in sequence:
+        try:
+            profile = tensor_profile_extractor(value)
+        except Exception:
+            profile = None
+        if not isinstance(profile, TensorProfile):
+            return rejected()
+        profiles.append(profile)
+    return OperatorCallProfile(
+        inputs=tuple(profiles), positional_args=len(args),
+        keyword_args=tuple(sorted(kwargs)), sequence_axis=axis,
+    )
+
+
 @dataclass(frozen=True)
 class OperatorCapability:
     """Runtime availability and audited provenance for one API."""
@@ -1172,6 +1241,28 @@ def match_capability_profile(
     elif capability.constraints:
         reasons.append("scoped capability has no qualified call signatures")
 
+    if capability.name == "concatenate" and profile.sequence_axis is None:
+        reasons.append("concatenate requires an explicit sequence-axis profile")
+    if profile.sequence_axis is not None:
+        if capability.name != "concatenate":
+            reasons.append("sequence-axis profile is only valid for concatenate")
+        first = profile.inputs[0]
+        rank = first.rank
+        axis = profile.sequence_axis
+        if rank == 0 or not -rank <= axis < rank:
+            reasons.append("concatenate axis is outside the tensor rank")
+        else:
+            axis %= rank
+            for index, tensor in enumerate(profile.inputs):
+                if tensor.rank != rank:
+                    reasons.append("concatenate operands have different ranks")
+                elif any(tensor.shape[i] != first.shape[i] for i in range(rank) if i != axis):
+                    reasons.append("concatenate non-axis dimensions do not match")
+                if any(dimension == 0 for dimension in tensor.shape):
+                    reasons.append("concatenate empty dimensions are outside the qualified profile")
+                if tensor.dtype != first.dtype:
+                    reasons.append("concatenate operands have different dtypes")
+
     if capability.constraints:
         if not profile.inputs:
             reasons.append("call exposes no profileable tensor operands")
@@ -1356,9 +1447,10 @@ class RuntimeProfileGuard:
         if name not in self.profile_scoped:
             return
         capability = self._capabilities[name]
+        profiler = profile_concatenate_call if name == "concatenate" else profile_operator_call
         match = match_capability_profile(
             capability,
-            profile_operator_call(
+            profiler(
                 args,
                 kwargs,
                 tensor_profile_extractor=self.tensor_profile_extractor,

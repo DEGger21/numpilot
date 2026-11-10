@@ -1,4 +1,5 @@
 import hashlib
+from dataclasses import replace
 
 import pytest
 
@@ -637,6 +638,7 @@ def test_promoted_missing_api_produces_a_proven_array_downstream():
             ),
             positional_args=1,
             keyword_args=("axis",),
+            sequence_axis=1,
         ),
     )
 
@@ -651,3 +653,16 @@ def test_promoted_missing_api_produces_a_proven_array_downstream():
     promoted = next(op for op in result.op_uses if op.name == "concatenate")
     assert promoted.supported is True
     assert promoted.reason is None
+
+    # The old generic fixture lacks sequence/axis evidence. It must neither
+    # promote concatenate nor manufacture a proven array for downstream add.
+    generic_callsite = replace(
+        callsite, profile=replace(callsite.profile, sequence_axis=None)
+    )
+    rejected = AnalysisAgent(_ProfileResolver(_concatenate_capability())).analyze(
+        source,
+        profiles=_profile_set(source, (generic_callsite,)),
+        strict_input_types=True,
+    )
+    assert set(rejected.unsupported) == {"add", "concatenate"}
+    assert not rejected.migratable

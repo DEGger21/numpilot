@@ -64,3 +64,47 @@ exact-edit parser 保留用于历史回执重放和修复兼容；新 generation
 - 结构化候选进入 `generated_unverified` 后，仍必须依次通过 build、import、
   NumPy oracle、真实 NPU execution、performance 和 qualification，才能计入
   benchmark 迁移结果。
+
+## 本地 Codex 实测：官方 concatenate 接入
+
+- 查实现再判断缺口：固定新版 AsNumpy 已含 `Concatenate` 的设备拷贝实现，
+  Python export 也已存在。静态覆盖表中的缺口不等于源码完全没有实现。
+  新 ACLNN adapter 使用 `ConcatenateAclnn` / `concatenate_aclnn` 独立入口，
+  保留旧 native 接口给 `hstack/vstack`，避免重复符号和连带收窄其他 API。
+- 不为满足“每文件必须修改”制造注释。`__init__.py` 的既有 lazy export 可以
+  按窗口协议原样返回；hash、label、顺序和边界仍须验证，整份候选不得无改动。
+- `aclDestroyTensorList` 会释放列表内的 tensor 描述符。不要把输入 NPUArray
+  自有的 `tensorPtr` 交给一个会被销毁的列表；为列表新建指向同一设备缓冲的
+  元数据描述符，并明确成功与异常路径的所有权，避免双重释放。绑定层传引用，
+  不用 `vector<NPUArray>` 隐式深拷贝充当零拷贝接入。
+- 数值正确不证明路由正确。首次集成因 wrapper 错用 `_concatenate_legacy`，
+  NumPy 对拍全部通过却未进入新 ACLNN。修复后 NumPilot 自有 gate 会验证
+  `_concatenate` 对应 `concatenate_aclnn`，统计每次调用，并禁止旧路径。
+  生成者自己的测试之外，应有框架独立的路由断言。
+- 新 `official_candidate_gap` run 可明确选择 `--profile full-local-recovery`；
+  已存在 receipt-only run 的策略保持冻结，不能直接改状态 JSON 来升权。
+  项目作者已经授权本地构建时，记录对应 profile 后执行，不反复要求口头确认。
+- 固定 AsNumpy bundle 可包含未提交的作者 matmul 补丁。隔离构建可逐文件验证
+  component/source manifest 后复制精确文件集，不依赖新的 Git 提交，不带入
+  untracked 文件；transaction 同时记录组件、archive、source manifest 哈希。
+- 精简 official-candidate fixture 与原始 I006 是两个不同 source。对原始 I006
+  的直接 API smoke 需保存 source hash、原输入和变换方式，不能冒充 NumPilot
+  自动迁移完成。构建/对拍也不能替代 rank、provenance 和 qualification 适配。
+
+
+## 正式资格与原始样例迁移实测
+
+- `official_candidate_gap`必须按其原始schema验证，不改名成script_api_gap。
+  搬移证据时携带原source/resolution字节和hash，从内容重建GapSpec/decision；路径只作身份标签。
+- 隔离runtime可在sys.prefix外，但必须逐项匹配transaction、wheel、解释器、core、wrapper和source。
+  明示overlay只准入已审计的调用范围，不把整个AsNumpy的audit_required改成matched。
+- concatenate的输入是tensor sequence加axis，不能用通用参数个数匹配。非法输入不得退回
+  一个看似完整的普通profile；matcher也必须要求sequence_axis，防单ndarray或tensor axis误准入。
+- Python native调用次数不是kernel次数。使用msprof原CSV，检查ConcatD、device/task、正的
+  有限耗时和runtime绑定；独立profiler4条kernel与另一轮gate2次native分别保存。
+  msprof启动带-S的Python可用独立launch.sh，避免把-S识别为application路径。
+- 正式qualification和原始程序迁移分开保存。API资格可以来源于精简fixture；原始I006
+  则必须通过Orchestrator真实生成代码、strict NPU和原始NumPy oracle，保存source/hash/guard。
+  本次I006成功不等于150例全部成功，也不证明性能加速。
+- 复现入口：仓库docs/codex-adapter-walkthrough.zh-CN.md；profiler、qualification和migration
+  输出均使用新目录，失败尝试保留。固定组件与共享runtime不被试验产物覆盖。

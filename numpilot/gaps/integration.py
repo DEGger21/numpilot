@@ -480,8 +480,23 @@ def _source_snapshot(
     reference_root: Path,
     target: Path,
     timeout: float,
+    *,
+    binding: Dict[str, Any] | None = None,
 ) -> Tuple[str, Dict[str, str], int]:
-    revision = _git_identity(reference_root, timeout)
+    try:
+        revision = _git_identity(reference_root, timeout)
+    except IntegrationError as exc:
+        if exc.code not in {"source_dirty", "source_unavailable"}:
+            raise
+        # Author-maintained source bundles can deliberately include the matmul
+        # patch without a new upstream Git commit. Copy only files whose full
+        # contents match the verified component manifest, never a dirty tree.
+        from numpilot.gaps.bundled_source import snapshot_bundled_source
+
+        try:
+            return snapshot_bundled_source(reference_root, target, binding=binding)
+        except (OSError, ValueError) as bundle_error:
+            raise IntegrationError("source_binding_mismatch", str(bundle_error)) from bundle_error
     _reject_unsafe_source(reference_root, "pinned AsNumpy source")
     reference_hashes, total, count = _tree_hashes(
         reference_root, "pinned AsNumpy source"
@@ -505,6 +520,8 @@ def _source_snapshot(
         raise IntegrationError(
             "source_copy_drift", "isolated source copy differs from the pinned tree"
         )
+    if binding is not None:
+        binding.update({"kind": "clean_git", "revision": revision})
     return revision, reference_hashes, total
 
 
@@ -1536,8 +1553,9 @@ def _produce_transaction(
     try:
         stage.mkdir(mode=0o700)
         source_root = stage / "source"
+        source_binding: Dict[str, Any] = {}
         revision, reference_hashes, reference_total = _source_snapshot(
-            reference_root, source_root, timeout
+            reference_root, source_root, timeout, binding=source_binding
         )
         overlay = _overlay_bytes(adapter_root, adapter.report["files_sha256"])
         overlay_before = _apply_overlay(source_root, overlay)
@@ -1768,6 +1786,7 @@ def _produce_transaction(
             "adapter_artifact_id": adapter.report.get("adapter_artifact_id"),
             "adapter_report_sha256": adapter_ref.sha256,
             "source_revision": revision,
+            "source_binding": source_binding,
             "source_tree_sha256": _tree_digest(reference_hashes),
             "overlay_sha256": dict(adapter.report["files_sha256"]),
             "wheel_sha256": build.get("wheel_sha256"),
@@ -1833,6 +1852,7 @@ def _produce_transaction(
             "adapter_report_sha256": adapter_ref.sha256,
             "adapter_ref": adapter_ref.to_dict(),
             "source": {
+                "binding": source_binding,
                 "revision": revision,
                 "tree_sha256": _tree_digest(reference_hashes),
                 "file_count": len(reference_hashes),

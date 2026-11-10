@@ -123,7 +123,7 @@ RecoveryStore to `ADAPTER_CANDIDATE`; it does not build or import AsNumpy. The
 preflight is read-only. A receipt-only local profile is expected to return
 `status=blocked`, `code=authorization_missing`, and
 `next_action=authorize_full_local_recovery` until the operator explicitly
-provides the full-local-recovery policy. Only after a `ready_for_integration`
+provides the full-local-recovery policy. Only after a `status=ready`, `code=ready_for_integration`
 preflight may the operator run `integrate-candidate` with a private absolute
 `--out` directory. Integration then remains subject to build, import, NumPy
 oracle, real NPU, performance, qualification, and activation gates.
@@ -132,3 +132,31 @@ Do not skip a failed or blocked step, do not copy a response directly into the
 AsNumpy source tree, and do not convert a local Codex receipt into a remote
 DeepSeek receipt. Every command above is replayable from the hash-bound handoff
 and candidate paths.
+
+
+The official materializer now accepts `--profile full-local-recovery` for a
+**new** run, when local builds/execution are authorized. Use
+`materialize-official-candidate-recovery --help` for the bound handoff,
+preflight, resolution, context gate, source, target and runtime-identity
+arguments. An existing run cannot change its policy: create a new state and
+candidate-output directory from the same verified inputs, then ingest the
+validated adapter there. The runtime identity must come from an actual probe,
+not a test fixture. `audit_required` remains unqualified even if integration
+passes. This explicit local profile does not itself call a remote model or
+activate a candidate.
+
+
+### Qualify an integrated official concatenate adapter
+
+The real Codex route now continues through an independently measured CANN
+kernel profile, the official qualification producer, and the original I006
+AST/strict-NPU migration. See
+`docs/codex-adapter-walkthrough.zh-CN.md` for the three runnable commands and
+runtime selection. Qualification keeps the native official handoff schema and
+requires transaction-bound evidence. Its explicit overlay admits only its
+reviewed API/profile; the global runtime can remain `audit_required`.
+
+The integration RecoveryStore record, published qualification overlay, and
+sample migration receipt are separate products. Do not manually edit the
+store to claim activation, increment the 150-case suite from a direct smoke,
+or turn an independent profiler count into a count for another execution.

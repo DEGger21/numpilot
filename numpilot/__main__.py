@@ -7745,7 +7745,7 @@ def main(argv=None):
     official_recovery.add_argument("--runtime-audit-id", required=True, help="显式 runtime audit id")
     official_recovery.add_argument("--runtime-identity-sha256", required=True, help="显式 runtime identity SHA-256")
     official_recovery.add_argument("--run-id", help="可选 recovery run id")
-    official_recovery.add_argument("--profile", default="receipt-only", choices=["receipt-only", "candidate-generation"], help="receipt-only 仅建候选；candidate-generation 为后续模型请求冻结权限")
+    official_recovery.add_argument("--profile", default="receipt-only", choices=["receipt-only", "candidate-generation", "full-local-recovery"], help="在新 run 创建时冻结权限；full-local-recovery 允许后续隔离构建与验证，旧状态不能升级或改写")
     official_recovery.add_argument("--json", action="store_true", help="只输出机器可读回执")
 
     recover_gaps = sub.add_parser(
