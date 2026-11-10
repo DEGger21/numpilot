@@ -629,6 +629,19 @@ def test_complete_gaps_injected_response_is_local_and_contract_bound(tmp_path, c
     assert report["claim_boundary"]["activation_performed"] is False
 
 
+
+def _assert_only_prepared_taskbooks(output):
+    """Early admission failures may preserve requirements, never candidates."""
+    from numpilot.gap_requirements import validate_gap_taskbook
+    files = sorted(path for path in output.rglob("*") if path.is_file())
+    assert len(files) == 2
+    assert {path.name for path in files} == {"GAP_TASKBOOK.json", "GAP_TASKBOOK.md"}
+    assert all(path.relative_to(output).parts[0] == "gaps" for path in files)
+    taskbook = validate_gap_taskbook(json.loads(next(path for path in files if path.suffix == ".json").read_text()))
+    assert taskbook["status"] == "requirements_prepared_unverified"
+    assert taskbook["generation"]["claim_level"] == "unverified_candidate_only"
+
+
 def test_complete_gaps_injected_requires_response_file_before_output(tmp_path, capsys):
     from numpilot import __main__ as cli
 
@@ -644,7 +657,7 @@ def test_complete_gaps_injected_requires_response_file_before_output(tmp_path, c
     ])
 
     assert rc == 2
-    assert not out.exists()
+    _assert_only_prepared_taskbooks(out)
     terminal = capsys.readouterr()
     assert "--provider injected" in terminal.err
     assert "不会读取 llm.json" in terminal.err
@@ -687,7 +700,7 @@ def test_complete_gaps_performance_goal_fails_before_network_skill_or_output(
     ])
 
     assert rc == 2
-    assert not out.exists()
+    _assert_only_prepared_taskbooks(out)
     terminal = capsys.readouterr()
     assert "performance 尚未开放" in terminal.err
 
@@ -2049,7 +2062,9 @@ def forward(x, delta):
     assert all("return np.multiply(x, delta)" in prompt for prompt in prompts)
     assert all("external operator implementation repository" in prompt for prompt in prompts)
     assert all("Project-wide invariants (mandatory)" in prompt for prompt in prompts)
-    assert all("Admitted dtypes are exactly: float32" in prompt for prompt in prompts)
+    assert all("Declared GapSpec dtype rules (unresolved markers are NOT dtypes): float32" in prompt for prompt in prompts)
+    assert all("This generation targets float32 tensor inputs only" in prompt for prompt in prompts)
+    assert all("Admitted dtypes are exactly: runtime_profile_required" not in prompt for prompt in prompts)
     test_prompt = next(prompt for prompt in prompts if "tests/test_scale_delta.py" in prompt)
     assert "Do not import `asnumpy` at module scope" in test_prompt
 
@@ -2726,7 +2741,7 @@ def test_complete_gaps_llm_requires_official_receipt_before_model_skill_or_outpu
     assert result == 3
     assert "--official-resolution-report" in captured.err
     assert "actual_remote_generation_call=no" in captured.err
-    assert not output.exists()
+    _assert_only_prepared_taskbooks(output)
 
 
 def test_complete_gaps_cli_reports_fresh_and_reused_actions_without_reloading_config(
@@ -2917,7 +2932,7 @@ def test_complete_gaps_llm_gate_failure_prevents_skill_read_and_generation(
     assert result == 4
     assert "生成门禁 1/2] fail" in captured.err
     assert "未读取 Skill" in captured.err
-    assert not (tmp_path / "gate-one-fail").exists()
+    _assert_only_prepared_taskbooks((tmp_path / "gate-one-fail"))
 
 
 @pytest.mark.parametrize(
@@ -2968,7 +2983,7 @@ def test_complete_gaps_generic_configuration_reaches_readiness_before_skill(
     assert result == 4
     assert calls == ["readiness"]
     assert "HTTP status 503" in captured.err
-    assert not (tmp_path / "non-glm-cli").exists()
+    _assert_only_prepared_taskbooks((tmp_path / "non-glm-cli"))
 
 
 def test_complete_gaps_skill_gate_failure_prevents_operator_generation(
@@ -3007,7 +3022,7 @@ def test_complete_gaps_skill_gate_failure_prevents_operator_generation(
     assert calls == [1]
     assert "生成门禁 2/2] fail" in captured.err
     assert "actual_remote_generation_call=no" in captured.err
-    assert not (tmp_path / "gate-two-fail").exists()
+    _assert_only_prepared_taskbooks((tmp_path / "gate-two-fail"))
 
 
 def test_complete_gaps_cli_skips_remote_gates_when_there_is_no_gap(

@@ -445,6 +445,25 @@ class OverlayRuntimeConfig:
             raise ValueError("trusted_producers must be a non-empty tuple")
 
 
+@dataclass(frozen=True)
+class BaselineApiRuntimeConfig:
+    """Explicit certificate for unchanged baseline APIs in an integrated wheel.
+
+    This is an API/profile admission, never a whole-runtime identity audit.
+    It is composed only after the configured official overlay passes its own
+    unchanged base-manifest and runtime checks.
+    """
+
+    certificate_path: str
+    evidence_root: str
+
+    def __post_init__(self):
+        for name in ("certificate_path", "evidence_root"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value:
+                raise ValueError(name + " must be non-empty text")
+
+
 def _canonical_capability_key(value):
     """Return one safe internal key without a source namespace."""
 
@@ -1830,6 +1849,7 @@ class NpuBackend(ExecutionBackend):
         module=None,
         *,
         overlay_config=None,
+        baseline_api_config=None,
         tensor_profile_extractor=None,
     ):
         # Injection keeps capability tests independent of CANN/NPU availability.
@@ -1839,6 +1859,12 @@ class NpuBackend(ExecutionBackend):
         ):
             raise TypeError("overlay_config must be OverlayRuntimeConfig")
         self._overlay_config = overlay_config
+        if baseline_api_config is not None:
+            if not isinstance(baseline_api_config, BaselineApiRuntimeConfig):
+                raise TypeError("baseline_api_config must be BaselineApiRuntimeConfig")
+            if overlay_config is None:
+                raise ValueError("baseline API admission requires an explicit official overlay")
+        self._baseline_api_config = baseline_api_config
         if tensor_profile_extractor is not None and not callable(
             tensor_profile_extractor
         ):
@@ -2160,22 +2186,34 @@ class NpuBackend(ExecutionBackend):
         config = self._overlay_config
         overlay = load_overlay(config.overlay_path)
         overlay_names = tuple(entry.registry_key for entry in overlay.entries)
+        baseline = None
+        baseline_names = ()
+        if self._baseline_api_config is not None:
+            if not is_official_overlay(overlay):
+                raise ValueError("baseline API admission requires an official qualification overlay")
+            from numpilot.baseline_api_qualification import load_baseline_api_certificate
+
+            baseline = load_baseline_api_certificate(self._baseline_api_config.certificate_path)
+            baseline_names = tuple(entry.registry_key for entry in baseline.entries)
+            if set(baseline_names) & set(overlay_names):
+                raise ValueError("baseline and official overlay operator ownership overlaps")
 
         requested = (
-            set(SUPPORTED_OPS) | set(overlay_names)
+            set(SUPPORTED_OPS) | set(overlay_names) | set(baseline_names)
             if required_ops is None
             else {str(name) for name in required_ops}
         )
         # Availability, version, module identity and environment must all come
         # from one snapshot.  A second lazy lookup here would create a TOCTOU
         # window in which admitted evidence could overwrite a drifted runtime.
-        snapshot_ops = set(requested) | set(overlay_names)
+        snapshot_ops = set(requested) | set(overlay_names) | set(baseline_names)
+        snapshot_targets = {} if runtime_targets is not None else None
         if runtime_targets is None:
             snapshot = self._raw_capability_manifest(snapshot_ops)
         else:
             snapshot = self._raw_capability_manifest(
                 snapshot_ops,
-                runtime_targets=runtime_targets,
+                runtime_targets=snapshot_targets,
             )
 
         # The overlay identity is deliberately based only on its own entries.
@@ -2217,13 +2255,10 @@ class NpuBackend(ExecutionBackend):
             current_identity=runtime_identity if official else None,
         )
 
-        operators = {
-            name: snapshot.operators[name]
-            for name in requested
-        }
-        for name in set(requested) & set(overlay_names):
+        operators = dict(snapshot.operators)
+        for name in overlay_names:
             operators[name] = admitted.operators[name]
-        return CapabilityManifest(
+        combined = CapabilityManifest(
             backend=snapshot.backend,
             backend_version=snapshot.backend_version,
             operators=operators,
@@ -2231,6 +2266,32 @@ class NpuBackend(ExecutionBackend):
             schema_version=snapshot.schema_version,
             audit_id=admitted.audit_id,
         )
+        if baseline is not None:
+            from numpilot.baseline_api_qualification import apply_baseline_api_certificate
+
+            combined = apply_baseline_api_certificate(
+                combined, baseline, evidence_root=self._baseline_api_config.evidence_root,
+                current_identity=runtime_identity,
+            )
+        result = CapabilityManifest(
+            backend=combined.backend,
+            backend_version=combined.backend_version,
+            operators={name: combined.operators[name] for name in requested},
+            environment=dict(combined.environment),
+            schema_version=combined.schema_version,
+            audit_id=combined.audit_id,
+        )
+        if runtime_targets is not None:
+            # Evidence validation needs the complete overlay/certificate union,
+            # but this execution may use only one of those APIs. Publish only
+            # requested callables after all validation succeeds, retaining the
+            # exact objects from the single raw snapshot. The runtime guard's
+            # strict key-set and callable-identity checks remain unchanged.
+            runtime_targets.update({
+                name: snapshot_targets[name]
+                for name in requested if name in snapshot_targets
+            })
+        return result
 
     def capability_manifest(self, required_ops=None, *, runtime_identity=None):
         return self._capability_manifest(
@@ -2296,6 +2357,30 @@ class NpuBackend(ExecutionBackend):
             runtime_identity_sha256=identity.identity_sha256,
             entries=entries,
         )
+
+    def qualified_baseline_api_admission(self, runtime_identity=None):
+        """Describe the independently validated baseline API certificate."""
+        config = self._baseline_api_config
+        if config is None:
+            return None
+        from numpilot.baseline_api_qualification import load_baseline_api_certificate
+
+        certificate = load_baseline_api_certificate(config.certificate_path)
+        identity = runtime_identity if runtime_identity is not None else self.runtime_identity()
+        names = tuple(sorted(entry.registry_key for entry in certificate.entries))
+        # Reuse the atomic raw/official/baseline composition; never trust a
+        # certificate descriptor without validating its complete evidence.
+        self._capability_manifest(names, runtime_identity=identity)
+        digest = _sha256_private_regular_file(Path(config.certificate_path))
+        if not _sha256_text(digest):
+            raise ValueError("baseline API certificate is unreadable or unsafe")
+        return {
+            "qualification_id": certificate.qualification_id,
+            "certificate_sha256": digest,
+            "runtime_identity_sha256": identity.identity_sha256,
+            "operators": list(names),
+            "qualified_names": sorted(entry.qualified_api for entry in certificate.entries),
+        }
 
     def prepare_profile_guard(self, required_ops):
         """Prepare a runtime session that guards every scoped call pre-dispatch."""

@@ -36,3 +36,12 @@ NumPilot 的 150 个 benchmark 样例共享一个 **benchmark run 根目录**。
 `operator_id` 同时绑定 AsNumpy baseline、API catalog、CANNBot bundle 和 runtime identity 哈希；任一环境哈希变化都会产生新的算子键，旧候选不会被误复用。benchmark 每个样例的 `operator-ref.json` 只引用 `operator-artifacts/samples/` 中的绑定；direct、rejected、unsupported 样例写 `not_applicable`/`rejected`/`unsupported`，不伪造候选。
 
 保留策略采用 mark-and-sweep：仍被 150 例 summary、qualification overlay 或用户 pin 引用的对象永不删除；未引用的 failed/blocked candidate 默认 7 天、未引用 qualification/build 默认 30 天。GC 首先只生成 dry-run 清单，二次确认引用关系后才允许删除，并写入独立 GC receipt；benchmark receipt 永不删除。并行写入使用 store lock，run root 和 artifact 子目录要求 0700，拒绝符号链接。
+
+
+## 官方范围限定的样例资格
+
+benchmark可在global runtime为audit_required时存储单个样例的正式scope资格。
+store要求完整source/generated/profile/runtime/overlay/guard/数值证据并独立重验，
+不能只传strict=true或scope标签。性能另验，不能随数值或scope资格自动升格。
+原始候选/官方qualification包仍独立归档；样例回执只引用经过校验的链。
+复现与跨机恢复边界见[范围限定benchmark](scoped-benchmark.zh-CN.md)。

@@ -40,6 +40,16 @@ are used for understanding, planning, code migration, gap filling, diagnosis, an
 Unsupported or ambiguous programs stop with a stable failure code instead of being silently rewritten or
 routed to CPU.
 
+## Visible progress and implementation requirements
+
+The CLI shows the active role, activity, execution mode, elapsed time and blocked state.
+Deterministic validation is shown separately. Before generation, each gap retains a
+`GAP_TASKBOOK.md` and `GAP_TASKBOOK.json` containing source bindings, call contracts,
+unknowns, integration dependencies and acceptance requirements. Developers or external
+coding agents can use the same taskbook when a model fails. The current candidate scope
+focuses on float32 inputs; unknown profiles and generated code are never reported as
+qualified capabilities. See the [taskbook and progress guide](docs/gap-taskbook.zh-CN.md).
+
 ## Target architecture
 
 <p align="center">

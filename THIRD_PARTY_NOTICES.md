@@ -52,3 +52,11 @@ resolver、来源/哈希收据和一份 AsNumpy 集成参考 patch，不重新�
 逐资产来源、处理方式、哈希与待核权状态见
 [`docs/assets/brand/README.md`](docs/assets/brand/README.md)。截图或商标的公开再分发权不能从本项目
 Apache-2.0 许可证推导；正式公开前必须由仓库所有者确认或替换为获准资产。
+
+
+## GPU4PySCF 科学内核示例
+
+`examples/scientific/gpu4pyscf_sandwich/` 的 NumPy 示例改编自 PySCF Developers 的
+GPU4PySCF `sandwich_dot`（commit `5fde981316127cd3506d9d3c7d5633647fcc4508`），遵循 Apache-2.0。
+保留的原函数、版权/许可全文、来源与修改范围见该目录 `source/` 和 README；
+仅演示实数二维 float32 基变换，不包含完整 GPU4PySCF 应用。

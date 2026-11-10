@@ -1,0 +1,18 @@
+def sandwich_dot(a, c, out=None):
+    '''Performs c.T.dot(a).dot(c)'''
+    a = cupy.asarray(a)
+    c = cupy.asarray(c)
+    a_ndim = a.ndim
+    if a_ndim == 2:
+        a = a[None]
+    counts = a.shape[0]
+    m = c.shape[1]
+    dtype = np.result_type(a, c)
+    out = cupy.empty((counts, m, m), dtype=dtype)
+    tmp = None
+    for i in range(counts):
+        tmp = cupy.dot(c.conj().T, a[i], out=tmp)
+        cupy.dot(tmp, c, out=out[i])
+    if a_ndim == 2:
+        out = out[0]
+    return out

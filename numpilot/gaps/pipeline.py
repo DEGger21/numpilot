@@ -32,6 +32,7 @@ import tempfile
 from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 
 from numpilot.agents.analysis import AnalysisAgent
+from numpilot.gap_requirements import build_gap_taskbook, persist_gap_taskbook
 from numpilot.gaps.models import GapSpec, OperatorDraft
 from numpilot.operator_artifacts import OperatorArtifactStore, OperatorKey
 from numpilot.gaps.provider import DraftGenerationError, LlmDraftProvider
@@ -532,6 +533,7 @@ class GapCompletionResult:
     # multi-gap run can finish the independent gaps and leave a durable report.
     generation_failures: Tuple[Mapping[str, Any], ...] = ()
     continue_on_error: bool = False
+    taskbooks: Tuple[Mapping[str, Any], ...] = ()
 
     @property
     def generated_count(self) -> int:
@@ -574,6 +576,7 @@ class GapCompletionResult:
                 dict(item) for item in self.generation_failures
             ],
             "continue_on_error": self.continue_on_error,
+            "taskbooks": [dict(item) for item in self.taskbooks],
         }
         if self.skill_bundle is not None:
             result["skill_bundle"] = dict(self.skill_bundle)
@@ -652,6 +655,33 @@ def prepare_gap_completion(
         specs=tuple(specs),
         blocked=tuple(blocked),
     )
+
+
+
+def persist_preparation_taskbooks(preparation: GapPreparation, out_dir: str) -> Tuple[Dict[str, Any], ...]:
+    """Save DIY handoffs before model readiness/configuration checks.
+
+    This helper is pure local work. CLI/workflow callers can invoke it before
+    constructing a provider; the pipeline repeats it idempotently on entry.
+    """
+    if not isinstance(preparation, GapPreparation):
+        raise TypeError("taskbook preparation must be GapPreparation")
+    if not preparation.specs:
+        return ()
+    refs = []
+    root = Path(out_dir).absolute()
+    for parent in (root, *root.parents):
+        if parent.is_symlink():
+            raise GapCompletionError("taskbook output is not a real directory: %s" % parent)
+    _ensure_directory(root, private=True)
+    try:
+        for spec in preparation.specs:
+            workspace = Path(out_dir) / "gaps" / spec.gap_id
+            taskbook = build_gap_taskbook(spec, source=preparation.source)
+            refs.append(persist_gap_taskbook(workspace, taskbook))
+    except (OSError, ValueError) as exc:
+        raise GapCompletionError("cannot persist generation taskbook: %s" % exc) from exc
+    return tuple(refs)
 
 
 def _atomic_write(path: Path, payload: bytes, *, replace: bool) -> None:
@@ -842,6 +872,9 @@ class GapCompletionPipeline:
         blocked = preparation.blocked
         unsupported = preparation.unsupported
         output = Path(out_dir)
+        # Materialize every gap before the first provider call, including gaps
+        # after one that may fail. These are usable manual/agent handoffs.
+        taskbooks = persist_preparation_taskbooks(preparation, out_dir)
         _ensure_directory(output, private=True)
         gaps_dir = output / "gaps"
         _ensure_directory(gaps_dir, private=True)
@@ -863,6 +896,7 @@ class GapCompletionPipeline:
                 replace=False,
             )
             try:
+                taskbook = build_gap_taskbook(spec, source=source)
                 semantic_contract = extract_semantic_contract(source, spec)
                 request = render_generation_request(
                     spec,
@@ -870,6 +904,7 @@ class GapCompletionPipeline:
                     asnumpy_reference=self.asnumpy_reference,
                     skill_bundle=self.skill_bundle,
                     semantic_contract=semantic_contract,
+                    taskbook=taskbook,
                 ).encode("utf-8")
             except ValueError as exc:
                 raise GapCompletionError(
@@ -903,6 +938,11 @@ class GapCompletionPipeline:
             else:
                 _atomic_write(request_path, request, replace=False)
             if self.provider is not None:
+                if not taskbook["generation"]["allowed"]:
+                    raise GapCompletionError(
+                        "float32 generation scope conflicts with explicit dtype; "
+                        "see %s/GAP_TASKBOOK.json" % workspace
+                    )
                 try:
                     draft = self.provider.generate(
                         spec,
@@ -1003,6 +1043,7 @@ class GapCompletionPipeline:
             ),
             generation_failures=tuple(generation_failures),
             continue_on_error=continue_on_error,
+            taskbooks=taskbooks,
         )
         _write_json(output / "gap-report.json", result.to_dict(), replace=True)
         return result

@@ -91,6 +91,7 @@ from numpilot.asnumpy_skill import (                         # noqa: E402
 from numpilot.bench import run_cpu_baseline, run_npu_compare  # noqa: E402
 from numpilot.capabilities import load_analysis_profile_set    # noqa: E402
 from numpilot.cli_ui import (                                 # noqa: E402
+    AgentProgress,
     flow_print,
     render_doctor,
     render_home,
@@ -701,7 +702,18 @@ def _render_qualified_analysis(payload, output_path=None):
 
 
 def _cmd_analyze(args):
+    with AgentProgress(enabled=not args.json) as progress:
+        code = _cmd_analyze_with_progress(args, progress)
+        if code == 1:
+            progress.warning()
+        elif code:
+            progress.error()
+        return code
+
+
+def _cmd_analyze_with_progress(args, progress):
     """Run the inert, runtime-qualified admission analysis for one script."""
+    progress.emit("analyzer", "running", "读取源码与运行时资格，分析真实 API 调用契约")
 
     from numpilot.backends.npu import NpuBackend
     from numpilot.qualified_analysis import (
@@ -711,20 +723,15 @@ def _cmd_analyze(args):
 
     try:
         source, source_path = _read_analyze_source(args.file)
-        with terminal_status(
-            "读取当前 AsNumpy / NPU 资格身份",
-            enabled=not args.json,
-        ) as progress:
-            try:
-                runtime_identity = NpuBackend().runtime_identity()
-            except Exception:
-                # A probe failure is an audit-required fact, not a reason to execute
-                # the source or silently switch to a less strict runtime.
-                runtime_identity = {
-                    "status": "audit_required",
-                    "identity_sha256": None,
-                }
-                progress.warning()
+        try:
+            runtime_identity = NpuBackend().runtime_identity()
+        except Exception:
+            # Identity failure is an audit-required fact; source stays inert.
+            runtime_identity = {
+                "status": "audit_required",
+                "identity_sha256": None,
+            }
+            progress.warning()
         analysis = analyze_qualified_script(
             source,
             source_path,
@@ -745,6 +752,9 @@ def _cmd_analyze(args):
         print("[analyze] %s" % exc, file=sys.stderr)
         return 2
 
+    progress.emit("analyzer", "completed" if payload["decision"] == "DIRECT" else "blocked",
+                  "静态分析完成，可进入迁移" if payload["decision"] == "DIRECT" else
+                  "静态分析完成，存在缺口或资格边界；请查看分析回执")
     if args.json:
         print(json.dumps(
             payload,
@@ -984,11 +994,7 @@ def _cmd_run(args):
         return 2
 
     try:
-        with terminal_status(
-            "执行一键流水线：分析 → 模型迁移 → 数值验证"
-            + (" → strict-NPU 性能" if args.benchmark else ""),
-            enabled=not args.json,
-        ) as progress:
+        with AgentProgress(enabled=not args.json) as progress:
             result = run_ordinary_workflow(
                 args.file,
                 out_dir,
@@ -1004,6 +1010,7 @@ def _cmd_run(args):
                 skip_env_check=bool(args.skip_env_check),
                 timeout_seconds=args.timeout,
                 python_executable=args.python,
+                on_event=progress.on_event,
             )
             if result["status"] != "passed":
                 progress.error()
@@ -2935,9 +2942,7 @@ def _cmd_interactive_migrate(args):
             + (" → strict-NPU benchmark" if args.benchmark else ""),
             tone="phase",
         )
-        stop = threading.Event()
-        heartbeat = _interactive_heartbeat(stop, "NumPilot 迁移/验证流水线", interval=8.0)
-        try:
+        with AgentProgress() as progress:
             result = run_ordinary_workflow(
                 workflow_snapshot.path,
                 workflow_out,
@@ -2953,10 +2958,10 @@ def _cmd_interactive_migrate(args):
                 skip_env_check=bool(args.skip_env_check),
                 timeout_seconds=args.timeout,
                 python_executable=args.python,
+                on_event=progress.on_event,
             )
-        finally:
-            stop.set()
-            heartbeat.join(timeout=1.0)
+            if result.get("status") != "passed":
+                progress.error()
     except WorkflowError as exc:
         flow_print(
             "[迁移流水线] %s: %s" % (exc.code, exc),
@@ -3616,7 +3621,7 @@ def _resolve_operator_goal(args):
     if goal is None and sys.stdin.isatty() and sys.stdout.isatty():
         print("[算子目标] 请选择补全目标：")
         print("  1) 精度正确（推荐）：通过编译、真机运行和数值精度后即可使用")
-        print("  2) 高性能（尚未开放）：当前会安全拒绝且不会联网或写输出")
+        print("  2) 高性能（尚未开放）：当前仅保留任务书，不联网或生成代码")
         answer = input("输入 1 或 2 [默认 1]: ").strip()
         goal = "performance" if answer == "2" else "accuracy"
     elif goal is None:
@@ -3628,7 +3633,7 @@ def _resolve_operator_goal(args):
     if goal == "performance":
         print(
             "[算子目标] performance 尚未开放：当前版本不会启动模型、"
-            "读取 Skill 或写入输出。",
+            "读取 Skill 或生成代码；仅保留已准备的任务书。",
             file=sys.stderr,
         )
     else:
@@ -4408,6 +4413,7 @@ def _cmd_complete_gaps(args):
         GapCompletionPipeline,
         load_script_gap_request,
         prepare_gap_completion,
+        persist_preparation_taskbooks,
     )
     from numpilot.gaps.provider import (
         DraftGenerationError,
@@ -4449,6 +4455,20 @@ def _cmd_complete_gaps(args):
             file=sys.stderr,
         )
         return 2
+
+    try:
+        taskbook_refs = persist_preparation_taskbooks(preparation, args.out)
+    except (OSError, ValueError, TypeError):
+        print("[任务书] 本地任务书无法安全保存；尚未调用模型", file=sys.stderr)
+        return 2
+    for taskbook_ref in taskbook_refs:
+        print("[任务书] %s" % taskbook_ref["markdown"]["path"], file=sys.stderr)
+    if args.provider in {"llm", "injected"}:
+        from numpilot.gap_requirements import build_gap_taskbook
+        if any(not build_gap_taskbook(spec, source=preparation.source)["generation"]["allowed"]
+               for spec in preparation.specs):
+            print("[任务书] 输入不符合首期 float32 范围；已保存要求，尚未调用模型", file=sys.stderr)
+            return 2
 
     llm_enabled = args.provider == "llm" and bool(preparation.specs)
     injected_enabled = args.provider == "injected" and bool(preparation.specs)
@@ -5354,6 +5374,7 @@ def _cmd_validate_asnumpy_adapter_handoff(args):
             expected_paths=handoff["expected_overlay_paths"],
             adapter_context_plan=plan,
             skill_files=tuple(handoff["skill_files"]),
+            gap_taskbook=handoff.get("gap_taskbook"),
         )
     except DraftRepairError as exc:
         print("[Codex交接] VALIDATE 失败：%s" % exc, file=sys.stderr)
@@ -5425,12 +5446,22 @@ def _cmd_validate_asnumpy_adapter_handoff(args):
     return 0
 
 def _cmd_generate_asnumpy_adapter(args):
+    with AgentProgress(enabled=not getattr(args, "json", False)) as progress:
+        code = _cmd_generate_asnumpy_adapter_with_progress(args, progress)
+        if code:
+            progress.error()
+        return code
+
+
+def _cmd_generate_asnumpy_adapter_with_progress(args, progress):
     """Generate an architecture-aware AsNumpy overlay with the remote model."""
+    progress.emit("gap_filler", "running", "校验候选来源、接入契约与 AsNumpy 源码上下文")
 
     from numpilot.asnumpy_adapter_context import (
         plan_asnumpy_adapter_context,
         plan_official_aclnn_adapter_context,
     )
+    from numpilot.gap_requirements import build_gap_taskbook, persist_gap_taskbook
     from numpilot.gaps.models import GapSpec
     from numpilot.gaps.official_adapter import (
         OfficialAdapterInputError,
@@ -5788,6 +5819,14 @@ def _cmd_generate_asnumpy_adapter(args):
         validated_context_manifest = _validate_adapter_context_plan(
             context_plan.manifest()
         )
+        taskbook = build_gap_taskbook(spec)
+        taskbook_ref = persist_gap_taskbook(
+            out_root.with_name(out_root.name + "-taskbook"), taskbook
+        )
+        print("[任务书] %s" % taskbook_ref["markdown"]["path"], file=sys.stderr)
+        if not taskbook["generation"]["allowed"]:
+            progress.emit("gap_filler", "blocked", "输入不符合首期 float32 范围；任务书已保存，尚未调用模型")
+            return 2
         if getattr(args, "handoff_only", False):
             bundle = load_asnumpy_integration_skill(
                 Path(args.asnumpy_skill_root) if args.asnumpy_skill_root else None
@@ -5801,7 +5840,9 @@ def _cmd_generate_asnumpy_adapter(args):
                 adapter_context_plan=validated_context_manifest,
                 skill_files=tuple(adapter_skill_files),
                 skill_bundle_sha256=bundle.bundle_sha256,
+                gap_taskbook=taskbook,
             )
+            progress.emit("gap_filler", "blocked", "交接包已准备；等待外部 Codex 写入响应，未调用内置模型", execution_mode="external")
             print(
                 "[Codex交接] PREPARE → WAITING_FOR_AGENT · handoff=%s · "
                 "paths=%d · plan_sha256=%s"
@@ -5840,6 +5881,7 @@ def _cmd_generate_asnumpy_adapter(args):
         return 4
     if _llm_proxy_for_remote_call("接入门禁 1/2") is None:
         return 4
+    progress.emit("gap_filler", "running", "连接已配置模型并验证响应；此步仅进行连接测试", execution_mode="llm")
     try:
         llm_gate = _run_llm_readiness_gate(
             configuration_status, require_marker=True
@@ -5864,6 +5906,7 @@ def _cmd_generate_asnumpy_adapter(args):
         )
     )
 
+    progress.emit("gap_filler", "running", "连接测试通过；读取与校验 AsNumpy 接入 Skill")
     bundle = load_asnumpy_integration_skill(
         Path(args.asnumpy_skill_root) if args.asnumpy_skill_root else None
     )
@@ -5907,15 +5950,17 @@ def _cmd_generate_asnumpy_adapter(args):
             skill_bundle=bundle,
             staged_direct=True,
         )
-        report = provider.generate_asnumpy_adapter_candidate(
-            staging_root,
-            operator_artifact=artifact_manifest,
-            adapter_contract=adapter_contract,
-            asnumpy_context=context,
-            expected_paths=context_plan.expected_overlay_paths,
-            adapter_context_plan=validated_context_manifest,
-            skill_files=adapter_skill_files,
-        )
+        with progress.operation("gap_filler", "依据接入 Skill 生成 AsNumpy overlay；等待模型返回文件", execution_mode="llm"):
+            report = provider.generate_asnumpy_adapter_candidate(
+                staging_root,
+                operator_artifact=artifact_manifest,
+                adapter_contract=adapter_contract,
+                asnumpy_context=context,
+                expected_paths=context_plan.expected_overlay_paths,
+                adapter_context_plan=validated_context_manifest,
+                skill_files=adapter_skill_files,
+                gap_taskbook=taskbook,
+            )
         _publish_output_stage(staging_root, out_root, "AsNumpy adapter")
         staging_root = None
         if args.candidate:
@@ -5996,6 +6041,7 @@ def _cmd_generate_asnumpy_adapter(args):
         if staging_root is not None:
             shutil.rmtree(staging_root, ignore_errors=True)
 
+    progress.emit("gap_filler", "completed", "接入候选已生成；尚未构建、验证或激活", execution_mode="llm")
     print(
         "[AsNumpy 接入生成] status=%s adapter_artifact_id=%s out=%s"
         % (report["status"], report["adapter_artifact_id"], out_root / "candidate")
@@ -6267,6 +6313,16 @@ def _preflight(backend_name, skip):
 
 
 def _cmd_migrate(args):
+    with AgentProgress(enabled=not getattr(args, "json", False)) as progress:
+        code = _cmd_migrate_with_progress(args, progress)
+        if code == 1:
+            progress.warning()
+        elif code:
+            progress.error()
+        return code
+
+
+def _cmd_migrate_with_progress(args, progress):
     from numpilot.script_migration import (
         ScriptMigrationError,
         build_gap_request,
@@ -6320,6 +6376,7 @@ def _cmd_migrate(args):
                 prefix=_net_name(args.file) + "-",
                 dir=str(default_root),
             )
+        progress.emit("analyzer", "running", "解析普通 NumPy 脚本与实际运行时能力")
         qualified_analysis = None
         overlay_admission = None
         overlay_admission_provider = None
@@ -6362,21 +6419,27 @@ def _cmd_migrate(args):
             str(Path(args.file).absolute()),
             qualified_analysis=qualified_analysis,
         )
+        progress.emit("analyzer", "completed", "源代码扫描与调用契约提取完成")
+        progress.emit("planner", "running", "规划设备边界并核对 API 资格")
         analysis = classify_script(
             scan,
             backend,
             qualified_analysis=qualified_analysis,
         )
 
+        progress.emit("planner", "completed", "迁移范围与资格判定完成")
+        progress.emit("gap_filler", "skipped", "此迁移命令不生成算子；实际缺口通过独立接入流程处理")
+
         def write_current_script_result(*, status, fallback_accepted, **values):
-            return write_script_artifacts(
-                out_dir,
-                analysis,
-                status=status,
-                fallback_accepted=fallback_accepted,
-                qualified_analysis=qualified_analysis,
-                **values,
-            )
+            with progress.operation("reporter", "写入迁移工件与可复查报告"):
+                return write_script_artifacts(
+                    out_dir,
+                    analysis,
+                    status=status,
+                    fallback_accepted=fallback_accepted,
+                    qualified_analysis=qualified_analysis,
+                    **values,
+                )
 
         print(
             "── NumPilot 普通脚本迁移 · %s ──" % _net_name(args.file)
@@ -6675,9 +6738,9 @@ def _cmd_migrate(args):
                     configuration_status, "response_model_aliases", ()
                 ),
             }
-            with terminal_status(
-                "调用已配置模型 %s 生成迁移代码"
-                % (configuration_status.model or "unknown"),
+            with progress.operation(
+                "code_migrator", "调用已配置模型生成迁移代码并审计返回工件",
+                execution_mode="llm",
             ):
                 if qualified_analysis is None:
                     artifact = generate_script_with_configured_model(
@@ -6699,6 +6762,7 @@ def _cmd_migrate(args):
                     )
         except ScriptMigrationError:
             raise
+        progress.emit(None, "completed", "生成代码的静态 AST 审计通过；尚未执行数值验证", component="verification")
         if fallback_accepted:
             status = "migrated_with_fallback"
         elif analysis.scoped:
@@ -6746,7 +6810,7 @@ def _cmd_migrate(args):
         threshold=args.threshold,
         analysis_profiles=analysis_profiles,
     )
-    res = orch.run(args.file, out_dir=args.out)
+    res = orch.run(args.file, out_dir=args.out, on_event=progress.on_event)
 
     print(_render_terminal(res))
     try:
@@ -8418,7 +8482,13 @@ def main(argv=None):
         if args.cmd == "doctor":
             return _cmd_doctor(args)
         if args.cmd == "bench-cpu":
-            return run_cpu_baseline(args.file, args.out, parse_cpu_threads(args.cpu_threads))
+            # Only boundary events: no live refresh thread during measurement.
+            with AgentProgress(dynamic=False) as progress:
+                with progress.operation(None, "CPU 基线测量", component="verification") as operation:
+                    code = run_cpu_baseline(args.file, args.out, parse_cpu_threads(args.cpu_threads))
+                    operation.finish("completed" if code == 0 else "failed",
+                                     "CPU 基线流程结束，请以性能回执为准")
+                    return code
         if args.cmd == "bench-npu":
             if args.engine == "llm":
                 if _load_llm_or_report() is None:
@@ -8427,11 +8497,18 @@ def main(argv=None):
                     return 4
             backend, analysis_profiles = _qualified_runtime_inputs(args, "npu")
             _preflight("npu", args.skip_env_check)
-            return run_npu_compare(args.file, args.out, engine=_make_engine(args.engine),
-                                   threshold=args.threshold,
-                                   allow_cpu_fallback=args.allow_cpu_fallback,
-                                   backend=backend,
-                                   analysis_profiles=analysis_profiles)
+            # This command may migrate before it measures. Describe the whole
+            # system step without claiming six model calls or adding timer hooks.
+            with AgentProgress(dynamic=False) as progress:
+                with progress.operation(None, "严格 NPU 性能流程（含所选迁移引擎）", component="workflow") as operation:
+                    code = run_npu_compare(args.file, args.out, engine=_make_engine(args.engine),
+                                           threshold=args.threshold,
+                                           allow_cpu_fallback=args.allow_cpu_fallback,
+                                           backend=backend,
+                                           analysis_profiles=analysis_profiles)
+                    operation.finish("completed" if code == 0 else "blocked" if code == 1 else "failed",
+                                     "NPU 性能流程结束，请以资格与性能回执为准")
+                    return code
         return _cmd_migrate(args)
     except LlmError as e:
         print(f"\n[LLM] 迁移终止:{e}", file=sys.stderr)

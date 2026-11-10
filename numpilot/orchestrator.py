@@ -22,7 +22,7 @@ import os
 
 from numpilot.agents.analysis import AnalysisAgent
 from numpilot.agents.diagnostics import DiagnosticsAgent
-from numpilot.agents.gap_filler import GapFillerAgent
+from numpilot.agents.gap_filler import GapFillerAgent, collect_gap_inventory
 from numpilot.agents.migration import MigrationAgent
 from numpilot.agents.planner import ROUTE_FILL_GAPS, PlannerAgent
 from numpilot.agents.verification import VerificationAgent
@@ -31,6 +31,7 @@ from numpilot.engines.ast_rewrite import AstRewriteEngine
 from numpilot.engines.llm import LlmEngine
 from numpilot.paths import default_benchmark_dir
 from numpilot.program_ir import build_program_ir
+from numpilot.progress import ProgressEmitter, notify_observer
 from numpilot.roles import Role, RoleRecord, RoleStage, records_to_dicts
 
 MAX_REPAIR_ITERATIONS = 3
@@ -150,10 +151,10 @@ class Orchestrator:
         self.threshold = threshold
         self.analysis_profiles = analysis_profiles
 
-    def run(self, source_path: str, out_dir=None) -> dict:
+    def run(self, source_path: str, out_dir=None, *, on_record=None, on_event=None) -> dict:
         with open(source_path, encoding="utf-8") as f:
             source = f.read()
-        return self.run_source(source, source_path, out_dir)
+        return self.run_source(source, source_path, out_dir, on_record=on_record, on_event=on_event)
 
     def run_source(
         self,
@@ -163,12 +164,16 @@ class Orchestrator:
         on_record=None,
         verification_source=None,
         strict_input_types=False,
+        on_event=None,
     ) -> dict:
         """Run the six-role mainline on in-memory source.
 
         ``on_record`` is an optional observer called with each
         :class:`~numpilot.roles.RoleRecord` as soon as it is produced; the
-        wizard uses it for progress, the CLI ignores it.
+        existing final role records remain unchanged. ``on_event`` observes
+        immutable lifecycle events before and after actual operations, including
+        the deterministic verification gate (which is not a seventh role).
+        Observer display failures do not change migration or validation results.
 
         ``verification_source`` separates the program used for analysis and
         migration from the NumPy oracle used for numerical verification.  The
@@ -180,11 +185,12 @@ class Orchestrator:
             source if verification_source is None else verification_source
         )
         records = []
+        progress = ProgressEmitter(on_event)
+        engine_mode = "llm" if getattr(self.engine, "name", None) == "llm" else "static"
 
         def emit(record):
             records.append(record)
-            if on_record is not None:
-                on_record(record)
+            notify_observer(on_record, record)
 
         # ---------------------------------------------------------- Understand
         profile_resolver = (
@@ -192,15 +198,27 @@ class Orchestrator:
             if callable(getattr(self.backend, "resolve_profile_capability", None))
             else None
         )
-        analysis = AnalysisAgent(profile_resolver).analyze(
-            source,
-            source_path,
-            profiles=self.analysis_profiles,
-            strict_input_types=strict_input_types,
-        )
-        program_ir = build_program_ir(source, source_path)
-        gap_plan = GapFillerAgent().plan(analysis)
-        plan = PlannerAgent(self.threshold).plan(analysis, gap_plan)
+        with progress.operation(Role.ANALYZER, "分析源码与 API 调用契约") as activity:
+            analysis = AnalysisAgent(profile_resolver).analyze(
+                source, source_path, profiles=self.analysis_profiles,
+                strict_input_types=strict_input_types,
+            )
+            program_ir = build_program_ir(source, source_path)
+            gap_inventory = collect_gap_inventory(analysis)
+            activity.finish("completed" if analysis.migratable else "blocked",
+                            "分析完成" if analysis.migratable else "分析完成，存在待处理的 API 缺口")
+        with progress.operation(Role.PLANNER, "制定迁移路线与主机设备边界") as activity:
+            plan = PlannerAgent(self.threshold).plan(analysis, gap_inventory)
+            activity.finish("completed" if plan.direct else "blocked",
+                            "迁移计划已生成" if plan.direct else "计划要求先补全 API 缺口")
+        # Recheck the analysis inventory after planning. This small deterministic
+        # pass is actual Gap Filler work, not a reordered progress notification.
+        with progress.operation(Role.GAP_FILLER, "核对规划任务、缺口清单与可用接入路径") as activity:
+            gap_plan = GapFillerAgent().plan(analysis)
+            if gap_plan != gap_inventory:
+                raise RuntimeError("gap inventory changed after planning")
+            activity.finish("blocked" if gap_plan.blocking else "completed",
+                            "缺口需要补全，当前迁移暂停" if gap_plan.blocking else "缺口路径核对完成")
         emit(_analyzer_record(analysis, program_ir))
         emit(_planner_record(plan))
 
@@ -210,6 +228,9 @@ class Orchestrator:
             # yet, so the mainline stops here instead of rewriting around a
             # gap; a silent substitute would be exactly what the project bans.
             emit(_gap_record(gap_plan))
+            progress.emit(Role.CODE_MIGRATOR, "skipped", "缺口未补全，尚未改写代码", execution_mode=engine_mode)
+            progress.emit(None, "skipped", "尚无可验证的迁移产物")
+            progress.emit(Role.DIAGNOSTICS, "skipped", "缺口已明确，尚未进入运行诊断")
             reporter = RoleRecord(
                 Role.REPORTER,
                 RoleStage.VALIDATE,
@@ -217,7 +238,6 @@ class Orchestrator:
                 "已写出缺口报告" if out_dir else "未落盘（无 out_dir）",
                 {"unsupported": list(analysis.unsupported)},
             )
-            emit(reporter)
             result = {
                 "status": "unsupported",
                 "route": plan.route,
@@ -227,24 +247,55 @@ class Orchestrator:
                 "program_ir": program_ir.to_dict(),
                 "gap_plan": gap_plan.to_dict(),
                 "source_path": source_path,
-                "roles": records_to_dicts(records),
+                "roles": records_to_dicts(records + [reporter]),
                 "diagnosis": None,
             }
-            self._maybe_write(out_dir, result)
+            with progress.operation(Role.REPORTER, "汇总缺口报告与执行记录") as activity:
+                if out_dir:
+                    from numpilot.gap_requirements import build_planning_taskbook, persist_gap_taskbook
+
+                    taskbook = build_planning_taskbook(analysis, gap_plan, source=source)
+                    result["gap_taskbook"] = persist_gap_taskbook(out_dir, taskbook)
+                self._maybe_write(out_dir, result)
+                emit(reporter)
+                activity.finish(message="缺口报告已写入文件" if out_dir else "缺口报告已汇总，未指定输出目录")
             return result
 
         emit(_gap_record(gap_plan))
-        migrator = MigrationAgent(self.engine)
-        verifier = VerificationAgent(self.backend)
-        migration = migrator.migrate(source, plan)
-        report = verifier.verify(
-            oracle_source,
-            migration.migrated_source,
-            measure=False,
-            required_ops=migration.expected_rewrites,
-        )
-        diagnostics = DiagnosticsAgent()
-        diagnosis = diagnostics.diagnose(report)
+        with progress.operation(Role.CODE_MIGRATOR, "生成迁移代码并核对改写完整性", execution_mode=engine_mode) as activity:
+            migrator = MigrationAgent(self.engine)
+            migration = migrator.migrate(source, plan)
+            activity.finish("completed" if migration.rewrite_integrity else "failed",
+                            "迁移代码已生成" if migration.rewrite_integrity else "迁移改写完整性未通过")
+
+        verifier = None
+        diagnostics = None
+
+        def verify_candidate(candidate, attempt):
+            nonlocal verifier
+            with progress.operation(None, "执行输入、数值与能力门禁", attempt=attempt) as activity:
+                if verifier is None:
+                    verifier = VerificationAgent(self.backend)
+                report = verifier.verify(
+                    oracle_source, candidate.migrated_source, measure=False,
+                    required_ops=candidate.expected_rewrites,
+                )
+                activity.finish("completed" if report.status == "pass" else "failed",
+                                "确定性验证通过" if report.status == "pass" else "确定性验证未通过")
+                return report
+
+        def diagnose_report(report, attempt):
+            nonlocal diagnostics
+            with progress.operation(Role.DIAGNOSTICS, "检查验证结果与失败位置", attempt=attempt) as activity:
+                if diagnostics is None:
+                    diagnostics = DiagnosticsAgent()
+                diagnosis = diagnostics.diagnose(report)
+                activity.finish("skipped" if diagnosis is None else "completed",
+                                "验证通过，无需诊断" if diagnosis is None else "诊断完成，已确定后续处理角色")
+                return diagnosis
+
+        report = verify_candidate(migration, 1)
+        diagnosis = diagnose_report(report, 1)
 
         # Bounded repair: only engines that implement ``repair`` can consume a
         # diagnosis; the deterministic AST engine has exactly one attempt.
@@ -257,16 +308,13 @@ class Orchestrator:
             and repair_attempts < MAX_REPAIR_ITERATIONS
         ):
             repair_attempts += 1
-            migration = migrator.repair(
-                source, plan, migration.migrated_source, diagnosis
-            )
-            report = verifier.verify(
-                oracle_source,
-                migration.migrated_source,
-                measure=False,
-                required_ops=migration.expected_rewrites,
-            )
-            diagnosis = diagnostics.diagnose(report)
+            with progress.operation(Role.CODE_MIGRATOR, "根据诊断执行有界代码修复",
+                                    execution_mode=engine_mode, attempt=repair_attempts + 1) as activity:
+                migration = migrator.repair(source, plan, migration.migrated_source, diagnosis)
+                activity.finish("completed" if migration.rewrite_integrity else "failed",
+                                "修复代码已生成，等待重新验证" if migration.rewrite_integrity else "修复改写完整性未通过")
+            report = verify_candidate(migration, repair_attempts + 1)
+            diagnosis = diagnose_report(report, repair_attempts + 1)
 
         emit(_migrator_record(migration, repair_attempts))
 
@@ -288,46 +336,49 @@ class Orchestrator:
                 diagnosis.to_dict(),
             ))
 
-        migrated_path = None
-        if out_dir:
-            os.makedirs(out_dir, exist_ok=True)
-            migrated_path = os.path.join(out_dir, "migrated.py")
-            with open(migrated_path, "w", encoding="utf-8") as f:
-                f.write(migration.migrated_source)
-        evidence = _validation_evidence(report, oracle_source, migration)
-        emit(RoleRecord(
+        reporter = RoleRecord(
             Role.REPORTER,
             RoleStage.VALIDATE,
             "ok",
             "已写出报告、验证证据与迁移产物" if out_dir else "未落盘（无 out_dir）",
             {"status": report.status},
-        ))
+        )
 
-        result = {
-            "status": report.status,
-            "route": plan.route,
-            "report": report,
-            "analysis": analysis,
-            "plan": plan,
-            "program_ir": program_ir.to_dict(),
-            "gap_plan": gap_plan.to_dict(),
-            "engine": migration.engine,
-            "rewrites": migration.rewrites,
-            "expected_rewrites": migration.expected_rewrites,
-            "rewrite_integrity": migration.rewrite_integrity,
-            "model_receipt": migration.model_receipt,
-            "model_identity": migration.model_identity,
-            "migrated_source": migration.migrated_source,
-            "migrated_path": migrated_path,
-            "source_path": source_path,
-            "source_sha256": _sha256(oracle_source),
-            "analysis_source_sha256": _sha256(source),
-            "repair_attempts": repair_attempts,
-            "validation_evidence": evidence,
-            "roles": records_to_dicts(records, migration.engine),
-            "diagnosis": diagnosis.to_dict() if diagnosis is not None else None,
-        }
-        self._maybe_write(out_dir, result)
+        with progress.operation(Role.REPORTER, "写入迁移代码、验证证据与报告") as activity:
+            migrated_path = None
+            if out_dir:
+                os.makedirs(out_dir, exist_ok=True)
+                migrated_path = os.path.join(out_dir, "migrated.py")
+                with open(migrated_path, "w", encoding="utf-8") as f:
+                    f.write(migration.migrated_source)
+            evidence = _validation_evidence(report, oracle_source, migration)
+            result = {
+                "status": report.status,
+                "route": plan.route,
+                "report": report,
+                "analysis": analysis,
+                "plan": plan,
+                "program_ir": program_ir.to_dict(),
+                "gap_plan": gap_plan.to_dict(),
+                "engine": migration.engine,
+                "rewrites": migration.rewrites,
+                "expected_rewrites": migration.expected_rewrites,
+                "rewrite_integrity": migration.rewrite_integrity,
+                "model_receipt": migration.model_receipt,
+                "model_identity": migration.model_identity,
+                "migrated_source": migration.migrated_source,
+                "migrated_path": migrated_path,
+                "source_path": source_path,
+                "source_sha256": _sha256(oracle_source),
+                "analysis_source_sha256": _sha256(source),
+                "repair_attempts": repair_attempts,
+                "validation_evidence": evidence,
+                "roles": records_to_dicts(records + [reporter], migration.engine),
+                "diagnosis": diagnosis.to_dict() if diagnosis is not None else None,
+            }
+            self._maybe_write(out_dir, result)
+            emit(reporter)
+            activity.finish(message="迁移产物与报告已写入文件" if out_dir else "执行报告已汇总，未指定输出目录")
         return result
 
     @staticmethod
@@ -379,6 +430,8 @@ class Orchestrator:
             "strategy": getattr(result.get("plan"), "strategy", None),
             "program_ir": result.get("program_ir"),
             "gap_plan": result.get("gap_plan"),
+            "planning_requirements": getattr(result.get("plan"), "planning_requirements", ()),
+            "gap_taskbook": result.get("gap_taskbook"),
             "diagnosis": result.get("diagnosis"),
             "repair_attempts": result.get("repair_attempts", 0),
             "validation_evidence": result.get("validation_evidence"),
@@ -412,6 +465,12 @@ def _render_md(summary, result) -> str:
         lines.append(f"- 缺口算子(未迁移):{', '.join(summary['unsupported'])}")
         _render_roles(lines, roles)
         gap_plan = summary.get("gap_plan") or {}
+        taskbook = summary.get("gap_taskbook") or {}
+        if taskbook:
+            lines.append("")
+            lines.append("## 缺口任务书")
+            lines.append(f"- JSON: `{taskbook['json']['path']}`")
+            lines.append(f"- Markdown: `{taskbook['markdown']['path']}`")
         tasks = gap_plan.get("tasks") or []
         if tasks:
             lines.append("")

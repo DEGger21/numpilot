@@ -1,21 +1,13 @@
 """Overlay-scoped admission for the deterministic benchmark.
 
-The 150-case benchmark executes migrated programs on the shim backend, which
-verifies semantic preservation against NumPy.  It does not re-prove AsNumpy
-device behaviour: that evidence comes from an official qualification overlay.
+The official operator overlay and optional baseline API certificate remain
+independent evidence chains, both bound to the live runtime.  Only migrated
+``forward`` calls are profiled; ``build_inputs`` remains the CPU input builder.
 
-This module joins the two evidence sources for the benchmark only:
-
-* the official overlay and its receipt chain are validated against the live
-  runtime identity (the real qualification wheel must be importable);
-* every source callsite of an admitted API is profiled by executing the
-  benchmark program under NumPy and capturing the exact tensor operands;
-* the shim backend receives explicit stand-ins for the overlay operators.
-
-An admitted callsite therefore needs three independent facts: a qualified
-overlay entry, an exact profile that satisfies that entry's constraints, and a
-shim execution that reproduces NumPy semantics.  Missing any one keeps the
-callsite unsupported.
+The shim consumer uses explicit semantic stand-ins.  The NPU consumer uses the
+validated resolver and records separate callsite qualification evidence.  Both
+share the same exact argument profiler, including reduction control arguments
+and creation metadata.  Neither promotes a whole-runtime provenance audit.
 """
 from __future__ import annotations
 
@@ -26,8 +18,6 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Tuple
 
-import numpy as _np
-
 from numpilot.agents.analysis import (
     numpy_bindings_for_forward,
     resolve_numpy_function,
@@ -35,9 +25,7 @@ from numpilot.agents.analysis import (
 from numpilot.capabilities import (
     AnalysisCallsiteProfile,
     AnalysisProfileSet,
-    OperatorCallProfile,
-    profile_concatenate_call,
-    tensor_profile_from_value,
+    profile_api_call,
 )
 
 _PROGRAM_FILENAME = "program.py"
@@ -54,9 +42,14 @@ class BenchmarkOverlay:
     operators: Tuple[str, ...]
     qualified_names: Tuple[str, ...]
     resolver: object = field(repr=False, compare=False)
+    overlay_path: str = ""
+    evidence_root: str = ""
+    baseline_certificate_path: str = ""
+    baseline_evidence_root: str = ""
+    baseline_admission: dict | None = None
 
     def to_dict(self) -> dict:
-        return {
+        result = {
             "qualification_id": self.qualification_id,
             "overlay_sha256": self.overlay_sha256,
             "runtime_identity_sha256": self.runtime_identity_sha256,
@@ -65,6 +58,9 @@ class BenchmarkOverlay:
             "admission": "official_qualification_overlay",
             "execution": "shim_semantic_verification",
         }
+        if self.baseline_admission is not None:
+            result["baseline_api"] = dict(self.baseline_admission)
+        return result
 
 
 @dataclass(frozen=True)
@@ -77,7 +73,9 @@ class OverlayProfiles:
     notes: Tuple[str, ...] = ()
 
 
-def load_benchmark_overlay(overlay_path: str, evidence_root: str) -> BenchmarkOverlay:
+def load_benchmark_overlay(overlay_path: str, evidence_root: str, *,
+                           baseline_api_certificate: str | None = None,
+                           baseline_api_evidence_root: str | None = None) -> BenchmarkOverlay:
     """Validate one official overlay against the live overlay runtime.
 
     Importing ``asnumpy`` must resolve to the qualified wheel.  A different
@@ -85,13 +83,18 @@ def load_benchmark_overlay(overlay_path: str, evidence_root: str) -> BenchmarkOv
     unproven surface.
     """
 
-    from numpilot.backends.npu import NpuBackend, OverlayRuntimeConfig
+    from numpilot.backends.npu import NpuBackend, OverlayRuntimeConfig, BaselineApiRuntimeConfig
 
+    if bool(baseline_api_certificate) != bool(baseline_api_evidence_root):
+        raise ValueError("baseline API certificate and evidence root must be supplied together")
+    baseline_config = (BaselineApiRuntimeConfig(baseline_api_certificate, baseline_api_evidence_root)
+                       if baseline_api_certificate else None)
     resolver = NpuBackend(
         overlay_config=OverlayRuntimeConfig(
             overlay_path=str(overlay_path),
             evidence_root=str(evidence_root),
-        )
+        ),
+        baseline_api_config=baseline_config,
     )
     identity = resolver.runtime_identity()
     admission = resolver.qualified_overlay_admission(identity)
@@ -100,13 +103,24 @@ def load_benchmark_overlay(overlay_path: str, evidence_root: str) -> BenchmarkOv
     entries = admission.entries
     if not entries:
         raise ValueError("official capability overlay admits no operators")
+    baseline = resolver.qualified_baseline_api_admission(identity) if baseline_config else None
+    operators = set(entries)
+    qualified_names = {entry.source_api for entry in entries.values()}
+    if baseline is not None:
+        operators.update(baseline["operators"])
+        qualified_names.update(baseline["qualified_names"])
     return BenchmarkOverlay(
         qualification_id=admission.qualification_id,
         overlay_sha256=admission.overlay_sha256,
         runtime_identity_sha256=admission.runtime_identity_sha256,
-        operators=tuple(sorted(entries)),
-        qualified_names=tuple(sorted(entry.source_api for entry in entries.values())),
+        operators=tuple(sorted(operators)),
+        qualified_names=tuple(sorted(qualified_names)),
         resolver=resolver,
+        overlay_path=str(overlay_path),
+        evidence_root=str(evidence_root),
+        baseline_certificate_path=str(baseline_api_certificate or ""),
+        baseline_evidence_root=str(baseline_api_evidence_root or ""),
+        baseline_admission=baseline,
     )
 
 
@@ -125,7 +139,7 @@ def _overlay_callsites(tree: ast.Module, overlay: BenchmarkOverlay) -> list[_Cal
     qualified_names = set(overlay.qualified_names)
     sites = []
     for function in tree.body:
-        if not isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        if not isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef)) or function.name != "forward":
             continue
         bindings = numpy_bindings_for_forward(tree, function)
         for node in ast.walk(function):
@@ -150,82 +164,18 @@ def _overlay_callsites(tree: ast.Module, overlay: BenchmarkOverlay) -> list[_Cal
     return sites
 
 
-_SCALAR_TYPES = (bool, int, float, complex, str, bytes, type(None))
-
-
-def _tensor_operands(value):
-    """Return ``(tensors, ok)`` for one runtime operand.
-
-    Scalars are signature facts, not tensor operands.  A tuple/list is part of
-    the public calling convention (``concatenate`` accepts a sequence), so its
-    leaves are flattened.  Any other object is unprofiled and rejects the
-    callsite.
-    """
-
-    if type(value) is _np.ndarray:
-        return [value], True
-    if isinstance(value, (tuple, list)):
-        tensors = []
-        for item in value:
-            nested, ok = _tensor_operands(item)
-            if not ok:
-                return [], False
-            tensors.extend(nested)
-        return tensors, True
-    if isinstance(value, _SCALAR_TYPES):
-        return [], True
-    return [], False
-
-
-def _profile_call(args, kwargs):
-    tensors = []
-    for value in args:
-        nested, ok = _tensor_operands(value)
-        if not ok:
-            return None
-        tensors.extend(nested)
-    for value in kwargs.values():
-        nested, ok = _tensor_operands(value)
-        if not ok:
-            return None
-        tensors.extend(nested)
-    if not tensors:
-        return None
-    profiles = []
-    for tensor in tensors:
-        profile = tensor_profile_from_value(tensor)
-        if profile is None:
-            return None
-        profiles.append(profile)
-    try:
-        return OperatorCallProfile(
-            inputs=tuple(profiles),
-            positional_args=len(args),
-            keyword_args=tuple(sorted(kwargs)),
-            unprofiled_operands=(),
-        )
-    except ValueError:
-        # The v1 call-profile contract counts one tensor per public operand.
-        # A sequence operand (concatenate's first argument) can only be
-        # represented when the remaining signature supplies the matching
-        # operand count, e.g. ``concatenate((a, b), axis=1)``.  Anything else
-        # stays unprofiled rather than claiming a shape the contract cannot
-        # express.
-        return None
-
 
 def _record_callsite(site, args, kwargs):
     if len(args) != site.positional_args:
         return None
     if tuple(sorted(kwargs)) != site.keyword_args:
         return None
-    if site.name == "concatenate":
-        profile = profile_concatenate_call(args, kwargs)
-        if profile.sequence_axis is None or profile.unprofiled_operands or not profile.inputs:
-            return None
-    else:
-        profile = _profile_call(args, kwargs)
-    if profile is None:
+    profile = profile_api_call(site.name, args, kwargs)
+    if profile.unprofiled_operands:
+        return None
+    if not profile.inputs and profile.creation_output is None:
+        return None
+    if site.name == "concatenate" and profile.sequence_axis is None:
         return None
     site.used = True
     return AnalysisCallsiteProfile(

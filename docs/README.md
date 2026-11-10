@@ -16,6 +16,10 @@ NumPilot 将 NumPy 程序的静态分析、迁移候选生成、数值验证和 
 
 ## 工作流与验证
 
+- [GPU4PySCF 科学计算示例](../examples/scientific/gpu4pyscf_sandwich/README.md)：轨道基变换的 CuPy→NumPy→AsNumpy 迁移、单核/单卡复现和暖 E2E 性能口径；
+- [生成任务书与实时角色](gap-taskbook.zh-CN.md)：用户可接手的JSON/Markdown需求、float32范围与真实执行状态；
+- [混合程序的基础 API 资格](baseline-api-qualification.zh-CN.md)：源码继承、真实设备 probes、精确 profile 和双证书组合；
+- [官方资格进入 benchmark](scoped-benchmark.zh-CN.md)：按样例验证隔离 runtime、批量回执、离线审计及正式性能边界；
 - [本地 Codex adapter 真机接入](codex-adapter-walkthrough.zh-CN.md)：生成、隔离构建、路由验证、I006 诊断与下一步；
 - [系统架构](architecture.md)：ordinary 脚本路径、能力判定和缺口恢复边界；
 - [脚本数值验证](script-verification.md)：隔离 worker、输出比较和回执绑定；

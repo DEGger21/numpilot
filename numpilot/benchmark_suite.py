@@ -15,10 +15,12 @@ original program against the migrated program counts as ``migrated``.
 
 ``--capability-overlay`` adds an overlay-scoped admission path: the official
 qualification overlay must validate against the live qualified runtime, every
-overlay callsite needs an exact tensor profile, and the shim executes an
-explicit stand-in for the admitted operator.  Cases that use it record the
-qualification identity in their receipt and are never reported as strict-NPU
-qualified.
+overlay callsite needs an exact tensor profile.  Shim runs verify semantics
+with explicit stand-ins.  NPU runs use the admitted runtime and preserve a
+hash-bound callsite qualification; they never promote the global runtime
+audit or imply performance qualification.  An optional baseline API certificate
+adds only independently verified exact profiles while preserving the official
+overlay and global runtime identity.
 """
 from __future__ import annotations
 
@@ -90,6 +92,7 @@ class CaseOutcome:
     numerically_consistent: bool | None = None
     comparisons: dict = field(default_factory=dict)
     failure_reason: str | None = None
+    qualification_failure_reason: str | None = None
     exception_type: str | None = None
     exception_message: str | None = None
     artifact_inputs_executed: bool = False
@@ -110,10 +113,12 @@ class CaseOutcome:
     runtime_identity_sha256: str | None = None
     runtime_audit_id: str | None = None
     runtime_qualification_id: str = ""
+    runtime_qualification_scope: dict | None = None
     receipt_path: str = ""
     operator_ref_path: str = ""
     overlay_ops: list = field(default_factory=list)
     overlay_profile_callsites: int = 0
+    overlay_attempted_callsites: int = 0
     overlay_notes: list = field(default_factory=list)
     scope_name: str = ""
     scope_category: str = ""
@@ -141,6 +146,7 @@ class CaseOutcome:
             "numerically_consistent": self.numerically_consistent,
             "comparisons": self.comparisons,
             "failure_reason": self.failure_reason,
+            "qualification_failure_reason": self.qualification_failure_reason,
             "exception_type": self.exception_type,
             "exception_message": self.exception_message,
             "artifact_inputs_executed": self.artifact_inputs_executed,
@@ -161,10 +167,12 @@ class CaseOutcome:
             "runtime_identity_sha256": self.runtime_identity_sha256,
             "runtime_audit_id": self.runtime_audit_id,
             "runtime_qualification_id": self.runtime_qualification_id,
+            "runtime_qualification_scope": self.runtime_qualification_scope,
             "receipt_path": self.receipt_path,
             "operator_ref_path": self.operator_ref_path,
             "overlay_ops": list(self.overlay_ops),
             "overlay_profile_callsites": self.overlay_profile_callsites,
+            "overlay_attempted_callsites": self.overlay_attempted_callsites,
             "overlay_notes": list(self.overlay_notes),
             "scope": {
                 "name": self.scope_name,
@@ -310,6 +318,8 @@ def resolve_expectation(expectations, group, name):
 
 
 def _observed_outcome(outcome):
+    if outcome.qualification_failure_reason:
+        return "runtime_qualification_failure"
     return {
         "migrated": "migrated",
         "refused": "rejected",
@@ -382,9 +392,16 @@ def _write_receipt(case_out, outcome, expectation):
             "artifact_inputs_executed": outcome.artifact_inputs_executed,
             "overlay_ops": list(outcome.overlay_ops),
             "overlay_profile_callsites": outcome.overlay_profile_callsites,
+            "overlay_attempted_callsites": outcome.overlay_attempted_callsites,
+            "runtime_identity_status": outcome.runtime_identity_status,
+            "runtime_identity_sha256": outcome.runtime_identity_sha256,
+            "runtime_audit_id": outcome.runtime_audit_id,
+            "runtime_qualification_id": outcome.runtime_qualification_id,
+            "runtime_qualification_scope": outcome.runtime_qualification_scope,
             "overlay_notes": list(outcome.overlay_notes),
             "reason": outcome.reason,
             "failure_reason": outcome.failure_reason,
+            "qualification_failure_reason": outcome.qualification_failure_reason,
             "max_rel_diff": outcome.max_rel_diff,
             "rewrites": dict(outcome.rewrites),
             "lowering": list(outcome.lowering),
@@ -482,6 +499,7 @@ def _record_operator_ref(store, out_root, outcome, *, backend, runtime_identity)
         "numerical_verified": bool(outcome.numerical_verified),
         "performance_qualified": outcome.performance_qualified,
         "performance_evidence": outcome.performance_evidence,
+        "runtime_qualification_scope": outcome.runtime_qualification_scope,
         "reason": outcome.reason or "runtime qualification gate completed",
     }
     runtime_ref = store.put_runtime_qualification(sample_id, runtime_receipt)
@@ -503,6 +521,9 @@ def _record_operator_ref(store, out_root, outcome, *, backend, runtime_identity)
         "strict_npu_qualified": strict,
         "numerical_verified": bool(outcome.numerical_verified),
         "performance_qualified": outcome.performance_qualified,
+        "runtime_identity_status": outcome.runtime_identity_status,
+        "runtime_identity_sha256": outcome.runtime_identity_sha256,
+        "runtime_qualification_scope": outcome.runtime_qualification_scope,
     }
     case_out.mkdir(parents=True, exist_ok=True)
     (case_out / "runtime-qualification.json").write_text(
@@ -533,6 +554,7 @@ def _record_operator_ref(store, out_root, outcome, *, backend, runtime_identity)
         "operator_id": None,
         "candidate_id": None,
         "qualification_id": None,
+        "runtime_qualification_scope": outcome.runtime_qualification_scope,
         "activation_id": None,
         "reason": outcome.reason or "no generated operator artifact in this run",
     }
@@ -543,6 +565,110 @@ def _record_operator_ref(store, out_root, outcome, *, backend, runtime_identity)
     outcome.operator_ref_path = "operator-ref.json"
 
 
+def _overlay_description(overlay, backend):
+    if overlay is None:
+        return None
+    description = overlay.to_dict()
+    if getattr(backend, "name", "") == "npu":
+        description = {**description, "execution": "strict_npu_mainline"}
+    return description
+
+
+def _select_case_ids(case_ids, discovered):
+    if case_ids is None:
+        return None
+    selected = set()
+    known = {group + "/" + name for group, name, _ in discovered}
+    for value in case_ids:
+        if (not isinstance(value, str)
+                or not re.fullmatch(r"[A-Za-z0-9_]+/[A-Za-z0-9_]+", value)):
+            raise ValueError("case IDs must be exact group/name identifiers")
+        if value in selected:
+            raise ValueError("duplicate case ID: " + value)
+        if value not in known:
+            raise ValueError("unknown case ID: " + value)
+        selected.add(value)
+    if not selected:
+        raise ValueError("case IDs must not be empty")
+    return selected
+
+
+def _validate_scoped_corpus(cases, expectations):
+    """An official NPU benchmark claim uses the unchanged repository corpus."""
+    corpus = Path(__file__).resolve().parent.parent / "benchmark/cases"
+    for group, name, program in cases:
+        original = corpus / group / name / "program.py"
+        if not original.is_file() or original.read_bytes() != Path(program).read_bytes():
+            raise ValueError("scoped NPU source differs from the canonical benchmark: " + group + "/" + name)
+    canonical = load_expectations(corpus)
+    actual = {key: value for key, value in (expectations or {}).items() if key != "__path__"}
+    expected = {key: value for key, value in (canonical or {}).items() if key != "__path__"}
+    if actual != expected:
+        raise ValueError("scoped NPU qualification requires unchanged benchmark expectations")
+
+
+def _persist_scoped_qualification(case_out, *, sample_id, source, analysis_source,
+                                  result, profile_result, overlay, runtime_before,
+                                  runtime_after, base_manifest):
+    from numpilot.scoped_qualification import build_scoped_qualification
+
+    if not overlay.overlay_path or not overlay.evidence_root:
+        raise ValueError("official overlay has no bound evidence paths")
+    generated = result.get("migrated_source")
+    if not isinstance(generated, str) or not generated:
+        raise ValueError("mainline generated source is unavailable")
+    # Preserve the actual artifact executed by the verifier, not a reconstructed rewrite.
+    if (Path(case_out) / "migrated.py").read_text(encoding="utf-8") != generated:
+        raise ValueError("persisted migration does not match verified generated source")
+    evidence_dir = Path(case_out) / "scoped-qualification"
+    evidence_dir.mkdir(mode=0o700, exist_ok=False)
+
+    def write(name, payload):
+        with (evidence_dir / name).open("xb") as stream:
+            stream.write(payload)
+        (evidence_dir / name).chmod(0o600)
+
+    for name, text in (("original.py", source), ("analysis_source.py", analysis_source),
+                       ("migrated.py", generated)):
+        write(name, text.encode("utf-8"))
+    profiles = {
+        "matched_callsites": profile_result.matched_callsites,
+        "attempted_callsites": profile_result.attempted_callsites,
+        "notes": list(profile_result.notes),
+        "profiles": profile_result.profiles.to_dict() if profile_result.profiles else None,
+    }
+    payloads = {
+        "profiles.json": profiles,
+        "overlay-admission.json": _overlay_description(overlay, overlay.resolver),
+        "runtime-before.json": runtime_before,
+        "runtime-after.json": runtime_after,
+        "base-manifest.json": base_manifest,
+        "validation-evidence.json": result.get("validation_evidence") or {},
+        "mainline-result.json": {key: result.get(key) for key in (
+            "status", "engine", "rewrite_integrity", "rewrites", "expected_rewrites",
+            "source_sha256", "analysis_source_sha256",
+        )},
+    }
+    for name, value in payloads.items():
+        write(name, (json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True,
+                                allow_nan=False) + "\n").encode("utf-8"))
+    baseline_kwargs = {}
+    if overlay.baseline_admission is not None:
+        baseline_kwargs = {
+            "baseline_certificate_path": overlay.baseline_certificate_path,
+            "baseline_evidence_root": overlay.baseline_evidence_root,
+        }
+    return build_scoped_qualification(
+        evidence_dir, sample_id=sample_id,
+        source_sha256=hashlib.sha256(source.encode("utf-8")).hexdigest(),
+        analysis_source_sha256=hashlib.sha256(analysis_source.encode("utf-8")).hexdigest(),
+        overlay_path=overlay.overlay_path,
+        overlay_evidence_root=overlay.evidence_root,
+        expected_runtime_identity=runtime_after,
+        **baseline_kwargs,
+    )
+
+
 def run_suite(
     cases_root,
     out_dir,
@@ -550,6 +676,7 @@ def run_suite(
     backend,
     engine,
     groups=None,
+    case_ids=None,
     limit=None,
     on_case=None,
     expectations=None,
@@ -571,6 +698,7 @@ def run_suite(
         scope["include_categories"] = categories
     selected = set(groups) if groups else None
     discovered = discover_cases(cases_root)
+    exact_cases = _select_case_ids(case_ids, discovered)
     scope_entries = {}
     if scope is not None:
         for group, name, _program in discovered:
@@ -581,6 +709,7 @@ def run_suite(
     cases = [
         case for case in discovered
         if (selected is None or case[0] in selected)
+        and (exact_cases is None or case[0] + "/" + case[1] in exact_cases)
         and (
             include_categories is None
             or scope_entries[(case[0], case[1])]["category"] in include_categories
@@ -588,9 +717,13 @@ def run_suite(
     ]
     if limit is not None:
         cases = cases[:limit]
+    if exact_cases is not None and not cases:
+        raise ValueError("case selection is empty after groups/scope/limit filters")
 
     if expectations is None:
         expectations = load_expectations(cases_root)
+    if overlay is not None and getattr(backend, "name", "") == "npu":
+        _validate_scoped_corpus(cases, expectations)
 
     out_root = Path(out_dir)
     out_root.mkdir(parents=True, exist_ok=True)
@@ -624,6 +757,7 @@ def run_suite(
             expectation=expectation,
             overlay=overlay,
         )
+        runtime_identity = _runtime_identity_snapshot(backend)
         if performance_catalog is not None:
             resolution = performance_catalog.resolve(
                 "%s/%s" % (outcome.group, outcome.name),
@@ -632,6 +766,7 @@ def run_suite(
                 strict_npu_qualified=outcome.strict_npu_qualified,
                 numerical_verified=outcome.numerical_verified,
                 runtime_identity_sha256=runtime_identity.get("identity_sha256"),
+                scoped_qualification=outcome.runtime_qualification_scope,
             )
             outcome.performance_qualified = resolution.qualified
             outcome.performance_evidence = resolution.ref
@@ -642,6 +777,8 @@ def run_suite(
                     expectation,
                 )
         _record_operator_ref(artifact_store, out_root, outcome, backend=backend, runtime_identity=runtime_identity)
+        if outcome.out_dir:
+            _write_receipt(out_root / outcome.out_dir, outcome, expectation)
         outcomes.append(outcome)
         if on_case is not None:
             on_case(outcome, index, len(cases))
@@ -713,9 +850,15 @@ def run_case(
     )
 
     profiles = None
+    profile_result = None
+    runtime_before = None
+    runtime_after = None
+    base_manifest = None
+    scoped_npu = overlay is not None and getattr(backend, "name", "") == "npu"
     overlay_ops = []
     overlay_notes = []
     overlay_profile_callsites = 0
+    overlay_attempted_callsites = 0
     if overlay is not None:
         from numpilot.benchmark_overlay import build_analysis_profiles
 
@@ -724,8 +867,16 @@ def run_case(
         overlay_ops = list(overlay.operators)
         overlay_notes = list(profile_result.notes)
         overlay_profile_callsites = profile_result.matched_callsites
+        overlay_attempted_callsites = profile_result.attempted_callsites
 
     try:
+        if scoped_npu:
+            if backend is not overlay.resolver:
+                raise ValueError("NPU overlay must execute with its qualified resolver")
+            runtime_before = backend.runtime_identity().to_dict()
+            base_manifest = backend._raw_capability_manifest(overlay.operators).to_dict()
+            if runtime_before.get("identity_sha256") != overlay.runtime_identity_sha256:
+                raise ValueError("live runtime identity does not match the official overlay")
         orchestrator = Orchestrator(
             backend=backend,
             engine=engine,
@@ -739,6 +890,8 @@ def run_case(
             verification_source=source,
             strict_input_types=True,
         )
+        if scoped_npu:
+            runtime_after = backend.runtime_identity().to_dict()
     except Exception as exc:  # a single case must not abort the sweep
         return _finish(
             CaseOutcome(
@@ -755,8 +908,13 @@ def run_case(
                 exception_type=type(exc).__name__,
                 exception_message=_sanitize(exc),
                 out_dir=relative_out,
+                strict_npu_qualified=False if getattr(backend, "name", "") == "npu" else None,
+                runtime_identity_status=(runtime_before or {}).get("status"),
+                runtime_identity_sha256=(runtime_before or {}).get("identity_sha256"),
+                runtime_audit_id=(runtime_before or {}).get("audit_id"),
                 overlay_ops=overlay_ops,
                 overlay_profile_callsites=overlay_profile_callsites,
+                overlay_attempted_callsites=overlay_attempted_callsites,
                 overlay_notes=[
                     _sanitize(note) for note in overlay_notes
                 ],
@@ -782,12 +940,42 @@ def run_case(
         )
     else:
         strict_npu_qualified = None
+    qualification_scope = None
+    scope_error = ""
+    if (status == "failed" and getattr(backend, "name", "") == "npu"
+            and getattr(report, "exception_phase", None) == "migrated.capabilities"
+            and getattr(report, "exception_type", None) in ("BackendCapabilityError", "ValueError")
+            and provenance.get("ok") is False
+            and provenance.get("runtime_execution_ok") is False):
+        scope_error = "runtime capability preflight rejected: " + _sanitize(
+            getattr(report, "exception_message", None)
+            or "required APIs lack qualified NPU provenance"
+        )
+    if scoped_npu and status == "migrated":
+        try:
+            if runtime_before != runtime_after:
+                raise ValueError("runtime identity changed during scoped migration")
+            if program.read_text(encoding="utf-8") != source:
+                raise ValueError("original benchmark source changed during execution")
+            qualification_scope = _persist_scoped_qualification(
+                case_out, sample_id="%s/%s" % (group, name),
+                source=source, analysis_source=lowered.source, result=result,
+                profile_result=profile_result, overlay=overlay,
+                runtime_before=runtime_before, runtime_after=runtime_after,
+                base_manifest=base_manifest,
+            )
+            strict_npu_qualified = True
+        except Exception as exc:
+            strict_npu_qualified = False
+            qualification_scope = None
+            status = "failed"
+            scope_error = "scoped NPU qualification failed: " + _sanitize(exc)
     return _finish(
         CaseOutcome(
             group=group,
             name=name,
             status=status,
-            reason=_reason_for(result, blockers),
+            reason=scope_error or _reason_for(result, blockers),
             route=result.get("route") or "",
             engine=result.get("engine") or "",
             source_sha256=source_sha256,
@@ -805,6 +993,7 @@ def run_case(
             ),
             comparisons=evidence.get("comparisons") or {},
             failure_reason=getattr(report, "failure_reason", None),
+            qualification_failure_reason=scope_error or None,
             exception_type=getattr(report, "exception_type", None),
             exception_message=_sanitize(
                 getattr(report, "exception_message", None) or ""
@@ -821,8 +1010,13 @@ def run_case(
             numerical_verified=numerical_verified,
             strict_npu_qualified=strict_npu_qualified,
             performance_qualified=None,
+            runtime_qualification_scope=qualification_scope,
+            runtime_identity_status=(runtime_after or {}).get("status"),
+            runtime_identity_sha256=(runtime_after or {}).get("identity_sha256"),
+            runtime_audit_id=(runtime_after or {}).get("audit_id"),
             overlay_ops=overlay_ops,
             overlay_profile_callsites=overlay_profile_callsites,
+            overlay_attempted_callsites=overlay_attempted_callsites,
             overlay_notes=[_sanitize(note) for note in overlay_notes],
         ),
         case_out,
@@ -1024,9 +1218,19 @@ def build_summary(outcomes, *, backend, engine, overlay=None, scope=None):
         "status": "pass" if unexpected == 0 else "incomplete",
         "backend": getattr(backend, "name", type(backend).__name__),
         "engine": getattr(engine, "name", type(engine).__name__),
-        "overlay": overlay.to_dict() if overlay is not None else None,
+        "overlay": _overlay_description(overlay, backend),
+        "scoped_npu_qualified": sum(
+            outcome.strict_npu_qualified is True and outcome.runtime_qualification_scope is not None
+            for outcome in outcomes
+        ),
+        "runtime_identity_statuses": sorted({
+            outcome.runtime_identity_status for outcome in outcomes if outcome.runtime_identity_status
+        }),
+        "global_runtime_audit_promoted": False,
         "scope": scope_summary,
         "total": len(outcomes),
+        "selected_total": len(outcomes),
+        "corpus_expected_total": EXPECTED_TOTAL,
         "expected_total": len(outcomes) if scope is not None else EXPECTED_TOTAL,
         "expected": expected,
         "improved": improved,
@@ -1073,9 +1277,14 @@ def _render_markdown(summary):
         "",
         "- status: `%s`" % summary["status"],
         "- backend: `%s` · engine: `%s`" % (summary["backend"], summary["engine"]),
-        "- cases: %d/%d (expected %d)" % (
-            summary["total"], summary["expected_total"], summary["expected_total"],
+        "- selected cases completed: %d · original corpus: %d cases" % (
+            summary["total"], summary.get("corpus_expected_total", EXPECTED_TOTAL),
         ),
+        "- scoped strict-NPU qualified: %d · global runtime status: %s" % (
+            summary.get("scoped_npu_qualified", 0),
+            ", ".join("`%s`" % value for value in summary.get("runtime_identity_statuses", [])) or "not recorded",
+        ),
+        "- global runtime audit promoted: no · performance qualified: %d" % summary.get("performance_qualified", 0),
         "- route honoured: %d · gap closed early: %d · unexpected: %d" % (
             summary["expected"], summary.get("improved", 0),
             summary["unexpected"],
@@ -1169,7 +1378,7 @@ def main(argv=None):
     parser.add_argument("--out", required=True, help="evidence output directory")
     parser.add_argument(
         "--backend", choices=("shim", "npu"), default="shim",
-        help="execution backend (default: shim; npu requires audited runtime)",
+        help="execution backend (default: shim; npu requires audited runtime or exact official overlay scope)",
     )
     parser.add_argument(
         "--engine", choices=("ast",), default="ast",
@@ -1179,6 +1388,8 @@ def main(argv=None):
         "--groups", nargs="*", default=None,
         help="optional group directory names to run",
     )
+    parser.add_argument("--cases", nargs="+", default=None,
+                        help="exact group/name case IDs; intersected with groups and scope")
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument(
         "--scope",
@@ -1195,12 +1406,20 @@ def main(argv=None):
     parser.add_argument(
         "--capability-overlay",
         default=None,
-        help="official capability overlay JSON (requires --backend shim)",
+        help="official capability overlay JSON (shim semantics or exact scoped NPU qualification)",
     )
     parser.add_argument(
         "--qualification-evidence-root",
         default=None,
         help="evidence root that authenticates --capability-overlay",
+    )
+    parser.add_argument(
+        "--baseline-api-certificate", default=None,
+        help="independent baseline API/profile certificate; requires NPU plus official overlay",
+    )
+    parser.add_argument(
+        "--baseline-api-evidence-root", default=None,
+        help="evidence root authenticating the baseline API certificate",
     )
     parser.add_argument(
         "--performance-evidence-root",
@@ -1223,30 +1442,35 @@ def main(argv=None):
             "--capability-overlay and --qualification-evidence-root "
             "must be supplied together"
         )
+    if bool(args.baseline_api_certificate) != bool(args.baseline_api_evidence_root):
+        parser.error("--baseline-api-certificate and --baseline-api-evidence-root must be supplied together")
+    if args.baseline_api_certificate and (not args.capability_overlay or args.backend != "npu"):
+        parser.error("baseline API admission requires --backend npu and --capability-overlay")
     overlay = None
     if args.capability_overlay:
-        if args.backend != "shim":
-            parser.error(
-                "overlay admission requires --backend shim: the qualified "
-                "overlay wheel has no strict provenance audit for its base "
-                "operators, so a strict NPU run would be rejected"
-            )
         from numpilot.backends.shim import ShimBackend
         from numpilot.benchmark_overlay import load_benchmark_overlay
 
         try:
+            baseline_kwargs = {}
+            if args.baseline_api_certificate:
+                baseline_kwargs = {
+                    "baseline_api_certificate": args.baseline_api_certificate,
+                    "baseline_api_evidence_root": args.baseline_api_evidence_root,
+                }
             overlay = load_benchmark_overlay(
                 args.capability_overlay,
                 args.qualification_evidence_root,
+                **baseline_kwargs,
             )
         except Exception as exc:
             parser.error(
                 "cannot admit capability overlay: %s" % _sanitize(exc)
             )
-        backend = ShimBackend(
+        backend = (overlay.resolver if args.backend == "npu" else ShimBackend(
             extra_ops=overlay.operators,
             analysis_profile_resolver=overlay.resolver,
-        )
+        ))
     else:
         backend = select_backend(args.backend)
     engine = AstRewriteEngine()
@@ -1260,26 +1484,30 @@ def main(argv=None):
         scope = load_scope(args.scope) if args.scope is not None else None
     except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
         parser.error("cannot load benchmark scope: %s" % _sanitize(exc))
-    summary = run_suite(
-        args.root,
-        args.out,
-        backend=backend,
-        engine=engine,
-        groups=args.groups,
-        limit=args.limit,
-        expectations=expectations,
-        overlay=overlay,
-        performance_evidence_root=args.performance_evidence_root,
-        scope=scope,
-        scope_categories=args.scope_categories,
-        on_case=lambda outcome, index, total: print(
-            "[bench] %d/%d %s/%s -> %s (%s)" % (
-                index, total, outcome.group, outcome.name, outcome.status,
-                outcome.verdict or "legacy",
+    try:
+        summary = run_suite(
+            args.root,
+            args.out,
+            backend=backend,
+            engine=engine,
+            groups=args.groups,
+            case_ids=args.cases,
+            limit=args.limit,
+            expectations=expectations,
+            overlay=overlay,
+            performance_evidence_root=args.performance_evidence_root,
+            scope=scope,
+            scope_categories=args.scope_categories,
+            on_case=lambda outcome, index, total: print(
+                "[bench] %d/%d %s/%s -> %s (%s)" % (
+                    index, total, outcome.group, outcome.name, outcome.status,
+                    outcome.verdict or "legacy",
+                ),
+                file=sys.stderr,
             ),
-            file=sys.stderr,
-        ),
-    )
+        )
+    except (ValueError, OSError) as exc:
+        parser.error("cannot run benchmark selection: %s" % _sanitize(exc))
     if args.json:
         print(json.dumps(summary, ensure_ascii=False, indent=2, allow_nan=False))
     else:

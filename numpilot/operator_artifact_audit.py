@@ -15,6 +15,8 @@ from numpilot.operator_artifacts import (
     QUALIFICATION_SCHEMA,
     STORE_SCHEMA,
     RUNTIME_QUALIFICATION_SCHEMA,
+    validate_runtime_qualification_scope,
+    validate_scoped_performance_reference,
 )
 
 
@@ -189,6 +191,33 @@ def audit_store(root: str | Path) -> dict[str, Any]:
                 sample_id = payload.get("sample_id")
                 if not isinstance(sample_id, str) or not sample_id:
                     _add(errors, f"runtime qualification sample missing: {path.name}")
+                receipt = payload.get("receipt")
+                if not isinstance(receipt, dict):
+                    raise OperatorArtifactStoreError("runtime receipt payload missing")
+                for field in ("strict_npu_qualified", "numerical_verified", "performance_qualified",
+                              "runtime_identity_status", "runtime_identity_sha256"):
+                    if payload.get(field) != receipt.get(field):
+                        raise OperatorArtifactStoreError("runtime receipt projection mismatch: " + field)
+                expected_id = hashlib.sha256(json.dumps(
+                    {"sample_id": sample_id, "receipt": receipt}, ensure_ascii=False,
+                    sort_keys=True, separators=(",", ":"), allow_nan=False,
+                ).encode("utf-8")).hexdigest()
+                if expected_id != runtime_id:
+                    _add(errors, "runtime receipt content hash mismatch: " + path.name)
+                scoped = validate_runtime_qualification_scope(sample_id, receipt)
+                if scoped is not None:
+                    validate_scoped_performance_reference(sample_id, receipt)
+                    if (payload.get("runtime_qualification_scope") != receipt.get("runtime_qualification_scope")
+                            or payload.get("identity_scope") != scoped["identity_scope"]
+                            or payload.get("global_runtime_audit_promoted") is not False):
+                        raise OperatorArtifactStoreError("runtime scope projection mismatch")
+                elif payload.get("runtime_qualification_scope") is not None:
+                    raise OperatorArtifactStoreError("runtime scope projection lacks evidence")
+                if payload.get("strict_npu_qualified") is True and (
+                    receipt.get("backend") != "npu" or receipt.get("numerical_verified") is not True
+                    or (receipt.get("runtime_identity_status") != "matched" and scoped is None)
+                ):
+                    raise OperatorArtifactStoreError("strict runtime receipt lacks matched or scoped evidence")
                 if payload.get("strict_npu_qualified") is True:
                     if payload.get("status") != "qualified":
                         _add(errors, f"strict runtime qualification not qualified: {path.name}")

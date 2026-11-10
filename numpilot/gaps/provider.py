@@ -4115,12 +4115,15 @@ def _stage_invariants(spec: GapSpec, path: str) -> str:
             spec.asnumpy_api,
         ),
         "- Source call signatures are exactly: %s." % signature_text,
-        "- Admitted dtypes are exactly: %s; do not add convenient extra dtypes." % (
+        "- Declared GapSpec dtype rules (unresolved markers are NOT dtypes): %s." % (
             ", ".join(spec.dtype_rules),
         ),
-        "- Admitted shape rules are exactly: %s." % (
+        "- Declared GapSpec shape rules (not observed profiles): %s." % (
             ", ".join(spec.shape_rules),
         ),
+        "- This generation targets float32 tensor inputs only. Preserve required bool outputs. "
+        "Unknown dtype/shape facts remain unresolved; do not silently cast other input dtypes "
+        "or claim qualification before exact-profile numerical and device tests.",
         "- Preserve the NumPy oracle parameter order. Host definition, infer-shape, "
         "tiling, kernel entry, L0/L2 ACLNN declarations/definitions, tests, and adapter "
         "must agree on input/output count, order, names, dtypes, and shapes.",
@@ -4272,6 +4275,7 @@ class LlmDraftProvider:
         generation_base,
         spec: GapSpec,
         generation_request: str,
+        taskbook_prompt: str = "",
     ):
         """Generate a direct operator as bounded per-file receipt-bound stages."""
 
@@ -4305,6 +4309,8 @@ class LlmDraftProvider:
                     contract,
                     "\n\n",
                     self._skill_bundle.prompt_context(references),
+                    "\n\n",
+                    taskbook_prompt,
                 ))
                 if failure:
                     prompt += (
@@ -4677,6 +4683,7 @@ class LlmDraftProvider:
         expected_paths: Tuple[str, ...],
         adapter_context_plan: Dict[str, object],
         skill_files: Tuple[str, ...] = ASNUMPY_INTEGRATION_SKILL_FILES,
+        gap_taskbook=None,
     ) -> Dict[str, object]:
         """Ask the model for an isolated AsNumpy registry/test overlay."""
 
@@ -4793,6 +4800,26 @@ class LlmDraftProvider:
         if os.path.lexists(candidate_dir):
             raise DraftGenerationError("AsNumpy adapter candidate already exists")
 
+        taskbook_prompt = ""
+        if gap_taskbook is not None:
+            from numpilot.gap_requirements import (
+                validate_gap_taskbook, persist_gap_taskbook, render_gap_taskbook_markdown,
+            )
+            taskbook = validate_gap_taskbook(gap_taskbook)
+            persist_gap_taskbook(root / "taskbook", taskbook)
+            from numpilot.gaps.taskbook_binding import validate_adapter_taskbook
+
+            try:
+                taskbook = validate_adapter_taskbook(
+                    taskbook, operator_artifact=operator_artifact,
+                    adapter_contract=adapter_contract,
+                )
+            except (TypeError, ValueError, RecursionError) as exc:
+                raise DraftGenerationError("adapter taskbook binding is invalid: " + str(exc)) from exc
+            if taskbook.get("generation", {}).get("allowed") is not True:
+                raise DraftGenerationError("float32 taskbook blocks candidate generation")
+            taskbook_prompt = ("PERSISTED GAP TASKBOOK (requirements, not proof of success):\n"
+                               + render_gap_taskbook_markdown(taskbook))
         chat, generation_base = self._resolve_chat()
         if generation_base["mode"] not in {"remote_llm", "injected_test_double"}:
             raise DraftGenerationError("AsNumpy adapter generation mode is unsupported")
@@ -4894,6 +4921,8 @@ class LlmDraftProvider:
                         skill_context,
                     )))
                     system_prompt = _ASNUMPY_ADAPTER_SYSTEM_PROMPT
+                if taskbook_prompt:
+                    prompt += "\n\n" + taskbook_prompt
                 if failure:
                     prompt += (
                         "\n\nThe previous response was rejected by local validation: "
@@ -5818,6 +5847,21 @@ class LlmDraftProvider:
                 return draft
             raise DraftGenerationError("draft target exists and is not a directory")
 
+        from numpilot.gaps.taskbook_binding import prepare_spec_taskbook
+        from numpilot.gap_requirements import render_gap_taskbook_markdown
+
+        try:
+            taskbook = prepare_spec_taskbook(spec, workspace)
+        except (OSError, TypeError, ValueError, RecursionError) as exc:
+            raise DraftGenerationError("generation taskbook binding is invalid: " + str(exc)) from exc
+        if taskbook["generation"]["allowed"] is not True:
+            raise DraftGenerationError("float32 taskbook blocks candidate generation")
+        taskbook_markdown = render_gap_taskbook_markdown(taskbook)
+        taskbook_prompt = (
+            "PERSISTED GAP TASKBOOK (requirements, not proof of success):\n"
+            + taskbook_markdown
+        )
+        generation_request = generation_request or ""
         request = (
             "Generate the operator project for this GapSpec. "
             "The JSON contract is the only semantic source of truth:\n"
@@ -5829,6 +5873,8 @@ class LlmDraftProvider:
                 "local cannbot skill and AsNumpy reference; follow it directly):\n"
                 + generation_request
             )
+        if taskbook_markdown not in request:
+            request += "\n\n" + taskbook_prompt
         chat, generation_base = self._resolve_chat()
         if (
             self._staged_direct
@@ -5846,6 +5892,8 @@ class LlmDraftProvider:
                 generation_base,
                 spec,
                 generation_request,
+                taskbook_prompt=("" if taskbook_markdown in _compact_generation_contract(generation_request)
+                                 else taskbook_prompt),
             )
             generation = dict(generation_base)
             generation.update({

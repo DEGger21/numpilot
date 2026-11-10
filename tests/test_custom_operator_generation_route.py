@@ -186,4 +186,15 @@ def test_complete_cli_requires_custom_flag_before_model_or_fresh_resolver(
     captured = capsys.readouterr()
     assert result == 3
     assert "allow-custom-operator-generation" in captured.err
-    assert not (tmp_path / "no-model").exists()
+    _assert_only_prepared_taskbooks((tmp_path / "no-model"))
+
+
+def _assert_only_prepared_taskbooks(output):
+    from numpilot.gap_requirements import validate_gap_taskbook
+    files = sorted(path for path in output.rglob("*") if path.is_file())
+    assert len(files) == 2
+    assert {path.name for path in files} == {"GAP_TASKBOOK.json", "GAP_TASKBOOK.md"}
+    assert all(path.relative_to(output).parts[0] == "gaps" for path in files)
+    book = validate_gap_taskbook(json.loads(next(path for path in files if path.suffix == ".json").read_text()))
+    assert book["status"] == "requirements_prepared_unverified"
+    assert book["generation"]["claim_level"] == "unverified_candidate_only"

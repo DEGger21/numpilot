@@ -1,0 +1,20 @@
+{
+  "upstream": "https://github.com/pyscf/gpu4pyscf",
+  "commit": "5fde981316127cd3506d9d3c7d5633647fcc4508",
+  "file": "gpu4pyscf/lib/cupy_helper.py",
+  "file_sha256": "a715bc30b2c18ccc9e94d6f3de4b3a60bf9a42f19cfe70cf5772fa5bc5a98779",
+  "function": "sandwich_dot",
+  "lines": [
+    1224,
+    1241
+  ],
+  "license": "Apache-2.0",
+  "adaptation": [
+    "single 2-D real float32 case",
+    "host prepares contiguous C_T",
+    "two matmuls preserve original evaluation order",
+    "synthetic symmetric A and dense C; no molecular-energy claim"
+  ],
+  "calculation": "C.T @ A @ C",
+  "callsite": "gpu4pyscf/pbc/scf/khf.py:219"
+}

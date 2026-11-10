@@ -189,6 +189,58 @@ def _atomic_bytes(path: Path, payload: bytes, *, mode: int = 0o600, replace: boo
             pass
 
 
+def validate_runtime_qualification_scope(sample_id: str, receipt: Mapping[str, Any]):
+    """Revalidate an explicit sample scope; never upgrade a global identity.
+
+    This helper is shared by store insertion and offline store auditing. A
+    scope label alone cannot replace the existing matched-runtime gate.
+    """
+    ref = receipt.get("runtime_qualification_scope")
+    if ref is None:
+        return None
+    if (receipt.get("backend") != "npu"
+            or receipt.get("strict_npu_qualified") is not True
+            or receipt.get("numerical_verified") is not True
+            or receipt.get("runtime_identity_status") not in {"matched", "audit_required"}):
+        raise OperatorArtifactStoreError("scoped qualification requires strict numerical NPU evidence")
+    _validate_sha(receipt.get("source_sha256"), "scoped source_sha256")
+    _validate_sha(receipt.get("runtime_identity_sha256"), "runtime_identity_sha256")
+    from numpilot.scoped_qualification import validate_scoped_qualification
+    try:
+        scope = validate_scoped_qualification(
+            ref, expected_sample_id=sample_id,
+            expected_source_sha256=receipt["source_sha256"],
+            expected_runtime_identity_sha256=receipt["runtime_identity_sha256"],
+        )
+    except (ValueError, TypeError, KeyError, OSError) as exc:
+        raise OperatorArtifactStoreError("scoped qualification rejected: " + str(exc)) from exc
+    if scope["runtime_identity_status"] != receipt["runtime_identity_status"]:
+        raise OperatorArtifactStoreError("scoped qualification cannot promote global runtime status")
+    return scope
+
+
+def validate_scoped_performance_reference(sample_id: str, receipt: Mapping[str, Any]) -> None:
+    """A scoped runtime fact does not by itself establish performance evidence."""
+    if receipt.get("performance_qualified") is not True:
+        return
+    if receipt.get("runtime_qualification_scope") is None:
+        return
+    evidence = receipt.get("performance_evidence")
+    if (not isinstance(evidence, Mapping)
+            or evidence.get("identity_scope") != "official_overlay_callsite"
+            or evidence.get("receipt_type") != "numpilot_scoped_sample_benchmark"):
+        raise OperatorArtifactStoreError("scoped performance requires separate exact-sample evidence")
+    from numpilot.performance_evidence import verify_reference
+    try:
+        verified = verify_reference(evidence, expected_sample_id=sample_id,
+            expected_scoped_qualification=receipt["runtime_qualification_scope"])
+    except (ValueError, TypeError, KeyError, OSError) as exc:
+        raise OperatorArtifactStoreError("scoped performance evidence rejected: " + str(exc)) from exc
+    if (verified.get("runtime_identity_sha256") != receipt.get("runtime_identity_sha256")
+            or verified.get("source_sha256") != receipt.get("source_sha256")):
+        raise OperatorArtifactStoreError("scoped performance sample/runtime binding mismatch")
+
+
 class OperatorArtifactStore:
     """Persistent content-addressed operator artifacts for one benchmark run.
 
@@ -557,8 +609,9 @@ class OperatorArtifactStore:
         numerical = stable.get("numerical_verified")
         runtime_status = stable.get("runtime_identity_status")
         runtime_sha = stable.get("runtime_identity_sha256")
+        scoped = validate_runtime_qualification_scope(sample_id, stable)
         if strict is True:
-            if backend != "npu" or runtime_status != "matched":
+            if backend != "npu" or (runtime_status != "matched" and scoped is None):
                 raise OperatorArtifactStoreError(
                     "strict runtime qualification requires matched NPU identity"
                 )
@@ -575,7 +628,7 @@ class OperatorArtifactStore:
                 strict is not True
                 or numerical is not True
                 or backend != "npu"
-                or runtime_status != "matched"
+                or (runtime_status != "matched" and scoped is None)
             ):
                 raise OperatorArtifactStoreError(
                     "performance qualification requires strict NPU and numerical verification"
@@ -606,6 +659,8 @@ class OperatorArtifactStore:
                 raise OperatorArtifactStoreError(
                     "performance evidence source does not match sample"
                 )
+        if scoped is not None:
+            validate_scoped_performance_reference(sample_id, stable)
         gate_status = (
             "qualified"
             if strict is True and numerical is True
@@ -628,6 +683,9 @@ class OperatorArtifactStore:
             "performance_qualified": stable.get("performance_qualified"),
             "runtime_identity_status": runtime_status,
             "runtime_identity_sha256": runtime_sha,
+            **({"runtime_qualification_scope": stable["runtime_qualification_scope"],
+                "identity_scope": scoped["identity_scope"],
+                "global_runtime_audit_promoted": False} if scoped is not None else {}),
             "stored_at": _now(),
             "receipt": stable,
         }

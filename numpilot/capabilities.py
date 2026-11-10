@@ -15,6 +15,7 @@ import copy
 from enum import Enum
 import hashlib
 import json
+import math
 import os
 import platform
 import re
@@ -552,6 +553,60 @@ class TensorProfile:
 
 
 @dataclass(frozen=True)
+class ScalarValueProfile:
+    """Canonical finite scalar metadata; no rounding or signed-zero loss."""
+
+    kind: str
+    value: str
+
+    def __post_init__(self) -> None:
+        integer_kinds = {"python:int", *("numpy:" + name for name in (
+            "int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"))}
+        float_kinds = {"python:float", "numpy:float16", "numpy:float32", "numpy:float64"}
+        if (not isinstance(self.kind, str) or self.kind not in integer_kinds | float_kinds
+                or not isinstance(self.value, str) or len(self.value) > 80):
+            raise ValueError("scalar value profile kind/value is invalid")
+        try:
+            if self.kind in integer_kinds:
+                parsed = int(self.value)
+                if str(parsed) != self.value:
+                    raise ValueError("noncanonical integer scalar")
+                if self.kind == "python:int":
+                    if not -(2 ** 63) <= parsed < 2 ** 63:
+                        raise ValueError("integer scalar is outside the reviewed range")
+                else:
+                    import numpy as np
+                    limits = np.iinfo(self.kind.split(":", 1)[1])
+                    if not limits.min <= parsed <= limits.max:
+                        raise ValueError("integer scalar is outside its dtype")
+                real = float(parsed)
+            else:
+                real = float.fromhex(self.value)
+                if real.hex() != self.value:
+                    raise ValueError("noncanonical floating scalar")
+                if self.kind.startswith("numpy:"):
+                    import numpy as np
+                    dtype = np.dtype(self.kind.split(":", 1)[1])
+                    if abs(real) > np.finfo(dtype).max or float(dtype.type(real)).hex() != self.value:
+                        raise ValueError("floating scalar is outside its dtype")
+            # The admitted output is float32; overflow to infinity is outside
+            # this finite-fill contract even for a finite float64 argument.
+            if not math.isfinite(real) or abs(real) > 3.4028234663852886e38:
+                raise ValueError("fill scalar must be finite in float32")
+        except (OverflowError, TypeError, ValueError) as exc:
+            raise ValueError("scalar value profile is invalid") from exc
+
+    def to_dict(self) -> Dict[str, str]:
+        return {"kind": self.kind, "value": self.value}
+
+    @classmethod
+    def from_dict(cls, data):
+        if not isinstance(data, Mapping) or set(data) != {"kind", "value"}:
+            raise ValueError("scalar value profile fields are invalid")
+        return cls(kind=data["kind"], value=data["value"])
+
+
+@dataclass(frozen=True)
 class OperatorCallProfile:
     """Exact signature plus all tensor operands observed at a public API call."""
 
@@ -562,6 +617,10 @@ class OperatorCallProfile:
     # Explicit concatenate sequence + integer axis contract. None preserves the
     # legacy one-tensor-per-operand representation for every other API.
     sequence_axis: Optional[int] = None
+    reduction_axis: Optional[int] = None
+    reduction_keepdims: Optional[bool] = None
+    creation_output: Optional[TensorProfile] = None
+    creation_fill: Optional[ScalarValueProfile] = None
 
     def __post_init__(self) -> None:
         try:
@@ -587,6 +646,14 @@ class OperatorCallProfile:
         ):
             raise ValueError("operator call profile unprofiled operands are invalid")
         operand_count = signature.positional_args + len(signature.keyword_args)
+        markers = (self.sequence_axis is not None, self.reduction_axis is not None,
+                   self.creation_output is not None)
+        if sum(markers) > 1:
+            raise ValueError("operator call profile mixes API-specific markers")
+        if (self.reduction_axis is None) != (self.reduction_keepdims is None):
+            raise ValueError("mean reduction profile is incomplete")
+        if (self.creation_output is None) != (self.creation_fill is None):
+            raise ValueError("full creation profile is incomplete")
         if self.sequence_axis is not None:
             if (
                 isinstance(self.sequence_axis, bool)
@@ -599,6 +666,21 @@ class OperatorCallProfile:
                 }
             ):
                 raise ValueError("concatenate sequence profile is invalid")
+        elif self.reduction_axis is not None:
+            if (type(self.reduction_axis) is not int or not -(2 ** 63) <= self.reduction_axis < 2 ** 63
+                    or type(self.reduction_keepdims) is not bool or len(self.inputs) != 1
+                    or self.unprofiled_operands or (self.positional_args, self.keyword_args) not in {
+                        (1, ("axis",)), (1, ("axis", "keepdims")), (2, ()), (2, ("keepdims",)),
+                    }):
+                raise ValueError("mean reduction profile is invalid")
+        elif self.creation_output is not None:
+            output = self.creation_output
+            if (not isinstance(output, TensorProfile) or not isinstance(self.creation_fill, ScalarValueProfile)
+                    or self.inputs or self.unprofiled_operands
+                    or (self.positional_args, self.keyword_args) != (2, ("dtype",))
+                    or output.dtype != "float32" or not output.c_contiguous
+                    or not 1 <= output.rank <= 3 or any(size <= 0 for size in output.shape)):
+                raise ValueError("full creation profile is invalid")
         elif len(self.inputs) + len(self.unprofiled_operands) != operand_count:
             raise ValueError("operator call profile operand count is inconsistent")
 
@@ -611,6 +693,12 @@ class OperatorCallProfile:
         }
         if self.sequence_axis is not None:
             result["sequence_axis"] = self.sequence_axis
+        if self.reduction_axis is not None:
+            result["reduction_axis"] = self.reduction_axis
+            result["reduction_keepdims"] = self.reduction_keepdims
+        if self.creation_output is not None:
+            result["creation_output"] = self.creation_output.to_dict()
+            result["creation_fill"] = self.creation_fill.to_dict()
         return result
 
     @classmethod
@@ -618,10 +706,12 @@ class OperatorCallProfile:
         if not isinstance(data, Mapping):
             raise ValueError("operator call profile must be an object")
         fields = {"inputs", "positional_args", "keyword_args", "unprofiled_operands"}
-        if set(data) not in (fields, fields | {"sequence_axis"}):
+        extra_groups = ({"sequence_axis"}, {"reduction_axis", "reduction_keepdims"},
+                        {"creation_output", "creation_fill"})
+        if set(data) not in (fields, *(fields | group for group in extra_groups)):
             raise ValueError("operator call profile fields are invalid")
-        if "sequence_axis" in data and data["sequence_axis"] is None:
-            raise ValueError("concatenate sequence axis may not be null")
+        if any(data[name] is None for group in extra_groups for name in group if name in data):
+            raise ValueError("API-specific profile metadata may not be null")
         inputs = data["inputs"]
         keywords = data["keyword_args"]
         unprofiled = data["unprofiled_operands"]
@@ -639,6 +729,12 @@ class OperatorCallProfile:
             keyword_args=tuple(keywords),
             unprofiled_operands=tuple(unprofiled),
             sequence_axis=data.get("sequence_axis"),
+            reduction_axis=data.get("reduction_axis"),
+            reduction_keepdims=data.get("reduction_keepdims"),
+            creation_output=(TensorProfile.from_dict(data["creation_output"])
+                             if "creation_output" in data else None),
+            creation_fill=(ScalarValueProfile.from_dict(data["creation_fill"])
+                           if "creation_fill" in data else None),
         )
 
 
@@ -1056,6 +1152,86 @@ def profile_concatenate_call(
     )
 
 
+def _unprofiled_call(args, kwargs) -> OperatorCallProfile:
+    return OperatorCallProfile(
+        inputs=(), positional_args=len(args), keyword_args=tuple(sorted(kwargs)),
+        unprofiled_operands=tuple(["arg[%d]" % i for i in range(len(args))]
+                                 + ["kwarg[%s]" % name for name in sorted(kwargs)]),
+    )
+
+
+def _scalar_value_profile(value) -> Optional[ScalarValueProfile]:
+    import numpy as np
+    if type(value) is int:
+        kind, encoded = "python:int", str(value)
+    elif type(value) is float:
+        kind, encoded = "python:float", value.hex()
+    elif isinstance(value, np.integer) and not isinstance(value, np.bool_):
+        kind, encoded = "numpy:" + value.dtype.name, str(int(value))
+    elif isinstance(value, np.floating) and value.dtype.name in {"float16", "float32", "float64"}:
+        kind, encoded = "numpy:" + value.dtype.name, float(value).hex()
+    else:
+        return None
+    try:
+        return ScalarValueProfile(kind, encoded)
+    except ValueError:
+        return None
+
+
+def profile_api_call(name, args, kwargs, *, tensor_profile_extractor=tensor_profile_from_value) -> OperatorCallProfile:
+    """One profiler shared by NumPy collection and pre-dispatch NPU guards.
+
+    Mean and full have narrow explicit contracts; their scalar facts never
+    become fake tensors or grant scalar support to unrelated APIs.
+    """
+    if not callable(tensor_profile_extractor):
+        raise TypeError("tensor_profile_extractor must be callable")
+    if name == "concatenate":
+        return profile_concatenate_call(args, kwargs, tensor_profile_extractor=tensor_profile_extractor)
+    if name == "mean":
+        signature = (len(args), tuple(sorted(kwargs)))
+        if signature not in {(1, ("axis",)), (1, ("axis", "keepdims")), (2, ()), (2, ("keepdims",))}:
+            return _unprofiled_call(args, kwargs)
+        axis = args[1] if len(args) == 2 else kwargs["axis"]
+        keepdims = kwargs.get("keepdims", False)
+        if type(axis) is not int or not -(2 ** 63) <= axis < 2 ** 63 or type(keepdims) is not bool:
+            return _unprofiled_call(args, kwargs)
+        try:
+            tensor = tensor_profile_extractor(args[0])
+        except Exception:
+            tensor = None
+        if not isinstance(tensor, TensorProfile):
+            return _unprofiled_call(args, kwargs)
+        return OperatorCallProfile(inputs=(tensor,), positional_args=len(args),
+            keyword_args=tuple(sorted(kwargs)), reduction_axis=axis, reduction_keepdims=keepdims)
+    if name == "full":
+        if len(args) != 2 or tuple(sorted(kwargs)) != ("dtype",):
+            return _unprofiled_call(args, kwargs)
+        import numpy as np
+        dtype = kwargs["dtype"]
+        if not (isinstance(dtype, (str, np.dtype)) or dtype is np.float32):
+            return _unprofiled_call(args, kwargs)
+        try:
+            if np.dtype(dtype) != np.dtype("float32"):
+                return _unprofiled_call(args, kwargs)
+        except (TypeError, ValueError):
+            return _unprofiled_call(args, kwargs)
+        raw_shape = args[0]
+        dims = (raw_shape,) if isinstance(raw_shape, (int, np.integer)) else raw_shape
+        if type(dims) not in (list, tuple) or not 1 <= len(dims) <= 3:
+            return _unprofiled_call(args, kwargs)
+        if any(isinstance(dim, (bool, np.bool_)) or not isinstance(dim, (int, np.integer))
+               or not 1 <= int(dim) < 2 ** 63 for dim in dims):
+            return _unprofiled_call(args, kwargs)
+        fill = _scalar_value_profile(args[1])
+        if fill is None:
+            return _unprofiled_call(args, kwargs)
+        return OperatorCallProfile(inputs=(), positional_args=2, keyword_args=("dtype",),
+            creation_output=TensorProfile("float32", tuple(int(dim) for dim in dims), True),
+            creation_fill=fill)
+    return profile_operator_call(args, kwargs, tensor_profile_extractor=tensor_profile_extractor)
+
+
 @dataclass(frozen=True)
 class OperatorCapability:
     """Runtime availability and audited provenance for one API."""
@@ -1066,6 +1242,7 @@ class OperatorCapability:
     evidence: str = ""
     constraints: Tuple[str, ...] = ()
     signature_variants: Tuple[OperatorSignature, ...] = ()
+    qualified_profiles: Tuple[OperatorCallProfile, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.name, str) or not self.name:
@@ -1094,6 +1271,10 @@ class OperatorCapability:
             or len(set(self.signature_variants)) != len(self.signature_variants)
         ):
             raise ValueError("operator capability signatures are invalid")
+        if (not isinstance(self.qualified_profiles, tuple) or len(self.qualified_profiles) > 256
+                or any(not isinstance(profile, OperatorCallProfile) for profile in self.qualified_profiles)
+                or len(set(self.qualified_profiles)) != len(self.qualified_profiles)):
+            raise ValueError("operator capability qualified profiles are invalid")
 
     @property
     def strict_npu(self) -> bool:
@@ -1102,12 +1283,12 @@ class OperatorCapability:
         # Constraints are descriptive evidence until a caller supplies a
         # profile-aware matcher.  A name-only capability check must never
         # broaden any scoped result to every dtype/shape/layout.
-        if self.constraints or self.signature_variants:
+        if self.constraints or self.signature_variants or self.qualified_profiles:
             return False
         return True
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        result = {
             "name": self.name,
             "available": self.available,
             "provenance": self.provenance.value,
@@ -1118,12 +1299,15 @@ class OperatorCapability:
                 signature.to_dict() for signature in self.signature_variants
             ],
         }
+        if self.qualified_profiles:
+            result["qualified_profiles"] = [profile.to_dict() for profile in self.qualified_profiles]
+        return result
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "OperatorCapability":
         if not isinstance(data, Mapping):
             raise ValueError("operator capability must be an object")
-        if frozenset(data) != {
+        fields = {
             "name",
             "available",
             "provenance",
@@ -1131,8 +1315,13 @@ class OperatorCapability:
             "evidence",
             "constraints",
             "signature_variants",
-        }:
+        }
+        if set(data) not in (fields, fields | {"qualified_profiles"}):
             raise ValueError("operator capability fields are invalid")
+        qualified = data.get("qualified_profiles", ())
+        if (not isinstance(qualified, (list, tuple))
+                or ("qualified_profiles" in data and not qualified)):
+            raise ValueError("operator capability qualified profiles must be nonempty when supplied")
         if not isinstance(data.get("name"), str):
             raise ValueError("operator capability name must be text")
         if type(data.get("available")) is not bool:
@@ -1153,6 +1342,7 @@ class OperatorCapability:
                 OperatorSignature.from_dict(item)
                 for item in signatures
             ),
+            qualified_profiles=tuple(OperatorCallProfile.from_dict(item) for item in qualified),
         )
         if type(data["strict_npu"]) is not bool:
             raise ValueError("operator capability strict_npu must be boolean")
@@ -1229,6 +1419,12 @@ def match_capability_profile(
     if not capability.provenance.is_strict_npu:
         reasons.append("operator provenance is not strict NPU")
 
+    if capability.qualified_profiles:
+        if not capability.constraints or not capability.signature_variants:
+            reasons.append("exact-profile capability requires complete constraints and signatures")
+        if profile not in capability.qualified_profiles:
+            reasons.append("call profile is outside the qualified exact profiles")
+
     if capability.signature_variants and not capability.constraints:
         reasons.append("scoped capability has no profile constraints")
     if capability.signature_variants:
@@ -1263,8 +1459,31 @@ def match_capability_profile(
                 if tensor.dtype != first.dtype:
                     reasons.append("concatenate operands have different dtypes")
 
+    if capability.name == "mean" and profile.reduction_axis is None:
+        reasons.append("mean requires an explicit reduction profile")
+    if profile.reduction_axis is not None:
+        if capability.name != "mean":
+            reasons.append("reduction profile is only valid for mean")
+        tensor = profile.inputs[0]
+        if tensor.rank == 0 or not -tensor.rank <= profile.reduction_axis < tensor.rank:
+            reasons.append("mean axis is outside the tensor rank")
+    if capability.name == "full" and profile.creation_output is None:
+        reasons.append("full requires an explicit creation profile")
+    if profile.creation_output is not None and capability.name != "full":
+        reasons.append("creation profile is only valid for full")
+
+    tensors = profile.inputs
+    if capability.name == "full" and profile.creation_output is not None:
+        tensors = (profile.creation_output,)
+    if capability.qualified_profiles:
+        if not tensors or profile.unprofiled_operands:
+            reasons.append("exact-profile call contains unprofiled operands")
+        for tensor in tensors:
+            if (tensor.dtype != "float32" or not tensor.c_contiguous
+                    or not 1 <= tensor.rank <= 3 or any(size <= 0 for size in tensor.shape)):
+                reasons.append("exact-profile tensor is outside float32 contiguous positive rank1-3 scope")
     if capability.constraints:
-        if not profile.inputs:
+        if not tensors:
             reasons.append("call exposes no profileable tensor operands")
         if profile.unprofiled_operands:
             reasons.append(
@@ -1277,7 +1496,7 @@ def match_capability_profile(
             parsed = {}
             reasons.append(str(exc))
 
-        for index, tensor in enumerate(profile.inputs):
+        for index, tensor in enumerate(tensors):
             if "dtype" in parsed and tensor.dtype != parsed["dtype"]:
                 reasons.append(
                     "input[%d] dtype=%s does not satisfy dtype=%s"
@@ -1447,12 +1666,10 @@ class RuntimeProfileGuard:
         if name not in self.profile_scoped:
             return
         capability = self._capabilities[name]
-        profiler = profile_concatenate_call if name == "concatenate" else profile_operator_call
         match = match_capability_profile(
             capability,
-            profiler(
-                args,
-                kwargs,
+            profile_api_call(
+                name, args, kwargs,
                 tensor_profile_extractor=self.tensor_profile_extractor,
             ),
         )

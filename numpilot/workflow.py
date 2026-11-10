@@ -325,10 +325,12 @@ def _run_stage(
     *,
     cwd: Path,
     timeout_seconds: float,
+    on_event=None,
 ) -> WorkflowStage:
     started = time.monotonic()
     timed_out = False
     returncode: int | None = None
+    progress_pipe = None
     try:
         popen_kwargs: dict[str, Any] = {
             "cwd": str(cwd),
@@ -342,10 +344,17 @@ def _run_stage(
             # timeout cannot leave a descendant running after the report says
             # the stage stopped.
             popen_kwargs["start_new_session"] = True
+            from numpilot.progress_transport import ChildProgressPipe, PROGRESS_FD_ENV
+            popen_kwargs["env"].pop(PROGRESS_FD_ENV, None)
+            if on_event is not None:
+                progress_pipe = ChildProgressPipe(on_event)
+                popen_kwargs.update(progress_pipe.popen_options(popen_kwargs["env"]))
         process = subprocess.Popen(
             list(argv),
             **popen_kwargs,
         )
+        if progress_pipe is not None:
+            progress_pipe.start()
         captured: dict[str, bytes] = {}
         readers = [
             threading.Thread(
@@ -401,6 +410,9 @@ def _run_stage(
         stdout = b""
         stderr = ("child launch failed: %s" % type(exc).__name__).encode("ascii")
         returncode = None
+    finally:
+        if progress_pipe is not None:
+            progress_pipe.close()
     elapsed = round(max(0.0, time.monotonic() - started), 6)
     stdout_path = root / ("%s.stdout.log" % name)
     stderr_path = root / ("%s.stderr.log" % name)
@@ -583,6 +595,7 @@ def run_ordinary_workflow(
     skip_env_check: bool = False,
     timeout_seconds: float = 3600.0,
     python_executable: str | None = None,
+    on_event=None,
 ) -> dict[str, Any]:
     """Run the ordinary configured-model chain in separate child processes.
 
@@ -739,22 +752,72 @@ def run_ordinary_workflow(
         {"stage": "admission", "sha256": initial_source_sha}
     ]
     source_changed = False
+    from numpilot.progress import ProgressEmitter, notify_observer
+    progress_events = []
+    active_events = {}
+    progress_lock = threading.RLock()
+
+    def observe(event):
+        with progress_lock:
+            if len(progress_events) < 2048:
+                progress_events.append(event.to_dict())
+            if event.state == "running":
+                active_events[event.component] = event
+            else:
+                active_events.pop(event.component, None)
+            notify_observer(on_event, event)
+
+    progress = ProgressEmitter(observe if on_event is not None else None)
+
+    def relay(event):
+        # A single parent clock/sequence orders children from several stages.
+        with progress_lock:
+            progress.emit(event.role, event.state, event.message,
+                          execution_mode=event.execution_mode,
+                          component=event.component, attempt=event.attempt)
+
+    def close_active(state):
+        with progress_lock:
+            for event in list(active_events.values()):
+                if event.component != "workflow":
+                    progress.emit(event.role, state, "子进程已结束，请以阶段回执为准",
+                                  execution_mode=event.execution_mode,
+                                  component=event.component, attempt=event.attempt)
+
+    def save_progress():
+        if on_event is not None:
+            payload = "".join(json.dumps(e, ensure_ascii=False, allow_nan=False) + "\n"
+                              for e in progress_events).encode("utf-8")
+            _write_private(root / "workflow-progress.jsonl", payload)
 
     def run_stage_checked(
         name: str, argv: Sequence[str]
     ) -> tuple[WorkflowStage, bool]:
         """Run a child and verify the source did not drift at its boundary."""
 
-        stage = _run_stage(
-            name,
-            argv,
-            root,
-            cwd=project_root,
-            timeout_seconds=timeout,
-        )
+        labels = {"01-analyze": "分析源码并检查迁移准入",
+                  "02-migrate": "迁移子进程运行中，等待其真实角色状态",
+                  "03-verify": "执行原程序与迁移程序的独立数值验证",
+                  "04-benchmark": "执行独立性能测量"}
+        progress.emit(None, "running", labels[name], component="workflow")
+        extra = {"on_event": relay} if on_event is not None else {}
+        try:
+            stage = _run_stage(
+                name, argv, root, cwd=project_root, timeout_seconds=timeout, **extra,
+            )
+        except BaseException:
+            close_active("failed")
+            progress.emit(None, "failed", "流程中断，子进程已停止", component="workflow")
+            save_progress()
+            raise
         stages.append(stage)
         observed = _source_hash(source_path)
         source_guard_checks.append({"stage": name, "sha256": observed})
+        state = ("completed" if stage.status == "passed" and observed == initial_source_sha
+                 else "blocked" if stage.returncode in {1, 2, 3, 4} or observed != initial_source_sha
+                 else "failed")
+        close_active(state)
+        progress.emit(None, state, "阶段结束，回执与日志已保存", component="workflow")
         return stage, observed == initial_source_sha
 
     # Running from the package/repository root keeps ``python -m numpilot``
@@ -982,7 +1045,12 @@ def run_ordinary_workflow(
             "strict_npu_performance_verified": False,
         }
     payload = (json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode("utf-8")
-    _write_private(report_path, payload)
+    from numpilot.roles import Role
+    with progress.operation(Role.REPORTER, "汇总子进程回执并写入工作流报告"):
+        _write_private(report_path, payload)
+    progress.emit(None, "completed" if final_status == "passed" else "blocked" if final_status == "blocked" else "failed",
+                  "流程结束，请查看工作流报告与下一步建议", component="workflow")
+    save_progress()
     return report
 
 

@@ -519,7 +519,15 @@ def render_generation_request(
     asnumpy_reference: str = "",
     skill_bundle=None,
     semantic_contract: str = "",
+    taskbook=None,
 ) -> str:
+    from numpilot.gap_requirements import (
+        build_gap_taskbook, render_gap_taskbook_markdown, validate_gap_taskbook,
+    )
+
+    taskbook = validate_gap_taskbook(taskbook or build_gap_taskbook(spec))
+    if taskbook.get("gap_spec") != spec.to_dict():
+        raise ValueError("generation taskbook does not match GapSpec")
     skill = (
         skill_root.rstrip("/")
         + "/ops/ascendc-registry-invoke-template/SKILL.md"
@@ -582,6 +590,12 @@ def render_generation_request(
         f"- Gap ID: `{spec.gap_id}`\n",
         f"- Target: `{spec.target_soc}`, CANN `{spec.cann_version}`\n",
     ))
+    # Keep this before the Skill marker: staged generation compacts the request
+    # at that marker and must retain the exact same requirements for every file.
+    request += "\n## Planner taskbook (unverified requirements)\n\n"
+    request += render_gap_taskbook_markdown(taskbook)
+    request += "\n## Machine-readable taskbook\n\n```json\n"
+    request += json.dumps(taskbook, ensure_ascii=False, sort_keys=True, indent=2) + "\n```\n"
     if semantic_contract:
         request += (
             "\n## NumPy semantic oracle (authoritative)\n\n"

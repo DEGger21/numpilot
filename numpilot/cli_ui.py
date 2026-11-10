@@ -484,6 +484,191 @@ class OperatorGenerationTimeline:
         )
 
 
+_PROGRESS_STATES = {
+    "pending": ("○", "待执行", "dim"),
+    "running": ("●", "执行中", "bold cyan"),
+    "completed": ("✓", "完成", "green"),
+    "blocked": ("!", "已阻断", "yellow"),
+    "failed": ("✗", "失败", "red"),
+    "skipped": ("–", "未执行", "dim"),
+}
+_PROGRESS_MODES = {
+    "static": "规则处理 · 无模型",
+    "llm": "已配置模型 · 真实调用",
+    "external": "外部代理 · 独立接入",
+}
+
+
+def _progress_message(value):
+    """Bound framework labels and redact accidental credential-like values.
+
+    Event producers must never pass raw provider responses or exceptions. This
+    last presentation boundary additionally removes common credential forms;
+    it is not a substitute for that fixed-message event contract.
+    """
+    value = _terminal_safe(value)
+    value = re.sub(r"(?i)\b(?:api[_-]?key|auth[_-]?token|access[_-]?token|authorization|password|secret)\b\s*[:=]\s*(?:Bearer\s+\S+|\"[^\"]*\"|'[^']*'|\S+)", "[凭据已隐藏]", value)
+    value = re.sub(r"(?i)\bBearer\s+\S+", "Bearer [已隐藏]", value)
+    value = re.sub(r"\bsk-[A-Za-z0-9_-]{8,}\b", "[凭据已隐藏]", value)
+    return value[:180] + ("…" if len(value) > 180 else "")
+
+
+class AgentProgress:
+    """Observer-only live six-role view, with plain immediate stderr events.
+
+    Verification and workflow stages have separate rows, never a seventh role.
+    Model labels come from actual lifecycle events, not the selected engine or
+    an optimistic roster. Pending roles stay pending when work is blocked.
+    """
+
+    def __init__(self, *, enabled=True, stream=None, dynamic=True):
+        from numpilot.progress import ProgressEmitter
+        from numpilot.roles import ROLE_DEFINITIONS
+        self.stream = sys.stderr if stream is None else stream
+        self.enabled = enabled
+        self.dynamic = dynamic
+        self.definitions = ROLE_DEFINITIONS
+        self.rows = {item.role.value: self._new_row() for item in self.definitions}
+        self.steps = {}
+        self.emitter = ProgressEmitter(self.on_event)
+        self.value = "ok"
+        self._live = None
+        self._started = None
+        self._visible = False
+
+    @staticmethod
+    def _new_row():
+        return {"state": "pending", "mode": None, "message": "尚未执行", "attempt": 1,
+                "started": None, "elapsed": 0.0}
+
+    def __enter__(self):
+        self._started = time.monotonic()
+        if self.enabled and self.dynamic and is_interactive(self.stream):
+            from rich.live import Live
+            self._live = Live(get_renderable=self._renderable, console=_console(self.stream),
+                              refresh_per_second=4, redirect_stdout=False, redirect_stderr=False)
+            self._live.start(refresh=True)
+        return self
+
+    def error(self):
+        self.value = "error"
+
+    def warning(self):
+        if self.value != "error":
+            self.value = "warn"
+
+    def emit(self, *args, **kwargs):
+        return self.emitter.emit(*args, **kwargs)
+
+    def operation(self, *args, **kwargs):
+        return self.emitter.operation(*args, **kwargs)
+
+    def on_event(self, event):
+        from numpilot.progress import RoleProgressEvent
+        if isinstance(event, dict):
+            event = RoleProgressEvent.from_dict(event)
+        if not isinstance(event, RoleProgressEvent):
+            raise ValueError("expected a role lifecycle event")
+        # A workflow child sends structured events over its private inherited
+        # descriptor. Raw child stderr remains in its own evidence log.
+        forwarded = False
+        try:
+            from numpilot.progress_transport import emit_child_event
+        except ModuleNotFoundError as exc:
+            if exc.name != "numpilot.progress_transport":
+                raise
+        else:
+            forwarded = emit_child_event(event)
+        key = event.role.value if event.role is not None else event.component
+        target = self.rows if event.role is not None else self.steps
+        row = target.setdefault(key, self._new_row())
+        now = time.monotonic()
+        if event.state == "running" and row["state"] != "running":
+            row["started"] = now
+        if event.state != "running" and row["started"] is not None:
+            row["elapsed"] = max(0.0, now - row["started"])
+            row["started"] = None
+        row.update(state=event.state, mode=event.execution_mode,
+                   message=_progress_message(event.message), attempt=event.attempt)
+        if event.state == "failed":
+            self.error()
+        elif event.state == "blocked":
+            self.warning()
+        if not self.enabled or forwarded:
+            return
+        self._visible = True
+        if self._live is not None:
+            self._live.refresh()
+            return
+        from numpilot.roles import role_definition
+        label = role_definition(event.role).display_name if event.role is not None else (
+            "验证步骤" if event.component == "verification" else "流水线")
+        _mark, state, _style = _PROGRESS_STATES[event.state]
+        mode = (_PROGRESS_MODES[event.execution_mode] if event.role is not None else
+                "确定性验证" if event.component == "verification" else "独立流程")
+        print("[%s] %s · %s · %s · %.1fs" % (
+            label, state, mode, row["message"], self._elapsed(row)),
+            file=self.stream, flush=True)
+
+    def _elapsed(self, row):
+        return (max(0.0, time.monotonic() - row["started"])
+                if row["started"] is not None else row["elapsed"])
+
+    def _renderable(self):
+        width = self._live.console.width if self._live is not None else _console(self.stream).width
+        compact = width < 110
+        table = Table(box=box.SIMPLE, expand=True, padding=(0, 1))
+        table.add_column("六角色", min_width=16, max_width=23 if compact else None)
+        table.add_column("状态", no_wrap=True)
+        if not compact:
+            table.add_column("执行方式", min_width=12)
+        table.add_column("当前活动", ratio=1)
+        table.add_column("耗时", justify="right", no_wrap=True)
+        compact_names = {
+            "analyzer": "① 分析 Analyzer", "planner": "② 规划 Planner",
+            "gap_filler": "③ 补全 Gap Filler", "code_migrator": "④ 迁移 Migrator",
+            "diagnostics": "⑤ 诊断 Diagnostics", "reporter": "⑥ 报告 Reporter",
+        }
+
+        def add_row(name, row, *, independent=False):
+            marker, label, style = _PROGRESS_STATES[row["state"]]
+            mode = "独立步骤" if independent else _PROGRESS_MODES.get(row["mode"], "尚未执行")
+            cells = [Text(name), Text(marker + " " + label, style=style)]
+            if compact:
+                detail = Text(row["message"])
+                detail.append("\n" + mode, style="dim")
+            else:
+                cells.append(Text(mode, style="dim"))
+                detail = Text(row["message"])
+            cells.extend((detail, Text("%.1fs" % self._elapsed(row), style="dim")))
+            table.add_row(*cells)
+
+        for definition in self.definitions:
+            key = definition.role.value
+            add_row(compact_names[key] if compact else definition.display_name, self.rows[key])
+        for key, row in list(self.steps.items()):
+            add_row("验证步骤" if key == "verification" else "流水线", row, independent=True)
+        total = max(0.0, time.monotonic() - self._started) if self._started is not None else 0.0
+        return Panel(table, title="NumPilot · 六角色协作", border_style={
+            "ok": "cyan", "warn": "yellow", "error": "red"}[self.value],
+            subtitle=Text("总耗时 %.1fs · 运行状态不替代验证回执" % total), box=box.ROUNDED)
+
+    def __exit__(self, exc_type, exc, traceback):
+        if exc_type is not None:
+            self.error()
+        # A caught CLI error may return a nonzero code instead of raising.
+        # Running rows must not remain spinning after either exit path.
+        for key, row in list(self.rows.items()) + list(self.steps.items()):
+            if row["state"] == "running":
+                self.emit(key if key in self.rows else None,
+                    "failed" if self.value == "error" else "blocked",
+                    "任务未完成，请查看结果报告", execution_mode=row["mode"],
+                    component=key)
+        if self._live is not None:
+            self._live.stop()
+        return False
+
+
 @contextmanager
 def terminal_status(message, *, enabled=True):
     """Show a durable spinner/result pair on stderr only for a real TTY."""

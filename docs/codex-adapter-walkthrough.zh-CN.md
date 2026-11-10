@@ -19,7 +19,7 @@ CANNBot 自定义 kernel 路线仍是官方算子不满足契约时的后续分�
 | 设备执行证据 | 独立 msprof 实测 4 条 ConcatD；本轮 gate 另有 2 次 native 调用 |
 | 原始 I006 | AST 自动迁移及 strict NPU 验证通过 |
 | RecoveryStore | 仍为 `INTEGRATED_CANDIDATE`；正式资格产品另存 capability overlay |
-| 全局 activation / 性能资格 | 未执行 / 未完成 |
+| 全局 activation / 性能证据 | 未执行；原始 I006 已有正式证据，且未加速（见后续复现） |
 
 静态组件不被生成代码覆盖。代码和工件分开保存：`adapter-v2/candidate/` 是六文件
 源码 overlay；`integration-v2/source/` 是固定源码包叠加 overlay 的构建输入；
@@ -125,12 +125,12 @@ oracle。它保存原程序、生成代码、调用 profile、三类比较、run
 结果与生成程序输出均一致。单 ndarray 或 tensor-valued axis 不得借通用 profile 误准入。
 
 这是原始 I006 的范围限定迁移成功。全局 runtime 仍为 `audit_required`；没有更新
-150 例 suite 计数，没有赋予性能资格，也没有全局激活候选。前面的 direct smoke
+150 例全量 suite 计数，也没有全局激活候选。本节的独立 runner 不赋予性能资格；后续正式 suite 与性能生产记录见[范围限定 benchmark](scoped-benchmark.zh-CN.md)。前面的 direct smoke
 保留为历史诊断，不能替代本节正式迁移回执。
 
 ## 下一批工作
 
-1. 将范围限定的正式资格接入批量 benchmark 回执，扩展 single-gap → official-gap →
+1. 已将范围限定资格接入正式 suite/store/性能，详见[后续复现](scoped-benchmark.zh-CN.md)。已完成首批11个基础API及3个混合程序验证（[范围与复现](baseline-api-qualification.zh-CN.md)）；下一步直接补cbrt，再扩展 single-gap → official-gap →
    multi-gap 队列；保留每例不可变 source hash、拒绝原因和候选失败状态。至少复现一例
    CANNBot 指导生成自定义 Ascend C/ASC 算子、暴露 ACLNN 两段式、补入 AsNumpy
    并验证原程序的完整路线；本次官方 aclnnCat 复用不能替代该项验收。

@@ -20,6 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from numpilot.agents.decision import DecisionAgent
+from numpilot.gap_requirements import build_planning_requirements
 
 ROUTE_DIRECT = "direct_migration"
 ROUTE_FILL_GAPS = "fill_api_gaps"
@@ -34,6 +35,7 @@ class MigrationPlan:
     threshold_elements: int
     strategy: str
     gap_tasks: tuple = field(default_factory=tuple)
+    planning_requirements: tuple = field(default_factory=tuple)
 
     @property
     def direct(self) -> bool:
@@ -46,6 +48,7 @@ class MigrationPlan:
             "threshold_elements": self.threshold_elements,
             "placement": dict(self.placement),
             "gap_tasks": list(self.gap_tasks),
+            "planning_requirements": list(self.planning_requirements),
         }
 
 
@@ -68,4 +71,5 @@ class PlannerAgent:
             threshold_elements=offload.threshold_elements,
             strategy=offload.strategy,
             gap_tasks=tuple(task.to_dict() for task in blocking),
+            planning_requirements=build_planning_requirements(analysis, gap_plan),
         )

@@ -7,17 +7,16 @@ capability provenance；性能必须通过独立的 ``bench-cpu`` / ``bench-npu`
 import ast
 import os
 import sys
+import uuid
 
 from rich.console import Console
 from rich.panel import Panel
-from rich.progress import (BarColumn, Progress, SpinnerColumn, TextColumn,
-                           TimeElapsedColumn)
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
 from rich import box
 
 from numpilot.backends.base import select_backend
-from numpilot.cli_ui import compact_diagnostic
+from numpilot.cli_ui import AgentProgress, compact_diagnostic
 from numpilot.contracts import MigrationResult
 from numpilot.coverage import is_custom
 from numpilot.engines.llm import LlmError
@@ -27,7 +26,6 @@ from numpilot.llm_config import (LlmConfigError, configure_llm_interactive,
 from numpilot.orchestrator import Orchestrator, _make_engine
 from numpilot.paths import default_benchmark_dir, default_wizard_dir
 from numpilot.report import agent_roster, save_migration_report
-from numpilot.roles import role_definition
 
 console = Console()
 
@@ -155,23 +153,12 @@ def _run_pipeline(source, path, engine_name, backend_name, out_dir):
         backend=select_backend(backend_name),
         engine=_make_engine(engine_name),
     )
-    with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
-                  BarColumn(bar_width=24), TextColumn("{task.completed}/{task.total}"),
-                  TimeElapsedColumn(), console=console) as prog:
-        t = prog.add_task("准备中", total=6)
-
-        def on_record(record):
-            name = role_definition(record.role).display_name
-            prog.update(t, description=f"[{record.status}] {name}")
-            prog.console.print(f"   ↳ [cyan]{name}[/] {record.summary}")
-            prog.advance(t)
-
+    with AgentProgress(stream=console.file) as progress:
         result = orchestrator.run_source(
-            source, path, out_dir, on_record=on_record
+            source, path, out_dir, on_event=progress.on_event
         )
-        prog.update(
-            t, total=len(result["roles"]), completed=len(result["roles"])
-        )
+        if result["status"] not in {"pass", "unsupported"}:
+            progress.error()
 
     data["analysis"] = result["analysis"]
     data["plan"] = result.get("plan")
@@ -203,8 +190,8 @@ def _run_pipeline(source, path, engine_name, backend_name, out_dir):
             if provenance.get("strict_npu")
             else "未执行(shim/非 strict)"
         )
-        prog.console.print(
-            f"   ↳ [cyan]验证智能体[/] capability audit={audit_id} · "
+        console.print(
+            f"   ↳ [cyan]验证步骤[/] capability audit={audit_id} · "
             f"strict-NPU 门禁={gate}"
         )
     else:
@@ -350,7 +337,7 @@ def run_wizard(
     if engine_name is None:
         return 1
 
-    _print_roster(engine_name)      # 让用户看清 5 个智能体各自用什么模型/引擎
+    _print_roster(engine_name)      # 让用户看清六角色各自使用的实际执行方式
     source = open(path, encoding="utf-8").read()
     try:
         data = _run_pipeline(
@@ -358,7 +345,7 @@ def run_wizard(
             path,
             engine_name,
             backend_name,
-            out_dir or str(default_wizard_dir()),
+            out_dir or str(default_wizard_dir() / ("run-" + uuid.uuid4().hex)),
         )
     except LlmError as e:
         console.print(Panel(f"{e}", title="[red]LLM 迁移终止(strict)[/]", border_style="red"))

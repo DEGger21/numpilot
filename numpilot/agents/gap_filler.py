@@ -132,53 +132,63 @@ def _status_for(route):
     return "lowering_required"
 
 
+def collect_gap_inventory(analysis) -> GapPlan:
+    """Collect deterministic analysis facts without executing a model-facing role.
+
+    The Analyzer collects this inventory before the Planner chooses a route.
+    Gap Filler later rechecks it against the same analysis before acting on the
+    planned tasks; callers of its existing ``plan`` method keep the same result.
+    """
+    grouped = {}
+    for use in getattr(analysis, "op_uses", ()) or ():
+        if use.supported:
+            note = _CONTRACT_NOTES.get(use.name)
+            if note:
+                key = ("semantic_divergence", use.name)
+                existing = grouped.get(key)
+                sites = tuple(sorted(set((existing.call_sites if existing else ()) + (use.lineno,))))
+                grouped[key] = GapTask(
+                    name=use.name,
+                    category="semantic_divergence",
+                    route="api_correctness_gate",
+                    status="review_required",
+                    call_sites=sites,
+                    reason=note,
+                    target=use.name,
+                )
+            continue
+
+        category, route = _classify(use)
+        if category == "api_gap" and use.name in _OFFICIAL_ALIASES:
+            # A documented alias is a mechanical rename, not a gap.
+            category, route = "alias", "code_migrator"
+        key = (category, use.name)
+        existing = grouped.get(key)
+        sites = tuple(sorted(set((existing.call_sites if existing else ()) + (use.lineno,))))
+        target = None
+        if category in ("api_gap", "alias"):
+            target = _OFFICIAL_ALIASES.get(use.name, use.name)
+        grouped[key] = GapTask(
+            name=use.name,
+            category=category,
+            route=route,
+            status=_status_for(route),
+            call_sites=sites,
+            reason=use.reason or "",
+            target=target,
+        )
+
+    tasks = tuple(
+        sorted(
+            grouped.values(),
+            key=lambda task: (task.category, task.name, task.call_sites),
+        )
+    )
+    return GapPlan(tasks=tasks)
+
+
 class GapFillerAgent:
-    """Turn ``AnalysisResult.op_uses`` into a deduplicated, routed plan."""
+    """Recheck ``AnalysisResult.op_uses`` as deduplicated, routed gap tasks."""
 
     def plan(self, analysis) -> GapPlan:
-        grouped = {}
-        for use in getattr(analysis, "op_uses", ()) or ():
-            if use.supported:
-                note = _CONTRACT_NOTES.get(use.name)
-                if note:
-                    key = ("semantic_divergence", use.name)
-                    existing = grouped.get(key)
-                    sites = tuple(sorted(set((existing.call_sites if existing else ()) + (use.lineno,))))
-                    grouped[key] = GapTask(
-                        name=use.name,
-                        category="semantic_divergence",
-                        route="api_correctness_gate",
-                        status="review_required",
-                        call_sites=sites,
-                        reason=note,
-                        target=use.name,
-                    )
-                continue
-
-            category, route = _classify(use)
-            if category == "api_gap" and use.name in _OFFICIAL_ALIASES:
-                # A documented alias is a mechanical rename, not a gap.
-                category, route = "alias", "code_migrator"
-            key = (category, use.name)
-            existing = grouped.get(key)
-            sites = tuple(sorted(set((existing.call_sites if existing else ()) + (use.lineno,))))
-            target = None
-            if category in ("api_gap", "alias"):
-                target = _OFFICIAL_ALIASES.get(use.name, use.name)
-            grouped[key] = GapTask(
-                name=use.name,
-                category=category,
-                route=route,
-                status=_status_for(route),
-                call_sites=sites,
-                reason=use.reason or "",
-                target=target,
-            )
-
-        tasks = tuple(
-            sorted(
-                grouped.values(),
-                key=lambda task: (task.category, task.name, task.call_sites),
-            )
-        )
-        return GapPlan(tasks=tasks)
+        return collect_gap_inventory(analysis)

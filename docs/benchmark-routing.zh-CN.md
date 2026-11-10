@@ -215,8 +215,7 @@ backend npu@0.4.1.post0+numpilot.bee27ba2 cannot satisfy required APIs
   `histogram2d`、FFT 与大部分 `linalg`；
 - 契约差异：`logspace`/`geomspace` 的 `linspace` 参数要求静态标量，而 H012/H013
   的 `start`/`stop` 是 0 维数组；
-- 官方 `concatenate` overlay 已发布，但尚未接入 benchmark 分析路由
-  （D1005/G001/I006）；
+- 历史无 overlay sweep 未使用 `concatenate` 资格；最新正式 NPU 接入见下面补充。
 - F 组 10 例与 B001–B003 需要显式同意分支，不能静默改写。
 
 ## 7. 复现与边界
@@ -225,3 +224,19 @@ backend npu@0.4.1.post0+numpilot.bee27ba2 cannot satisfy required APIs
 - J 组只执行静态分析，`receipt.json` 中 `execution_performed` 固定为 `false`。
 - shim 结果不能对外宣称 NPU 执行；性能数据必须走 Phase 9 的独立 bench 口径。
 - 公开回执不包含私有绝对路径、token、endpoint、原始模型响应或 prompt 明文。
+
+
+## 正式范围限定 NPU 接入
+
+现在可以使用官方 overlay 运行真实 NPU suite，并通过 `--cases group/name` 精确选择原始样例。
+组合官方与基础API资格后，I006/G001/D1005/I003已正式迁移；35例single-gap实测为4迁移、28缺口停止、3执行前runtime资格拒绝。
+全局audit_required保留，拒绝原因与数值失败分开记录，expectations不变。
+操作、scope/store验证与性能回执见[完整复现](scoped-benchmark.zh-CN.md)。
+
+
+## Stage82 实测结果（2026-11-10）
+
+11个基础API、46个真实设备probes通过；G001/D1005/I003原始混合程序正式迁移通过。
+完整35例single-gap复测为4迁移成功、28缺口停止、3执行前runtime资格拒绝；后3例均涉及cbrt组合。
+全局audit_required、原始150例及作者源码不变，没有新增性能或加速宣称。
+本次复用官方concat和既有基础API，自定义Ascend C/ASC生成路线仍需单独完成验收。

@@ -82,6 +82,27 @@ def _validated_ref(root: Path, sample_id: str, entry: Mapping[str, Any]) -> dict
     if actual_sha != declared_sha:
         raise PerformanceEvidenceError("performance receipt hash mismatch")
     receipt = _read_object(path)
+    if receipt.get("receipt_type") == "numpilot_scoped_sample_benchmark":
+        from numpilot.scoped_performance import SAMPLE_ID, validate_receipt
+        if sample_id != SAMPLE_ID:
+            raise PerformanceEvidenceError("scoped performance sample identity mismatch")
+        try:
+            validated = validate_receipt(root, receipt)
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            raise PerformanceEvidenceError(str(exc)) from None
+        selector = entry.get("selector", {})
+        if not isinstance(selector, Mapping):
+            raise PerformanceEvidenceError("performance selector is invalid")
+        return {
+            "schema": "numpilot.performance-evidence-ref", "schema_version": 1,
+            "sample_id": sample_id,
+            "path": path.relative_to(root.resolve()).as_posix(),
+            "receipt_sha256": declared_sha,
+            "receipt_type": "numpilot_scoped_sample_benchmark",
+            "status": "passed", "performance_valid": True,
+            "selector": dict(selector), "evidence_root": str(root.absolute()),
+            **validated,
+        }
     if receipt.get("schema_version") != 1 or receipt.get("receipt_type") != _RECEIPT_TYPE:
         raise PerformanceEvidenceError("performance receipt schema is invalid")
     if receipt.get("status") != "passed":
@@ -152,6 +173,55 @@ def _validated_ref(root: Path, sample_id: str, entry: Mapping[str, Any]) -> dict
     }
 
 
+def _compatible_scopes(produced_ref, current_ref):
+    from numpilot.scoped_performance import load_scope
+    if not isinstance(current_ref, Mapping):
+        raise PerformanceEvidenceError("current scoped qualification is required")
+    try:
+        produced = load_scope(produced_ref)
+        current = load_scope(current_ref)
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        raise PerformanceEvidenceError(str(exc)) from None
+    for field in ("sample_id", "source_sha256", "analysis_source_sha256",
+                  "generated_source_sha256", "profile_sha256", "runtime_identity_sha256",
+                  "overlay_sha256", "qualification_id", "required_ops"):
+        if field not in produced or produced.get(field) != current.get(field):
+            raise PerformanceEvidenceError("performance current scope mismatch: " + field)
+    for field in ("baseline_qualification_id", "baseline_certificate_sha256"):
+        if produced.get(field) != current.get(field):
+            raise PerformanceEvidenceError("performance current baseline scope mismatch: " + field)
+
+
+def verify_reference(ref, *, expected_sample_id=None, expected_scoped_qualification=None):
+    """Revalidate a scoped performance reference, including its current case binding."""
+    if not isinstance(ref, Mapping) or ref.get("receipt_type") != "numpilot_scoped_sample_benchmark":
+        raise PerformanceEvidenceError("a scoped performance reference is required")
+    if expected_sample_id is not None and ref.get("sample_id") != expected_sample_id:
+        raise PerformanceEvidenceError("performance sample identity mismatch")
+    raw_root = ref.get("evidence_root")
+    if not isinstance(raw_root, str) or not raw_root:
+        raise PerformanceEvidenceError("performance evidence root is missing")
+    root = Path(raw_root).expanduser().absolute()
+    if root.is_symlink() or not root.is_dir():
+        raise PerformanceEvidenceError("performance evidence root is invalid")
+    validated = _validated_ref(root, ref.get("sample_id"), {
+        "path": ref.get("path"), "sha256": ref.get("receipt_sha256"),
+        "selector": ref.get("selector", {}),
+    })
+    current = ref.get("current_scoped_qualification_ref")
+    if current is not None:
+        _compatible_scopes(validated.get("scoped_qualification_ref"), current)
+        validated["current_scoped_qualification_ref"] = dict(current)
+        validated["current_scoped_qualification_receipt_sha256"] = current.get("receipt_sha256")
+    if expected_scoped_qualification is not None:
+        if current != expected_scoped_qualification:
+            raise PerformanceEvidenceError("performance reference is not bound to the current case scope")
+        _compatible_scopes(validated.get("scoped_qualification_ref"), expected_scoped_qualification)
+    if dict(ref) != validated:
+        raise PerformanceEvidenceError("performance evidence reference does not match validated files")
+    return validated
+
+
 @dataclass(frozen=True)
 class PerformanceEvidenceResolution:
     available: bool
@@ -200,6 +270,7 @@ class PerformanceEvidenceCatalog:
         strict_npu_qualified: bool | None,
         numerical_verified: bool,
         runtime_identity_sha256: str | None,
+        scoped_qualification: Mapping[str, Any] | None = None,
     ) -> PerformanceEvidenceResolution:
         entry = self._entries.get(sample_id)
         if entry is None:
@@ -213,4 +284,11 @@ class PerformanceEvidenceCatalog:
             return PerformanceEvidenceResolution(True, False, ref, "case has not passed strict NPU and numerical gates")
         if ref.get("runtime_identity_sha256") != runtime_identity_sha256:
             return PerformanceEvidenceResolution(True, False, ref, "performance runtime identity does not match case")
+        if ref.get("receipt_type") == "numpilot_scoped_sample_benchmark":
+            try:
+                _compatible_scopes(ref.get("scoped_qualification_ref"), scoped_qualification)
+            except PerformanceEvidenceError as exc:
+                return PerformanceEvidenceResolution(True, False, ref, str(exc))
+            ref = {**ref, "current_scoped_qualification_ref": dict(scoped_qualification),
+                   "current_scoped_qualification_receipt_sha256": scoped_qualification.get("receipt_sha256")}
         return PerformanceEvidenceResolution(True, True, ref, "performance evidence accepted")

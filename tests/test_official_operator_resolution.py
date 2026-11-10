@@ -732,7 +732,7 @@ def test_complete_gaps_candidate_receipt_blocks_before_model_or_skill(
     assert result == 3
     assert "不得调用模型手写 kernel" in captured.err
     assert "actual_remote_generation_call=no" in captured.err
-    assert not output.exists()
+    _assert_only_prepared_taskbooks(output)
 
 
 def test_complete_gaps_rejects_tampered_resolution_before_model(tmp_path, monkeypatch):
@@ -769,7 +769,7 @@ def test_complete_gaps_rejects_tampered_resolution_before_model(tmp_path, monkey
     ])
 
     assert result == 2
-    assert not (tmp_path / "out").exists()
+    _assert_only_prepared_taskbooks((tmp_path / "out"))
 
 
 def test_complete_gaps_rechecks_current_official_evidence_before_model(
@@ -827,4 +827,15 @@ def test_complete_gaps_rechecks_current_official_evidence_before_model(
     captured = capsys.readouterr()
     assert result == 2
     assert "evidence changed" in captured.err
-    assert not (tmp_path / "out").exists()
+    _assert_only_prepared_taskbooks((tmp_path / "out"))
+
+
+def _assert_only_prepared_taskbooks(output):
+    from numpilot.gap_requirements import validate_gap_taskbook
+    files = sorted(path for path in output.rglob("*") if path.is_file())
+    assert len(files) == 2
+    assert {path.name for path in files} == {"GAP_TASKBOOK.json", "GAP_TASKBOOK.md"}
+    assert all(path.relative_to(output).parts[0] == "gaps" for path in files)
+    book = validate_gap_taskbook(json.loads(next(path for path in files if path.suffix == ".json").read_text()))
+    assert book["status"] == "requirements_prepared_unverified"
+    assert book["generation"]["claim_level"] == "unverified_candidate_only"
