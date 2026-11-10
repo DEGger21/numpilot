@@ -48,6 +48,35 @@ separate Codex CLI session, read `README.md` and each prompt, then write exactly
 one `NUMPILOT_WINDOW_REPLACE_V1` response to
 `responses/<target-path>.response`.
 
+Before asking the external Codex session to write files, or before running
+validation, inspect the hand-off directory with the read-only status command:
+
+```bash
+python -m numpilot inspect-asnumpy-adapter-handoff \
+  --handoff-dir /abs/path/codex-handoff \
+  --response-dir /abs/path/codex-handoff/responses
+```
+
+Use `--json` when another agent or a script needs a machine-readable result.
+The command checks only the hash-bound expected response paths. Each response
+must be a regular, non-empty UTF-8 file no larger than 2 MiB; symlinks, empty
+files, unreadable files, and over-sized files are reported in
+`invalid_responses`. It does not read `llm.json`, use the network, import
+AsNumpy, build, execute, activate, or write RecoveryStore state.
+
+Interpret the result as follows:
+
+- `status=waiting_for_agent`: at least one expected response is missing or an
+  existing response is invalid. The generation session still needs to write or
+  repair `responses/<target-path>.response`; this is an expected waiting state,
+  not a failed operator generation.
+- `status=ready_for_validation`: every expected response is present and passes
+  the local file checks. Run `validate-asnumpy-adapter-handoff` next; it is the
+  command that parses and hash-validates the replacement protocol.
+
+The status command never replaces validation. A response can be locally ready
+and still fail the protocol, source-context, or later AsNumpy gates.
+
 NumPilot then consumes the local responses:
 
 ```bash

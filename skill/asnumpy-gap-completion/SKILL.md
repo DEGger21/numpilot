@@ -72,6 +72,28 @@ A build or import pass is not a numerical pass. A numerical pass is not a
 performance pass. A generated candidate remains `generated_unverified` until
 all gates are independently hash-bound.
 
+## Read-only handoff status
+
+When the official adapter route is prepared for a separate Codex CLI session,
+use the status command to make the boundary visible before validation:
+
+```bash
+python -m numpilot inspect-asnumpy-adapter-handoff \
+  --handoff-dir /abs/path/codex-handoff \
+  --response-dir /abs/path/codex-handoff/responses \
+  --json
+```
+
+`waiting_for_agent` means that at least one expected response is missing or
+locally invalid; it is an expected pause while the external agent writes the
+response. `ready_for_validation` means every expected response is a regular,
+non-empty UTF-8 file within the 2 MiB local limit. Invalid entries are listed
+under `invalid_responses`. The command is read-only: it does not access
+`llm.json`, use the network, import or build AsNumpy, execute code, activate an
+overlay, or write RecoveryStore state. Only `validate-asnumpy-adapter-handoff`
+may advance this local response package, and it remains subject to every later
+build, numerical, NPU, performance, qualification, and activation gate.
+
 ## Artifact and failure contract
 
 Store the immutable draft, overlay, custom OPP receipt, source/component

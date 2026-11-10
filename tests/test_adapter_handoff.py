@@ -149,3 +149,95 @@ def test_validate_handoff_missing_response_writes_failure_receipt(tmp_path, monk
     assert receipt['receipt_count'] == 0
     assert receipt['missing_response_paths'] == [path + '.response']
     assert receipt['expected_response_paths'] == [path + '.response']
+def test_inspect_handoff_reports_missing_and_ready_states(tmp_path, capsys):
+    from argparse import Namespace
+
+    import numpilot.__main__ as main
+
+    path = 'src/asnumpy/linalg/direct.py'
+    content = 'def matmul(a, b):\n    return a @ b\n'
+    plan = {
+        'schema_version': 3,
+        'architecture': 'official_aclnn_existing_module',
+        'mode': 'existing_module',
+        'expected_overlay_paths': [path],
+        'context_sha256': {path: _sha(content)},
+        'plan_sha256': 'a' * 64,
+        'total_bytes': len(content.encode()),
+    }
+    root = tmp_path / 'handoff'
+    write_adapter_handoff(
+        root,
+        operator_artifact={'artifact_id': 'candidate-abc'},
+        adapter_contract='{}',
+        asnumpy_context={path: content},
+        adapter_context_plan=plan,
+        skill_files=('references/official.md',),
+        skill_bundle_sha256='b' * 64,
+    )
+    args = Namespace(
+        handoff_dir=str(root),
+        response_dir=str(root / 'responses'),
+        json=True,
+    )
+
+    assert main._cmd_inspect_asnumpy_adapter_handoff(args) == 0
+    missing = json.loads(capsys.readouterr().out)
+    assert missing['status'] == 'waiting_for_agent'
+    assert missing['next_action'] == 'write_responses'
+    assert missing['counts'] == {'expected': 1, 'ready': 0, 'missing': 1, 'invalid': 0}
+    assert missing['actual_remote_call'] is False
+    assert all(not value for value in missing['side_effects'].values())
+
+    response = root / 'responses' / (path + '.response')
+    response.parent.mkdir(parents=True, exist_ok=True)
+    response.write_text('NUMPILOT_WINDOW_REPLACE_V1\\n', encoding='utf-8')
+    assert main._cmd_inspect_asnumpy_adapter_handoff(args) == 0
+    ready = json.loads(capsys.readouterr().out)
+    assert ready['status'] == 'ready_for_validation'
+    assert ready['next_action'] == 'validate-asnumpy-adapter-handoff'
+    assert ready['counts'] == {'expected': 1, 'ready': 1, 'missing': 0, 'invalid': 0}
+
+
+def test_inspect_handoff_reports_invalid_empty_response(tmp_path, capsys):
+    from argparse import Namespace
+
+    import numpilot.__main__ as main
+
+    path = 'src/asnumpy/linalg/direct.py'
+    content = 'def matmul(a, b):\n    return a @ b\n'
+    plan = {
+        'schema_version': 3,
+        'architecture': 'official_aclnn_existing_module',
+        'mode': 'existing_module',
+        'expected_overlay_paths': [path],
+        'context_sha256': {path: _sha(content)},
+        'plan_sha256': 'a' * 64,
+        'total_bytes': len(content.encode()),
+    }
+    root = tmp_path / 'handoff'
+    write_adapter_handoff(
+        root,
+        operator_artifact={'artifact_id': 'candidate-abc'},
+        adapter_contract='{}',
+        asnumpy_context={path: content},
+        adapter_context_plan=plan,
+        skill_files=('references/official.md',),
+        skill_bundle_sha256='b' * 64,
+    )
+    response = root / 'responses' / (path + '.response')
+    response.parent.mkdir(parents=True, exist_ok=True)
+    response.write_bytes(b'')
+    args = Namespace(
+        handoff_dir=str(root),
+        response_dir=str(root / 'responses'),
+        json=True,
+    )
+
+    assert main._cmd_inspect_asnumpy_adapter_handoff(args) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload['status'] == 'waiting_for_agent'
+    assert payload['counts'] == {'expected': 1, 'ready': 0, 'missing': 0, 'invalid': 1}
+    assert payload['invalid_responses'] == [
+        {'path': path + '.response', 'reason': 'empty'}
+    ]

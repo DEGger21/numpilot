@@ -5160,6 +5160,111 @@ def _cmd_seal_repair(args):
 
 
 
+def _cmd_inspect_asnumpy_adapter_handoff(args):
+    """Report local Codex handoff response readiness without side effects."""
+
+    from numpilot.gaps.adapter_handoff import load_adapter_handoff
+
+    handoff_root = Path(args.handoff_dir).absolute()
+    response_root = Path(args.response_dir).absolute()
+    try:
+        handoff = load_adapter_handoff(handoff_root)
+        if response_root.is_symlink() or not response_root.is_dir():
+            raise ValueError("response-dir must be a regular directory")
+    except (OSError, UnicodeError, ValueError, TypeError) as exc:
+        print("[Codex交接] STATUS 失败：%s" % exc, file=sys.stderr)
+        return 2
+
+    expected = tuple(handoff["expected_overlay_paths"])
+    ready = []
+    missing = []
+    invalid = []
+
+    def has_symlink_component(path):
+        try:
+            relative = path.relative_to(response_root)
+        except ValueError:
+            return True
+        current = response_root
+        for part in relative.parts:
+            current = current / part
+            if current.is_symlink():
+                return True
+        return False
+
+    for relative in expected:
+        response_path = response_root / (relative + ".response")
+        if has_symlink_component(response_path):
+            invalid.append({"path": relative, "reason": "symlink"})
+            continue
+        if not response_path.is_file():
+            missing.append(relative)
+            continue
+        try:
+            payload = response_path.read_bytes()
+            if not payload:
+                invalid.append({"path": relative, "reason": "empty"})
+            elif len(payload) > 2 * 1024 * 1024:
+                invalid.append({"path": relative, "reason": "size_limit"})
+            else:
+                payload.decode("utf-8")
+                ready.append(relative)
+        except (OSError, UnicodeError):
+            invalid.append({"path": relative, "reason": "unreadable_or_utf8"})
+
+    status = "ready_for_validation" if len(ready) == len(expected) else "waiting_for_agent"
+    next_action = "validate-asnumpy-adapter-handoff" if status == "ready_for_validation" else "write_responses"
+    payload = {
+        "schema_version": 1,
+        "schema": "numpilot.codex-adapter-handoff-status.v1",
+        "status": status,
+        "next_action": next_action,
+        "handoff_status": handoff["manifest"]["status"],
+        "handoff_dir": str(handoff_root),
+        "response_dir": str(response_root),
+        "protocol": handoff["manifest"]["protocol"],
+        "candidate_id": str(handoff["operator_artifact"].get("artifact_id", "")),
+        "expected_response_paths": [relative + ".response" for relative in expected],
+        "ready_response_paths": [relative + ".response" for relative in ready],
+        "missing_response_paths": [relative + ".response" for relative in missing],
+        "invalid_responses": [
+            {"path": item["path"] + ".response", "reason": item["reason"]}
+            for item in invalid
+        ],
+        "counts": {
+            "expected": len(expected),
+            "ready": len(ready),
+            "missing": len(missing),
+            "invalid": len(invalid),
+        },
+        "actual_remote_call": False,
+        "side_effects": {
+            "model_invocation_performed": False,
+            "network_access_performed": False,
+            "system_write_performed": False,
+            "asnumpy_import_performed": False,
+            "build_performed": False,
+            "execution_performed": False,
+            "activation_performed": False,
+        },
+    }
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+    else:
+        print(
+            "[Codex交接] STATUS=%s · ready=%d/%d · missing=%d · invalid=%d · next=%s"
+            % (
+                status,
+                len(ready),
+                len(expected),
+                len(missing),
+                len(invalid),
+                next_action,
+            )
+        )
+    return 0
+
+
 def _cmd_validate_asnumpy_adapter_handoff(args):
     """Validate a local Codex response package without reading llm.json."""
 
@@ -8118,6 +8223,14 @@ def main(argv=None):
     validate_handoff.add_argument("--asnumpy-skill-root", "--skill-root", dest="asnumpy_skill_root", default=None, help="NumPilot 自带 AsNumpy Skill 根目录")
     validate_handoff.add_argument("--offline-skills", action="store_true", help="兼容参数；validate 始终不联网")
 
+    inspect_handoff = sub.add_parser(
+        "inspect-asnumpy-adapter-handoff",
+        help="只读显示 Codex handoff 的 response 完成度，不联网、不读取 llm.json",
+    )
+    inspect_handoff.add_argument("--handoff-dir", required=True, help="prepare 命令生成的 handoff 目录")
+    inspect_handoff.add_argument("--response-dir", required=True, help="Codex 写入的 responses 根目录")
+    inspect_handoff.add_argument("--json", action="store_true", help="仅输出机器可读 JSON")
+
     adapter_repair = sub.add_parser(
         "repair-asnumpy-adapter",
         help="把 AsNumpy 构建/测试原始诊断交给已配置模型，修复一个 overlay 文件",
@@ -8275,6 +8388,8 @@ def main(argv=None):
             return _cmd_seal_repair(args)
         if args.cmd == "prepare-asnumpy-adapter-handoff":
             return _cmd_generate_asnumpy_adapter(args)
+        if args.cmd == "inspect-asnumpy-adapter-handoff":
+            return _cmd_inspect_asnumpy_adapter_handoff(args)
         if args.cmd == "validate-asnumpy-adapter-handoff":
             return _cmd_validate_asnumpy_adapter_handoff(args)
         if args.cmd == "generate-asnumpy-adapter":
