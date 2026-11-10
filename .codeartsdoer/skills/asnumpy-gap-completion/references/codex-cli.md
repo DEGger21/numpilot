@@ -91,3 +91,44 @@ A successful result is `schema_version=5`,
 `actual_remote_call=false`. It is still only `generated_unverified`; build,
 import, NumPy oracle, real NPU, performance, qualification, and activation
 remain NumPilot gates.
+
+### Consume the validated local adapter
+
+After the status command reports `ready_for_validation`, consume the package in
+this order. These commands use only local artifacts and do not call `llm.json`:
+
+```bash
+python -m numpilot validate-asnumpy-adapter-handoff \
+  --handoff-dir /abs/path/codex-handoff \
+  --response-dir /abs/path/codex-handoff/responses \
+  --out /abs/path/codex-adapter
+
+python -m numpilot recover-gaps ingest-codex-adapter \
+  --state-dir /abs/path/recovery \
+  --candidate /abs/path/operator-candidate.json \
+  --adapter-output /abs/path/codex-adapter \
+  --json
+
+python -m numpilot recover-gaps preflight-integrate-candidate \
+  --state-dir /abs/path/recovery \
+  --candidate /abs/path/operator-candidate.json \
+  --adapter-output /abs/path/codex-adapter \
+  --asnumpy-reference /abs/path/asnumpy \
+  --python /abs/path/python \
+  --json
+```
+
+`ingest-codex-adapter` accepts only the schema-5 local profile and advances
+RecoveryStore to `ADAPTER_CANDIDATE`; it does not build or import AsNumpy. The
+preflight is read-only. A receipt-only local profile is expected to return
+`status=blocked`, `code=authorization_missing`, and
+`next_action=authorize_full_local_recovery` until the operator explicitly
+provides the full-local-recovery policy. Only after a `ready_for_integration`
+preflight may the operator run `integrate-candidate` with a private absolute
+`--out` directory. Integration then remains subject to build, import, NumPy
+oracle, real NPU, performance, qualification, and activation gates.
+
+Do not skip a failed or blocked step, do not copy a response directly into the
+AsNumpy source tree, and do not convert a local Codex receipt into a remote
+DeepSeek receipt. Every command above is replayable from the hash-bound handoff
+and candidate paths.
