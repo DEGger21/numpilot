@@ -158,7 +158,9 @@ from numpilot.gaps.official_candidate_recovery import (
 
 from numpilot.gaps.integration import (
     IntegrationError,
+    IntegrationPreflightResult,
     IntegrationTransactionResult,
+    preflight_official_adapter_integration,
     run_official_adapter_integration,
 )
 
@@ -282,7 +284,9 @@ __all__ = [
     "OfficialAdapterInputError",
     "OfficialAdapterRecoveryResult",
     "IntegrationError",
+    "IntegrationPreflightResult",
     "IntegrationTransactionResult",
+    "preflight_official_adapter_integration",
     "run_official_adapter_integration",
     "OfficialCandidateAdapterInput",
     "bind_official_adapter_context",

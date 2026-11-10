@@ -4036,6 +4036,47 @@ def _cmd_recover_gaps(args):
                 print("[接入候选修复导入] 输出=%s" % result.adapter_output_root)
             return 0
 
+        if args.recovery_command == "preflight-integrate-candidate":
+            from numpilot.gaps.integration import (
+                IntegrationError,
+                preflight_official_adapter_integration,
+            )
+
+            try:
+                result = preflight_official_adapter_integration(
+                    args.state_dir,
+                    args.candidate,
+                    args.adapter_output,
+                    args.asnumpy_reference,
+                    python_executable=args.python,
+                )
+            except IntegrationError as exc:
+                print("[集成预检] %s: %s" % (exc.code, exc), file=sys.stderr)
+                return 2
+            payload = result.to_dict()
+            if args.json:
+                print(json.dumps(payload, ensure_ascii=False, allow_nan=False, sort_keys=True))
+            else:
+                print(
+                    "[集成预检] gap=%s · status=%s · code=%s · profile=%s · next=%s"
+                    % (
+                        result.gap_id,
+                        result.status,
+                        result.code,
+                        result.generation_mode,
+                        result.next_action,
+                    )
+                )
+                if result.missing_policy:
+                    print(
+                        "[集成预检] missing_policy=%s" % ",".join(result.missing_policy),
+                        file=sys.stderr,
+                    )
+                print(
+                    "[集成预检] model=no · build=no · import=no · execution=no · activation=no"
+                )
+            return 0 if result.status == "ready" else 2
+
         if args.recovery_command == "integrate-candidate":
             from numpilot.gaps.integration import (
                 IntegrationError,
@@ -7739,6 +7780,20 @@ def main(argv=None):
     recovery_adapter_repair.add_argument(
         "--json", action="store_true", help="仅向 stdout 输出机器可读 JSON"
     )
+    recovery_preflight = recovery_sub.add_parser(
+        "preflight-integrate-candidate",
+        help=(
+            "只读校验 adapter、候选、AsNumpy reference 和 full-local-recovery 授权；"
+            "不构建、不导入、不执行、不写 RecoveryStore"
+        ),
+    )
+    recovery_preflight.add_argument("--state-dir", required=True, help="已通过完整 hash-chain 校验的恢复状态目录")
+    recovery_preflight.add_argument("--candidate", required=True, help="恢复状态精确绑定的 operator-candidate.json")
+    recovery_preflight.add_argument("--adapter-output", required=True, help="包含 asnumpy-adapter-report.json 与 candidate/ 的已发布目录")
+    recovery_preflight.add_argument("--asnumpy-reference", required=True, help="adapter context plan 绑定的干净固定 AsNumpy Git 工作树")
+    recovery_preflight.add_argument("--python", default=None, help="仅计算解释器文件 hash，不会执行解释器")
+    recovery_preflight.add_argument("--json", action="store_true", help="仅向 stdout 输出机器可读 JSON")
+
     recovery_integrate = recovery_sub.add_parser(
         "integrate-candidate",
         help=(

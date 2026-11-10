@@ -113,6 +113,82 @@ class IntegrationError(RecoveryError):
         self.code = code
 
 
+INTEGRATION_PREFLIGHT_SCHEMA_VERSION = 1
+_REQUIRED_INTEGRATION_POLICY = (
+    "subprocess_allowed",
+    "system_write_allowed",
+    "asnumpy_import_allowed",
+    "build_allowed",
+    "execution_allowed",
+    "activation_allowed",
+)
+
+
+@dataclass(frozen=True)
+class IntegrationPreflightResult:
+    """Read-only admission result for the isolated integration producer."""
+
+    status: str
+    code: str
+    next_action: str
+    gap_id: str
+    candidate_id: str
+    candidate_sha256: str
+    adapter_artifact_id: str
+    adapter_report_sha256: str
+    generation_mode: str
+    provider: str
+    model: str
+    configuration_source: str
+    reference_root: str
+    context_plan_sha256: str
+    python_path: str
+    python_sha256: str
+    policy: Mapping[str, Any]
+    required_policy: Tuple[str, ...]
+    missing_policy: Tuple[str, ...]
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "schema_version": INTEGRATION_PREFLIGHT_SCHEMA_VERSION,
+            "record_type": "numpilot_integration_preflight",
+            "status": self.status,
+            "code": self.code,
+            "next_action": self.next_action,
+            "gap_id": self.gap_id,
+            "candidate_id": self.candidate_id,
+            "candidate_sha256": self.candidate_sha256,
+            "adapter_artifact_id": self.adapter_artifact_id,
+            "adapter_report_sha256": self.adapter_report_sha256,
+            "adapter_profile": {
+                "generation_mode": self.generation_mode,
+                "provider": self.provider,
+                "model": self.model,
+                "configuration_source": self.configuration_source,
+            },
+            "reference_root": self.reference_root,
+            "context_plan_sha256": self.context_plan_sha256,
+            "python": {
+                "path": self.python_path,
+                "sha256": self.python_sha256,
+            },
+            "policy": dict(self.policy),
+            "required_policy": list(self.required_policy),
+            "missing_policy": list(self.missing_policy),
+            "side_effects": {
+                "subprocess_performed": False,
+                "system_write_performed": False,
+                "asnumpy_import_performed": False,
+                "build_performed": False,
+                "execution_performed": False,
+                "verification_performed": False,
+                "activation_performed": False,
+                "model_invocation_performed": False,
+                "network_access_performed": False,
+            },
+        }
+
+
 @dataclass(frozen=True)
 class IntegrationTransactionResult:
     """Deterministic result of one integration producer invocation."""
@@ -1076,6 +1152,127 @@ def _append_blocked_if_exhausted(
     )
 
 
+def preflight_official_adapter_integration(
+    state_dir: os.PathLike[str] | str,
+    candidate_path: os.PathLike[str] | str,
+    adapter_output_root: os.PathLike[str] | str,
+    asnumpy_reference: os.PathLike[str] | str,
+    *,
+    python_executable: os.PathLike[str] | str | None = None,
+) -> IntegrationPreflightResult:
+    """Validate integration admission without writes, subprocesses, or imports."""
+
+    python = _absolute_path(
+        sys.executable if python_executable is None else python_executable,
+        "integration Python",
+    )
+    if not python.is_file():
+        raise IntegrationError(
+            "invalid_python", "integration Python must be a regular file"
+        )
+    python_sha256 = _python_identity(python)
+    reference_root = _absolute_path(asnumpy_reference, "AsNumpy reference root")
+    if reference_root.is_symlink() or not reference_root.is_dir():
+        raise IntegrationError(
+            "invalid_reference", "AsNumpy reference root must be a real directory"
+        )
+
+    try:
+        status = RecoveryStore(state_dir).status()
+    except RecoveryError as exc:
+        raise IntegrationError(
+            "state_unavailable", "cannot verify the complete recovery chain"
+        ) from exc
+    candidate_file = _absolute_path(candidate_path, "operator candidate")
+    adapter_root = _absolute_path(adapter_output_root, "adapter output root")
+    candidate, gap, candidate_before = _candidate_gap(status, candidate_file)
+    if gap.phase is not RecoveryPhase.ADAPTER_CANDIDATE or gap.outcome is not RecoveryOutcome.READY:
+        raise IntegrationError(
+            "state_phase_mismatch",
+            "integration preflight requires a ready ADAPTER_CANDIDATE gap",
+        )
+    adapter_ref = _latest_adapter_ref(gap.refs)
+    if adapter_ref.locator != str(adapter_root / "asnumpy-adapter-report.json"):
+        raise IntegrationError(
+            "adapter_binding_mismatch",
+            "adapter output is not the current recovery adapter",
+        )
+    expected_status = (
+        _ADAPTER_STATUS_GENERATED
+        if adapter_ref.name == _ADAPTER_REF_NAME
+        else _ADAPTER_STATUS_REPAIRED
+    )
+    if not (
+        adapter_ref.name == _ADAPTER_REF_NAME
+        or adapter_ref.name.startswith(_ADAPTER_REPAIR_REF_PREFIX)
+    ):
+        raise IntegrationError(
+            "adapter_binding_mismatch", "adapter reference name is not recognized"
+        )
+    prepared = _official_adapter_input(status, candidate)
+    try:
+        adapter = _load_adapter_output(
+            adapter_root,
+            candidate,
+            prepared,
+            accepted_statuses=(expected_status,),
+            ref_name=adapter_ref.name,
+            accepted_generation_modes=("remote_llm", "injected_test_double"),
+        )
+    except AdapterRecoveryError as exc:
+        raise IntegrationError(exc.code, str(exc)) from exc
+    if adapter.report_ref != adapter_ref:
+        raise IntegrationError(
+            "adapter_binding_mismatch",
+            "adapter report differs from the current recovery adapter",
+        )
+    context_plan = adapter.report.get("asnumpy_adapter_context_plan")
+    if not isinstance(context_plan, Mapping) or context_plan.get(
+        "reference_root"
+    ) != str(reference_root):
+        raise IntegrationError(
+            "reference_mismatch",
+            "integration reference root differs from the adapter context plan",
+        )
+    candidate_after = _snapshot_regular_file(
+        candidate_file, _MAX_JSON_BYTES, "operator candidate"
+    )
+    if candidate_after != candidate_before:
+        raise IntegrationError(
+            "candidate_drift",
+            "operator candidate changed during integration preflight",
+        )
+
+    policy = status.state.policy.to_dict()
+    missing = tuple(
+        name for name in _REQUIRED_INTEGRATION_POLICY if not policy.get(name, False)
+    )
+    blocked = bool(missing)
+    return IntegrationPreflightResult(
+        status="blocked" if blocked else "ready",
+        code="authorization_missing" if blocked else "ready_for_integration",
+        next_action=(
+            "authorize_full_local_recovery" if blocked else "integrate_candidate"
+        ),
+        gap_id=candidate.gap_id,
+        candidate_id=candidate.candidate_id,
+        candidate_sha256=candidate_before.sha256,
+        adapter_artifact_id=str(adapter.report["adapter_artifact_id"]),
+        adapter_report_sha256=adapter_ref.sha256,
+        generation_mode=str(adapter.report.get("generation_mode", "remote_llm")),
+        provider=str(adapter.report["provider"]),
+        model=str(adapter.report["model"]),
+        configuration_source=str(adapter.report["configuration_source"]),
+        reference_root=str(reference_root),
+        context_plan_sha256=str(context_plan["plan_sha256"]),
+        python_path=str(python),
+        python_sha256=python_sha256,
+        policy=policy,
+        required_policy=_REQUIRED_INTEGRATION_POLICY,
+        missing_policy=missing,
+    )
+
+
 def run_official_adapter_integration(
     state_dir: os.PathLike[str] | str,
     candidate_path: os.PathLike[str] | str,
@@ -1676,3 +1873,12 @@ def _produce_transaction(
     except BaseException:
         shutil.rmtree(stage, ignore_errors=True)
         raise
+
+
+__all__ = [
+    "IntegrationError",
+    "IntegrationPreflightResult",
+    "IntegrationTransactionResult",
+    "preflight_official_adapter_integration",
+    "run_official_adapter_integration",
+]
