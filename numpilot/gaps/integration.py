@@ -1160,6 +1160,7 @@ def run_official_adapter_integration(
             prepared,
             accepted_statuses=(expected_status,),
             ref_name=adapter_ref.name,
+            accepted_generation_modes=("remote_llm", "injected_test_double"),
         )
     except AdapterRecoveryError as exc:
         raise IntegrationError(exc.code, str(exc)) from exc

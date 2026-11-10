@@ -177,6 +177,60 @@ def test_ingest_adapter_cli_replays_published_receipt_as_json(
     )]
 
 
+def test_ingest_codex_adapter_cli_replays_local_receipt_as_json(
+    monkeypatch, capsys, tmp_path
+):
+    import numpilot.gaps.adapter_recovery as adapter_recovery_api
+
+    payload = {
+        "record_type": "numpilot_official_adapter_recovery",
+        "generation_mode": "injected_test_double",
+        "appended_revisions": 1,
+        "side_effects_performed": {
+            "network_access_performed": False,
+            "model_invocation_performed": False,
+        },
+    }
+    result = SimpleNamespace(
+        gap_id="concatenate-test",
+        generation_mode="injected_test_double",
+        recovery=SimpleNamespace(
+            state=SimpleNamespace(phase=SimpleNamespace(value="adapter_candidate"))
+        ),
+        appended_revisions=1,
+        adapter_output_root=str(tmp_path / "adapter"),
+        to_dict=lambda: payload,
+    )
+    observed = []
+
+    def ingest(state_dir, candidate, adapter_output):
+        observed.append((state_dir, candidate, adapter_output))
+        return result
+
+    monkeypatch.setattr(
+        adapter_recovery_api, "ingest_codex_adapter_candidate", ingest
+    )
+
+    rc = cli.main([
+        "recover-gaps",
+        "ingest-codex-adapter",
+        "--state-dir", str(tmp_path / "state"),
+        "--candidate", str(tmp_path / "candidate.json"),
+        "--adapter-output", str(tmp_path / "adapter"),
+        "--json",
+    ])
+
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert captured.err == ""
+    assert json.loads(captured.out) == payload
+    assert observed == [(
+        str(tmp_path / "state"),
+        str(tmp_path / "candidate.json"),
+        str(tmp_path / "adapter"),
+    )]
+
+
 def test_ingest_adapter_cli_reports_stable_error_code(
     monkeypatch, capsys, tmp_path
 ):

@@ -137,6 +137,7 @@ class OfficialAdapterRecoveryResult:
     adapter_ref: EvidenceRef
     adapter_output_root: str
     appended_revisions: int
+    generation_mode: str = "remote_llm"
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -150,10 +151,11 @@ class OfficialAdapterRecoveryResult:
             "adapter_output_root": self.adapter_output_root,
             "producer_receipt_revalidated": True,
             "model_invoked_by_ingest": False,
+            "generation_mode": self.generation_mode,
             "appended_revisions": self.appended_revisions,
             "side_effects_performed": SideEffectTruth(
-                network_access_performed=True,
-                model_invocation_performed=True,
+                network_access_performed=self.generation_mode == "remote_llm",
+                model_invocation_performed=self.generation_mode == "remote_llm",
             ).to_dict(),
             "recovery": self.recovery.to_dict(),
         }
@@ -598,6 +600,7 @@ def _load_adapter_output(
     *,
     accepted_statuses: Sequence[str] = (_ADAPTER_STATUS_GENERATED,),
     ref_name: str = _ADAPTER_REF_NAME,
+    accepted_generation_modes: Sequence[str] = ("remote_llm",),
 ) -> _ValidatedAdapter:
     if (
         isinstance(accepted_statuses, (str, bytes))
@@ -616,20 +619,61 @@ def _load_adapter_output(
         raise AdapterRecoveryError(
             "invalid_adapter_profile", "adapter reference name is invalid"
         )
+    if (
+        isinstance(accepted_generation_modes, (str, bytes))
+        or not isinstance(accepted_generation_modes, Sequence)
+        or not accepted_generation_modes
+        or len(set(accepted_generation_modes)) != len(accepted_generation_modes)
+        or any(
+            mode not in {"remote_llm", "injected_test_double"}
+            for mode in accepted_generation_modes
+        )
+    ):
+        raise AdapterRecoveryError(
+            "invalid_adapter_profile", "accepted adapter generation modes are invalid"
+        )
     root_identity = _directory_identity(root, "adapter output root")
     report_path = root / "asnumpy-adapter-report.json"
     before = _snapshot_regular_file(
         report_path, _MAX_INPUT_BYTES, "AsNumPy adapter report"
     )
     raw_report = _strict_report(before.payload)
-    if (
-        raw_report.get("schema_version") != 4
-        or raw_report.get("status") not in accepted_statuses
-        or raw_report.get("actual_remote_call") is not True
+    schema_version = raw_report.get("schema_version")
+    generation_mode = raw_report.get(
+        "generation_mode", "remote_llm" if schema_version == 4 else None
+    )
+    valid_profile = (
+        generation_mode in accepted_generation_modes
+        and raw_report.get("status") in accepted_statuses
+        and (
+            (
+                generation_mode == "remote_llm"
+                and schema_version == 4
+                and raw_report.get("actual_remote_call") is True
+            )
+            or (
+                generation_mode == "injected_test_double"
+                and schema_version == 5
+                and raw_report.get("actual_remote_call") is False
+            )
+        )
+    )
+    if not valid_profile:
+        raise AdapterRecoveryError(
+            "wrong_adapter_profile",
+            "official adapter generation profile is not accepted",
+        )
+    if generation_mode == "injected_test_double" and (
+        raw_report.get("provider") != "codex-self"
+        or raw_report.get("model") != "codex-local"
+        or raw_report.get("configuration_source") != "injected"
+        or raw_report.get("actual_remote_call") is not False
     ):
         raise AdapterRecoveryError(
             "wrong_adapter_profile",
-            "official adapter must be an accepted schema-4 remote receipt",
+            "local Codex adapter must bind provider=codex-self, "
+            "model=codex-local, configuration_source=injected, and "
+            "actual_remote_call=false",
         )
     try:
         report, payload, file_hashes = _load_asnumpy_adapter_report(root)
@@ -767,6 +811,7 @@ def _existing_adapter_matches(
     *,
     gap_id: str,
     adapter_ref: EvidenceRef,
+    require_model_effects: bool = True,
 ) -> bool:
     gap = _gap_for_candidate(status, gap_id)
     refs = tuple(item for item in gap.refs if item.name == _ADAPTER_REF_NAME)
@@ -800,7 +845,7 @@ def _existing_adapter_matches(
             "adapter_state_mismatch",
             "adapter reference lacks its exact ADAPTER_CANDIDATE receipt",
         )
-    if not (
+    if require_model_effects and not (
         status.state.side_effects.network_access_performed
         and status.state.side_effects.model_invocation_performed
     ):
@@ -816,6 +861,7 @@ def _result(
     candidate: OperatorCandidateArtifact,
     adapter: _ValidatedAdapter,
     appended: int,
+    generation_mode: str,
 ) -> OfficialAdapterRecoveryResult:
     return OfficialAdapterRecoveryResult(
         recovery=status,
@@ -825,13 +871,16 @@ def _result(
         adapter_ref=adapter.report_ref,
         adapter_output_root=str(adapter.root),
         appended_revisions=appended,
+        generation_mode=generation_mode,
     )
 
 
-def ingest_official_adapter_candidate(
+def _ingest_adapter_candidate(
     state_dir: os.PathLike[str] | str,
     candidate_path: os.PathLike[str] | str,
     adapter_output_root: os.PathLike[str] | str,
+    *,
+    generation_mode: str,
 ) -> OfficialAdapterRecoveryResult:
     """Revalidate one generated official adapter and append its stage receipt.
 
@@ -848,12 +897,16 @@ def ingest_official_adapter_candidate(
         raise AdapterRecoveryError(
             "state_unavailable", "cannot verify the complete recovery chain"
         ) from exc
-    if not status.state.policy.network_allowed:
+    if generation_mode not in {"remote_llm", "injected_test_double"}:
+        raise AdapterRecoveryError(
+            "invalid_adapter_profile", "adapter generation mode is invalid"
+        )
+    if generation_mode == "remote_llm" and not status.state.policy.network_allowed:
         raise AdapterRecoveryError(
             "network_not_authorized",
             "frozen recovery policy does not allow adapter network access",
         )
-    if not status.state.policy.model_allowed:
+    if generation_mode == "remote_llm" and not status.state.policy.model_allowed:
         raise AdapterRecoveryError(
             "model_not_authorized",
             "frozen recovery policy does not allow adapter model invocation",
@@ -867,7 +920,12 @@ def ingest_official_adapter_candidate(
             "adapter recovery requires a CANDIDATE_READY gap",
         )
     prepared = _official_adapter_input(status, candidate)
-    adapter = _load_adapter_output(adapter_root, candidate, prepared)
+    adapter = _load_adapter_output(
+        adapter_root,
+        candidate,
+        prepared,
+        accepted_generation_modes=(generation_mode,),
+    )
     candidate_after = _snapshot_regular_file(
         candidate_file, _MAX_INPUT_BYTES, "operator candidate"
     )
@@ -884,9 +942,12 @@ def ingest_official_adapter_candidate(
                 "state_unavailable", "cannot reload the complete recovery chain"
             ) from exc
         if _existing_adapter_matches(
-            current, gap_id=candidate.gap_id, adapter_ref=adapter.report_ref
+            current,
+            gap_id=candidate.gap_id,
+            adapter_ref=adapter.report_ref,
+            require_model_effects=generation_mode == "remote_llm",
         ):
-            return _result(current, candidate, adapter, 0)
+            return _result(current, candidate, adapter, 0, generation_mode)
         current_gap = _gap_for_candidate(current, candidate.gap_id)
         current_candidate_ref = _find_ref(
             current_gap.refs, "operator_candidate", "gap state"
@@ -944,13 +1005,17 @@ def ingest_official_adapter_candidate(
             gaps=next_gaps,
             stage_receipts=(receipt,),
             side_effects=SideEffectTruth(
-                network_access_performed=True,
-                model_invocation_performed=True,
+                network_access_performed=generation_mode == "remote_llm",
+                model_invocation_performed=generation_mode == "remote_llm",
             ),
             reason=(
-                "schema-4 official ACLNN AsNumPy adapter candidate was "
+                "%s official ACLNN AsNumPy adapter candidate was "
                 "content-bound; integration, build, execution, and activation "
                 "remain pending"
+                % (
+                    "schema-4 remote" if generation_mode == "remote_llm"
+                    else "schema-5 local Codex"
+                )
             ),
         )
         try:
@@ -960,9 +1025,39 @@ def ingest_official_adapter_candidate(
             # write-once revision.  Reload and either accept the exact winner
             # on the next iteration or retry against the new parent digest.
             continue
-        return _result(appended, candidate, adapter, 1)
+        return _result(appended, candidate, adapter, 1, generation_mode)
     raise AdapterRecoveryError(
         "state_append_failed", "recovery state changed too often to append adapter"
+    )
+
+
+def ingest_official_adapter_candidate(
+    state_dir: os.PathLike[str] | str,
+    candidate_path: os.PathLike[str] | str,
+    adapter_output_root: os.PathLike[str] | str,
+) -> OfficialAdapterRecoveryResult:
+    """Ingest a schema-4 adapter produced by the configured remote model."""
+
+    return _ingest_adapter_candidate(
+        state_dir,
+        candidate_path,
+        adapter_output_root,
+        generation_mode="remote_llm",
+    )
+
+
+def ingest_codex_adapter_candidate(
+    state_dir: os.PathLike[str] | str,
+    candidate_path: os.PathLike[str] | str,
+    adapter_output_root: os.PathLike[str] | str,
+) -> OfficialAdapterRecoveryResult:
+    """Ingest a schema-5 local Codex adapter without claiming remote effects."""
+
+    return _ingest_adapter_candidate(
+        state_dir,
+        candidate_path,
+        adapter_output_root,
+        generation_mode="injected_test_double",
     )
 
 

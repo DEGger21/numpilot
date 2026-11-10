@@ -100,6 +100,7 @@ from numpilot.gaps.adapter_recovery import (
     AdapterRecoveryError,
     OfficialAdapterRecoveryResult,
     RepairedAdapterRecoveryResult,
+    ingest_codex_adapter_candidate,
     ingest_official_adapter_candidate,
     ingest_repaired_adapter_candidate,
 )
@@ -285,6 +286,7 @@ __all__ = [
     "run_official_adapter_integration",
     "OfficialCandidateAdapterInput",
     "bind_official_adapter_context",
+    "ingest_codex_adapter_candidate",
     "ingest_official_adapter_candidate",
     "ingest_repaired_adapter_candidate",
     "load_official_candidate_adapter_input",

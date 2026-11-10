@@ -3921,6 +3921,44 @@ def _cmd_recover_gaps(args):
                 print("[候选物化] 输出=%s" % result.output_dir)
             return 0
 
+        if args.recovery_command == "ingest-codex-adapter":
+            from numpilot.gaps.adapter_recovery import (
+                AdapterRecoveryError,
+                ingest_codex_adapter_candidate,
+            )
+
+            try:
+                result = ingest_codex_adapter_candidate(
+                    args.state_dir,
+                    args.candidate,
+                    args.adapter_output,
+                )
+            except AdapterRecoveryError as exc:
+                print(
+                    "[Codex候选导入] %s: %s" % (exc.code, exc),
+                    file=sys.stderr,
+                )
+                return 2
+            if args.json:
+                print(json.dumps(
+                    result.to_dict(),
+                    ensure_ascii=False,
+                    allow_nan=False,
+                    sort_keys=True,
+                ))
+            else:
+                print(
+                    "[Codex候选导入] gap=%s · 阶段=%s · 本次追加=%d · "
+                    "producer_model=no · network=no · build/execution/activation=no"
+                    % (
+                        result.gap_id,
+                        result.recovery.state.phase.value,
+                        result.appended_revisions,
+                    )
+                )
+                print("[Codex候选导入] 输出=%s" % result.adapter_output_root)
+            return 0
+
         if args.recovery_command == "ingest-adapter":
             from numpilot.gaps.adapter_recovery import (
                 AdapterRecoveryError,
@@ -5178,7 +5216,11 @@ def _cmd_validate_asnumpy_adapter_handoff(args):
             % ("yes" if exc.actual_remote_call else "no", exc.receipt_count),
             file=sys.stderr,
         )
-        if exc.receipts:
+        # A missing or malformed local response can fail before a receipt is
+        # created. Persist the failure receipt whenever the bounded attempt
+        # chain actually ran, so operators can distinguish an empty response
+        # directory from a preflight failure and retry deterministically.
+        if exc.receipts or exc.failures or exc.request_count:
             failure_path = out_root / "asnumpy-adapter-validation-failure.json"
             try:
                 out_root.mkdir(parents=True, mode=0o700, exist_ok=True)
@@ -5193,6 +5235,19 @@ def _cmd_validate_asnumpy_adapter_handoff(args):
                     "receipt_count": exc.receipt_count,
                     "response_sha256": list(exc.response_hashes),
                     "local_receipts": list(exc.receipts),
+                    "expected_response_paths": [
+                        relative + ".response"
+                        for relative in handoff["expected_overlay_paths"]
+                    ],
+                    "response_dir": str(response_root),
+                    "missing_response_paths": [
+                        relative + ".response"
+                        for relative in handoff["expected_overlay_paths"]
+                        if (
+                            (response_root / (relative + ".response")).is_symlink()
+                            or not (response_root / (relative + ".response")).is_file()
+                        )
+                    ],
                     "failures": list(exc.failures),
                     "verified_new_adapter": False,
                     "gates": {
@@ -7638,6 +7693,28 @@ def main(argv=None):
         help="包含 asnumpy-adapter-report.json 与 candidate/ 的已发布目录",
     )
     recovery_adapter.add_argument(
+        "--json", action="store_true", help="仅向 stdout 输出机器可读 JSON"
+    )
+
+    recovery_codex_adapter = recovery_sub.add_parser(
+        "ingest-codex-adapter",
+        help=(
+            "复验外部 Codex CLI 生成的 schema-5 本地 overlay，并把 "
+            "CANDIDATE_READY 推进到 ADAPTER_CANDIDATE；不声明远程模型调用"
+        ),
+    )
+    recovery_codex_adapter.add_argument(
+        "--state-dir", required=True, help="已通过完整 hash-chain 校验的恢复状态目录"
+    )
+    recovery_codex_adapter.add_argument(
+        "--candidate", required=True, help="恢复状态精确绑定的 operator-candidate.json"
+    )
+    recovery_codex_adapter.add_argument(
+        "--adapter-output",
+        required=True,
+        help="包含 schema-5 asnumpy-adapter-report.json 与 candidate/ 的已发布目录",
+    )
+    recovery_codex_adapter.add_argument(
         "--json", action="store_true", help="仅向 stdout 输出机器可读 JSON"
     )
 

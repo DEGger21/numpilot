@@ -13,6 +13,7 @@ from numpilot.asnumpy_adapter_context import (
 from numpilot.gaps.adapter_recovery import (
     AdapterRecoveryError,
     _official_adapter_api_name,
+    ingest_codex_adapter_candidate,
     ingest_official_adapter_candidate,
 )
 from numpilot.gaps.official_adapter import (
@@ -26,7 +27,10 @@ from numpilot.gaps.official_adapter import (
 )
 from numpilot.gaps.official_resolution import load_official_resolution_report
 from numpilot.gaps.pipeline import load_script_gap_request
-from numpilot.gaps.provider import _adapter_artifact_id
+from numpilot.gaps.provider import (
+    _adapter_artifact_id,
+    _injected_generation_receipt,
+)
 from numpilot.gaps.recovery import (
     EvidenceRef,
     GapRecoveryState,
@@ -352,6 +356,35 @@ def _adapter_output(tmp_path: Path, candidate, prepared):
     return root, report
 
 
+def _codex_adapter_output(tmp_path: Path, candidate, prepared):
+    root, report = _adapter_output(tmp_path, candidate, prepared)
+    response = "codex local window response"
+    generation = {
+        "mode": "injected_test_double",
+        "provider": "codex-self",
+        "model": "codex-local",
+        "protocol": OPENAI_CHAT_COMPLETIONS_PROTOCOL,
+        "response_model_aliases": [],
+    }
+    report.update({
+        "schema_version": 5,
+        "generation_mode": "injected_test_double",
+        "model": "codex-local",
+        "provider": "codex-self",
+        "configuration_source": "injected",
+        "response_sha256": [hashlib.sha256(response.encode("utf-8")).hexdigest()],
+        "remote_receipts": [
+            _injected_generation_receipt("system", "user", response, generation)
+        ],
+        "actual_remote_call": False,
+    })
+    report["adapter_artifact_id"] = _adapter_artifact_id(report)
+    (root / "asnumpy-adapter-report.json").write_bytes(
+        _canonical_bytes(report) + b"\n"
+    )
+    return root, report
+
+
 def _mutate_report(root: Path, change):
     path = root / "asnumpy-adapter-report.json"
     report = json.loads(path.read_text(encoding="utf-8"))
@@ -411,6 +444,75 @@ def test_generated_official_adapter_advances_with_exact_typed_receipt(tmp_path):
     rendered = result.to_dict()
     assert rendered["model_invoked_by_ingest"] is False
     assert rendered["producer_receipt_revalidated"] is True
+
+
+def test_local_codex_adapter_advances_without_remote_effects(tmp_path):
+    state_dir, before, candidate, candidate_path, prepared = (
+        _candidate_ready_fixture(tmp_path)
+    )
+    adapter_root, report = _codex_adapter_output(tmp_path, candidate, prepared)
+
+    result = ingest_codex_adapter_candidate(
+        state_dir, candidate_path, adapter_root
+    )
+
+    assert result.appended_revisions == 1
+    assert result.generation_mode == "injected_test_double"
+    assert result.adapter_artifact_id == report["adapter_artifact_id"]
+    assert result.recovery.history_length == before.history_length + 1
+    assert result.recovery.state.phase is RecoveryPhase.ADAPTER_CANDIDATE
+    effects = result.recovery.state.event_side_effects.to_dict()
+    assert effects["network_access_performed"] is False
+    assert effects["model_invocation_performed"] is False
+    rendered = result.to_dict()
+    assert rendered["generation_mode"] == "injected_test_double"
+    assert rendered["side_effects_performed"]["network_access_performed"] is False
+    assert rendered["side_effects_performed"]["model_invocation_performed"] is False
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("provider", "openai-compatible"),
+        ("model", "deepseek-flash"),
+        ("configuration_source", "llm.json"),
+        ("actual_remote_call", True),
+    ),
+)
+def test_local_codex_adapter_rejects_spoofed_identity(tmp_path, field, value):
+    state_dir, _before, candidate, candidate_path, prepared = (
+        _candidate_ready_fixture(tmp_path)
+    )
+    adapter_root, _report = _codex_adapter_output(tmp_path, candidate, prepared)
+    before_status = RecoveryStore(state_dir).status()
+    _mutate_report(adapter_root, lambda report: report.update({field: value}))
+
+    with pytest.raises(AdapterRecoveryError) as failure:
+        ingest_codex_adapter_candidate(state_dir, candidate_path, adapter_root)
+    assert failure.value.code == "wrong_adapter_profile"
+    after_status = RecoveryStore(state_dir).status()
+    assert after_status == before_status
+
+
+def test_local_codex_adapter_is_idempotent_and_rejects_mode_drift(tmp_path):
+    state_dir, _before, candidate, candidate_path, prepared = (
+        _candidate_ready_fixture(tmp_path)
+    )
+    adapter_root, _report = _codex_adapter_output(tmp_path, candidate, prepared)
+
+    first = ingest_codex_adapter_candidate(state_dir, candidate_path, adapter_root)
+    second = ingest_codex_adapter_candidate(state_dir, candidate_path, adapter_root)
+    assert first.appended_revisions == 1
+    assert second.appended_revisions == 0
+    assert second.generation_mode == "injected_test_double"
+
+    _mutate_report(
+        adapter_root,
+        lambda report: report.update({"generation_mode": "remote_llm"}),
+    )
+    with pytest.raises(AdapterRecoveryError) as failure:
+        ingest_codex_adapter_candidate(state_dir, candidate_path, adapter_root)
+    assert failure.value.code == "wrong_adapter_profile"
 
 
 def test_ingest_is_idempotent_and_revalidates_output_each_time(tmp_path):
