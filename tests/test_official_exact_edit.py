@@ -44,6 +44,31 @@ def _exact_response(path, base, edits, *, base_sha256=None):
     return "".join(pieces)
 
 
+
+def _window_response(path, base, replacements):
+    pieces = [
+        "NUMPILOT_WINDOW_REPLACE_V1\n",
+        "PATH: %s\n" % path,
+        "BASE_SHA256: %s\n" % _sha256_text(base),
+    ]
+    specifications = provider_module._OFFICIAL_EXACT_EDIT_TARGET_WINDOWS[path]
+    pieces.append("WINDOW_COUNT: %d\n" % len(specifications))
+    for index, (label, start_marker, end_marker) in enumerate(specifications, 1):
+        start = 0 if start_marker is None else base.find(start_marker)
+        end = len(base) if end_marker is None else base.find(end_marker)
+        content = base[start:end]
+        for old, new in replacements:
+            if old in content:
+                content = content.replace(old, new, 1)
+        pieces.extend((
+            "BEGIN_WINDOW %d\nLABEL: %s\nCONTENT:\n" % (index, label),
+            content,
+            "\nEND_WINDOW %d\n" % index,
+        ))
+    pieces.append("END_WINDOW_REPLACE")
+    return "".join(pieces)
+
+
 def _context_plan(
     tmp_path,
     architecture,
@@ -638,7 +663,7 @@ def test_official_exact_edit_generation_binds_full_rebuilt_files_and_receipts(
         response = (
             ""
             if not prompts
-            else _exact_response(
+            else _window_response(
                 path,
                 planned_context[path],
                 (replacements[path],),
@@ -690,8 +715,8 @@ def test_official_exact_edit_generation_binds_full_rebuilt_files_and_receipts(
         {"stream": True},
         {"stream": True},
     ]
-    assert all("NUMPILOT_EXACT_EDIT_V1" in system for system, _, _ in prompts)
-    assert all("Never return a complete file" in system for system, _, _ in prompts)
+    assert all("NUMPILOT_WINDOW_REPLACE_V1" in system for system, _, _ in prompts)
+    assert all("complete replacement content for that reviewed window" in system for system, _, _ in prompts)
     assert header_content in prompts[0][1]
     assert header_content in prompts[1][1]
     assert header_content not in prompts[2][1]

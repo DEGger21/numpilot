@@ -39,6 +39,10 @@ from numpilot.gaps.official_resolution import (
     OfficialResolutionError,
     load_official_resolution_report,
 )
+from numpilot.gaps.official_candidate_handoff import (
+    OfficialCandidateHandoffError,
+    load_official_candidate_handoff,
+)
 from numpilot.gaps.pipeline import (
     GapCompletionError,
     load_script_gap_request,
@@ -369,6 +373,15 @@ def _find_ref(refs: Sequence[EvidenceRef], name: str, label: str) -> EvidenceRef
     return matches[0]
 
 
+def _find_prefix_ref(refs: Sequence[EvidenceRef], prefix: str, label: str) -> EvidenceRef:
+    matches = tuple(item for item in refs if item.name.startswith(prefix))
+    if len(matches) != 1:
+        raise AdapterRecoveryError(
+            "missing_binding", "%s requires exactly one %s reference" % (label, prefix)
+        )
+    return matches[0]
+
+
 def _verify_bound_file(ref: EvidenceRef, maximum: int, label: str) -> Path:
     path = _absolute_path(ref.locator, label)
     if ref.locator != str(path):
@@ -458,6 +471,7 @@ def _official_adapter_input(
     candidate: OperatorCandidateArtifact,
 ):
     state = status.state
+    gap = _gap_for_candidate(status, candidate.gap_id)
     source_path = _absolute_path(state.source.path, "recovery source")
     source_snapshot = _snapshot_regular_file(
         source_path, _MAX_SOURCE_BYTES, "recovery source"
@@ -466,7 +480,61 @@ def _official_adapter_input(
         raise AdapterRecoveryError(
             "binding_hash_mismatch", "recovery source content drifted"
         )
-    gap_request_ref = _find_ref(state.refs, "gap_request", "recovery state")
+    gap_request_matches = tuple(ref for ref in state.refs if ref.name == "gap_request")
+    if not gap_request_matches:
+        # Native official_candidate_gap recovery has no ordinary gap-request.
+        # Reconstruct the typed GapSpec from the hand-off instead of fabricating
+        # a script_api_gap sibling receipt.
+        handoff_ref = _find_prefix_ref(
+            gap.refs, "official_handoff_", "official recovery gap"
+        )
+        preflight_ref = _find_prefix_ref(
+            gap.refs, "official_preflight_", "official recovery gap"
+        )
+        official_ref = _find_prefix_ref(
+            gap.refs, "official_resolution_", "official recovery gap"
+        )
+        handoff_path = _verify_bound_file(handoff_ref, _MAX_INPUT_BYTES, "official hand-off")
+        _verify_bound_file(preflight_ref, _MAX_INPUT_BYTES, "official preflight")
+        official_path = _verify_bound_file(official_ref, _MAX_OFFICIAL_REPORT_BYTES, "official resolution")
+        try:
+            handoff = load_official_candidate_handoff(
+                str(handoff_path), str(source_path), str(official_path)
+            )
+            preparation = prepare_gap_completion(
+                str(source_path),
+                target_soc=state.target.target_soc,
+                cann_version=state.target.cann_version,
+            )
+            official_report = load_official_resolution_report(str(official_path))
+            official_report.validate_preparation(preparation)
+            specs = tuple(
+                item for item in preparation.specs if item.gap_id == candidate.gap_id
+            )
+            decisions = tuple(
+                item for item in official_report.decisions if item.gap_id == candidate.gap_id
+            )
+            if len(specs) != 1 or len(decisions) != 1:
+                raise AdapterRecoveryError(
+                    "candidate_gap_mismatch",
+                    "official hand-off does not contain exactly one candidate gap",
+                )
+            if handoff.payload.get("source_sha256") != state.source.sha256:
+                raise AdapterRecoveryError(
+                    "binding_hash_mismatch", "official hand-off source differs from recovery state"
+                )
+            return prepare_official_candidate_adapter_input(
+                candidate, specs[0], decisions[0]
+            )
+        except AdapterRecoveryError:
+            raise
+        except (GapCompletionError, OfficialResolutionError, OfficialCandidateHandoffError, OfficialAdapterInputError, RecoveryError, OSError, ValueError, TypeError) as exc:
+            raise AdapterRecoveryError(
+                "invalid_bound_receipt",
+                "cannot reconstruct the official_candidate_gap GapSpec and resolution",
+            ) from exc
+
+    gap_request_ref = gap_request_matches[0]
     official_ref = _find_ref(
         state.refs, "official_resolution", "recovery state"
     )

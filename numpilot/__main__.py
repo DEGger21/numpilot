@@ -5080,6 +5080,149 @@ def _cmd_seal_repair(args):
     return 0
 
 
+
+def _cmd_validate_asnumpy_adapter_handoff(args):
+    """Validate a local Codex response package without reading llm.json."""
+
+    from numpilot.gaps.adapter_handoff import load_adapter_handoff
+    from numpilot.gaps.provider import (
+        DraftGenerationError,
+        DraftRepairError,
+        LlmDraftProvider,
+        _injected_generation_receipt,
+        _validate_adapter_context_plan,
+    )
+    from numpilot.asnumpy_skill import load_asnumpy_integration_skill
+
+    handoff_root = Path(args.handoff_dir).absolute()
+    response_root = Path(args.response_dir).absolute()
+    out_root = Path(args.out).absolute()
+    if response_root.is_symlink() or not response_root.is_dir():
+        print("[Codex交接] VALIDATE 失败：response-dir 必须是普通目录", file=sys.stderr)
+        return 2
+    if os.path.lexists(out_root):
+        print("[Codex交接] VALIDATE 失败：输出目录必须不存在", file=sys.stderr)
+        return 2
+    try:
+        handoff = load_adapter_handoff(handoff_root)
+        manifest = handoff["manifest"]
+        plan = _validate_adapter_context_plan(handoff["adapter_context_plan"])
+        if tuple(plan["expected_overlay_paths"]) != handoff["expected_overlay_paths"]:
+            raise DraftGenerationError("handoff context plan/path mismatch")
+        if not isinstance(handoff["operator_artifact"], dict):
+            raise DraftGenerationError("handoff operator artifact is invalid")
+        if not isinstance(handoff["adapter_contract"], str):
+            raise DraftGenerationError("handoff adapter contract is invalid")
+        bundle = load_asnumpy_integration_skill(
+            Path(args.asnumpy_skill_root) if args.asnumpy_skill_root else None
+        )
+        if bundle.bundle_sha256 != manifest.get("skill_bundle_sha256"):
+            raise DraftGenerationError("handoff Skill bundle hash mismatch")
+        _run_asnumpy_skill_gate(bundle, required_files=tuple(handoff["skill_files"]))
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError, DraftGenerationError) as exc:
+        print("[Codex交接] VALIDATE 本地 handoff 校验失败：%s" % exc, file=sys.stderr)
+        return 2
+
+    def chat(system_prompt, user_prompt, **_options):
+        match = re.search(r"TARGET PATH: `([^`]+)`", user_prompt)
+        if match is None:
+            raise DraftGenerationError("Codex response prompt has no target path")
+        relative = match.group(1)
+        if relative not in handoff["expected_overlay_paths"]:
+            raise DraftGenerationError("Codex response target is not in handoff")
+        response_path = response_root / (relative + ".response")
+        try:
+            response_path.relative_to(response_root)
+        except ValueError as exc:
+            raise DraftGenerationError("Codex response path escapes response-dir") from exc
+        if response_path.is_symlink() or not response_path.is_file():
+            raise DraftGenerationError("missing Codex response: %s" % relative)
+        payload = response_path.read_bytes()
+        if not payload or len(payload) > 2 * 1024 * 1024:
+            raise DraftGenerationError("Codex response exceeds the size limit: %s" % relative)
+        response = payload.decode("utf-8")
+        generation = {
+            "mode": "injected_test_double",
+            "provider": "codex-self",
+            "model": "codex-local",
+            "protocol": "openai-chat-completions",
+            "response_model_aliases": [],
+        }
+        return response, _injected_generation_receipt(
+            system_prompt, user_prompt, response, generation
+        )
+
+    try:
+        out_root.mkdir(parents=True, mode=0o700)
+        provider = LlmDraftProvider(
+            chat=chat,
+            max_attempts=args.max_attempts,
+            provider_label="codex-self",
+            model_name="codex-local",
+            skill_bundle=bundle,
+            staged_direct=True,
+        )
+        report = provider.generate_asnumpy_adapter_candidate(
+            out_root,
+            operator_artifact=handoff["operator_artifact"],
+            adapter_contract=handoff["adapter_contract"],
+            asnumpy_context=handoff["context"],
+            expected_paths=handoff["expected_overlay_paths"],
+            adapter_context_plan=plan,
+            skill_files=tuple(handoff["skill_files"]),
+        )
+    except DraftRepairError as exc:
+        print("[Codex交接] VALIDATE 失败：%s" % exc, file=sys.stderr)
+        print(
+            "[Codex交接] provider=codex-self actual_remote_call=%s receipts=%d"
+            % ("yes" if exc.actual_remote_call else "no", exc.receipt_count),
+            file=sys.stderr,
+        )
+        if exc.receipts:
+            failure_path = out_root / "asnumpy-adapter-validation-failure.json"
+            try:
+                out_root.mkdir(parents=True, mode=0o700, exist_ok=True)
+                failure_payload = {
+                    "schema_version": 1,
+                    "status": "validation_failed",
+                    "provider": "codex-self",
+                    "model": "codex-local",
+                    "generation_mode": "injected_test_double",
+                    "actual_remote_call": False,
+                    "attempt_count": exc.request_count,
+                    "receipt_count": exc.receipt_count,
+                    "response_sha256": list(exc.response_hashes),
+                    "local_receipts": list(exc.receipts),
+                    "failures": list(exc.failures),
+                    "verified_new_adapter": False,
+                    "gates": {
+                        "generated": False, "built": False, "imported": False,
+                        "executed": False, "qualified": False, "activated": False,
+                    },
+                }
+                failure_path.write_text(
+                    json.dumps(failure_payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                    encoding="utf-8",
+                )
+                os.chmod(failure_path, 0o600)
+                print("[Codex交接] 失败回执=%s" % failure_path, file=sys.stderr)
+            except (OSError, TypeError, ValueError) as receipt_error:
+                print("[Codex交接] 失败回执写入失败：%s" % type(receipt_error).__name__, file=sys.stderr)
+        return 2
+    except (OSError, UnicodeError, ValueError, DraftGenerationError) as exc:
+        print("[Codex交接] VALIDATE 失败：%s" % exc, file=sys.stderr)
+        return 2
+    print(
+        "[Codex交接] WAITING_FOR_AGENT → VALIDATE → GENERATED_UNVERIFIED · "
+        "provider=codex-self actual_remote_call=no · artifact=%s · out=%s"
+        % (report["adapter_artifact_id"], out_root / "candidate")
+    )
+    print(
+        "[Codex交接] 后续仍需 build/import/NumPy oracle/NPU/performance/qualification；"
+        "当前不会自动激活"
+    )
+    return 0
+
 def _cmd_generate_asnumpy_adapter(args):
     """Generate an architecture-aware AsNumpy overlay with the remote model."""
 
@@ -5098,13 +5241,19 @@ def _cmd_generate_asnumpy_adapter(args):
         OfficialResolutionError,
         load_official_resolution_report,
     )
+    from numpilot.gaps.official_candidate_handoff import (
+        OfficialCandidateHandoffError,
+        load_official_candidate_handoff,
+    )
     from numpilot.gaps.adapter_recovery import (
         AdapterRecoveryError,
         ingest_official_adapter_candidate,
     )
+    from numpilot.gaps.adapter_handoff import write_adapter_handoff
     from numpilot.gaps.pipeline import (
         GapCompletionError,
         load_script_gap_request,
+        prepare_gap_completion,
     )
     from numpilot.gaps.provider import (
         DraftGenerationError,
@@ -5182,104 +5331,195 @@ def _cmd_generate_asnumpy_adapter(args):
                     "operator candidate differs from its recovery receipt"
                 )
 
-            gap_request_refs = tuple(
-                ref for ref in recovery.state.refs if ref.name == "gap_request"
-            )
-            official_refs = tuple(
-                ref for ref in recovery.state.refs
-                if ref.name == "official_resolution"
-            )
-            if len(gap_request_refs) != 1 or len(official_refs) != 1:
-                raise DraftGenerationError(
-                    "recovery state lacks bound gap/official receipts"
+            if args.official_context_gate:
+                gate_path = Path(args.official_context_gate).absolute()
+                gate_payload = json.loads(read_bounded(
+                    gate_path, "official context gate", 8 * 1024 * 1024
+                ))
+                gate_refs = tuple(
+                    ref for ref in recovery.state.refs
+                    if ref.name == "official_context_gate"
                 )
-            gap_request_path = Path(gap_request_refs[0].locator)
-            official_path = Path(official_refs[0].locator)
-            gap_request_payload = read_bounded(
-                gap_request_path, "gap request", 2 * 1024 * 1024
-            ).encode("utf-8")
-            official_payload = read_bounded(
-                official_path, "official resolution", 8 * 1024 * 1024
-            ).encode("utf-8")
-            if (
-                hashlib.sha256(gap_request_payload).hexdigest()
-                != gap_request_refs[0].sha256
-                or hashlib.sha256(official_payload).hexdigest()
-                != official_refs[0].sha256
-            ):
-                raise DraftGenerationError(
-                    "recovery gap/official receipt content drift"
+                if len(gate_refs) != 1 or Path(gate_refs[0].locator).absolute() != gate_path:
+                    raise DraftGenerationError(
+                        "official context gate is not bound to recovery state"
+                    )
+                if hashlib.sha256(gate_path.read_bytes()).hexdigest() != gate_refs[0].sha256:
+                    raise DraftGenerationError("official context gate content drift")
+                if (
+                    gate_payload.get("schema") != "numpilot.official-adapter-context-gate.v1"
+                    or gate_payload.get("status") != "ready_for_official_adapter_model"
+                    or gate_payload.get("next_action") != "invoke_configured_model_for_official_adapter"
+                    or any(gate_payload.get(name) is not False for name in (
+                        "model_invocation_performed", "network_access_performed",
+                        "system_write_performed", "asnumpy_import_performed",
+                        "build_performed", "execution_performed", "activation_performed",
+                    ))
+                ):
+                    raise DraftGenerationError("official context gate is not inert and model-ready")
+                ref_by_prefix = {}
+                for prefix in ("official_handoff_", "official_preflight_", "official_resolution_"):
+                    matches = tuple(ref for ref in gap_matches[0].refs if ref.name.startswith(prefix))
+                    if len(matches) != 1:
+                        raise DraftGenerationError("official recovery state lacks %s binding" % prefix)
+                    ref_by_prefix[prefix] = matches[0]
+                handoff_path = Path(ref_by_prefix["official_handoff_"].locator).absolute()
+                preflight_path = Path(ref_by_prefix["official_preflight_"].locator).absolute()
+                official_path = Path(ref_by_prefix["official_resolution_"].locator).absolute()
+                for ref, path, label, limit in (
+                    (ref_by_prefix["official_handoff_"], handoff_path, "official hand-off", 2 * 1024 * 1024),
+                    (ref_by_prefix["official_preflight_"], preflight_path, "official preflight", 8 * 1024 * 1024),
+                    (ref_by_prefix["official_resolution_"], official_path, "official resolution", 8 * 1024 * 1024),
+                ):
+                    payload = read_bounded(path, label, limit).encode("utf-8")
+                    if hashlib.sha256(payload).hexdigest() != ref.sha256:
+                        raise DraftGenerationError("%s content drift" % label)
+                handoff = load_official_candidate_handoff(
+                    str(handoff_path), recovery.state.source.path, str(official_path)
                 )
-            selection = load_script_gap_request(
-                str(gap_request_path),
-                recovery.state.source.path,
-                target_soc=recovery.state.target.target_soc,
-                cann_version=recovery.state.target.cann_version,
-            )
-            specs = tuple(
-                item for item in selection.specs
-                if item.gap_id == candidate.gap_id
-            )
-            if len(specs) != 1:
-                raise DraftGenerationError(
-                    "gap request does not contain one candidate GapSpec"
+                official_report = load_official_resolution_report(str(official_path))
+                preparation = prepare_gap_completion(
+                    recovery.state.source.path,
+                    target_soc=recovery.state.target.target_soc,
+                    cann_version=recovery.state.target.cann_version,
                 )
-            spec = specs[0]
-            official_report = load_official_resolution_report(
-                str(official_path)
-            )
-            decisions = tuple(
-                item for item in official_report.decisions
-                if item.gap_id == candidate.gap_id
-            )
-            if len(decisions) != 1:
-                raise DraftGenerationError(
-                    "official report does not contain one candidate decision"
+                official_report.validate_preparation(preparation)
+                specs = tuple(item for item in preparation.specs if item.gap_id == candidate.gap_id)
+                decisions = tuple(item for item in official_report.decisions if item.gap_id == candidate.gap_id)
+                if len(specs) != 1 or len(decisions) != 1:
+                    raise DraftGenerationError("official recovery does not bind one candidate GapSpec and decision")
+                spec = specs[0]
+                prepared = prepare_official_candidate_adapter_input(candidate, spec, decisions[0])
+                if gate_payload.get("candidate_id") != candidate.candidate_id or gate_payload.get("qualified_api") != spec.qualified_api:
+                    raise DraftGenerationError("official context gate candidate/API mismatch")
+                api_name = spec.api_name
+                selected_library = prepared.selected_library
+                context_plan = plan_official_aclnn_adapter_context(
+                    args.asnumpy_reference, api_name,
+                    selected_library_relative_path=selected_library["relative_path"],
+                    selected_library_sha256=selected_library["sha256"],
                 )
-            prepared = prepare_official_candidate_adapter_input(
-                candidate, spec, decisions[0]
-            )
-            api_name = spec.api_name
-            selected_library = prepared.selected_library
-            context_plan = plan_official_aclnn_adapter_context(
-                args.asnumpy_reference,
-                api_name,
-                selected_library_relative_path=selected_library[
-                    "relative_path"
-                ],
-                selected_library_sha256=selected_library["sha256"],
-            )
-            prepared = bind_official_adapter_context(
-                prepared, context_plan, api_name=api_name
-            )
-            prepared.require_model_ready()
-            artifact_manifest = prepared.operator_manifest
-            adapter_contract = prepared.adapter_contract
-            context = dict(context_plan.context)
-            header_refs = tuple(
-                ref for ref in candidate.candidate_refs
-                if ref.name == "official_selected_header"
-            )
-            if len(header_refs) != 1:
-                raise DraftGenerationError(
-                    "official candidate lacks one selected header"
+                prepared = bind_official_adapter_context(prepared, context_plan, api_name=api_name)
+                prepared.require_model_ready()
+                if (
+                    gate_payload.get("context_plan_sha256") != context_plan.plan_sha256
+                    or gate_payload.get("adapter_contract_sha256") != prepared.adapter_contract_sha256
+                ):
+                    raise DraftGenerationError("official context gate plan/contract hash mismatch")
+                artifact_manifest = prepared.operator_manifest
+                adapter_contract = prepared.adapter_contract
+                context = dict(context_plan.context)
+                header_refs = tuple(ref for ref in candidate.candidate_refs if ref.name == "official_selected_header")
+                if len(header_refs) != 1:
+                    raise DraftGenerationError("official candidate lacks one selected header")
+                selected_header = decisions[0].installed_cann.get("selected_header")
+                if not isinstance(selected_header, dict) or not isinstance(selected_header.get("relative_path"), str):
+                    raise DraftGenerationError("official resolution lacks selected header path")
+                header_path = Path(official_report.cann_root) / selected_header["relative_path"]
+                header_content = read_bounded(header_path, "official candidate header", 96 * 1024)
+                if hashlib.sha256(header_content.encode("utf-8")).hexdigest() != header_refs[0].sha256:
+                    raise DraftGenerationError("official candidate header hash mismatch")
+                context["SIGNED_OFFICIAL_HEADER/%s" % header_path.name] = header_content
+                adapter_skill_files = ASNUMPY_OFFICIAL_ADAPTER_SKILL_FILES
+            else:
+                gap_request_refs = tuple(
+                    ref for ref in recovery.state.refs if ref.name == "gap_request"
                 )
-            header_content = read_bounded(
-                header_refs[0].locator,
-                "official candidate header",
-                96 * 1024,
-            )
-            if hashlib.sha256(header_content.encode("utf-8")).hexdigest() != (
-                header_refs[0].sha256
-            ):
-                raise DraftGenerationError(
-                    "official candidate header hash mismatch"
+                official_refs = tuple(
+                    ref for ref in recovery.state.refs
+                    if ref.name == "official_resolution"
                 )
-            context[
-                "SIGNED_OFFICIAL_HEADER/%s"
-                % Path(header_refs[0].locator).name
-            ] = header_content
-            adapter_skill_files = ASNUMPY_OFFICIAL_ADAPTER_SKILL_FILES
+                if len(gap_request_refs) != 1 or len(official_refs) != 1:
+                    raise DraftGenerationError(
+                        "recovery state lacks bound gap/official receipts"
+                    )
+                gap_request_path = Path(gap_request_refs[0].locator)
+                official_path = Path(official_refs[0].locator)
+                gap_request_payload = read_bounded(
+                    gap_request_path, "gap request", 2 * 1024 * 1024
+                ).encode("utf-8")
+                official_payload = read_bounded(
+                    official_path, "official resolution", 8 * 1024 * 1024
+                ).encode("utf-8")
+                if (
+                    hashlib.sha256(gap_request_payload).hexdigest()
+                    != gap_request_refs[0].sha256
+                    or hashlib.sha256(official_payload).hexdigest()
+                    != official_refs[0].sha256
+                ):
+                    raise DraftGenerationError(
+                        "recovery gap/official receipt content drift"
+                    )
+                selection = load_script_gap_request(
+                    str(gap_request_path),
+                    recovery.state.source.path,
+                    target_soc=recovery.state.target.target_soc,
+                    cann_version=recovery.state.target.cann_version,
+                )
+                specs = tuple(
+                    item for item in selection.specs
+                    if item.gap_id == candidate.gap_id
+                )
+                if len(specs) != 1:
+                    raise DraftGenerationError(
+                        "gap request does not contain one candidate GapSpec"
+                    )
+                spec = specs[0]
+                official_report = load_official_resolution_report(
+                    str(official_path)
+                )
+                decisions = tuple(
+                    item for item in official_report.decisions
+                    if item.gap_id == candidate.gap_id
+                )
+                if len(decisions) != 1:
+                    raise DraftGenerationError(
+                        "official report does not contain one candidate decision"
+                    )
+                prepared = prepare_official_candidate_adapter_input(
+                    candidate, spec, decisions[0]
+                )
+                api_name = spec.api_name
+                selected_library = prepared.selected_library
+                context_plan = plan_official_aclnn_adapter_context(
+                    args.asnumpy_reference,
+                    api_name,
+                    selected_library_relative_path=selected_library[
+                        "relative_path"
+                    ],
+                    selected_library_sha256=selected_library["sha256"],
+                )
+                prepared = bind_official_adapter_context(
+                    prepared, context_plan, api_name=api_name
+                )
+                prepared.require_model_ready()
+                artifact_manifest = prepared.operator_manifest
+                adapter_contract = prepared.adapter_contract
+                context = dict(context_plan.context)
+                header_refs = tuple(
+                    ref for ref in candidate.candidate_refs
+                    if ref.name == "official_selected_header"
+                )
+                if len(header_refs) != 1:
+                    raise DraftGenerationError(
+                        "official candidate lacks one selected header"
+                    )
+                header_content = read_bounded(
+                    header_refs[0].locator,
+                    "official candidate header",
+                    96 * 1024,
+                )
+                if hashlib.sha256(header_content.encode("utf-8")).hexdigest() != (
+                    header_refs[0].sha256
+                ):
+                    raise DraftGenerationError(
+                        "official candidate header hash mismatch"
+                    )
+                context[
+                    "SIGNED_OFFICIAL_HEADER/%s"
+                    % Path(header_refs[0].locator).name
+                ] = header_content
+                adapter_skill_files = ASNUMPY_OFFICIAL_ADAPTER_SKILL_FILES
         else:
             if not args.spec or not args.artifact or args.recovery_state_dir:
                 raise DraftGenerationError(
@@ -5347,9 +5587,34 @@ def _cmd_generate_asnumpy_adapter(args):
         validated_context_manifest = _validate_adapter_context_plan(
             context_plan.manifest()
         )
+        if getattr(args, "handoff_only", False):
+            bundle = load_asnumpy_integration_skill(
+                Path(args.asnumpy_skill_root) if args.asnumpy_skill_root else None
+            )
+            _run_asnumpy_skill_gate(bundle, required_files=adapter_skill_files)
+            metadata = write_adapter_handoff(
+                out_root,
+                operator_artifact=artifact_manifest,
+                adapter_contract=adapter_contract,
+                asnumpy_context=context,
+                adapter_context_plan=validated_context_manifest,
+                skill_files=tuple(adapter_skill_files),
+                skill_bundle_sha256=bundle.bundle_sha256,
+            )
+            print(
+                "[Codex交接] PREPARE → WAITING_FOR_AGENT · handoff=%s · "
+                "paths=%d · plan_sha256=%s"
+                % (out_root, len(metadata["expected_overlay_paths"]),
+                   validated_context_manifest["plan_sha256"])
+            )
+            print(
+                "[Codex交接] 不读取 llm.json、不联网、不修改 AsNumpy；"
+                "请让外部代理写入 responses/<path>.response"
+            )
+            return 0
     except (OSError, UnicodeError, json.JSONDecodeError, ValueError,
             DraftGenerationError, GapCompletionError, OfficialAdapterInputError,
-            OfficialResolutionError, RecoveryError) as exc:
+            OfficialResolutionError, OfficialCandidateHandoffError, RecoveryError) as exc:
         print("[AsNumpy 接入] 本地输入校验失败: %s" % exc, file=sys.stderr)
         print(
             "[LLM调用] actual_remote_call=no · 未读取 Skill，未生成 overlay",
@@ -5477,6 +5742,50 @@ def _cmd_generate_asnumpy_adapter(args):
             % ("yes" if exc.actual_remote_call else "no", exc.receipt_count),
             file=sys.stderr,
         )
+        if exc.actual_remote_call and exc.receipts:
+            failure_payload = {
+                "schema_version": 1,
+                "status": "generation_failed",
+                "source_artifact_id": artifact_manifest.get("artifact_id"),
+                "model": exc.generation.get("model"),
+                "provider": exc.generation.get("provider"),
+                "protocol": exc.generation.get("protocol"),
+                "configuration_source": exc.generation.get("configuration_source"),
+                "attempt_count": exc.request_count,
+                "receipt_count": exc.receipt_count,
+                "response_sha256": list(exc.response_hashes),
+                "remote_receipts": list(exc.receipts),
+                "failures": list(exc.failures),
+                "failure_message": str(exc),
+                "actual_remote_call": True,
+                "verified_new_adapter": False,
+                "adapter_context_plan": validated_context_manifest,
+                "gates": {
+                    "generated": False,
+                    "built": False,
+                    "imported": False,
+                    "executed": False,
+                    "qualified": False,
+                    "activated": False,
+                },
+            }
+            try:
+                out_root.mkdir(parents=True, mode=0o700, exist_ok=False)
+                failure_path = out_root / "asnumpy-adapter-generation-failure.json"
+                encoded = (json.dumps(failure_payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode("utf-8")
+                fd = os.open(str(failure_path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                try:
+                    with os.fdopen(fd, "wb") as handle:
+                        fd = -1
+                        handle.write(encoded)
+                        handle.flush()
+                        os.fsync(handle.fileno())
+                finally:
+                    if fd >= 0:
+                        os.close(fd)
+                print("[失败回执] 已封存=%s" % failure_path, file=sys.stderr)
+            except (OSError, TypeError, ValueError) as receipt_error:
+                print("[失败回执] 写入失败: %s" % receipt_error, file=sys.stderr)
         return 2
     except (OSError, UnicodeError, json.JSONDecodeError, ValueError,
             DraftGenerationError) as exc:
@@ -7235,7 +7544,7 @@ def main(argv=None):
     official_recovery.add_argument("--runtime-audit-id", required=True, help="显式 runtime audit id")
     official_recovery.add_argument("--runtime-identity-sha256", required=True, help="显式 runtime identity SHA-256")
     official_recovery.add_argument("--run-id", help="可选 recovery run id")
-    official_recovery.add_argument("--profile", default="receipt-only", choices=["receipt-only"], help="本阶段固定为 receipt-only")
+    official_recovery.add_argument("--profile", default="receipt-only", choices=["receipt-only", "candidate-generation"], help="receipt-only 仅建候选；candidate-generation 为后续模型请求冻结权限")
     official_recovery.add_argument("--json", action="store_true", help="只输出机器可读回执")
 
     recover_gaps = sub.add_parser(
@@ -7608,6 +7917,14 @@ def main(argv=None):
         help="official candidate 模式：处于 CANDIDATE_READY 的恢复状态目录",
     )
     adapter.add_argument(
+        "--official-context-gate",
+        help=(
+            "official_candidate_gap 模式的 context gate 回执；与 --candidate 和 "
+            "--recovery-state-dir 一起使用，重新校验 hand-off/GapSpec/官方解析/"
+            "AsNumpy context plan 后才允许模型请求"
+        ),
+    )
+    adapter.add_argument(
         "--asnumpy-reference",
         required=True,
         help=(
@@ -7638,6 +7955,36 @@ def main(argv=None):
         action="store_true",
         help="兼容旧命令；内置 AsNumpy Skill 从不联网",
     )
+
+
+    handoff = sub.add_parser(
+        "prepare-asnumpy-adapter-handoff",
+        help="只读准备 Codex/人工代理的 AsNumpy adapter 交接包，不读取 llm.json",
+    )
+    handoff.set_defaults(handoff_only=True)
+    handoff.add_argument(
+        "--spec", help="保留参数；official candidate 模式不使用"
+    )
+    handoff_source = handoff.add_mutually_exclusive_group(required=True)
+    handoff_source.add_argument("--artifact", help="custom-OPP Artifact")
+    handoff_source.add_argument("--candidate", help="绑定 recovery 的 official candidate JSON")
+    handoff.add_argument("--recovery-state-dir", required=True, help="CANDIDATE_READY recovery 状态目录")
+    handoff.add_argument("--official-context-gate", required=True, help="ready_for_official_adapter_model gate 回执")
+    handoff.add_argument("--asnumpy-reference", required=True, help="只读 AsNumpy 源码树")
+    handoff.add_argument("--out", required=True, help="新建 handoff 目录")
+    handoff.add_argument("--asnumpy-skill-root", "--skill-root", dest="asnumpy_skill_root", default=None, help="NumPilot 自带 AsNumpy Skill 根目录")
+    handoff.add_argument("--offline-skills", action="store_true", help="兼容参数；handoff 始终不联网")
+
+    validate_handoff = sub.add_parser(
+        "validate-asnumpy-adapter-handoff",
+        help="只读回收 Codex/人工代理 responses，生成 injected AsNumpy candidate",
+    )
+    validate_handoff.add_argument("--handoff-dir", required=True, help="prepare 命令生成的 handoff 目录")
+    validate_handoff.add_argument("--response-dir", required=True, help="Codex 写入的 responses 根目录")
+    validate_handoff.add_argument("--out", required=True, help="新建 injected adapter 输出目录")
+    validate_handoff.add_argument("--max-attempts", type=int, choices=[1, 2, 3], default=1)
+    validate_handoff.add_argument("--asnumpy-skill-root", "--skill-root", dest="asnumpy_skill_root", default=None, help="NumPilot 自带 AsNumpy Skill 根目录")
+    validate_handoff.add_argument("--offline-skills", action="store_true", help="兼容参数；validate 始终不联网")
 
     adapter_repair = sub.add_parser(
         "repair-asnumpy-adapter",
@@ -7794,6 +8141,10 @@ def main(argv=None):
             return _cmd_repair_draft(args)
         if args.cmd == "seal-repair":
             return _cmd_seal_repair(args)
+        if args.cmd == "prepare-asnumpy-adapter-handoff":
+            return _cmd_generate_asnumpy_adapter(args)
+        if args.cmd == "validate-asnumpy-adapter-handoff":
+            return _cmd_validate_asnumpy_adapter_handoff(args)
         if args.cmd == "generate-asnumpy-adapter":
             return _cmd_generate_asnumpy_adapter(args)
         if args.cmd == "repair-asnumpy-adapter":

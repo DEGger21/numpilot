@@ -13,8 +13,9 @@ import hashlib
 import json
 import os
 from pathlib import Path
-from typing import Any, Mapping, Optional, Tuple
+from typing import Any, Mapping, Optional, Sequence, Tuple
 
+from numpilot.gaps.official_adapter_context_gate import OfficialAdapterContextGateError
 from numpilot.gaps.official_candidate_handoff import (
     OfficialCandidateHandoffError,
     load_official_candidate_handoff,
@@ -222,7 +223,7 @@ def _write_candidate(path: Path, candidate: OperatorCandidateArtifact) -> Eviden
         finally:
             if fd >= 0:
                 os.close(fd)
-    return EvidenceRef("official_candidate_%s" % candidate.gap_id, str(path.absolute()), _sha256(payload))
+    return EvidenceRef("operator_candidate", str(path.absolute()), _sha256(payload))
 
 
 def _advance(
@@ -232,6 +233,8 @@ def _advance(
     kind: StageReceiptKind,
     ref_by_gap: Mapping[str, EvidenceRef],
     reason: str,
+    global_refs: Sequence[EvidenceRef] = (),
+    gap_extra_refs: Optional[Mapping[str, Sequence[EvidenceRef]]] = None,
 ) -> RecoveryStatus:
     if status.state.phase is phase:
         return status
@@ -250,7 +253,11 @@ def _advance(
             phase=phase,
             outcome=RecoveryOutcome.READY,
             attempt_count=gap.attempt_count,
-            refs=tuple(gap.refs) + (ref_by_gap[gap.gap_id],),
+            refs=(
+                tuple(gap.refs)
+                + tuple((gap_extra_refs or {}).get(gap.gap_id, ()))
+                + (ref_by_gap[gap.gap_id],)
+            ),
         )
         for gap in status.state.gaps
     )
@@ -267,12 +274,19 @@ def _advance(
         )
         for gap in status.state.gaps
     )
+    event_refs = tuple(ref_by_gap.values())
+    if phase is RecoveryPhase.CANDIDATE_READY:
+        event_refs = tuple(
+            EvidenceRef("official_candidate_artifact_%s" % gap_id, ref.locator, ref.sha256)
+            for gap_id, ref in sorted(ref_by_gap.items())
+        )
+    event_refs = event_refs + tuple(global_refs)
     try:
         return store.append(RecoveryEvent.bound_to(
             status.state,
             phase=phase,
             outcome=RecoveryOutcome.READY,
-            refs=tuple(ref_by_gap.values()),
+            refs=event_refs,
             gaps=gaps,
             stage_receipts=receipts,
             side_effects=SideEffectTruth(),
@@ -302,8 +316,14 @@ def materialize_official_candidate_recovery(
         selected_profile = RecoveryPolicyProfile(profile)
     except ValueError as exc:
         raise OfficialCandidateRecoveryError("invalid_profile", "unsupported recovery policy profile") from exc
-    if selected_profile is not RecoveryPolicyProfile.RECEIPT_ONLY:
-        raise OfficialCandidateRecoveryError("unsafe_profile", "official candidate recovery requires receipt-only policy")
+    if selected_profile not in {
+        RecoveryPolicyProfile.RECEIPT_ONLY,
+        RecoveryPolicyProfile.CANDIDATE_GENERATION,
+    }:
+        raise OfficialCandidateRecoveryError(
+            "unsafe_profile",
+            "official candidate recovery accepts only receipt-only or candidate-generation policy",
+        )
     source_file = Path(source_path).absolute()
     handoff_file = Path(handoff_path).absolute()
     preflight_file = Path(preflight_path).absolute()
@@ -362,7 +382,7 @@ def materialize_official_candidate_recovery(
         source=source,
         target=target,
         runtime=runtime,
-        policy=recovery_policy_for_profile(RecoveryPolicyProfile.RECEIPT_ONLY),
+        policy=recovery_policy_for_profile(selected_profile),
     )
     store = RecoveryStore(state_dir)
     gap_ids = tuple(sorted(item.gap_id for item in candidates))
@@ -382,17 +402,29 @@ def materialize_official_candidate_recovery(
     handoff_ref = {item.gap_id: EvidenceRef("official_handoff_%s" % item.gap_id, str(handoff_file), _file_sha256(handoff_file, "handoff", _MAX_RECEIPT_BYTES)) for item in candidates}
     preflight_ref = {item.gap_id: EvidenceRef("official_preflight_%s" % item.gap_id, str(preflight_file), _file_sha256(preflight_file, "preflight", _MAX_RECEIPT_BYTES)) for item in candidates}
     resolution_ref = {item.gap_id: EvidenceRef("official_resolution_%s" % item.gap_id, str(resolution_file), _file_sha256(resolution_file, "resolution", _MAX_RECEIPT_BYTES)) for item in candidates}
+    context_gate_ref = EvidenceRef(
+        "official_context_gate",
+        str(gate_file),
+        _file_sha256(gate_file, "context gate", _MAX_RECEIPT_BYTES),
+    )
     stage_plan = (
-        (RecoveryPhase.ANALYZED, StageReceiptKind.ANALYSIS_REPORT, handoff_ref, "official hand-off was validated"),
-        (RecoveryPhase.GAP_PREPARED, StageReceiptKind.GAP_SPEC, preflight_ref, "official preflight was validated"),
-        (RecoveryPhase.RESOLVED, StageReceiptKind.OFFICIAL_RESOLUTION_DECISION, resolution_ref, "official resolution was revalidated"),
-        (RecoveryPhase.CANDIDATE_READY, StageReceiptKind.OPERATOR_CANDIDATE, artifact_refs, "official binary candidates are content-bound; adapter/model gates remain pending"),
+        (RecoveryPhase.ANALYZED, StageReceiptKind.ANALYSIS_REPORT, handoff_ref, "official hand-off was validated", ()),
+        (RecoveryPhase.GAP_PREPARED, StageReceiptKind.GAP_SPEC, preflight_ref, "official preflight was validated", ()),
+        (RecoveryPhase.RESOLVED, StageReceiptKind.OFFICIAL_RESOLUTION_DECISION, resolution_ref, "official resolution was revalidated", ()),
+        (RecoveryPhase.CANDIDATE_READY, StageReceiptKind.OPERATOR_CANDIDATE, artifact_refs, "official binary candidates are content-bound; adapter/model gates remain pending", (context_gate_ref,)),
     )
     appended = 0
-    for phase, kind, refs, reason in stage_plan:
+    for phase, kind, refs, reason, global_refs in stage_plan:
         if status.state.phase is phase or status.state.phase.value == "candidate_ready":
             continue
-        status = _advance(store, status, phase, kind, refs, reason)
+        status = _advance(
+            store, status, phase, kind, refs, reason,
+            global_refs=global_refs,
+            gap_extra_refs=(
+                {item.gap_id: (item.gap_spec_ref, item.resolution_decision_ref) for item in candidates}
+                if phase is RecoveryPhase.CANDIDATE_READY else {}
+            ),
+        )
         appended += 1
     if status.state.phase is not RecoveryPhase.CANDIDATE_READY:
         raise OfficialCandidateRecoveryError("state_incomplete", "official recovery did not reach CANDIDATE_READY")

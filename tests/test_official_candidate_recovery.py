@@ -39,7 +39,7 @@ def test_official_recovery_rejects_unbound_inputs(tmp_path):
     assert error.value.code == "unsafe_gate"
 
 
-def test_official_recovery_requires_receipt_only_profile(tmp_path):
+def test_official_recovery_candidate_generation_still_requires_gate(tmp_path):
     paths = _write_inputs(tmp_path)
     with pytest.raises(OfficialCandidateRecoveryError) as error:
         materialize_official_candidate_recovery(
@@ -54,7 +54,7 @@ def test_official_recovery_requires_receipt_only_profile(tmp_path):
             runtime_identity_sha256="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
             profile="candidate-generation",
         )
-    assert error.value.code == "unsafe_profile"
+    assert error.value.code == "unsafe_gate"
 
 
 def test_official_recovery_cli_help_is_explicitly_fail_closed():

@@ -93,6 +93,13 @@ On any failure, preserve the raw diagnostic and stop at the failed gate.
 receipt never count as pass. Do not update the 150-example migration count
 until the candidate is qualified.
 
+## Reusable generation lessons
+
+Read `references/operator-generation-lessons.md` before an official adapter
+model handoff. It records the observed DeepSeek failure mode, the bounded
+`NUMPILOT_WINDOW_REPLACE_V1` protocol, the terminal interaction contract, and
+the evidence required before a candidate may advance.
+
 ## Interaction and model boundary
 
 The skill does not call `llm.json` implicitly. A remote model request requires

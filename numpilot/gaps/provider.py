@@ -1,5 +1,6 @@
 """Safe providers for generating an unverified Ascend C operator draft."""
 
+import difflib
 import hashlib
 import json
 import os
@@ -8,7 +9,7 @@ import re
 import shutil
 import stat
 import tempfile
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 from numpilot.asnumpy_skill import (
     ASNUMPY_INTEGRATION_SKILL_FILES,
@@ -59,6 +60,11 @@ class DraftRepairError(DraftGenerationError):
         *,
         receipt_count: int = 0,
         request_count: Optional[int] = None,
+        receipts: Optional[Sequence[Dict[str, object]]] = None,
+        response_hashes: Optional[Sequence[str]] = None,
+        failures: Optional[Sequence[str]] = None,
+        generation: Optional[Dict[str, object]] = None,
+        actual_remote_call: Optional[bool] = None,
     ):
         if request_count is None:
             # Preserve the historical constructor behavior for callers that
@@ -77,7 +83,16 @@ class DraftRepairError(DraftGenerationError):
         super().__init__(message)
         self.receipt_count = receipt_count
         self.request_count = request_count
-        self.actual_remote_call = request_count > 0
+        if actual_remote_call is None:
+            self.actual_remote_call = request_count > 0
+        elif not isinstance(actual_remote_call, bool):
+            raise ValueError("actual_remote_call must be boolean")
+        else:
+            self.actual_remote_call = actual_remote_call
+        self.receipts = tuple(receipts or ())
+        self.response_hashes = tuple(response_hashes or ())
+        self.failures = tuple(failures or ())
+        self.generation = dict(generation or {})
 
 
 _ALLOWED_ROOT_FILES = frozenset({
@@ -334,6 +349,11 @@ _GENERATED_ADAPTER_REPORT_FIELDS_V4 = (
         "asnumpy_adapter_context_plan",
     })
 )
+_GENERATED_ADAPTER_REPORT_FIELDS_V5 = (
+    _GENERATED_ADAPTER_REPORT_FIELDS_V4 | frozenset({
+        "generation_mode",
+    })
+)
 _REPAIRED_ADAPTER_REPORT_FIELDS_V2 = frozenset({
     "schema_version",
     "status",
@@ -480,35 +500,28 @@ software, or claim build/NPU success. Never put a line equal to END_FILE inside
 file content.
 """
 
-_ASNUMPY_OFFICIAL_EXACT_EDIT_SYSTEM_PROMPT = """You propose bounded exact
-edits to exactly one EXISTING file for an UNVERIFIED official ACLNN AsNumpy
-integration overlay. The signed route-neutral official_binary candidate,
-adapter contract, selected CANN header, target file, and existing-module
-AsNumpy references are authoritative. The route-specific Skill is engineering
-and testing truth, except that its older complete-file output instruction is
-superseded by this exact-edit protocol.
+_ASNUMPY_OFFICIAL_EXACT_EDIT_SYSTEM_PROMPT = """You generate bounded reviewed-window replacements for exactly one EXISTING file in an UNVERIFIED official ACLNN AsNumpy integration overlay. The signed route-neutral official_binary candidate, adapter contract, selected CANN header, target file, and existing-module AsNumpy references are authoritative. The route-specific Skill is engineering and testing truth.
 
-Never return a complete file or a NUMPILOT_BUNDLE_V1 envelope. Return exactly:
-NUMPILOT_EXACT_EDIT_V1
+Return exactly this raw protocol, with no Markdown fences or commentary:
+NUMPILOT_WINDOW_REPLACE_V1
 PATH: the/exact/requested/path
-BASE_SHA256: lowercase SHA-256 supplied for that target
-EDIT_COUNT: N
-BEGIN_EDIT 1
-OLD:
-an exact non-empty substring copied verbatim from the supplied target
-END_OLD 1
-NEW:
-its exact replacement (which may be empty)
-END_NEW 1
-END_EDIT 1
-END_EXACT_EDIT
+BASE_SHA256: lowercase SHA-256 supplied for the complete target file
+WINDOW_COUNT: N
+BEGIN_WINDOW 1
+LABEL: exact reviewed window label
+CONTENT:
+complete replacement content for that reviewed window
+END_WINDOW 1
+END_WINDOW_REPLACE
 
-For N edits, repeat the numbered block consecutively from 1 through N. Every
-OLD block must occur exactly once in the original target, and OLD intervals
-must not overlap or leave the supplied target edit windows. Use the smallest
-sufficient OLD/NEW blocks. Do not use
-Markdown fences, ellipses, line numbers, unified diffs, commentary, TODOs,
-CPU fallbacks, network operations, installation, or build/NPU success claims.
+Emit every reviewed window exactly once, in the supplied order. WINDOW_COUNT must
+be a positive ASCII decimal equal to the number of BEGIN_WINDOW blocks. LABEL must
+be copied exactly. CONTENT must contain the complete replacement for that window,
+including unchanged context when the window covers a complete module. The local
+validator computes the original window hashes and permits changes only inside the
+reviewed windows. Do not return a complete-file envelope, a diff, OLD/NEW blocks,
+line numbers, TODOs, CPU fallbacks, network operations, installation, or build/NPU
+success claims. Never put a line equal to END_WINDOW N inside window content.
 """
 
 _ASNUMPY_OFFICIAL_EXACT_EDIT_REPAIR_SYSTEM_PROMPT = """You repair exactly one
@@ -1033,6 +1046,221 @@ def _validate_stage_bundle(
 def _sha256_bytes(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
 
+
+
+def _apply_official_window_replace_response(
+    payload: str,
+    *,
+    expected_path: str,
+    base_content: str,
+    allowed_intervals: Optional[Tuple[Tuple[int, int], ...]] = None,
+) -> str:
+    """Parse and apply the bounded reviewed-window protocol.
+
+    The model returns complete reviewed windows instead of copying OLD/NEW
+    fragments. The local target-window plan remains authoritative: labels,
+    order, source ranges, and the complete-file hash are all checked before
+    rebuilding the file. This removes the fragile nested exact-edit syntax
+    without widening the writable surface.
+    """
+
+    normalized_expected = str(_safe_asnumpy_adapter_relative_path(expected_path))
+    if normalized_expected != expected_path:
+        raise DraftGenerationError(
+            "official window-replace target path is not normalized"
+        )
+    if not isinstance(base_content, str) or not base_content or "\x00" in base_content:
+        raise DraftGenerationError("official window-replace base content is invalid")
+    if not isinstance(payload, str):
+        raise DraftGenerationError("official window-replace response must be text")
+    try:
+        base_bytes = base_content.encode("utf-8")
+        response_bytes = payload.encode("utf-8")
+    except UnicodeError as exc:
+        raise DraftGenerationError(
+            "official window-replace input is not valid UTF-8 text"
+        ) from exc
+    if len(base_bytes) > _MAX_ADAPTER_FILE_BYTES:
+        raise DraftGenerationError(
+            "official window-replace base content exceeds its size limit"
+        )
+    if not response_bytes:
+        raise DraftGenerationError("official window-replace response is empty")
+    if len(response_bytes) > _MAX_OFFICIAL_EXACT_EDIT_RESPONSE_BYTES:
+        raise DraftGenerationError(
+            "official window-replace response exceeds its size limit"
+        )
+    if "\x00" in payload or "\r" in payload:
+        raise DraftGenerationError(
+            "official window-replace response contains a forbidden byte"
+        )
+
+    specifications = _OFFICIAL_EXACT_EDIT_TARGET_WINDOWS.get(expected_path)
+    if not specifications:
+        raise DraftGenerationError(
+            "official window-replace target window plan is missing"
+        )
+    expected_labels = tuple(item[0] for item in specifications)
+    if allowed_intervals is None:
+        _window_context, allowed_intervals = _render_official_exact_edit_target_windows(
+            target_path=expected_path, base_content=base_content
+        )
+    if (
+        not isinstance(allowed_intervals, tuple)
+        or len(allowed_intervals) != len(expected_labels)
+    ):
+        raise DraftGenerationError(
+            "official window-replace target windows are invalid"
+        )
+    normalized_intervals = []
+    previous_end = -1
+    for interval in allowed_intervals:
+        if (
+            not isinstance(interval, tuple)
+            or len(interval) != 2
+            or any(isinstance(value, bool) or not isinstance(value, int) for value in interval)
+        ):
+            raise DraftGenerationError(
+                "official window-replace target windows are invalid"
+            )
+        start, end = interval
+        if start < 0 or start >= end or end > len(base_content) or start < previous_end:
+            raise DraftGenerationError(
+                "official window-replace target windows are invalid"
+            )
+        normalized_intervals.append((start, end))
+        previous_end = end
+
+    text = payload[:-1] if payload.endswith("\n") else payload
+    prefix = "NUMPILOT_WINDOW_REPLACE_V1\nPATH: "
+    if not text.startswith(prefix):
+        raise DraftGenerationError(
+            "official window-replace response has no window header"
+        )
+    path_end = text.find("\n", len(prefix))
+    if path_end < 0:
+        raise DraftGenerationError("official window-replace response path is incomplete")
+    response_path = str(
+        _safe_asnumpy_adapter_relative_path(text[len(prefix):path_end])
+    )
+    if response_path != expected_path:
+        raise DraftGenerationError("official window-replace response path mismatch")
+
+    hash_prefix = "BASE_SHA256: "
+    hash_start = path_end + 1
+    if not text.startswith(hash_prefix, hash_start):
+        raise DraftGenerationError("official window-replace base hash is missing")
+    hash_end = text.find("\n", hash_start)
+    if hash_end < 0:
+        raise DraftGenerationError("official window-replace base hash is incomplete")
+    base_sha256 = text[hash_start + len(hash_prefix):hash_end]
+    if (
+        not re.fullmatch(r"[0-9a-f]{64}", base_sha256)
+        or base_sha256 != _sha256_bytes(base_bytes)
+    ):
+        raise DraftGenerationError("official window-replace base hash mismatch")
+
+    count_prefix = "WINDOW_COUNT: "
+    count_start = hash_end + 1
+    if not text.startswith(count_prefix, count_start):
+        raise DraftGenerationError("official window-replace count is missing")
+    count_end = text.find("\n", count_start)
+    if count_end < 0:
+        raise DraftGenerationError("official window-replace count is incomplete")
+    raw_count = text[count_start + len(count_prefix):count_end]
+    if not re.fullmatch(r"[1-9][0-9]*", raw_count):
+        raise DraftGenerationError("official window-replace count is invalid")
+    window_count = int(raw_count)
+    if window_count != len(expected_labels) or window_count > _MAX_OFFICIAL_EXACT_EDITS:
+        raise DraftGenerationError("official window-replace count is invalid")
+
+    cursor = count_end + 1
+    replacements = []
+    for index, expected_label in enumerate(expected_labels, start=1):
+        block_prefix = "BEGIN_WINDOW %d\nLABEL: " % index
+        if not text.startswith(block_prefix, cursor):
+            raise DraftGenerationError(
+                "official window-replace block %d is malformed" % index
+            )
+        label_start = cursor + len(block_prefix)
+        label_end = text.find("\n", label_start)
+        if label_end < 0:
+            raise DraftGenerationError(
+                "official window-replace label %d is incomplete" % index
+            )
+        label = text[label_start:label_end]
+        if label != expected_label:
+            raise DraftGenerationError(
+                "official window-replace label %d is invalid" % index
+            )
+        content_prefix = "CONTENT:\n"
+        content_start = label_end + 1
+        if not text.startswith(content_prefix, content_start):
+            raise DraftGenerationError(
+                "official window-replace content %d is missing" % index
+            )
+        content_start += len(content_prefix)
+        end_marker = "\nEND_WINDOW %d\n" % index
+        content_end = text.find(end_marker, content_start)
+        if content_end < 0:
+            raise DraftGenerationError(
+                "official window-replace content %d is unterminated" % index
+            )
+        content = text[content_start:content_end]
+        if (
+            not content
+            or len(content.encode("utf-8")) > _MAX_OFFICIAL_EXACT_EDIT_FRAGMENT_BYTES
+            or end_marker.strip() in content.splitlines()
+        ):
+            raise DraftGenerationError(
+                "official window-replace content %d is invalid" % index
+            )
+        replacements.append(content)
+        cursor = content_end + len(end_marker)
+    if text[cursor:] != "END_WINDOW_REPLACE":
+        raise DraftGenerationError(
+            "official window-replace response has trailing or missing content"
+        )
+
+    original_windows = [
+        base_content[start:end] for start, end in normalized_intervals
+    ]
+    if replacements == original_windows:
+        raise DraftGenerationError("official window-replace response is a no-op")
+    rebuilt = []
+    cursor = 0
+    for (start, end), replacement in zip(normalized_intervals, replacements):
+        rebuilt.extend((base_content[cursor:start], replacement))
+        cursor = end
+    rebuilt.append(base_content[cursor:])
+    result = "".join(rebuilt)
+    if (
+        not result
+        or "\x00" in result
+        or len(result.encode("utf-8")) > _MAX_ADAPTER_FILE_BYTES
+    ):
+        raise DraftGenerationError(
+            "official window-replace rebuilt file exceeds its size limit"
+        )
+    if any(
+        marker in result
+        for marker in ("TODO_VERIFY_CANN_API", "TODO_IMPLEMENT_OPERATOR")
+    ):
+        raise DraftGenerationError(
+            "official window-replace rebuilt file contains a forbidden placeholder"
+        )
+    matcher = difflib.SequenceMatcher(None, base_content, result, autojunk=False)
+    for tag, old_start, old_end, _new_start, _new_end in matcher.get_opcodes():
+        if tag == "equal":
+            continue
+        if not any(
+            window_start <= old_start and old_end <= window_end
+            for window_start, window_end in normalized_intervals
+        ):
+            raise DraftGenerationError(
+                "official window-replace changed content outside target windows"
+            )
+    return result
 
 def _apply_official_exact_edit_response(
     payload: str,
@@ -1610,6 +1838,55 @@ def _validate_generation_attempt_receipt(
         response_model_aliases=generation.get("response_model_aliases", ()),
     )
 
+
+
+def _injected_generation_receipt(
+    system_prompt: str,
+    user_prompt: str,
+    response: str,
+    generation: Dict[str, object],
+) -> Dict[str, object]:
+    """Create a deterministic local receipt for an injected Codex response."""
+
+    if generation.get("mode") != "injected_test_double":
+        raise DraftGenerationError("injected receipt requires injected generation mode")
+    model = generation.get("model")
+    provider = generation.get("provider")
+    protocol = generation.get("protocol", OPENAI_CHAT_COMPLETIONS_PROTOCOL)
+    aliases = generation.get("response_model_aliases", ())
+    identity = _model_contract.model_identity_sha256(
+        protocol=protocol,
+        provider=provider,
+        configured_model=model,
+        requested_model=model,
+        response_model=model,
+        response_model_aliases=aliases,
+        response_model_identity="exact",
+    )
+    request_hash = _sha256_bytes((system_prompt + "\n" + user_prompt).encode("utf-8"))
+    response_hash = _sha256_bytes(response.encode("utf-8"))
+    return {
+        "schema_version": 2,
+        "utc_start": "1970-01-01T00:00:00Z",
+        "utc_end": "1970-01-01T00:00:00Z",
+        "http_status": 200,
+        "configured_model": model,
+        "requested_model": model,
+        "response_model": model,
+        "response_id": "codex-local-" + response_hash[:24],
+        "response_created": 0,
+        "request_body_sha256": request_hash,
+        "response_body_sha256": response_hash,
+        "content_sha256": response_hash,
+        "request_id": "codex-local-" + request_hash[:24],
+        "usage": {"total_tokens": 0},
+        "tls_verification": "disabled",
+        "protocol": protocol,
+        "provider": provider,
+        "model_identity_sha256": identity,
+        "response_model_aliases": list(aliases),
+        "response_model_identity": "exact",
+    }
 
 def _record_generation_attempt(
     receipts: List[Dict[str, object]],
@@ -2560,12 +2837,14 @@ def _validate_adapter_report(
     if (
         isinstance(schema_version, bool)
         or not isinstance(schema_version, int)
-        or schema_version not in (1, 2, 3, 4)
+        or schema_version not in (1, 2, 3, 4, 5)
     ):
         raise DraftGenerationError("AsNumpy adapter report schema is unsupported")
     if status == "generated_unverified":
         expected_fields = (
-            _GENERATED_ADAPTER_REPORT_FIELDS_V4
+            _GENERATED_ADAPTER_REPORT_FIELDS_V5
+            if schema_version == 5
+            else _GENERATED_ADAPTER_REPORT_FIELDS_V4
             if schema_version == 4
             else _GENERATED_ADAPTER_REPORT_FIELDS_V3
             if schema_version == 3
@@ -2666,6 +2945,10 @@ def _validate_adapter_report(
     response_hashes = report.get("response_sha256")
     receipts = report.get("remote_receipts")
     attempt_count = report["attempt_count"]
+    generation_mode = report.get("generation_mode") if schema_version == 5 else "remote_llm"
+    if generation_mode not in {"remote_llm", "injected_test_double"}:
+        raise DraftGenerationError("AsNumpy adapter generation mode is invalid")
+    expected_remote_call = generation_mode == "remote_llm"
     if (
         not isinstance(response_hashes, list)
         or not response_hashes
@@ -2674,7 +2957,7 @@ def _validate_adapter_report(
         or not isinstance(receipts, list)
         or not receipts
         or len(receipts) > attempt_count
-        or report.get("actual_remote_call") is not True
+        or report.get("actual_remote_call") is not expected_remote_call
         or report.get("gates") != _EXPECTED_UNVERIFIED_GATES
     ):
         raise DraftGenerationError("AsNumpy adapter transport evidence is invalid")
@@ -2730,7 +3013,7 @@ def _validate_adapter_report(
         )
 
     context_plan = None
-    if schema_version == 4:
+    if schema_version in {4, 5}:
         context_plan = _validate_adapter_context_plan(
             report.get("asnumpy_adapter_context_plan")
         )
@@ -4510,10 +4793,8 @@ class LlmDraftProvider:
             raise DraftGenerationError("AsNumpy adapter candidate already exists")
 
         chat, generation_base = self._resolve_chat()
-        if generation_base["mode"] != "remote_llm":
-            raise DraftGenerationError(
-                "AsNumpy adapter publication requires a real remote model"
-            )
+        if generation_base["mode"] not in {"remote_llm", "injected_test_double"}:
+            raise DraftGenerationError("AsNumpy adapter generation mode is unsupported")
         artifact_json = json.dumps(
             operator_artifact, ensure_ascii=False, indent=2, sort_keys=True
         )
@@ -4570,9 +4851,17 @@ class LlmDraftProvider:
                         "Official existing-file edit %d/%d. Propose exact edits "
                         "for `%s` and no other path."
                         % (file_index, len(normalized_paths), path),
-                        "Return NUMPILOT_EXACT_EDIT_V1 only. Do not return the "
-                        "complete file, NUMPILOT_BUNDLE_V1, a diff, Markdown, "
+                        "Return NUMPILOT_WINDOW_REPLACE_V1 only. Do not return a complete-file "
+                        "envelope, NUMPILOT_BUNDLE_V1, a diff, Markdown, "
                         "or commentary.",
+                        "FORMAT CHECK: WINDOW_COUNT must be a positive ASCII decimal equal to the "
+                        "number of consecutive BEGIN_WINDOW blocks. Every block "
+                        "must contain LABEL, CONTENT, and END_WINDOW N on separate "
+                        "lines; include END_WINDOW_REPLACE after the last block.",
+                        "MINIMAL SHAPE EXAMPLE (do not copy its text):\n"
+                        "WINDOW_COUNT: 1\nBEGIN_WINDOW 1\nLABEL: reviewed_window\n"
+                        "CONTENT:\ncomplete reviewed window\nEND_WINDOW 1\n"
+                        "END_WINDOW_REPLACE",
                         "TARGET PATH: `%s`\nTARGET BASE SHA-256: %s\n"
                         "Every OLD block must be copied from and remain inside "
                         "one supplied target edit window."
@@ -4645,7 +4934,7 @@ class LlmDraftProvider:
                         generation_base,
                     )
                     if official_exact_edit:
-                        content = _apply_official_exact_edit_response(
+                        content = _apply_official_window_replace_response(
                             response,
                             expected_path=path,
                             base_content=base_content,
@@ -4720,14 +5009,20 @@ class LlmDraftProvider:
                     % (total_attempts, "; ".join(failures)),
                     receipt_count=len(receipts),
                     request_count=total_attempts,
+                    receipts=tuple(receipts),
+                    response_hashes=tuple(response_hashes),
+                    failures=tuple(failures),
+                    generation=dict(generation_base),
+                    actual_remote_call=(generation_base["mode"] == "remote_llm"),
                 )
 
         file_hashes = {
             path: _sha256_bytes(content.encode("utf-8"))
             for path, content in collected.items()
         }
+        generation_mode = generation_base["mode"]
         report = {
-            "schema_version": 4,
+            "schema_version": 5 if generation_mode == "injected_test_double" else 4,
             "status": "generated_unverified",
             "source_artifact_id": operator_artifact["artifact_id"],
             "model": generation_base["model"],
@@ -4748,8 +5043,9 @@ class LlmDraftProvider:
             "integration_skill_files": list(skill_files),
             "response_sha256": response_hashes,
             "remote_receipts": receipts,
-            "actual_remote_call": True,
+            "actual_remote_call": generation_mode == "remote_llm",
             "gates": dict(_EXPECTED_UNVERIFIED_GATES),
+            **({"generation_mode": generation_mode} if generation_mode == "injected_test_double" else {}),
         }
         report["adapter_artifact_id"] = _adapter_artifact_id(report)
         report = _validate_adapter_report(
