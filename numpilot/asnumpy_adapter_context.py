@@ -231,6 +231,92 @@ _OFFICIAL_ACLNN_EXISTING_MODULE_PLANS = {
             ),
         },
     },
+    # ``numpy.cbrt`` is not a plain fractional power: negative inputs need a
+    # sign-preserving composition, and the signed ACLNN surface only declares
+    # the two-stage ``aclnnPowTensorScalar`` pair.  The reviewed overlay stays
+    # inside the existing math module and must prove signed zero, NaN,
+    # infinities, integer conversion and float16/32/64 promotion before the
+    # operator can be qualified.  No custom-ops path is permitted here.
+    "cbrt": {
+        "context_paths": (
+            "include/asnumpy/math/exponents_and_logarithms.hpp",
+            "csrc/math/exponents_and_logarithms.cpp",
+            "bindings/python/bind_math.cpp",
+            "bindings/python/CMakeLists.txt",
+            "include/asnumpy/utils/acl_executor.hpp",
+            "include/asnumpy/utils/acl_resource.hpp",
+            "include/asnumpy/utils/npu_array.hpp",
+            "include/asnumpy/utils/status_handler.hpp",
+            "include/asnumpy/utils/dtype_promotion.hpp",
+            "src/asnumpy/math.py",
+            "src/asnumpy/__init__.py",
+            "tests/asnumpy_tests/math_tests/test_exponents_and_logarithms.py",
+        ),
+        "expected_overlay_paths": (
+            "include/asnumpy/math/exponents_and_logarithms.hpp",
+            "csrc/math/exponents_and_logarithms.cpp",
+            "bindings/python/bind_math.cpp",
+            "src/asnumpy/math.py",
+            "src/asnumpy/__init__.py",
+            "tests/asnumpy_tests/math_tests/test_exponents_and_logarithms.py",
+        ),
+        "prompt_dependencies": {
+            "include/asnumpy/math/exponents_and_logarithms.hpp": (
+                ("reference", "include/asnumpy/utils/npu_array.hpp"),
+            ),
+            "csrc/math/exponents_and_logarithms.cpp": (
+                (
+                    "generated_overlay",
+                    "include/asnumpy/math/exponents_and_logarithms.hpp",
+                ),
+                ("reference", "include/asnumpy/utils/acl_executor.hpp"),
+                ("reference", "include/asnumpy/utils/dtype_promotion.hpp"),
+                (
+                    "signed_official_header",
+                    "SIGNED_OFFICIAL_HEADER/aclnn_pow.h",
+                ),
+            ),
+            "bindings/python/bind_math.cpp": (
+                (
+                    "generated_overlay",
+                    "include/asnumpy/math/exponents_and_logarithms.hpp",
+                ),
+                (
+                    "generated_overlay",
+                    "csrc/math/exponents_and_logarithms.cpp",
+                ),
+            ),
+            "src/asnumpy/math.py": (
+                (
+                    "generated_overlay",
+                    "bindings/python/bind_math.cpp",
+                ),
+            ),
+            "src/asnumpy/__init__.py": (
+                ("generated_overlay", "src/asnumpy/math.py"),
+            ),
+            "tests/asnumpy_tests/math_tests/test_exponents_and_logarithms.py": (
+                ("generated_overlay", "src/asnumpy/math.py"),
+            ),
+        },
+        "signed_official_header": "SIGNED_OFFICIAL_HEADER/aclnn_pow.h",
+        "official_library_binding": {
+            "cmake_path": "bindings/python/CMakeLists.txt",
+            "target": "_core",
+            "link_item": "opapi",
+            "selected_library_basename": "libopapi.so",
+            "cmake_link_block": (
+                "target_link_libraries(_core\n"
+                "    PUBLIC\n"
+                "    ascendcl\n"
+                "    runtime\n"
+                "    nnopbase\n"
+                "    opapi\n"
+                "    Python::NumPy\n"
+                ")"
+            ),
+        },
+    },
 }
 
 

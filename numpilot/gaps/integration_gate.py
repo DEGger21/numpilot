@@ -71,6 +71,182 @@ def _install_dispatch_probe(array_module, native_module):
     return observed
 
 
+CBRT_API_NAME = "numpy.cbrt"
+
+
+def _finish(result, publish):
+    failed = [case for case in result["cases"] if case["status"] != "passed"]
+    if failed:
+        result["status"] = "failed"
+        result["error"] = {
+            "type": "GateCaseFailure",
+            "message": "%d gate case(s) failed" % len(failed),
+        }
+        publish()
+        return 2
+    result["status"] = "passed"
+    result["error"] = None
+    publish()
+    return 0
+
+
+def _assert_cbrt(actual, expected, numpy, *, rtol=1e-6):
+    """Compare one cbrt output, including signed zero and NaN handling.
+
+    ``rtol`` defaults to the strict float32 target used for I001's bounded
+    input range.  The dedicated large-magnitude case passes a wider float32
+    tolerance because a single-precision ``pow`` implementation can land
+    around a dozen ulp from NumPy's cbrt at 1e30; the oracle still rejects any
+    percent-level error.
+    """
+
+    if actual.dtype != expected.dtype:
+        raise AssertionError("dtype %r != %r" % (actual.dtype, expected.dtype))
+    if actual.shape != expected.shape:
+        raise AssertionError("shape %r != %r" % (actual.shape, expected.shape))
+    if not numpy.array_equal(numpy.isnan(actual), numpy.isnan(expected)):
+        raise AssertionError("NaN propagation pattern differs from NumPy")
+    mask = ~numpy.isnan(expected)
+    if not numpy.array_equal(numpy.signbit(actual[mask]), numpy.signbit(expected[mask])):
+        raise AssertionError("signbit/signed-zero differs from NumPy cbrt; np.cbrt(-0.0) has signbit set")
+    if not numpy.allclose(actual[mask], expected[mask], rtol=rtol, atol=1e-7):
+        delta = numpy.abs(
+            actual[mask].astype(numpy.float64) - expected[mask].astype(numpy.float64)
+        )
+        scale = numpy.maximum(
+            numpy.abs(expected[mask].astype(numpy.float64)), 1.0
+        )
+        relative = numpy.max(delta / scale)
+        raise AssertionError(
+            "max absolute error %.9g, max relative error %.9g at rtol %.1e"
+            % (float(numpy.max(delta)), float(relative), rtol)
+        )
+
+
+def _run_cbrt(arguments, result, publish, record, numpy, ap):
+    """Deterministic NumPy oracle suite for the reviewed cbrt adapter."""
+
+    import importlib
+    import resource
+
+    if not callable(getattr(ap, "cbrt", None)):
+        raise RuntimeError("asnumpy.cbrt is not available")
+    math_module = importlib.import_module("asnumpy.math")
+    native_module = importlib.import_module("asnumpy._core.math")
+    native = getattr(native_module, "cbrt", None)
+    if not callable(native):
+        raise RuntimeError("reviewed native cbrt binding is missing")
+    if getattr(math_module, "_cbrt", None) is not native:
+        raise RuntimeError(
+            "public cbrt does not select the reviewed native binding"
+        )
+    observed = {"native_calls": 0, "fallback_calls": 0}
+
+    def checked_native(value):
+        observed["native_calls"] += 1
+        return native(value)
+
+    def forbidden_fallback(value):
+        observed["fallback_calls"] += 1
+        raise RuntimeError("public cbrt entered a fallback route")
+
+    # The reviewed Python wrapper resolves ``_cbrt`` from its module globals on
+    # every call, so this patch observes the real dispatch path without
+    # modifying the installed extension.
+    math_module._cbrt = checked_native
+    math_module._cbrt_legacy = forbidden_fallback
+
+    def compare(name, values, *, rtol=1e-6):
+        try:
+            expected = numpy.cbrt(values)
+            actual = ap.cbrt(ap.ndarray.from_numpy(values)).to_numpy()
+            _assert_cbrt(actual, expected, numpy, rtol=rtol)
+            result["oracle_comparisons"] += 1
+            record(name, "passed")
+        except BaseException as exc:
+            record(name, "failed", _detail(exc))
+
+    mixed = numpy.array(
+        [
+            -27.0, -8.0, -1.0, -0.125, -1e-6, 0.0, 1e-6, 0.125,
+            1.0, 8.0, 27.0, 1e6, -1e6,
+        ],
+        dtype=numpy.float32,
+    )
+    compare("mixed_real_values", mixed)
+    compare(
+        "signed_zero_preserved",
+        numpy.array([-0.0, 0.0], dtype=numpy.float32),
+    )
+    compare(
+        "large_magnitude_values",
+        numpy.array([1e30, -1e30], dtype=numpy.float32),
+        rtol=2e-6,
+    )
+    compare(
+        "negative_values",
+        numpy.array([-27.0, -8.0, -1.0, -0.125, -1e-6], dtype=numpy.float32),
+    )
+    compare(
+        "positive_values",
+        numpy.array([0.125, 1e-6, 1.0, 8.0, 27.0], dtype=numpy.float32),
+    )
+    compare(
+        "infinities",
+        numpy.array([numpy.inf, -numpy.inf], dtype=numpy.float32),
+    )
+    compare(
+        "nan_propagation",
+        numpy.array([numpy.nan, -numpy.nan], dtype=numpy.float32),
+    )
+    compare(
+        "single_value",
+        numpy.array([27.0], dtype=numpy.float32),
+    )
+    compare(
+        "rank_two_input",
+        numpy.linspace(-27.0, 27.0, 12, dtype=numpy.float32).reshape(3, 4),
+    )
+    compare(
+        "rank_three_input",
+        numpy.linspace(-27.0, 27.0, 24, dtype=numpy.float32).reshape(2, 3, 4),
+    )
+
+    start_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    repeated_failure = None
+    expected_mixed = numpy.cbrt(mixed)
+    for index in range(REPEATED_CALLS):
+        try:
+            actual = ap.cbrt(ap.ndarray.from_numpy(mixed)).to_numpy()
+            _assert_cbrt(actual, expected_mixed, numpy)
+            result["oracle_comparisons"] += 1
+        except BaseException as exc:
+            repeated_failure = "iteration %d: %s" % (index, _detail(exc))
+            break
+    end_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    result["peak_rss_kib"] = end_rss
+    result["repeated_calls"] = REPEATED_CALLS
+    result["rss_start_kib"] = start_rss
+    result["rss_end_kib"] = end_rss
+    if repeated_failure is not None:
+        record("repeated_calls_stable", "failed", repeated_failure)
+    else:
+        record("repeated_calls_stable", "passed")
+
+    result["dispatch_observation"] = dict(observed)
+    dispatch_passed = (
+        observed["native_calls"] >= result["oracle_comparisons"] > 0
+        and observed["fallback_calls"] == 0
+    )
+    record(
+        "official_aclnn_dispatch",
+        "passed" if dispatch_passed else "failed",
+        "native=%d fallback=%d"
+        % (observed["native_calls"], observed["fallback_calls"]),
+    )
+    return _finish(result, publish)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--result", required=True)
@@ -124,6 +300,12 @@ def main(argv=None):
         if not result["asnumpy_file_under_expected_root"]:
             raise RuntimeError(
                 "imported asnumpy does not come from the isolated runtime"
+            )
+        if arguments.api == CBRT_API_NAME:
+            return _run_cbrt(arguments, result, publish, record, numpy, ap)
+        if arguments.api != API_NAME:
+            raise RuntimeError(
+                "unsupported integration gate API: %s" % arguments.api
             )
         if not callable(getattr(ap, "concatenate", None)):
             raise RuntimeError("asnumpy.concatenate is not available")
@@ -314,19 +496,7 @@ def main(argv=None):
         )
         record("official_aclnn_dispatch", "passed" if dispatch_passed else "failed",
                "native=%d legacy=%d" % (dispatch["native_calls"], dispatch["legacy_calls"]))
-        failed = [case for case in result["cases"] if case["status"] != "passed"]
-        if failed:
-            result["status"] = "failed"
-            result["error"] = {
-                "type": "GateCaseFailure",
-                "message": "%d gate case(s) failed" % len(failed),
-            }
-            publish()
-            return 2
-        result["status"] = "passed"
-        result["error"] = None
-        publish()
-        return 0
+        return _finish(result, publish)
     except BaseException as exc:
         result["status"] = "failed"
         result["error"] = {"type": type(exc).__name__, "message": _detail(exc)}

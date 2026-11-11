@@ -265,6 +265,83 @@ def test_concatenate_mapping_does_not_inherit_older_audit_profiles(tmp_path):
     assert result.candidate.candidate_id == "numpy.concatenate-aclnn-cat"
 
 
+def test_cbrt_910b3_mapping_matches_only_the_recorded_runtime(tmp_path):
+    candidate = next(
+        item for item in ACLNN_ADAPTER_CANDIDATES
+        if item.candidate_id == "numpy.cbrt-aclnn-pow-tensor-scalar-910b3"
+    )
+    assert candidate.qualified_api == "numpy.cbrt"
+    assert candidate.header_name == "aclnn_pow.h"
+    assert candidate.required_symbols == (
+        "aclnnPowTensorScalarGetWorkspaceSize",
+        "aclnnPowTensorScalar",
+    )
+    assert candidate.audited_cann_versions == ("9.2.0-beta.2",)
+    assert candidate.audited_target_socs == ("ascend910b3",)
+    assert candidate.library_priority == (
+        "libopapi.so",
+        "libopapi_math.so",
+    )
+
+    root = _write_toolkit(tmp_path, version="9.2.0-beta.2")
+    result = _raw_resolve_installed_aclnn(
+        "numpy.cbrt",
+        cann_root=root,
+        expected_cann_version="9.2.0-beta.2",
+        expected_target_soc="Ascend910B3",
+        symbol_probe=_probe(),
+    )
+
+    assert result.status == EXACT_CANDIDATE
+    assert result.adapter_candidate is True
+    assert result.reason_code == "header_and_dynamic_symbols_present"
+    assert result.candidate.candidate_id == (
+        "numpy.cbrt-aclnn-pow-tensor-scalar-910b3"
+    )
+    assert result.header.file.relative_path.endswith("/aclnn_pow.h")
+    assert result.library.file.relative_path.endswith("/libopapi.so")
+    payload = result.to_dict()
+    assert payload["semantic_equivalence"] == "unverified"
+    assert payload["required_next_gate"] == (
+        "generate_and_qualify_asnumpy_adapter"
+    )
+
+
+def test_cbrt_910b4_mapping_still_resolves_only_its_own_profile(tmp_path):
+    root = _write_toolkit(tmp_path)
+
+    result = resolve_installed_aclnn(
+        "numpy.cbrt",
+        cann_root=root,
+        expected_cann_version="9.0.0",
+        symbol_probe=_probe(),
+    )
+
+    assert result.status == EXACT_CANDIDATE
+    assert result.candidate.candidate_id == (
+        "numpy.cbrt-aclnn-pow-tensor-scalar"
+    )
+    assert result.candidate.audited_target_socs == ("ascend910b4",)
+
+
+def test_cbrt_profile_does_not_cross_the_two_audit_claims(tmp_path):
+    root = _write_toolkit(tmp_path)
+
+    result = _raw_resolve_installed_aclnn(
+        "numpy.cbrt",
+        cann_root=root,
+        expected_cann_version="9.0.0",
+        expected_target_soc="Ascend910B2",
+        symbol_probe=lambda path: pytest.fail("probe must not run"),
+    )
+
+    assert result.status == INCOMPATIBLE
+    assert result.reason_code == "candidate_target_soc_not_audited"
+    assert result.candidate.candidate_id == (
+        "numpy.cbrt-aclnn-pow-tensor-scalar"
+    )
+
+
 def test_inventory_hashes_exact_files_and_records_no_full_symbol_listing(tmp_path):
     root = _write_toolkit(tmp_path)
 

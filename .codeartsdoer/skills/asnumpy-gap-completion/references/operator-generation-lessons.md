@@ -108,3 +108,12 @@ exact-edit parser 保留用于历史回执重放和修复兼容；新 generation
   本次I006成功不等于150例全部成功，也不证明性能加速。
 - 复现入口：仓库docs/codex-adapter-walkthrough.zh-CN.md；profiler、qualification和migration
   输出均使用新目录，失败尝试保留。固定组件与共享runtime不被试验产物覆盖。
+
+## Vitamin C 真实科学工作流经验（2026-11-11）
+
+- 真实样例应从可追溯的分子几何和上游科学代码开始。本次用 GPU4PySCF 的 Vitamin C 20 原子几何执行 RKS/PBE/cc-pVDZ SCF，再从收敛结果生成真实 DFT 网格输入；不能用随机矩阵结果代替科学真实性。
+- `dm.T` 常常不是 C-contiguous。进入已准入的 AsNumpy 二维 `float32` matmul 前，显式 `astype(np.float32)` 和 `np.ascontiguousarray`，并在 taskbook/receipt 中记录 dtype、rank、布局和形状。
+- 把 SCF/网格构造、热点 contraction、rho 归约分开计时。驻留态和暖态端到端必须分别报告，不能把 H2D/D2H 隐藏在“算子耗时”里。
+- 数值验收同时检查投影矩阵误差、电子数差和输出哈希；当前最大绝对误差为 `9.54e-06`，电子数差为 0。
+- 演示可以先用人工/Codex 完成已知 matmul 路由，但必须明确这不是 AI 自动生成缺口算子的证据；若后续接入生成模型，仍需沿用相同 taskbook、strict-NPU gate 和独立对拍。
+- 目前仅把 `dm.T @ ao` 放到 NPU，`rho` 归约仍在 CPU；不要把 20.8x 解释成完整 SCF 加速。

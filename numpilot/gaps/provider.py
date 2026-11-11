@@ -1,5 +1,6 @@
 """Safe providers for generating an unverified Ascend C operator draft."""
 
+import ast
 import difflib
 import hashlib
 import json
@@ -251,13 +252,52 @@ _OFFICIAL_EXACT_EDIT_TARGET_WINDOWS = {
             "    from .io import load, save, savez, savez_compressed",
         ),
         (
+            "type_checking_math_imports",
+            "    from .math import (",
+            "    from .nn import softmax",
+        ),
+        (
             "lazy_array_exports",
             "    # .array\n",
             "    # .linalg\n",
         ),
+        (
+            "lazy_math_exports",
+            "    # .math\n",
+            "    # .random\n",
+        ),
     ),
     "tests/asnumpy_tests/creation_tests/test_basic.py": (
         ("complete_creation_test_module", None, None),
+    ),
+    # np.cbrt is implemented in the existing math module.  The header, Python
+    # dispatch module, binding module and test module are replaced as complete
+    # reviewed files.  The C++ implementation may only touch the include block
+    # and append a new function before the namespace close; __init__.py keeps
+    # the existing array windows and adds bounded math import/export windows.
+    "include/asnumpy/math/exponents_and_logarithms.hpp": (
+        ("complete_math_exponents_header", None, None),
+    ),
+    "csrc/math/exponents_and_logarithms.cpp": (
+        (
+            "includes",
+            "#include <asnumpy/math/exponents_and_logarithms.hpp>",
+            "namespace asnumpy {",
+        ),
+        (
+            "cbrt_implementation",
+            "} // namespace asnumpy",
+            None,
+        ),
+    ),
+    "bindings/python/bind_math.cpp": (
+        ("complete_math_binding_module", None, None),
+    ),
+    "src/asnumpy/math.py": (
+        ("complete_math_dispatch_module", None, None),
+    ),
+    "tests/asnumpy_tests/math_tests/test_exponents_and_logarithms.py": (
+        ("complete_math_exponents_test_module", None, None),
     ),
 }
 _GENERATION_FIELDS_V1 = frozenset({
@@ -548,9 +588,12 @@ END_EXACT_EDIT
 For N edits, repeat the numbered block consecutively from 1 through N. Every
 OLD block must occur exactly once in the original target, and OLD intervals
 must not overlap or leave the supplied target edit windows. Use the smallest
-sufficient OLD/NEW blocks. Do not use Markdown fences, ellipses, line numbers,
-unified diffs, commentary, TODOs, CPU fallbacks, network operations,
-installation, or build/NPU success claims.
+sufficient OLD/NEW blocks. When a supplied target edit window ends in the
+middle of a source line, the read-only WINDOW_SUFFIX shows the exact text that
+follows it. A replacement for that window must end with a newline so the
+suffix is not glued to the preceding line. Do not use Markdown fences,
+ellipses, line numbers, unified diffs, commentary, TODOs, CPU fallbacks,
+network operations, installation, or build/NPU success claims.
 
 FRAMEWORK OWNERSHIP INVARIANT: `aclCreateTensorList` stores the caller's
 `aclTensor*` descriptors, and `aclDestroyTensorList` destroys every tensor in
@@ -582,6 +625,18 @@ C-contiguous. Compute contiguity from `itemsize`, `shape`, and `strides`,
 treating a dimension of extent 1 as unconstrained. Raise TypeError or
 ValueError before `_concatenate` is entered; do not wrap the native call in a
 fallback that hides validation failures.
+
+ROUTE PRESERVATION INVARIANT: When the target is the Python wrapper for a
+reviewed native binding, keep that binding call in the repaired wrapper. Do not
+replace `_<op>(...)` with a mathematically equivalent composition of other
+AsNumpy operators (for example `_power`, `_absolute`, or `_copysign`) just to
+work around a numerical defect. The integration route gate observes the
+reviewed binding, and existing helper operators can share the same underlying
+CANN defect. For IEEE negative zero, helpers built on `Sign` (including the
+existing `Copysign` implementation `Absolute(x1) * Sign(x2)`) can drop the
+sign of `-0.0`; detect negative zero explicitly and restore the sign in the
+wrapper result, or fix the reviewed native binding itself when the target is
+C++.
 
 TEST FILE INVARIANT (only when the target is a test file): The pinned AsNumpy
 `ndarray` exposes `shape`, `strides`, `ndim`, `itemsize`, `dtype`, and
@@ -1048,6 +1103,44 @@ def _sha256_bytes(payload: bytes) -> str:
 
 
 
+def _validate_rebuilt_python_syntax(path: str, content: str) -> None:
+    """Reject rebuilt Python overlay files that cannot be parsed.
+
+    This is a deterministic local check, not a semantic guarantee: it keeps a
+    repair or generation response from being accepted only because it obeys
+    the reviewed-window protocol while producing an unimportable file. The
+    caller retries the model within the same bounded attempt chain and feeds
+    back the exact SyntaxError location.
+    """
+
+    if not isinstance(path, str) or not path.endswith(".py"):
+        return
+    try:
+        ast.parse(content, filename=path)
+    except SyntaxError as exc:
+        line_number = exc.lineno or 0
+        lines = content.splitlines()
+        excerpt = ""
+        hint = ""
+        if 1 <= line_number <= len(lines):
+            offending = lines[line_number - 1]
+            if len(offending) > 160:
+                offending = offending[:157] + "..."
+            excerpt = "\n%6d | %s" % (line_number, offending)
+            if re.match(r"^\s*\)\s+from\s+\.", offending):
+                hint = (
+                    " Hint: the closing parenthesis of an import block is "
+                    "glued to the following relative import. Insert a newline "
+                    "between them by ending the enclosing import-window "
+                    "replacement with a newline. Fix every such boundary in "
+                    "the target file, not only this line."
+                )
+        raise DraftGenerationError(
+            "rebuilt Python source `%s` has invalid syntax at line %s: %s%s%s"
+            % (path, line_number, exc.msg, excerpt, hint)
+        ) from exc
+
+
 def _apply_official_window_replace_response(
     payload: str,
     *,
@@ -1226,6 +1319,28 @@ def _apply_official_window_replace_response(
     original_windows = [
         base_content[start:end] for start, end in normalized_intervals
     ]
+    for index, ((start, end), original, replacement) in enumerate(
+        zip(normalized_intervals, original_windows, replacements), start=1
+    ):
+        if original.endswith("\n") and not replacement.endswith("\n"):
+            raise DraftGenerationError(
+                "official window-replace content %d must end with a newline "
+                "because its target window ends at a line boundary" % index
+            )
+        if (
+            not original.endswith("\n")
+            and end < len(base_content)
+            and base_content[end] != "\n"
+            and re.match(
+                r"[ \t]*(?:from|import)\b", base_content[end:]
+            )
+            and not replacement.endswith("\n")
+        ):
+            raise DraftGenerationError(
+                "official window-replace content %d must end with a newline "
+                "because its target window ends in the middle of a line "
+                "before an import statement" % index
+            )
     if replacements == original_windows and not allow_unchanged:
         raise DraftGenerationError("official window-replace response is a no-op")
     rebuilt = []
@@ -2722,6 +2837,7 @@ def _render_official_exact_edit_target_windows(
     intervals = []
     previous_end = -1
     sections = []
+    mid_line_import_boundaries = []
     for label, start_marker, end_marker in specifications:
         if start_marker is None:
             start = 0
@@ -2752,10 +2868,32 @@ def _render_official_exact_edit_target_windows(
             "sha256": digest,
         })
         intervals.append((start, end))
-        sections.append(
+        section = (
             "TARGET EDIT WINDOW `%s` [%d,%d) SHA-256 %s:\n%s"
             % (label, start, end, digest, content)
         )
+        if (
+            not content.endswith("\n")
+            and end < len(base_content)
+            and base_content[end] != "\n"
+        ):
+            if re.match(
+                r"[ \t]*(?:from|import)\b", base_content[end:]
+            ):
+                mid_line_import_boundaries.append(
+                    (label, base_content.count("\n", 0, end) + 1)
+                )
+            suffix_end = min(len(base_content), end + 200)
+            section += (
+                "\n\nWINDOW_SUFFIX (read-only context, not editable; the "
+                "exact text that follows this window):\n%s\n"
+                "WINDOW_BOUNDARY: this window ends in the middle of a source "
+                "line. If the suffix begins a new Python statement (for "
+                "example `from` or `import`), end your replacement with a "
+                "newline so it is not glued to that statement."
+                % base_content[end:suffix_end]
+            )
+        sections.append(section)
         previous_end = end
     identity = {
         "schema_version": 1,
@@ -2772,12 +2910,23 @@ def _render_official_exact_edit_target_windows(
             separators=(",", ":"),
         ).encode("utf-8")),
     }
-    return "\n\n".join((
+    header_sections = [
         "HASH-BOUND TARGET EDIT WINDOWS:\n" + json.dumps(
             manifest, ensure_ascii=False, indent=2, sort_keys=True
         ),
-        *sections,
-    )), tuple(intervals)
+    ]
+    if mid_line_import_boundaries:
+        header_sections.append(
+            "DETERMINISTIC MID-LINE IMPORT BOUNDARY AUDIT:\n"
+            "The following target edit windows end immediately before an "
+            "import statement, with no intervening newline. Any replacement "
+            "for these windows must end with a newline:\n"
+            + "\n".join(
+                "- `%s` at line %d" % (label, line_number)
+                for label, line_number in mid_line_import_boundaries
+            )
+        )
+    return "\n\n".join((*header_sections, *sections)), tuple(intervals)
 
 
 def _enforce_official_exact_edit_prompt_budget(
@@ -4974,6 +5123,7 @@ class LlmDraftProvider:
                             # An entirely unchanged candidate is rejected below.
                             allow_unchanged=(path == "src/asnumpy/__init__.py"),
                         )
+                        _validate_rebuilt_python_syntax(path, content)
                     else:
                         _summary, files = _validate_stage_bundle(
                             response,
@@ -5382,6 +5532,9 @@ class LlmDraftProvider:
                         expected_path=normalized_path,
                         base_content=base_content,
                         allowed_intervals=target_window_intervals,
+                    )
+                    _validate_rebuilt_python_syntax(
+                        normalized_path, proposed
                     )
                 else:
                     _summary, files = _validate_stage_bundle(

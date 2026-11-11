@@ -725,6 +725,36 @@ def _extract_wheel(wheel: Path, site: Path) -> Tuple[str, str]:
         return core_relative, core_sha256
 
 
+_GATE_PROFILES = {
+    "numpy.concatenate": {
+        "api": "numpy.concatenate",
+        "minimum_oracle_comparisons": 5,
+        "minimum_cases": 10,
+        "candidate_tests": "tests/asnumpy_tests/creation_tests/test_basic.py",
+    },
+    "numpy.cbrt": {
+        "api": "numpy.cbrt",
+        "minimum_oracle_comparisons": 10,
+        "minimum_cases": 10,
+        "candidate_tests": (
+            "tests/asnumpy_tests/math_tests/test_exponents_and_logarithms.py"
+        ),
+    },
+}
+
+
+def _gate_profile_for_api(qualified_api: object) -> Dict[str, Any]:
+    """Return the deterministic gate profile bound to one gap API."""
+
+    if not isinstance(qualified_api, str) or qualified_api not in _GATE_PROFILES:
+        raise IntegrationError(
+            "unsupported_gate_api",
+            "no deterministic integration gate profile is registered for %r"
+            % (qualified_api,),
+        )
+    return dict(_GATE_PROFILES[qualified_api])
+
+
 def _gate_failure_detail(result: Mapping[str, Any]) -> str:
     cases = result.get("cases")
     if not isinstance(cases, list):
@@ -1646,6 +1676,7 @@ def _produce_transaction(
                 )
             package_version = dist_infos[0].name
 
+        gate_profile = _gate_profile_for_api(candidate.qualified_api)
         gate_source = Path(__file__).with_name("integration_gate.py")
         gate_payload = _read_bounded(
             gate_source, _MAX_JSON_BYTES, "integration gate script"
@@ -1696,7 +1727,7 @@ def _produce_transaction(
                     "--expected-root",
                     str(site),
                     "--api",
-                    "numpy.concatenate",
+                    gate_profile["api"],
                 ],
                 cwd=gate_dir,
                 environment=runtime_environment,
@@ -1722,10 +1753,11 @@ def _produce_transaction(
             gate_passed = (
                 gate_returncode == 0
                 and gate_result.get("status") == "passed"
-                and gate_result.get("api") == "numpy.concatenate"
+                and gate_result.get("api") == gate_profile["api"]
                 and gate_result.get("asnumpy_file_under_expected_root") is True
-                and gate["oracle_comparisons"] >= 5
-                and gate["cases"] >= 10
+                and gate["oracle_comparisons"]
+                >= gate_profile["minimum_oracle_comparisons"]
+                and gate["cases"] >= gate_profile["minimum_cases"]
             )
             gate["status"] = "passed" if gate_passed else "failed"
             if not gate_passed:
@@ -1746,14 +1778,14 @@ def _produce_transaction(
                         os.devnull,
                         "-p",
                         "no:cacheprovider",
-                        "tests/asnumpy_tests/creation_tests/test_basic.py",
+                        gate_profile["candidate_tests"],
                         "-q",
                     ],
                     cwd=source_root,
                     environment=runtime_environment,
                     timeout=timeout,
                     log_path=stage / "logs/candidate-tests.log",
-                    label="candidate AsNumpy tests",
+                    label="candidate AsNumpy %s tests" % gate_profile["api"],
                 )
                 tests.update({
                     "status": "passed" if tests_returncode == 0 else "failed",
