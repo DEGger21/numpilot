@@ -1,0 +1,27 @@
+{
+  "case": "H004_asin_alias",
+  "elapsed_s": 3.37,
+  "engine": "llm",
+  "expected_rewrites": {
+    "add": 1,
+    "arcsin": 2,
+    "divide": 1,
+    "subtract": 1
+  },
+  "group": "H_gap_official",
+  "migrated": "cases/H004_asin_alias/migrated.py",
+  "migrated_sha256": "befaf541b2106b988d21b76c61e1f4454038108126e64e8ea8fb799782eb1888",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 50,
+  "numerically_consistent": true,
+  "repair_attempts": 0,
+  "route": "direct_migration",
+  "source": "cases/H004_asin_alias/program.py",
+  "source_sha256": "cf618abbf60a04b8863ebe6bb946db78cf379d1592520aa6c39da4a7da064fee",
+  "status": "pass",
+  "total_rewrites": 5
+}

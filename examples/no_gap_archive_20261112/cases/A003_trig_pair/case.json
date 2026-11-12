@@ -1,0 +1,25 @@
+{
+  "case": "A003_trig_pair",
+  "elapsed_s": 1.52,
+  "engine": "llm",
+  "expected_rewrites": {
+    "cos": 1,
+    "sin": 1
+  },
+  "group": "A_direct_simple",
+  "migrated": "cases/A003_trig_pair/migrated.py",
+  "migrated_sha256": "ca0b81e46dda94461096b6890db10426ff60c4fd18335d3ac4acc6544a374f31",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 96,
+  "numerically_consistent": true,
+  "repair_attempts": 0,
+  "route": "direct_migration",
+  "source": "cases/A003_trig_pair/program.py",
+  "source_sha256": "b96d059954fa336ab1e923fcdc5cefe053a3bfeae9c6652d94c6a006643beb47",
+  "status": "pass",
+  "total_rewrites": 2
+}

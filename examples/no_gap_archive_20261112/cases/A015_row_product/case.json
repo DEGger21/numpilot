@@ -1,0 +1,24 @@
+{
+  "case": "A015_row_product",
+  "elapsed_s": 1.97,
+  "engine": "llm",
+  "expected_rewrites": {
+    "prod": 1
+  },
+  "group": "A_direct_simple",
+  "migrated": "cases/A015_row_product/migrated.py",
+  "migrated_sha256": "de817944bfc0be294f293be26e32210c61c64fc2d8a3b533e17493c865fb3636",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 6,
+  "numerically_consistent": true,
+  "repair_attempts": 0,
+  "route": "direct_migration",
+  "source": "cases/A015_row_product/program.py",
+  "source_sha256": "48eaf7c270fb128ae9d50e948225207e3fc708cb464848b7948d0aa2c0c22fbb",
+  "status": "pass",
+  "total_rewrites": 1
+}

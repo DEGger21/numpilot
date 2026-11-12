@@ -1,0 +1,8 @@
+{
+  "case": "C003_layer_normalization_16384x256",
+  "base_case": "C003_layer_normalization",
+  "kind": "scaled_performance_variant",
+  "note": "C003_layer_normalization: 16,384 x 256 float32; two normalization passes.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+  "scalable": true
+}

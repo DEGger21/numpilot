@@ -11,7 +11,7 @@ path. This is required because GapSpec hashes include the canonical source
 path:
 
 ```bash
-cd /home/ma-user/work/numpilot
+cd /path/to/numpilot
 FIXTURE="$PWD/benchmark/fixtures/official_candidate/concatenate.py"
 python -m numpilot complete-gaps \
   "$FIXTURE" \

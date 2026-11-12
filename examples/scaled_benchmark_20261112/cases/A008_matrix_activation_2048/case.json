@@ -1,0 +1,8 @@
+{
+  "case": "A008_matrix_activation_2048",
+  "base_case": "A008_matrix_activation",
+  "kind": "scaled_performance_variant",
+  "note": "A008_matrix_activation: 2048 x 2048 float32 matmul plus tanh.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+  "scalable": true
+}

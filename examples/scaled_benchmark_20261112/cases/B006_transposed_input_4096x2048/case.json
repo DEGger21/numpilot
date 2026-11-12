@@ -1,0 +1,8 @@
+{
+  "case": "B006_transposed_input_4096x2048",
+  "base_case": "B006_transposed_input",
+  "kind": "scaled_performance_variant",
+  "note": "B006_transposed_input: 4,096 x 2,048 base matrix; transposed view.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+  "scalable": true
+}

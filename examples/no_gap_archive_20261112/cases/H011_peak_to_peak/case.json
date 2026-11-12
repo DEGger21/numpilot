@@ -1,0 +1,26 @@
+{
+  "case": "H011_peak_to_peak",
+  "elapsed_s": 3.07,
+  "engine": "llm",
+  "expected_rewrites": {
+    "max": 2,
+    "min": 2,
+    "subtract": 2
+  },
+  "group": "H_gap_official",
+  "migrated": "cases/H011_peak_to_peak/migrated.py",
+  "migrated_sha256": "7e7bb54f49284780ec1ec546c7054f7f6e9f3b57d7992c449f2afbbb6d1fae5b",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 19,
+  "numerically_consistent": true,
+  "repair_attempts": 0,
+  "route": "direct_migration",
+  "source": "cases/H011_peak_to_peak/program.py",
+  "source_sha256": "4b49e12a6a3ccbd936cd1fdf300d722062bfaccd436c700337dc78cf839e4183",
+  "status": "pass",
+  "total_rewrites": 6
+}

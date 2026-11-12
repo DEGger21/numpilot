@@ -1,0 +1,7 @@
+{
+  "case": "S3_residual_gemm_512",
+  "base_case": "C011_residual_gemm",
+  "kind": "scaled_performance_variant",
+  "note": "C011 residual-GEMM graph with 512x512 projections.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed."
+}

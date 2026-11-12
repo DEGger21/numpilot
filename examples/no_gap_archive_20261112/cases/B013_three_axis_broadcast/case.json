@@ -1,0 +1,24 @@
+{
+  "case": "B013_three_axis_broadcast",
+  "elapsed_s": 2.17,
+  "engine": "llm",
+  "expected_rewrites": {
+    "subtract": 1
+  },
+  "group": "B_direct_semantics",
+  "migrated": "cases/B013_three_axis_broadcast/migrated.py",
+  "migrated_sha256": "d75e3dfa328788fad3c441f7793811ac272bc8a36a3356054e63cbf604bfe0a4",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 24,
+  "numerically_consistent": true,
+  "repair_attempts": 0,
+  "route": "direct_migration",
+  "source": "cases/B013_three_axis_broadcast/program.py",
+  "source_sha256": "0a976266eacd147a8224af5c4b02e53d177d264b1d830f47d468cfd6a28d2e8d",
+  "status": "pass",
+  "total_rewrites": 1
+}

@@ -1,0 +1,8 @@
+{
+  "case": "B010_empty_sum_16384x0x256",
+  "base_case": "B010_empty_sum",
+  "kind": "scaled_performance_variant",
+  "note": "B010_empty_sum: 16,384 x 0 x 256 float32; empty axis retained.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+  "scalable": true
+}

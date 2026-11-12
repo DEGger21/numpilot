@@ -1,0 +1,8 @@
+{
+  "case": "B009_keepdims_4096x1024",
+  "base_case": "B009_keepdims",
+  "kind": "scaled_performance_variant",
+  "note": "B009_keepdims: 4,096 x 1,024 float32; keepdims plus broadcast.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+  "scalable": true
+}

@@ -1,0 +1,8 @@
+{
+  "case": "I003_nan_classification_4m",
+  "base_case": "I003_nan_classification",
+  "kind": "scaled_performance_variant",
+  "note": "I003_nan_classification: 4,000,000 float32 elements; NaN/Inf/signed-zero pattern.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+  "scalable": true
+}

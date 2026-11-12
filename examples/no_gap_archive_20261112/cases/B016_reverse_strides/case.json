@@ -1,0 +1,25 @@
+{
+  "case": "B016_reverse_strides",
+  "elapsed_s": 1.85,
+  "engine": "llm",
+  "expected_rewrites": {
+    "signbit": 1,
+    "sin": 1
+  },
+  "group": "B_direct_semantics",
+  "migrated": "cases/B016_reverse_strides/migrated.py",
+  "migrated_sha256": "8df244ad9afa31dc8a93663554c70144249a9f4fd8210e97cd45f5dbce70b775",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 38,
+  "numerically_consistent": true,
+  "repair_attempts": 0,
+  "route": "direct_migration",
+  "source": "cases/B016_reverse_strides/program.py",
+  "source_sha256": "c8ff985f3e01432dcf5e7924b5d47ea1b9bb55332597c73c0dd043e630b84089",
+  "status": "pass",
+  "total_rewrites": 2
+}

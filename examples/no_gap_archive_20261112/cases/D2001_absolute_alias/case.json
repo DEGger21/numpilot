@@ -1,0 +1,32 @@
+{
+  "case": "D2001_absolute_alias",
+  "elapsed_s": 3.72,
+  "engine": "llm",
+  "expected_rewrites": {
+    "absolute": 1,
+    "add": 1,
+    "clip": 1,
+    "full": 2,
+    "mean": 1,
+    "minimum": 1,
+    "multiply": 1,
+    "square": 1,
+    "subtract": 2
+  },
+  "group": "D2_partial_low_official",
+  "migrated": "cases/D2001_absolute_alias/migrated.py",
+  "migrated_sha256": "13551e3e92537b2ab2f97e363c64b9122c227e6ab19eafab7c26f12d5f7f10c3",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 216,
+  "numerically_consistent": true,
+  "repair_attempts": 0,
+  "route": "direct_migration",
+  "source": "cases/D2001_absolute_alias/program.py",
+  "source_sha256": "f4b0a87fec60296af3d8bfd18088c22fbdabc5391598440000401d53b9f874ba",
+  "status": "pass",
+  "total_rewrites": 11
+}

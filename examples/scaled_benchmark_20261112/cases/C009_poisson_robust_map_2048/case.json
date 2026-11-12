@@ -1,0 +1,8 @@
+{
+  "case": "C009_poisson_robust_map_2048",
+  "base_case": "C009_poisson_robust_map",
+  "kind": "scaled_performance_variant",
+  "note": "C009_poisson_robust_map: 2,048 x 2,048 float32; four robust-map steps.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+  "scalable": true
+}

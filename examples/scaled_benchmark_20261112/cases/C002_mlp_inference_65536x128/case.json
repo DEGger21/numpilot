@@ -1,0 +1,8 @@
+{
+  "case": "C002_mlp_inference_65536x128",
+  "base_case": "C002_mlp_inference",
+  "kind": "scaled_performance_variant",
+  "note": "C002_mlp_inference: 65,536 x 128 input; 128-256-64 MLP.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+  "scalable": true
+}

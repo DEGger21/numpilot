@@ -1,0 +1,33 @@
+{
+  "case": "C002_mlp_inference",
+  "elapsed_s": 5.87,
+  "engine": "llm",
+  "expected_rewrites": {
+    "add": 2,
+    "divide": 1,
+    "exp": 1,
+    "full": 2,
+    "matmul": 2,
+    "max": 2,
+    "maximum": 1,
+    "minimum": 1,
+    "subtract": 1,
+    "sum": 2
+  },
+  "group": "C_direct_structure",
+  "migrated": "cases/C002_mlp_inference/migrated.py",
+  "migrated_sha256": "841abd044792705c47f98f60462b80ffdc1961004984b843f553ae425f49b876",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 54,
+  "numerically_consistent": true,
+  "repair_attempts": 0,
+  "route": "direct_migration",
+  "source": "cases/C002_mlp_inference/program.py",
+  "source_sha256": "bd7ccb68f50ef2218313ed28c909894a434a48f8d598fabd8543a998221ad9fa",
+  "status": "pass",
+  "total_rewrites": 15
+}

@@ -1,0 +1,27 @@
+{
+  "case": "I001_cube_root",
+  "elapsed_s": 5.82,
+  "engine": "llm",
+  "expected_rewrites": {
+    "absolute": 1,
+    "copysign": 1,
+    "full_like": 1,
+    "power": 1
+  },
+  "group": "I_gap_model",
+  "migrated": "cases/I001_cube_root/migrated.py",
+  "migrated_sha256": "626a7489b7710f4ec5000fc09cc490ee9baee528460d6ce07f6e422162ad7e76",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 257,
+  "numerically_consistent": true,
+  "repair_attempts": 0,
+  "route": "direct_migration",
+  "source": "cases/I001_cube_root/program.py",
+  "source_sha256": "c5f0b7809cc832059095067d3cbb024b72ea5014fa8c673bd983f8358f25738b",
+  "status": "pass",
+  "total_rewrites": 4
+}

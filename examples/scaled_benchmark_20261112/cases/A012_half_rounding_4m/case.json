@@ -1,0 +1,8 @@
+{
+  "case": "A012_half_rounding_4m",
+  "base_case": "A012_half_rounding",
+  "kind": "scaled_performance_variant",
+  "note": "A012_half_rounding: 4,000,000 float16 elements.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+  "scalable": true
+}

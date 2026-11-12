@@ -1,0 +1,29 @@
+{
+  "case": "C005_distance_refinement",
+  "elapsed_s": 13.04,
+  "engine": "llm",
+  "expected_rewrites": {
+    "full": 5,
+    "multiply": 7,
+    "sqrt": 2,
+    "square": 2,
+    "subtract": 13,
+    "sum": 2
+  },
+  "group": "C_direct_structure",
+  "migrated": "cases/C005_distance_refinement/migrated.py",
+  "migrated_sha256": "1bd297563dbbc496c2bbc2a09bd904c9026732caa15cca90b0f121ed73426854",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 210,
+  "numerically_consistent": true,
+  "repair_attempts": 0,
+  "route": "direct_migration",
+  "source": "cases/C005_distance_refinement/program.py",
+  "source_sha256": "68e1718504b62ab145e83345341a7222c814f2542f0cf99df3954e1d1a24d1f4",
+  "status": "pass",
+  "total_rewrites": 31
+}

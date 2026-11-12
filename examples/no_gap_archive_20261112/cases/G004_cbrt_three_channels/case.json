@@ -1,0 +1,31 @@
+{
+  "case": "G004_cbrt_three_channels",
+  "elapsed_s": 5.67,
+  "engine": "llm",
+  "expected_rewrites": {
+    "absolute": 3,
+    "add": 2,
+    "copysign": 3,
+    "full": 3,
+    "full_like": 3,
+    "multiply": 5,
+    "power": 3,
+    "tanh": 1
+  },
+  "group": "G_partial_dedup",
+  "migrated": "cases/G004_cbrt_three_channels/migrated.py",
+  "migrated_sha256": "df306af015fbc54b8089d0d015cf49b62945a12d293f97c84dcedde33068492a",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 96,
+  "numerically_consistent": true,
+  "repair_attempts": 0,
+  "route": "direct_migration",
+  "source": "cases/G004_cbrt_three_channels/program.py",
+  "source_sha256": "7e35f07109bc1590b5652b6d24e90fb54bfe5fa68ef7c1be07d2e980ec940c95",
+  "status": "pass",
+  "total_rewrites": 23
+}

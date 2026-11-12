@@ -1,0 +1,24 @@
+{
+  "case": "A014_prefix_sum",
+  "elapsed_s": 1.82,
+  "engine": "llm",
+  "expected_rewrites": {
+    "cumsum": 1
+  },
+  "group": "A_direct_simple",
+  "migrated": "cases/A014_prefix_sum/migrated.py",
+  "migrated_sha256": "2afeeaede2052d92c30ca658da684211a3398d2fd8b1db0e360a97dd982664d0",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 40,
+  "numerically_consistent": true,
+  "repair_attempts": 0,
+  "route": "direct_migration",
+  "source": "cases/A014_prefix_sum/program.py",
+  "source_sha256": "79bfe017a56b35fa3245997bdf5224db35abfe591e0e2253ced23d4408f016bc",
+  "status": "pass",
+  "total_rewrites": 1
+}

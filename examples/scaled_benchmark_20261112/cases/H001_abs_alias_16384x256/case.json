@@ -1,0 +1,8 @@
+{
+  "case": "H001_abs_alias_16384x256",
+  "base_case": "H001_abs_alias",
+  "kind": "scaled_performance_variant",
+  "note": "H001_abs_alias: 16,384 x 256 float32; signed-zero witness retained.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+  "scalable": true
+}

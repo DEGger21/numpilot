@@ -1,0 +1,32 @@
+{
+  "case": "C012_calibrated_projection",
+  "elapsed_s": 7.17,
+  "engine": "llm",
+  "expected_rewrites": {
+    "clip": 5,
+    "divide": 5,
+    "exp": 5,
+    "full": 4,
+    "matmul": 1,
+    "max": 5,
+    "multiply": 4,
+    "subtract": 14,
+    "sum": 5
+  },
+  "group": "C_direct_structure",
+  "migrated": "cases/C012_calibrated_projection/migrated.py",
+  "migrated_sha256": "f720c06e988486b7160455d9a5d7e789a116a0f919cb5297f78f0176b2d5bf52",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 96,
+  "numerically_consistent": true,
+  "repair_attempts": 0,
+  "route": "direct_migration",
+  "source": "cases/C012_calibrated_projection/program.py",
+  "source_sha256": "77acb535b01d33d592e0327f8096c961ffcbded7b03feb39b5211d6a6040ffe2",
+  "status": "pass",
+  "total_rewrites": 48
+}

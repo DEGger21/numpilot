@@ -104,6 +104,16 @@ def test_rejects_unverified_numpy_ufunc_keywords():
     assert "out" in result.op_uses[0].reason
 
 
+def test_accepts_shared_stable_sort_keyword():
+    result = AnalysisAgent().analyze(
+        "import numpy as np\n"
+        "def forward(x):\n"
+        "    return np.sort(x, axis=1, stable=True)\n"
+    )
+    assert result.migratable
+    assert result.unsupported == []
+
+
 @pytest.mark.parametrize(
     "call, marker",
     [
@@ -132,7 +142,6 @@ def test_rejects_unverified_numpy_ufunc_keywords():
         ("np.all(x, keepdims=True)", "axis=None"),
         ("np.mean(x, 0, axis=1)", "重复绑定"),
         ("np.dot(x, x, a=x)", "重复绑定"),
-        ("np.sort(x, stable=True)", "stable"),
         ("np.zeros((2,))", "必需参数"),
         ("np.zeros((2,), dtype=None)", "静态可验证"),
         ("np.eye(2, 3)", "位置参数"),

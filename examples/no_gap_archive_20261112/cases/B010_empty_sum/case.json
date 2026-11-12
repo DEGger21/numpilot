@@ -1,0 +1,25 @@
+{
+  "case": "B010_empty_sum",
+  "elapsed_s": 2.72,
+  "engine": "llm",
+  "expected_rewrites": {
+    "prod": 1,
+    "sum": 1
+  },
+  "group": "B_direct_semantics",
+  "migrated": "cases/B010_empty_sum/migrated.py",
+  "migrated_sha256": "7f60138ac516eefad3c29801582515e22c3ecbcb984d261ca8fa002791e6560f",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 24,
+  "numerically_consistent": true,
+  "repair_attempts": 0,
+  "route": "direct_migration",
+  "source": "cases/B010_empty_sum/program.py",
+  "source_sha256": "1fd51c55580388370e6d6e46721af808fbb0b503eb703cef16481a7ff8a418f5",
+  "status": "pass",
+  "total_rewrites": 2
+}

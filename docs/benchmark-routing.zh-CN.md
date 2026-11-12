@@ -118,7 +118,7 @@ python -m numpilot.benchmark_suite \
 `route_counts`、`group_counts`、`status_counts`；`summary.tsv` 和 `SUMMARY.md`
 包含同样的路由与判定列。
 
-## 5. 当前全量结果
+## 5. 历史全量结果（Phase 8，2026-11-04；最新基线见 §5.4）
 
 运行目录：仓库外 `runs/phase8-benchmark-20261104/full-suite-03`（由 `--out` 指定；
 backend `shim`，engine `ast`，150 例）。
@@ -205,9 +205,20 @@ backend npu@0.4.1.post0+numpilot.bee27ba2 cannot satisfy required APIs
 `non_strict_npu` 清单。这说明“数值迁移成功”与“strict-NPU 合格”是两个独立维度；
 没有版本级审计的 API 不会被标成 strict-NPU。
 
+### 5.4 最新可复核基线（2026-11-10）
+
+`documents/benchmark-baselines/20261110-numpy-compute-only-v1` 对 135 个 compute
+用例做 scope-limited sweep，135/135 执行，`failed=0`、`unexpected=0`：
+
+- migrated 70、unsupported 65（64 个 gap stop + 1 个 audit stop）；
+- direct 51/51 honored；gap 83（19 improved + 64 honored）；audit 1/1 honored；
+- 加上 J 组 15/15 静态拒绝，按目标闭环口径为 **85/150 = 56.7%**；按实际 compute
+  迁移为 **70/135 = 51.9%**。两个分母不同，不能混用。
+- 该 sweep 未宣称 strict-NPU 或性能资格；J 组数字来自 Phase 8 全量 sweep。
+
 ## 6. 已知缺口
 
-在 Phase 14 无 overlay sweep 中当前有 65 个 unsupported/gap stop；历史 Phase 8 数字仍保留在 §5，下面列出主要原因：
+最新 2026-11-10 baseline 仍为 65 个 unsupported/gap stop；历史 Phase 8 数字保留在 §5，下面列出主要原因：
 
 - 缺失 API：`spacing`、`nextafter`、`diff`、`pad`、`repeat`、`tile`、`roll`、
   `median`、`quantile`、`argmax`、`take`、`convolve`、`searchsorted`、

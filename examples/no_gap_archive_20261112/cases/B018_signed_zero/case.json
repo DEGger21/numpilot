@@ -1,0 +1,25 @@
+{
+  "case": "B018_signed_zero",
+  "elapsed_s": 2.98,
+  "engine": "llm",
+  "expected_rewrites": {
+    "copysign": 1,
+    "signbit": 1
+  },
+  "group": "B_direct_semantics",
+  "migrated": "cases/B018_signed_zero/migrated.py",
+  "migrated_sha256": "1a4727d19fdb47e2d4c11d60d8480aeb5ed7c6da0146d3a378020675627e01b9",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 8,
+  "numerically_consistent": true,
+  "repair_attempts": 0,
+  "route": "direct_migration",
+  "source": "cases/B018_signed_zero/program.py",
+  "source_sha256": "3968ad9665a9cee0bd3ac145e07f56dd71d5f5c764d7208d3352188fb63e99ad",
+  "status": "pass",
+  "total_rewrites": 2
+}

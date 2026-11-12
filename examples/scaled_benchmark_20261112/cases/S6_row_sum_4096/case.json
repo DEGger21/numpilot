@@ -1,0 +1,7 @@
+{
+  "case": "S6_row_sum_4096",
+  "base_case": "A004_row_sum",
+  "kind": "scaled_performance_variant",
+  "note": "A004 row-sum graph on a 4096x4096 float32 matrix.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes/constants changed."
+}

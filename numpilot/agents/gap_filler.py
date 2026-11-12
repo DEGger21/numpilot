@@ -25,6 +25,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from numpilot.python_operators import target_for_operator
+
 
 # Mechanical renames where NumPy's documented alias has the same contract.
 _OFFICIAL_ALIASES = {
@@ -166,7 +168,9 @@ def collect_gap_inventory(analysis) -> GapPlan:
         existing = grouped.get(key)
         sites = tuple(sorted(set((existing.call_sites if existing else ()) + (use.lineno,))))
         target = None
-        if category in ("api_gap", "alias"):
+        if category == "dialect_operator":
+            target = target_for_operator(use.name)
+        elif category in ("api_gap", "alias"):
             target = _OFFICIAL_ALIASES.get(use.name, use.name)
         grouped[key] = GapTask(
             name=use.name,

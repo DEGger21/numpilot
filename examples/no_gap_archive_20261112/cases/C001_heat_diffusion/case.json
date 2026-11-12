@@ -1,0 +1,30 @@
+{
+  "case": "C001_heat_diffusion",
+  "elapsed_s": 8.13,
+  "engine": "llm",
+  "expected_rewrites": {
+    "add": 7,
+    "full": 9,
+    "maximum": 4,
+    "multiply": 5,
+    "square": 2,
+    "subtract": 3,
+    "sum": 2
+  },
+  "group": "C_direct_structure",
+  "migrated": "cases/C001_heat_diffusion/migrated.py",
+  "migrated_sha256": "8c5177d953aef5d711ab1e402f6c43ac1e0d28d151130e99cd53e48ff9185653",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 528,
+  "numerically_consistent": true,
+  "repair_attempts": 0,
+  "route": "direct_migration",
+  "source": "cases/C001_heat_diffusion/program.py",
+  "source_sha256": "7d6ef26d18fcf05917540bb1fceb38098c0136610305521c0d709d61f7dfcb61",
+  "status": "pass",
+  "total_rewrites": 32
+}

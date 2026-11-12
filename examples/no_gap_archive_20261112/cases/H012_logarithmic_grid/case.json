@@ -1,0 +1,29 @@
+{
+  "case": "H012_logarithmic_grid",
+  "elapsed_s": 16.79,
+  "engine": "llm",
+  "expected_rewrites": {
+    "add": 2,
+    "full_like": 2,
+    "linspace": 6,
+    "multiply": 2,
+    "power": 2,
+    "subtract": 2
+  },
+  "group": "H_gap_official",
+  "migrated": "cases/H012_logarithmic_grid/migrated.py",
+  "migrated_sha256": "eee78452b0d3a23f124d6dbb9c5b7034d947a3164107714780b08ae771ebbb79",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 34,
+  "numerically_consistent": true,
+  "repair_attempts": 1,
+  "route": "direct_migration",
+  "source": "cases/H012_logarithmic_grid/program.py",
+  "source_sha256": "fa2bfb21bc7100f140d1398d8da30823bae802d281049365a889a92c096ad658",
+  "status": "pass",
+  "total_rewrites": 16
+}

@@ -92,11 +92,11 @@ target design.
 | Unified fact layer | In progress | Consolidating duplicated AST and call-site scanning |
 | Capability registry | In progress | Merging coverage, catalog, and profile logic into one registry |
 | ModelGateway | In progress | The private configured model is available; all role calls are being routed through one gateway |
-| Analyzer / Planner | Scaffolded | Role records and deterministic planning exist; unified model calls remain to be wired |
-| Code Migrator | In progress | Existing script migration path is being reduced to a single rewrite role |
+| Analyzer / Planner | Implemented (deterministic) | Analyzer emits call-site facts; Planner routes and seals `TRANSLATION_TASKBOOK.json/.md` with per-callsite target APIs and acceptance boundaries |
+| Code Migrator | Implemented (AST + configured model) | Direct AST rewrites and configured-model `rewrite`/`repair` share the AsNumpy format guide and taskbook; surface audit and numerical oracle remain deterministic gates |
 | API Gap Filler | Scaffolded | Gap classification exists; candidate generation and API-gate integration remain |
 | Full-program validation | Implemented | Retained as the deterministic program-level gate |
-| Competition direct vertical slice | Implemented (scoped) | Direct routing and numerical receipts are recorded; strict-NPU provenance still requires a runtime audit |
+| Competition direct vertical slice | Implemented (scoped) | Direct routing and numerical receipts are recorded; a 71/71 no-gap real-model batch passed on the shim backend; strict-NPU provenance still requires a runtime audit |
 | Benchmark adapter | Implemented | 150 cases: 68 migrated, 15 refused, 66 gap stop, 1 audit failure, 0 unexpected |
 | Diagnostics / Reporter | Scaffolded | Role records exist; validation-driven diagnosis and reporting remain to be unified |
 | Legacy pipelines | To be retired | Moved to `compat/legacy` after parity is established |
@@ -287,6 +287,8 @@ tools/               repository and release utilities
 - [Model configuration and transport contract](docs/model-contract.md)
 - [Numerical verification](docs/script-verification.md)
 - [Strict-NPU benchmarking](docs/script-benchmark.md)
+- [Large-scale migration performance table — 71 cases (CANN 9.2.0-beta.2 / Ascend 910B3)](examples/scaled_benchmark_20261112/BENCHMARK_TABLE.md)
+- [No-gap migration correctness archive (71/71)](examples/no_gap_archive_20261112/README.md)
 - [Agent Skill contract](skill/SKILL.md)
 - [Changelog](CHANGELOG.md)
 

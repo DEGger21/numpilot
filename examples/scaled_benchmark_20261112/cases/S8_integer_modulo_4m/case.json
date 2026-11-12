@@ -1,0 +1,7 @@
+{
+  "case": "S8_integer_modulo_4m",
+  "base_case": "A011_integer_modulo",
+  "kind": "scaled_performance_variant",
+  "note": "A011 remainder graph on 4,000,000 int32 elements.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes/constants changed."
+}

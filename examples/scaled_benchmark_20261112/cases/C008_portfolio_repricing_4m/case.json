@@ -1,0 +1,8 @@
+{
+  "case": "C008_portfolio_repricing_4m",
+  "base_case": "C008_portfolio_repricing",
+  "kind": "scaled_performance_variant",
+  "note": "C008_portfolio_repricing: 4,000,000 float32 scenarios; four price evaluations.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+  "scalable": true
+}

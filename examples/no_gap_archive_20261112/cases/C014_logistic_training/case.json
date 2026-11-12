@@ -1,0 +1,35 @@
+{
+  "case": "C014_logistic_training",
+  "elapsed_s": 23.55,
+  "engine": "llm",
+  "expected_rewrites": {
+    "add": 16,
+    "clip": 9,
+    "divide": 7,
+    "exp": 8,
+    "full": 30,
+    "log": 1,
+    "log1p": 1,
+    "matmul": 15,
+    "multiply": 16,
+    "negative": 10,
+    "reciprocal": 8,
+    "subtract": 15
+  },
+  "group": "C_direct_structure",
+  "migrated": "cases/C014_logistic_training/migrated.py",
+  "migrated_sha256": "a0dd4dce54491b5290c024cff051ac7f44f100b0e31e99eb5bdc4206bc818419",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 46,
+  "numerically_consistent": true,
+  "repair_attempts": 0,
+  "route": "direct_migration",
+  "source": "cases/C014_logistic_training/program.py",
+  "source_sha256": "15d88a17c2848ebbc86c29d91af5f4021ad2f0c083696d14e1eedeebd04e2ea0",
+  "status": "pass",
+  "total_rewrites": 136
+}

@@ -1,0 +1,8 @@
+{
+  "case": "B015_fortran_matmul_2048",
+  "base_case": "B015_fortran_matmul",
+  "kind": "scaled_performance_variant",
+  "note": "B015_fortran_matmul: 2048 x 2048 Fortran-ordered float32 matmul.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+  "scalable": true
+}

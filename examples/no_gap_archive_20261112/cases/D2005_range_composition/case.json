@@ -1,0 +1,30 @@
+{
+  "case": "D2005_range_composition",
+  "elapsed_s": 5.78,
+  "engine": "llm",
+  "expected_rewrites": {
+    "clip": 1,
+    "divide": 1,
+    "full": 1,
+    "max": 1,
+    "maximum": 1,
+    "min": 2,
+    "subtract": 3
+  },
+  "group": "D2_partial_low_official",
+  "migrated": "cases/D2005_range_composition/migrated.py",
+  "migrated_sha256": "91ca6a26c14fb02e68c9da329a108f580e688669cce13438327bdbc7c5e5cd45",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 120,
+  "numerically_consistent": true,
+  "repair_attempts": 0,
+  "route": "direct_migration",
+  "source": "cases/D2005_range_composition/program.py",
+  "source_sha256": "0be8f67f23d0efa2aaabbfc4d3c37681723543bcd63ce1d36f1bbfa3241b4f6b",
+  "status": "pass",
+  "total_rewrites": 10
+}

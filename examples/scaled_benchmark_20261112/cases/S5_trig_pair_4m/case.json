@@ -1,0 +1,7 @@
+{
+  "case": "S5_trig_pair_4m",
+  "base_case": "A003_trig_pair",
+  "kind": "scaled_performance_variant",
+  "note": "A003 sin/cos graph on 4,000,000 float32 elements.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes/constants changed."
+}

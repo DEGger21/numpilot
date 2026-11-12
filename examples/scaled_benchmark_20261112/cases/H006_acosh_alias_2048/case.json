@@ -1,0 +1,8 @@
+{
+  "case": "H006_acosh_alias_2048",
+  "base_case": "H006_acosh_alias",
+  "kind": "scaled_performance_variant",
+  "note": "H006_acosh_alias: 2,048 x 2,048 float32.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+  "scalable": true
+}

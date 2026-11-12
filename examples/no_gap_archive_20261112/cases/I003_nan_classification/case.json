@@ -1,0 +1,24 @@
+{
+  "case": "I003_nan_classification",
+  "elapsed_s": 2.37,
+  "engine": "llm",
+  "expected_rewrites": {
+    "not_equal": 1
+  },
+  "group": "I_gap_model",
+  "migrated": "cases/I003_nan_classification/migrated.py",
+  "migrated_sha256": "f730a9189aac251470616c0d62a6a817554651f00830e286e4645148bceea4ff",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 7,
+  "numerically_consistent": true,
+  "repair_attempts": 0,
+  "route": "direct_migration",
+  "source": "cases/I003_nan_classification/program.py",
+  "source_sha256": "62f3f60159d847fe6348ac9d87ffc09e7992da07f3339627e0572a7dd2c5b866",
+  "status": "pass",
+  "total_rewrites": 1
+}

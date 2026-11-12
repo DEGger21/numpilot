@@ -1,0 +1,8 @@
+{
+  "case": "B007_strided_input_4m",
+  "base_case": "B007_strided_input",
+  "kind": "scaled_performance_variant",
+  "note": "B007_strided_input: 4,000,000-element base; 1-in-3 strided view.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+  "scalable": true
+}

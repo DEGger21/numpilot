@@ -1,0 +1,8 @@
+{
+  "case": "H013_geometric_grid_4m",
+  "base_case": "H013_geometric_grid",
+  "kind": "scaled_performance_variant",
+  "note": "H013_geometric_grid: 4,000,000-point geomspace grids; num 21 -> 4,000,000.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes/constants changed.",
+  "scalable": true
+}

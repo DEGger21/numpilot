@@ -1,0 +1,25 @@
+{
+  "case": "B019_boolean_keepdims",
+  "elapsed_s": 2.62,
+  "engine": "llm",
+  "expected_rewrites": {
+    "all": 1,
+    "any": 1
+  },
+  "group": "B_direct_semantics",
+  "migrated": "cases/B019_boolean_keepdims/migrated.py",
+  "migrated_sha256": "6083cfe288b049ac91812399c66487d84bfde310df13184abf9b68762d81480b",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 8,
+  "numerically_consistent": true,
+  "repair_attempts": 0,
+  "route": "direct_migration",
+  "source": "cases/B019_boolean_keepdims/program.py",
+  "source_sha256": "d3d8ff86a25ea0fa5168c7cee510fd3fa823b2282c45b26816cb0e7f1d5ab9d5",
+  "status": "pass",
+  "total_rewrites": 2
+}

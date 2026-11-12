@@ -399,6 +399,35 @@ def forward(x):
     assert analysis.migratable, analysis.unsupported
 
 
+def test_keeps_stable_sort_as_shared_stable_keyword():
+    source = """
+import numpy as np
+
+def build_inputs():
+    return {'x': np.array([0.0, -0.0, 1.0, -1.0], dtype=np.float64)}
+
+def forward(x):
+    out = np.sort(x, kind="stable")
+    return {'out': out}
+"""
+    lowered = lower_benchmark_program(source)
+
+    assert "contract" in _kinds(lowered)
+    assert "stable=True" in lowered.source
+    assert "kind" not in lowered.source
+    expected = _run_forward(source)["out"]
+    actual = _run_forward(lowered.source)["out"]
+    np.testing.assert_array_equal(actual, expected)
+    np.testing.assert_array_equal(np.signbit(actual), np.signbit(expected))
+
+    analysis = AnalysisAgent().analyze(
+        lowered.source,
+        "program.py",
+        strict_input_types=True,
+    )
+    assert analysis.migratable, analysis.unsupported
+
+
 def test_sort_kind_is_not_dropped_when_it_is_not_a_literal():
     source = """
 import numpy as np

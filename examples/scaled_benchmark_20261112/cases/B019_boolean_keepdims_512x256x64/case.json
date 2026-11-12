@@ -1,0 +1,8 @@
+{
+  "case": "B019_boolean_keepdims_512x256x64",
+  "base_case": "B019_boolean_keepdims",
+  "kind": "scaled_performance_variant",
+  "note": "B019_boolean_keepdims: 512 x 256 x 64 boolean tensor.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+  "scalable": true
+}

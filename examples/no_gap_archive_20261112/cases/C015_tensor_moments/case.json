@@ -1,0 +1,33 @@
+{
+  "case": "C015_tensor_moments",
+  "elapsed_s": 13.33,
+  "engine": "llm",
+  "expected_rewrites": {
+    "add": 8,
+    "clip": 3,
+    "divide": 5,
+    "full": 5,
+    "mean": 14,
+    "multiply": 3,
+    "sqrt": 5,
+    "square": 7,
+    "subtract": 14,
+    "tanh": 2
+  },
+  "group": "C_direct_structure",
+  "migrated": "cases/C015_tensor_moments/migrated.py",
+  "migrated_sha256": "00e18ad29199923a4635a44cedb4fe458274ae3ee517fc904c274aeb92ed7727",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 168,
+  "numerically_consistent": true,
+  "repair_attempts": 0,
+  "route": "direct_migration",
+  "source": "cases/C015_tensor_moments/program.py",
+  "source_sha256": "2ebef98eba2f3e143449fbf0f5f4b5fbdc7615410216ce6b68bc684871916df8",
+  "status": "pass",
+  "total_rewrites": 66
+}

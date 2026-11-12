@@ -1,0 +1,8 @@
+{
+  "case": "B012_zero_dimensional_1elem",
+  "base_case": "B012_zero_dimensional",
+  "kind": "scaled_performance_variant",
+  "note": "B012_zero_dimensional: zero-dimensional contract witness; not scalable.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+  "scalable": false
+}

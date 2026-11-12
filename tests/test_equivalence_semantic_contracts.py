@@ -25,9 +25,19 @@ def forward(x):
 """
     lowered = _lowered(source)
 
-    # Removing kind can reorder +0/-0. A value-only proof is insufficient.
+    # Stability is kept as the shared NumPy 2 / AsNumpy spelling, never
+    # dropped: dropping it could reorder +0/-0 and NaNs.
     assert "np.sort" in lowered.source
-    assert "contract" not in [item.kind for item in lowered.rewrites]
+    assert "stable=True" in lowered.source
+    assert "contract" in [item.kind for item in lowered.rewrites]
+
+    namespace = {}
+    exec(compile(lowered.source, "<lowered>", "exec"), namespace)
+    values = np.array([0.0, -0.0, 1.0, -1.0], dtype=np.float64)
+    expected = np.sort(values, kind="stable")
+    actual = namespace["forward"](values)["out"]
+    assert np.array_equal(actual, expected)
+    assert np.array_equal(np.signbit(actual), np.signbit(expected))
 
 
 def test_logspace_array_inputs_keep_axis_zero_shape_contract():

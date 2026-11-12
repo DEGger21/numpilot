@@ -1,0 +1,33 @@
+{
+  "case": "C003_layer_normalization",
+  "elapsed_s": 7.82,
+  "engine": "llm",
+  "expected_rewrites": {
+    "add": 2,
+    "clip": 1,
+    "divide": 1,
+    "full": 1,
+    "mean": 4,
+    "multiply": 2,
+    "sqrt": 1,
+    "square": 1,
+    "subtract": 1,
+    "tanh": 1
+  },
+  "group": "C_direct_structure",
+  "migrated": "cases/C003_layer_normalization/migrated.py",
+  "migrated_sha256": "61944d6cefade064a20eb8074f3989d4e2700c8672f69b5073248ccfe728ca1e",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 150,
+  "numerically_consistent": true,
+  "repair_attempts": 0,
+  "route": "direct_migration",
+  "source": "cases/C003_layer_normalization/program.py",
+  "source_sha256": "2b0d6c5a7f67828d93e37df6f534735bcdb13959ceb1113905a88a13658f8f64",
+  "status": "pass",
+  "total_rewrites": 15
+}

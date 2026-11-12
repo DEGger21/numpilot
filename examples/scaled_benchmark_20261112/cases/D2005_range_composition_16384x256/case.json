@@ -1,0 +1,8 @@
+{
+  "case": "D2005_range_composition_16384x256",
+  "base_case": "D2005_range_composition",
+  "kind": "scaled_performance_variant",
+  "note": "D2005_range_composition: 16,384 x 256 float32.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+  "scalable": true
+}

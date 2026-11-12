@@ -1,0 +1,32 @@
+{
+  "case": "C004_cosine_rows",
+  "elapsed_s": 7.27,
+  "engine": "llm",
+  "expected_rewrites": {
+    "clip": 1,
+    "divide": 1,
+    "full": 2,
+    "maximum": 1,
+    "multiply": 2,
+    "sqrt": 4,
+    "square": 2,
+    "subtract": 1,
+    "sum": 3
+  },
+  "group": "C_direct_structure",
+  "migrated": "cases/C004_cosine_rows/migrated.py",
+  "migrated_sha256": "c9b423fc7ac137267b7da6bdcfac54685720ffbe486bb9e19951be3d22f3550e",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 36,
+  "numerically_consistent": true,
+  "repair_attempts": 0,
+  "route": "direct_migration",
+  "source": "cases/C004_cosine_rows/program.py",
+  "source_sha256": "b741ed2f3ee1d66bd7d3dbea3234c4398556ad4ba822aa89bd648d0277d1068b",
+  "status": "pass",
+  "total_rewrites": 17
+}

@@ -889,6 +889,7 @@ def run_case(
             out_dir=str(case_out),
             verification_source=source,
             strict_input_types=True,
+            prepare_source=False,
         )
         if scoped_npu:
             runtime_after = backend.runtime_identity().to_dict()

@@ -20,7 +20,9 @@ NumPilot 将可静态分析的普通 NumPy 单文件迁移为 AsNumpy 候选，�
 独立容器或虚拟机。
 
 历史 `build_inputs + forward` 合同仅通过显式 `--mode contract` 提供。它是独立兼容通道，
-不能替代普通文件的能力、来源或验证证据。
+不能替代普通文件的能力、来源或验证证据。`--mode contract` 会对 `build_inputs` 的叶子做
+严格静态输入分类：object、字符串、日期时间、timedelta 和结构化 dtype 在分析阶段即失败
+关闭，不会进入模型生成或执行。
 
 ## 2. 两种交互路线
 
@@ -63,6 +65,35 @@ overlay 和哈希清单。CANNBot 提供工作流上下文，不是代码生成�
 2. 全程序验证失败后只回退到 Diagnostics 指定的角色；`repair` 仅对声明支持修复的引擎开放，
    最多 3 次（`MAX_REPAIR_ITERATIONS`）。
 3. Reporter 引用验证证据，不重新判定通过与否。
+
+### 3.1 翻译主线：整程序准备、任务书与模型代码格式
+
+“AsNumpy 接口已全覆盖”的程序仍可能因为结构、别名拼写或模型格式不清楚而迁移失败。
+这条翻译主线把确定性事实集中到 Planner，并把模型需要遵守的 AsNumpy 形状显式交给它：
+
+```text
+原始源码（数值 oracle，永不替换）
+  └─ prepare_program → 分析/迁移表面
+       └─ Analyzer → Planner → TRANSLATION_TASKBOOK.json/.md
+            ├─ route=code_migrator（别名、Python 算子、静态结构、标量绑定）→ direct
+            └─ 真正的 gap_required / consent_required → fill_api_gaps
+```
+
+| 组件 | 责任 | 边界 |
+|---|---|---|
+| `program_preparation.py` | helper 内联、静态 for/while/if 展开、解构、文档化等价拼写、Python dunder 降级与标量广播；直线化 SSA 重排单独标记 | 只改分析/迁移表面；原源码继续做数值 oracle；`operator_spec` 领域算子保持调用边界；`applied`/`source_changed`/`normalized` 必须一致 |
+| `translation_taskbook.py` | 逐调用点的源/目标 API、常见 Python 算子的确定性目标、静态参数、状态、已知/未知事实、准备前后 SHA-256、验收边界 | 内容寻址、可验证、可渲染；不是能力或性能证书 |
+| `asnumpy_guide.py` | 合法 `forward` 形状、`ap.*` 映射、标量 materialization、排序 `stable=True`、禁止项 | 随配置模型 system prompt 发送；Planner 任务书中的逐调用点事实优先 |
+| `engines/llm.py` | `rewrite` 与 `repair` 都接收 taskbook；repair 另带确定性诊断和上一版候选 | 模型输出仍须通过表面审计；生成文本成功不等于迁移成功 |
+
+准备记录区分语义 rewrite 与表面直线化：只做 SSA 重排时报告
+`source_changed=true` / `normalized=true`，不会出现 `applied=false` 而分析源码已经
+变化的矛盾记录。
+
+Planner 只把 `code_migrator` 任务留在 direct 路线；只有真正的 `gap_required` /
+`consent_required` 任务才把路线切到 `fill_api_gaps`。API Gap Filler 继续消费任务书里的
+`gap_tasks`，Code Migrator 消费 `callsites`，因此“翻译”和“补缺口”共享同一份事实，
+但不会互相冒充。全程序表面审计和数值对拍仍是独立的确定性门禁。
 
 ## 4. 普通文件迁移流程
 

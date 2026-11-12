@@ -1,0 +1,8 @@
+{
+  "case": "B004_mixed_int_float_4m",
+  "base_case": "B004_mixed_int_float",
+  "kind": "scaled_performance_variant",
+  "note": "B004_mixed_int_float: 4,000,000 int32/float32 elements; 16777217 trap retained.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+  "scalable": true
+}

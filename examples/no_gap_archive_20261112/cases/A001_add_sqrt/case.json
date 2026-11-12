@@ -1,0 +1,26 @@
+{
+  "case": "A001_add_sqrt",
+  "elapsed_s": 1.62,
+  "engine": "llm",
+  "expected_rewrites": {
+    "add": 1,
+    "sqrt": 1,
+    "square": 1
+  },
+  "group": "A_direct_simple",
+  "migrated": "cases/A001_add_sqrt/migrated.py",
+  "migrated_sha256": "7dd2d96d8d92b875d9004603e4555b3bbe3bb5356cf42a2b1c585134d40052da",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 128,
+  "numerically_consistent": true,
+  "repair_attempts": 0,
+  "route": "direct_migration",
+  "source": "cases/A001_add_sqrt/program.py",
+  "source_sha256": "601073c168055abdeb9f17f3a692b8cf39e93103954993e2c84cc181380d85c9",
+  "status": "pass",
+  "total_rewrites": 3
+}

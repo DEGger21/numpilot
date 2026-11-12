@@ -1,4 +1,6 @@
 """迁移智能体:委托 MigrationEngine 策略完成 np->ap 改写。"""
+import inspect
+
 from numpilot.contracts import MigrationResult, OffloadPlan
 from numpilot.engines.ast_rewrite import (
     AstRewriteEngine,
@@ -6,6 +8,15 @@ from numpilot.engines.ast_rewrite import (
     expected_forward_ap_calls,
 )
 from numpilot.engines.base import MigrationEngine
+
+
+def _supports_taskbook(method) -> bool:
+    """Backward-compatible optional hand-off for third-party engines."""
+
+    try:
+        return "taskbook" in inspect.signature(method).parameters
+    except (TypeError, ValueError):
+        return False
 
 
 class MigrationAgent:
@@ -22,15 +33,26 @@ class MigrationAgent:
             model_identity=dict(getattr(self.engine, "last_identity", {}) or {}),
         )
 
-    def migrate(self, source: str, plan: OffloadPlan) -> MigrationResult:
-        return self._result(source, plan, self.engine.rewrite(source, plan))
+    def migrate(self, source: str, plan: OffloadPlan, taskbook=None) -> MigrationResult:
+        taskbook = (
+            taskbook
+            if taskbook is not None
+            else getattr(plan, "translation_taskbook", None)
+        )
+        return self._result(
+            source,
+            plan,
+            self.engine.rewrite(source, plan, taskbook=taskbook)
+            if _supports_taskbook(self.engine.rewrite)
+            else self.engine.rewrite(source, plan),
+        )
 
     @property
     def supports_repair(self) -> bool:
         """Whether the engine can consume a diagnosis and produce a candidate."""
         return callable(getattr(self.engine, "repair", None))
 
-    def repair(self, source, plan, previous_source, diagnosis) -> MigrationResult:
+    def repair(self, source, plan, previous_source, diagnosis, taskbook=None) -> MigrationResult:
         """Apply one bounded repair attempt; raises when the engine has none.
 
         The engine owns the strategy; this agent only rebuilds the deterministic
@@ -40,5 +62,14 @@ class MigrationAgent:
         repair = getattr(self.engine, "repair", None)
         if not callable(repair):
             raise RuntimeError("迁移引擎未实现 repair，不能执行有界修复")
-        repaired = repair(source, plan, previous_source, diagnosis)
+        taskbook = (
+            taskbook
+            if taskbook is not None
+            else getattr(plan, "translation_taskbook", None)
+        )
+        repaired = (
+            repair(source, plan, previous_source, diagnosis, taskbook=taskbook)
+            if _supports_taskbook(repair)
+            else repair(source, plan, previous_source, diagnosis)
+        )
         return self._result(source, plan, repaired)

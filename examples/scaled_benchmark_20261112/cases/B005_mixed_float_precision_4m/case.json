@@ -1,0 +1,8 @@
+{
+  "case": "B005_mixed_float_precision_4m",
+  "base_case": "B005_mixed_float_precision",
+  "kind": "scaled_performance_variant",
+  "note": "B005_mixed_float_precision: 4,000,000 float32 + float64 elements; 1e-10 increments retained.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+  "scalable": true
+}
