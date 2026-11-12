@@ -2,20 +2,18 @@
 
 <h1><img src="docs/assets/brand/numpilot-wordmark.png" alt="NumPilot" width="560"></h1>
 
-### 面向 Ascend NPU 的可审计 NumPy → AsNumpy 迁移
+### 面向昇腾 NPU 的端到端 NumPy → AsNumpy 迁移框架
 
 <p>
   <a href="README.md">English</a> ·
-  <a href="docs/installation.zh-CN.md">安装指南</a> ·
-  <a href="docs/architecture.md">实现说明</a> ·
-  <a href="examples/scaled_benchmark_20261112/BENCHMARK_TABLE.md">性能报告</a> ·
-  <a href="CONTRIBUTING.md">参与贡献</a> ·
-  <a href="LICENSE">许可证</a>
+  <a href="#快速安装与使用">快速安装</a> ·
+  <a href="#系统架构">系统架构</a> ·
+  <a href="#实测迁移与加速效果">实测效果</a> ·
+  <a href="#贡献与许可证">贡献</a>
 </p>
 
 <p>
   <img alt="版本" src="https://img.shields.io/badge/version-0.3.0a1.dev0-6D5CE7?style=flat-square">
-  <img alt="状态" src="https://img.shields.io/badge/status-active%20refactor-F59E0B?style=flat-square">
   <img alt="发布阶段" src="https://img.shields.io/badge/status-alpha-F59E0B?style=flat-square">
   <img alt="Python" src="https://img.shields.io/badge/Python-as%20supported%20by%20AsNumpy-3776AB?style=flat-square&amp;logo=python&amp;logoColor=white">
   <img alt="NPU" src="https://img.shields.io/badge/NPU-Ascend%20(runtime--detected)-008AA3?style=flat-square">
@@ -24,290 +22,113 @@
 
 </div>
 
-> **项目状态：正在重构。**
-> NumPilot 正在按照下方两张 PNG 架构图收敛到三阶段、六角色主链。旧架构 SVG 和生成器已经删除；
-> 仓库中仍保留部分旧执行路径，正在接入新的主 CLI。重构完成前，CLI 入口、模块布局和内部接口可能
-> 发生变化。需要可复现使用时，请固定 commit 或 release。
+## 项目简介
 
-## 概述
+NumPilot 是一个把完整 NumPy 程序端到端迁移为昇腾 NPU 上可执行的完整 AsNumpy 程序的迁移
+框架，每个阶段都会产出可审计的回执。
 
-NumPilot 是面向 Ascend NPU 上 AsNumpy 的 NumPy 程序迁移框架，目标程序需可静态分析。框架将模型
-生成的候选与确定性准入分离：解析、能力解析、构建、正确性检查、全程序验证和回执由确定性组件完成；
-模型用于理解、规划、代码迁移、缺口填补、诊断和报告。
+[AsNumpy](https://github.com/asnumpy/asnumpy) 是面向昇腾 NPU 的 NumPy 兼容张量库，由
+哈尔滨工业大学 AISS 团队（苏统华教授团队）开发。
 
-不支持或语义不明确的程序会以稳定的失败码停止，不会被静默改写或回退到 CPU。
+## 快速安装与使用
 
-## 实测性能
-
-[**71 例 NumPy 程序大规模迁移性能报告（Ascend 910B3 实测）→**](examples/scaled_benchmark_20261112/BENCHMARK_TABLE.md)
-
-71 个无缺口归档样例全部完成规模化改写，并在真实昇腾 NPU 上执行。稳态计算加速比 = CPU 单核
-`forward()` 中位耗时 ÷ NPU 设备常驻 `forward()` 中位耗时（输入已预置；NPU 计时含结果回传，
-不含 H2D 与输入构造）。66 个计算样例实测：**1.34x–612.41x，中位 11.06x**。测试环境：
-CANN 9.2.0-beta.2、Ascend 910B3（64 GB HBM）、Kunpeng-920、
-AsNumpy 0.4.1.dev12+gc9115e8ce.d20261031。
-
-| 迁移的代码 | 功能解读（输入输出规模） | 迁移耗时 | CPU 耗时 | NPU 耗时 | 加速比 |
-| --- | --- | ---: | ---: | ---: | ---: |
-| `A009_matrix_chain_2048` | 3 个 2048×2048 float32 矩阵，`(x·w)·v` 两次连乘，输出 2048×2048（34.4 GFLOP） | 2.07 s | 1225.11 ms | 2.00 ms | **612.41x** |
-| `A007_matrix_product_2048` | 2 个 2048×2048 float32 矩阵相乘，输出 2048×2048（17.2 GFLOP） | 1.69 s | 608.88 ms | 1.68 ms | **361.58x** |
-| `B015_fortran_matmul_2048` | 2 个 2048×2048 Fortran 序 float32 矩阵相乘，输出 2048×2048 矩阵及 2048 维行平方和 | 2.27 s | 634.30 ms | 1.79 ms | **355.01x** |
-| `H015_real_vecdot_16384x256` | 2 个 16,384×256 float32 矩阵，逐元素乘后沿两轴求 vecdot，输出 16,384 维及 256 维向量 | 2.51 s | 91.98 ms | 0.56 ms | **164.79x** |
-| `C013_markov_relaxation_4096x1024` | 1,024×1,024 转移矩阵作用于 4,096×1,024 状态，8 步 Markov 松弛，输出 4,096×1,024 及两个 4,096 维向量 | 13.29 s | 2846.40 ms | 22.55 ms | **126.22x** |
-
-迁移耗时来自归档时同一算子图的一次真实模型迁移；规模化改写只改变输入规模常量，未重复调用模型。
-严格数值容差（rtol=1e-4，atol=1e-5）下 60/71 一致，其余 11 例为已记录的 float32 累加顺序差异或
-已登记的 IEEE 边界情形（B011 NaN、B018 符号零）。完整 71 行表格、数值边界与复现方式见
-[性能报告](examples/scaled_benchmark_20261112/BENCHMARK_TABLE.md)。
-
-## 生成任务与可见进度
-
-使用时可即时看到六个角色的活动、执行方式、耗时与阻塞状态；确定性验证单独显示。
-缺口在模型调用前保存 `GAP_TASKBOOK.md` 和 `GAP_TASKBOOK.json`，包含来源、调用契约、
-未知项、接入依赖与验收要求。模型失败后，开发者或外部 Codex 可依据同一任务书继续实现。
-当前候选先聚焦 float32 输入，任务书不会把未知 profile 或生成结果写成已验证能力。
-详见[任务书与角色状态](docs/gap-taskbook.zh-CN.md)。
-
-## 目标架构
-
-<p align="center">
-  <a href="docs/assets/architecture/numpilot-architecture-zh.png">
-    <img src="docs/assets/architecture/numpilot-architecture-zh.png" alt="NumPilot：LLM-native NumPy → AsNumpy 迁移" width="100%">
-  </a>
-</p>
-
-<p align="center"><sub>中文架构图 · <a href="docs/assets/architecture/numpilot-architecture-en.png">English diagram</a></sub></p>
-
-目标流水线包含三个阶段和六个模型角色：
-
-| 阶段 | 确定性主干 | 模型角色 | 阶段出口 |
-| --- | --- | --- | --- |
-| 理解（Understand） | AST、Program IR、DAG、能力分析 | ① Analyzer · ② Planner | 经过验证的迁移计划 |
-| 迁移（Migrate） | API 注册表、契约、构建、API 正确性检查 | ③ API Gap Filler · ④ Code Migrator | 已迁移的 AsNumpy 代码 |
-| 验证（Validate） | 全程序验证、回执、manifest | ⑤ Diagnostics Agent · ⑥ Migration Reporter | 程序 + 证据 + 报告 |
-
-该图描述目标设计，不是当前代码树的模块依赖图。
-
-两条 gate 不会交给模型：
-
-- **API 正确性检查**——针对每个缺口：构建、加载、dtype/shape/边界行为，以及与 NumPy oracle 的数值对比。
-- **全程序验证**——迁移后程序与源程序对比，包含命名输出、dtype/shape/数值比较和一次写入的回执。
-
-生成的算子在 API 正确性检查通过前保持 `generated_unverified`。单个算子合格不代表程序合格；整个程序
-仍必须通过全程序验证。
-
-## 重构状态
-
-重构按以下工作流组织。状态标签描述仓库现状，不描述目标设计。
-
-| 工作流 | 状态 | 说明 |
-| --- | --- | --- |
-| 架构契约 | 已定义 | 本 README 与架构图定义目标 |
-| 统一事实层 | 进行中 | 合并重复的 AST 与调用点扫描 |
-| 能力注册表 | 进行中 | 将覆盖、目录与画像逻辑合并为单一注册表 |
-| ModelGateway | 进行中 | 私有配置模型已经可用，正在统一接入一个共享网关 |
-| Analyzer / Planner | 已搭骨架 | 角色记录和确定性规划已存在，统一模型调用仍待接入 |
-| Code Migrator | 进行中 | 现有脚本迁移路径正在收敛为单一改写角色 |
-| API Gap Filler | 已搭骨架 | 缺口分类已存在，候选生成和 API gate 接入仍待完成 |
-| 全程序验证 | 已实现 | 保留为确定性的程序级 gate |
-| 比赛直迁垂直切片 | 已实现（受限） | 直迁路由和数值回执已落地；strict-NPU 仍需运行时审计 |
-| Benchmark adapter | 已实现 | 150 例：68 迁移、15 拒绝、66 缺口停止、1 审计失败，unexpected 0 |
-| Diagnostics / Reporter | 已搭骨架 | 角色记录已存在，基于验证结果的诊断和报告仍待统一 |
-| 旧流水线 | 待退役 | 达到行为对等后移入 `compat/legacy` |
-
-## 开发顺序
-
-后续开发严格按照两张 PNG 架构图推进，先完成一条可审查的垂直闭环，再扩大覆盖面：
-
-1. 冻结角色、工件、回执和 CLI 契约，完成共享 `ModelGateway`。
-2. 用 `migrate --out RUN_DIR` 跑通 straight-line 直迁、确定性验证、`verify` 和 `replay`。
-3. 以 `np.concatenate` 跑通 official-first、API 正确性检查、集成和全程序验证。
-4. 展示错误候选被拒绝、诊断并在预算内修复。
-5. 审计当前 AsNumpy 运行时，再发布 strict-NPU 或性能结论。
-6. 最后接入 150 个 benchmark、静态 CANNBot bundle 和发布/性能证据。
-
-私有 `llm.json` 只允许由共享 `ModelGateway` 使用；token、endpoint 和原始模型响应不能进入运行工件、日志、提交或报告。
-
-### 变化内容
-
-| 方面 | 当前仓库 | 目标 |
-| --- | --- | --- |
-| 入口 | CLI、向导、Agent Skill、旧契约路径 | CLI 分发加单一工作流协调器 |
-| 模型访问 | 各模块自带模型提供方 | 单一 ModelGateway |
-| 能力逻辑 | 多套扫描器与目录 | 单一 ApiRegistry |
-| 迁移路径 | 普通、契约、缺口三条并行链路 | 单一 Understand → Migrate → Validate 流水线 |
-| 回执 | 分阶段的不同结构 | 统一回执 schema 与运行 manifest |
-
-## 环境要求
-
-NumPilot 跟随**你实际安装的 AsNumpy**，不维护硬编码的环境矩阵。只要 NumPy 与 AsNumpy 在同一个
-解释器中可用，就具备 NumPilot 所需的环境。
-
-- **Python / NumPy**：以你的 AsNumpy 构建所支持的版本为准。NumPilot 不额外引入自己的版本上限。
-- **AsNumpy**：已安装，并可在运行 NumPilot 的同一解释器中导入。
-- **CANN / Ascend 驱动 / SoC**：运行时探测；NumPilot 不安装、也不固定这些组件。
-- **NPU**：可选。没有 NPU 时，分析与 shim 验证仍可工作；strict-NPU 与性能结论需要真实设备和
-  已评审的运行时画像。
-
-`numpilot doctor` 会报告探测到的环境。未知组合会被标记为 `qualification_required`，既不会被拒绝，
-也不会被静默视为已验证。
-
-## 安装
-
-在 AsNumpy 已经可用的环境中安装 NumPilot：
+**环境要求：** 已安装 Python、NumPy 与 AsNumpy。端侧执行需要 CANN 和昇腾 NPU；分析与
+shim 验证不需要设备。
 
 ```bash
 git clone --branch main --depth 1 https://gitcode.com/li-xingHIT/numpilot.git
 cd numpilot
-python3 -m venv .venv
-. .venv/bin/activate
-python -m pip install .            # 核心 CLI：纯文本回退，无需 rich
-# python -m pip install '.[ui]'    # 可选：彩色 TUI 与交互式向导
-
-# NumPy 与 AsNumpy 必须已能在该解释器中工作
-python -c "import numpy, asnumpy; print(numpy.__version__, asnumpy.__version__)"
-
-python -m numpilot doctor --backend shim   # 无需 NPU
-python -m numpilot doctor --backend npu    # 在 Ascend 机器上
+python3 -m venv .venv && . .venv/bin/activate
+python -m pip install .
+python -m numpilot doctor --backend npu
 ```
 
-如果 AsNumpy 位于另一个虚拟环境，请先激活那个环境，再把 NumPilot 安装进去。NumPilot 使用其自身
-解释器中可导入的 AsNumpy。冻结发布还会在 `components/` 中携带作者维护的哈希绑定 AsNumpy 组件和
-CANNBot Skill 快照；自动运行路径只读取这些快照，不联网拉取或升级。
-
-离线、哈希绑定或需要可复现的部署方式，见[安装与验收](docs/installation.zh-CN.md)和
-[AsNumpy API 与 CANNBot 快照清单](docs/asnumpy-api-support.zh-CN.md)。
-
-## 使用
-
-> CLI 是正式执行契约。下面明确标出底层兼容入口，保证可复现工作流使用同一组阶段命令和回执。
-
-### 唯一正式 CLI 契约
-
-CLI 是 NumPilot 唯一的正式执行契约，负责工作流状态、哈希绑定工件、确定性门禁和 JSON 回执。
-IDE/侧栏 Agent Skill 是可选适配器，只负责交互、审批、任务编排和结果展示，不维护第二套迁移或
-验证引擎。
-
-公开阶段命令为：
+迁移并验证一个完整程序：
 
 ```bash
-numpilot analyze SOURCE [--json]
-numpilot migrate SOURCE --out RUN_DIR
-numpilot verify SOURCE \
-  --migration-report RUN_DIR/migration/script-migration-report.json \
-  --output result --out RUN_DIR/verification.json [--json]
-numpilot replay RUN_DIR [--json]
+numpilot analyze program.py
+numpilot migrate program.py --out runs/demo
+numpilot verify program.py \
+  --migration-report runs/demo/migration/script-migration-report.json \
+  --output result --out runs/demo/verification.json
 ```
 
-`run` 仍是同一套阶段的便捷协调器。`verify-script`、`benchmark-script`、
-`interactive-migrate` 和 `--mode contract` 保留为底层或兼容接口；它们共享同一套回执和门禁，
-不构成第二个产品。`replay` 是只读操作，只校验 workflow report 与阶段回执，不调用模型、不执行
-用户源码，也不运行 NPU 阶段。
-
-### 终端/配置模型 CLI 路线
-
-终端路线是 CLI 正式契约上的配置模型适配器。NumPilot 可以使用为它显式配置的 OpenAI-compatible 模型。配置是私有且可选启用的；重构期间 `llm.json` 只由共享 `ModelGateway` 读取，不会复制到运行工件。仓库内提供空白模板
-`llm.example.json`；复制为被 `.gitignore` 忽略的 `llm.json` 后填写自己的值。
+如需使用配置模型补全缺口算子，复制空白模板并填入自己的服务信息：
 
 ```bash
 install -m 600 llm.example.json llm.json
 # 编辑 llm.json：base_url、auth_token、model
-python -m numpilot paths --get llm_config
 python -m numpilot configure-llm --check
-python -m numpilot configure-llm --probe
-numpilot
 ```
 
-进入交互式 shell 后：
+CLI 是唯一的正式执行契约。离线安装与哈希绑定部署见
+[安装指南](docs/installation.zh-CN.md)。
 
-```text
-check llm
-migrate /absolute/path/to/program.py
-y
-execute
-exit
-```
+## 系统架构
 
-`y` 授权生成候选；`execute` 另行授权运行已展示的源码与候选。请保持 `llm.json` 权限为 `0600`；
-它已被 `.gitignore` 忽略，`llm.example.json` 必须保持空白。绝不能提交填写后的配置。
+<p align="center">
+  <img src="docs/assets/architecture/numpilot-architecture-zh.png" alt="NumPilot 系统架构" width="100%">
+</p>
 
-### Agent Skill 工作流（可选侧栏适配器）
+主链由六个角色组成——分析器（Analyzer）、规划器（Planner）、缺口补全器（API Gap
+Filler）、代码迁移器（Code Migrator）、诊断器（Diagnostics）、迁移报告器（Migration
+Reporter）——覆盖分析、迁移、验证三个阶段。解析、能力解析、构建、数值对拍与回执都由
+确定性门禁负责；模型可以提出代码，但不能把未经验证的结论升级为通过。
 
-如果你使用的 IDE/侧边栏 AI 能读取工作区并执行经授权的命令，NumPilot 可以在没有 `llm.json` 的情况下
-工作。侧边栏模型负责生成候选，适配器调用同一套正式 CLI 并展示回执；它不复制迁移、验证、能力或
-性能逻辑。
+## 实测迁移与加速效果
 
-```text
-请阅读 /absolute/path/to/numpilot/skill/SKILL.md，并使用其中的 agent/no-llm 路线。
-请用当前侧边栏已经提供的模型迁移 /absolute/path/to/source.py。
-不要读取 llm.json，不要运行 configure-llm 或 check llm，也不要调用 NumPilot 配置的模型。
-先只读分析源码并向我展示计划；我确认后，由你生成候选，并只把框架支持的制品提交给
-NumPilot 的确定性门禁。请如实报告 stopped、unverified、数值、运行时和性能状态，不得升级结论。
-```
+### 1. 维生素 C：真实量子化学格点密度链路
 
-没有登记适配器的候选会停在 `agent_authored_draft`，不能继承 strict-NPU 或性能结论。
+真实维生素 C 分子（20 原子、92 电子、208 个基函数、81,936 个 DFT 格点），执行
+`dm.T @ AO → rho → weighted → electron_count` 链路。
 
-## 设计原则
+| 统计范围 | CPU 单核 | NPU 设备常驻 | NPU 热态端到端 |
+| --- | ---: | ---: | ---: |
+| 完整格点密度链路 | 341.750 ms | 13.157 ms（**25.98x**） | 17.419 ms（**19.62x**） |
 
-- **确定性事实优先。** 解析、调用点提取、能力解析、构建、验证和回执都是确定性的。模型不会增加、
-  删除或静默重新解释调用点。
-- **模型生成，验证器裁决。** 所有模型输出都是候选。`ValidationReceipt` 只由验证器写入。
-- **AsNumpy 是兼容性的唯一来源。** 能力证据绑定到实际使用的 AsNumpy、Python ABI、CANN 和 SoC。
-  `hasattr` 不构成证据。
-- **不静默回退。** 不支持、语义不明确或未通过资格验证的行为会以稳定的失败码停止；CPU/主机回退需要
-  显式同意，并会关闭 strict-NPU/性能结论。
-- **一次写入，始终可重放。** 每次运行写入新目录，包含哈希、模型调用、回执和制品。重放不会重新生成
-  或重新编译。
+SCF（约 294.7 s）仍在 CPU 上执行；加速比只覆盖格点密度子阶段。输入为 float32，
+`projected` 最大绝对误差 9.54e-6，`rho` 为 1.83e-4，电子数与 CPU 同形式结果完全一致。
+该案例是使用 NumPilot 审计运行期的手写迁移（`model_called=false`），不是模型生成算子。
 
-## 结论与证据
+详见：[维生素 C 案例](examples/scientific/gpu4pyscf_vitamin_c/README.md)。
 
-- 迁移后的程序不会仅因为被生成或编译就视为已验证。
-- 单个算子合格不代表整个程序合格。
-- 单个算子的基准测试不等于全程序加速。
-- 未通过资格验证的 SoC/CANN/Python 组合不构成 strict-NPU 结论。
+### 2. 71 个不含缺口 API 的程序
 
-如果某项结论在本次运行中没有对应回执，系统会报告为 `qualification_required`、
-`performance_valid=false` 或 `blocked`。
+71 个只使用 AsNumpy 已覆盖 API 的完整 NumPy 程序；其中 66 个有 CPU/NPU 实测数据，
+加速比中位数为 11.06x。最快的四个：
 
-## 仓库结构
+| 程序 | 计算内容 | CPU / NPU (ms) | 加速比 |
+| --- | --- | ---: | ---: |
+| `A009_matrix_chain_2048` | 两个 2048 × 2048 float32 矩阵乘；34.4 GFLOP | 1225.11 / 2.00 | **612.41x** |
+| `A007_matrix_product_2048` | 2048 × 2048 float32 矩阵乘；17.2 GFLOP | 608.88 / 1.68 | **361.58x** |
+| `B015_fortran_matmul_2048` | 2048 × 2048 Fortran 顺序 float32 矩阵乘 | 634.30 / 1.79 | **355.01x** |
+| `H015_real_vecdot_16384x256` | 16,384 × 256 float32；沿两个轴做 vecdot | 91.98 / 0.56 | **164.79x** |
 
-```text
-numpilot/            CLI 与核心模块（正在重组）
-docs/                架构、契约、验证、安装
-skill/               Agent Skill 契约与参考
-components/asnumpy/  作者维护的 AsNumpy wheel、完整源码基线、来源材料与契约审计探针
-components/cannbot-skills/  作者维护的静态 CANNBot Skill bundle
-tests/               回归测试与 fixtures
-tools/               仓库与发布工具
-```
+完整清单：[71 例迁移性能表](examples/scaled_benchmark_20261112/BENCHMARK_TABLE.md)。
 
-## 文档
+### 3. 含真实缺口 API 的程序
 
-- [安装与验收](docs/installation.zh-CN.md)
-- [当前实现说明与信任边界](docs/architecture.md)——描述当前代码；目标设计以两张 PNG 架构图为准
-- [模型配置与传输契约](docs/model-contract.md)
-- [数值验证](docs/script-verification.md)
-- [strict-NPU 性能测试](docs/script-benchmark.md)
-- [大规模迁移性能报告（71 例，Ascend 910B3 实测）](examples/scaled_benchmark_20261112/BENCHMARK_TABLE.md)
-- [Agent Skill 契约](skill/SKILL.md)
-- [变更记录](CHANGELOG.md)
+6 个完整程序，其 NumPy 调用是真实的 API 缺口。每个算子先由配置模型（`llm.json`）生成，
+再经过构建、部署、数值验证与准入，然后通过 NumPilot 六智能体链路迁移整个程序。正加速比
+的四个：
 
-## 安全说明
+| 程序 | 缺口 API | 数据规模 | 迁移耗时 | CPU / NPU (ms) | 加速比 |
+| --- | --- | --- | ---: | ---: | ---: |
+| `std` | `np.std` | 2048 × 2048 float32；沿 axis=1 求标准差 | 7 s | 15.96 / 0.3718 | **42.92x** |
+| `tril` | `np.tril` | 2048 × 2048 float32；默认 k=0 下三角 | 8 s | 14.16 / 1.649 | **8.59x** |
+| `ediff1d` | `np.ediff1d` | 2048 × 2048 float32 展平；4,194,303 个相邻差分 | 6 s | 4.48 / 1.664 | **2.69x** |
+| `pad` | `np.pad` | 2048 × 2048 float32；constant 填充 | 7 s | 4.117 / 1.724 | **2.39x** |
 
-- 只迁移和执行可信源码；`python -I` 隔离不是操作系统沙箱。
-- 配置的远端模型可能接收源码，并可能产生调用费用。
-- 生成的 kernel 与接入代码在全部必要 gate 通过前始终未验证。
-- 运行时身份或制品发生漂移时，系统会明确阻断或要求重新审计。
+6/6 个程序通过全程序数值对拍，适配层单测 84 项全部通过。完整表同时保留 `flip`
+（0.0042x，CPU view 基线）与 `argpartition`（0.03x，512 元素受 launch 限制）作为
+正确性案例。
 
-安全问题请按 [SECURITY.md](SECURITY.md) 报告。
+完整清单：[缺口算子迁移归档](examples/gap_archive_20261112/BENCHMARK_TABLE.md)。
 
-## 参与贡献
+## 贡献与许可证
 
-欢迎贡献。提交 Pull Request 前，请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)，为行为变化补充测试，并运行
-相关测试与发布树检查。重构期间请优先提交小而易审的变更；旧行为应保留在 `compat/legacy`，而不是继续
-扩展。
+欢迎提交 Issue 和 Pull Request。可以在仓库中直接提 Issue，或联系
+[li-xing@stu.hit.edu.cn](mailto:li-xing@stu.hit.edu.cn)。参见 [CONTRIBUTING.md](CONTRIBUTING.md)
+与 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)。
 
-## 许可证
-
-NumPilot 使用 [Apache License 2.0](LICENSE)。第三方组件保留各自许可证，详见
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。产品名称和 Logo 权利归各自所有者，不表示赞助或背书。
+NumPilot 采用 [Apache-2.0 许可证](LICENSE)。

@@ -1,0 +1,46 @@
+{
+  "file": "flip/source/flip_contract.py",
+  "source_sha256": "d89f11b95c02dc443cb12edbb853bf769856286eed87ac667a8d602bfe84d9d0",
+  "net": "flip_contract",
+  "t_cpu_ms": 0.007380731403827667,
+  "timing": {
+    "clock": "time.perf_counter",
+    "warmup_iterations": 3,
+    "measurement_iterations": 10,
+    "samples_ms": [
+      0.010509975254535675,
+      0.008460134267807007,
+      0.007380731403827667,
+      0.006940215826034546,
+      0.006619840860366821,
+      0.007109716534614563,
+      0.006780959665775299,
+      0.007539987564086914,
+      0.007399357855319977,
+      0.007010065019130707
+    ],
+    "median_ms": 0.007380731403827667
+  },
+  "n_elements": 4194304,
+  "output_shape": [
+    2048,
+    2048
+  ],
+  "cpu_threads": 1,
+  "cpu_threads_requested": 1,
+  "blas": {
+    "source": "threadpoolctl",
+    "effective_threads": 1,
+    "pools": [
+      {
+        "internal_api": "openblas",
+        "num_threads": 1,
+        "prefix": "libscipy_openblas",
+        "version": "0.3.34.106.0",
+        "threading_layer": "pthreads",
+        "architecture": "tsv110"
+      }
+    ]
+  },
+  "dtype": "float32"
+}

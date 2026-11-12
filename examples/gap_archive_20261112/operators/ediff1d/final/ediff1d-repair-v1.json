@@ -1,0 +1,50 @@
+{
+  "schema": "numpilot.operator_repair.v1",
+  "operator": "ediff1d",
+  "repairs": [
+    {
+      "id": "output-count-off-by-one",
+      "symptom": "kernel subtracted one from totalNum, which already holds N-1",
+      "fix": "kernel treats totalNum as the output count"
+    },
+    {
+      "id": "ub-budget-three-queues",
+      "symptom": "ubFactor sized for one queue while three are allocated",
+      "fix": "divide the UB budget by BUFFER_NUM*3 and cap the tile"
+    },
+    {
+      "id": "link-libopapi",
+      "symptom": "cust_opapi calls l0op::Contiguous/ViewCopy without linking libopapi",
+      "fix": "target_link_directories + target_link_libraries(opapi)"
+    }
+  ],
+  "files": [
+    {
+      "path": "op_kernel/arch22/ediff1d.h",
+      "sha256_before": "e33408189b4940136af516c618d8f068981ef392d4c97eacb05106bdd1e05e47",
+      "sha256_after": "5e93aff84e6eeb7880ca185a1768b6a13806a0662b59a36b43cfa1a4fef6fc66",
+      "edits": [
+        "output-count-semantics",
+        "tiling-data-comment"
+      ]
+    },
+    {
+      "path": "op_host/arch22/ediff1d_tiling.cpp",
+      "sha256_before": "32934ac4b6ebaad36fcb48f4b628c422f0c489a0e6291fa358fbbee22b34ccb0",
+      "sha256_after": "0037d3a16a0ad72b8347f835a7289518506fecbdcd1317097c0a99aa9950d979",
+      "edits": [
+        "ub-budget-three-queues",
+        "cap-ub-tile",
+        "max-ub-constant"
+      ]
+    },
+    {
+      "path": "op_host/CMakeLists.txt",
+      "sha256_before": "97a680a632ca6470ac61f521c90e8d9357ff45548f28e5e83380b3b499bf02d9",
+      "sha256_after": "9730d7ab5e39dd58ab50eb7ba058511fe6c1600a1c0bc03cff7124e38bf65ea3",
+      "edits": [
+        "link-libopapi"
+      ]
+    }
+  ]
+}

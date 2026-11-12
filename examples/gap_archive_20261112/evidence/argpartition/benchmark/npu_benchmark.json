@@ -1,0 +1,277 @@
+{
+  "schema_version": 1,
+  "status": "pass",
+  "file": "argpartition/source/argpartition_contract.py",
+  "source_sha256": "0ddb6a97b1dc177f4e1c36d445e0dfbde2311e23639acc347fa75204abc5400d",
+  "migrated_sha256": "7f185e9d91bea87f9e5d60135d8ffa2e2ca92faf657772610fc7831c7d8f7438",
+  "net": "argpartition_contract",
+  "engine": "ast",
+  "backend": "npu",
+  "backend_version": "0.3.1",
+  "backend_module": "argpartition/custom-v1/adapter-build-v1/stage/asnumpy/__init__.py",
+  "rewrites": {
+    "argpartition": 1
+  },
+  "expected_rewrites": {
+    "argpartition": 1
+  },
+  "rewrite_integrity": true,
+  "model_receipt": {},
+  "model_identity": {},
+  "allow_cpu_fallback": false,
+  "fallback_override_used": false,
+  "provenance": {
+    "ok": true,
+    "audit_source": "NpuBackend.prepare_profile_guard",
+    "audit_error": null,
+    "required_ops": [
+      "argpartition"
+    ],
+    "planned_cpu_ops": [],
+    "cpu_fallback_ops": [],
+    "unknown_ops": [],
+    "backend_version": "0.3.1",
+    "audit_id": "unaudited-asnumpy-version",
+    "environment": {
+      "cann_home": "/usr/local/Ascend/cann-9.2.0-beta.2",
+      "cann_version": "9.2.0-beta.2",
+      "module_path": "argpartition/custom-v1/adapter-build-v1/stage/asnumpy/__init__.py",
+      "python_version": "3.12.14",
+      "soc_version": "Ascend910B3"
+    },
+    "strict_npu": true,
+    "profile_status": "not_required",
+    "profile_guard_integrity_error": false,
+    "provenance_by_op": {
+      "argpartition": "custom_npu"
+    },
+    "capabilities": {
+      "argpartition": {
+        "name": "argpartition",
+        "available": true,
+        "provenance": "custom_npu",
+        "strict_npu": true,
+        "evidence": "custom-operator admission 48c1d6929e41cd34d66fbb92e221dd4f0711f7d9df8d116e28dede7cfa83c1f7; adapter manifest sha256 94c661956e46ec7d028371616a2e8c7b735fdd71aa3ce5dc0a2784dd43fcebf0; adapter build receipt sha256 aad87c5c9e4bd7813b84932d64894c6636aa81426375386abf41fefce8f33768; wheel sha256 5b4a0f31da01a05a236d33e20f655859513d5d33f0e3147cdf0f4aa7240a52cd; profile enforced by the adapter",
+        "constraints": [],
+        "signature_variants": []
+      }
+    },
+    "issues": [],
+    "static_forward_surface": {
+      "ok": true,
+      "ap_calls": {
+        "argpartition": 1
+      },
+      "violations": []
+    },
+    "profile_scoped": [],
+    "runtime_profile_checks": {},
+    "runtime_call_counts": {
+      "kernel": {
+        "argpartition": 1
+      },
+      "artifact": {
+        "argpartition": 1
+      }
+    },
+    "runtime_trace_ok": true,
+    "schema_version": "1.1",
+    "backend": "npu",
+    "preflight_ok": true,
+    "preflight_strict_npu": true,
+    "missing": [],
+    "non_strict": [],
+    "runtime_profile_ok": true,
+    "runtime_target_integrity_ok": true,
+    "runtime_target_integrity_errors": [],
+    "profile_guard": {
+      "schema_version": "1.1",
+      "backend": "npu",
+      "backend_version": "0.3.1",
+      "audit_id": "unaudited-asnumpy-version",
+      "environment": {
+        "cann_home": "/usr/local/Ascend/cann-9.2.0-beta.2",
+        "cann_version": "9.2.0-beta.2",
+        "module_path": "argpartition/custom-v1/adapter-build-v1/stage/asnumpy/__init__.py",
+        "python_version": "3.12.14",
+        "soc_version": "Ascend910B3"
+      },
+      "strict_npu": true,
+      "ok": true,
+      "preflight_ok": true,
+      "preflight_strict_npu": true,
+      "profile_status": "not_required",
+      "required_ops": [
+        "argpartition"
+      ],
+      "missing": [],
+      "non_strict": [],
+      "profile_scoped": [],
+      "runtime_profile_ok": true,
+      "runtime_profile_checks": {},
+      "runtime_target_integrity_ok": true,
+      "runtime_target_integrity_errors": [],
+      "capabilities": {
+        "argpartition": {
+          "name": "argpartition",
+          "available": true,
+          "provenance": "custom_npu",
+          "strict_npu": true,
+          "evidence": "custom-operator admission 48c1d6929e41cd34d66fbb92e221dd4f0711f7d9df8d116e28dede7cfa83c1f7; adapter manifest sha256 94c661956e46ec7d028371616a2e8c7b735fdd71aa3ce5dc0a2784dd43fcebf0; adapter build receipt sha256 aad87c5c9e4bd7813b84932d64894c6636aa81426375386abf41fefce8f33768; wheel sha256 5b4a0f31da01a05a236d33e20f655859513d5d33f0e3147cdf0f4aa7240a52cd; profile enforced by the adapter",
+          "constraints": [],
+          "signature_variants": []
+        }
+      }
+    },
+    "runtime_execution_ok": true
+  },
+  "performance_valid": true,
+  "performance_issues": [],
+  "speedup": 0.030066919181808233,
+  "comparison": {
+    "consistent": true,
+    "max_abs_diff": 0.0,
+    "max_rel_diff": 0.0,
+    "atol": 0.0,
+    "rtol": 0.0,
+    "failure_path": null,
+    "failure_index": null,
+    "reason": null,
+    "n_elements": 512
+  },
+  "t_cpu_ms": 0.01049041748046875,
+  "t_npu_ms": 0.34890230745077133,
+  "npu_timing": {
+    "clock": "time.perf_counter",
+    "warmup_iterations": 3,
+    "measurement_iterations": 10,
+    "samples_ms": [
+      0.3577824681997299,
+      0.35042036324739456,
+      0.3476319834589958,
+      0.34890230745077133,
+      0.34617073833942413,
+      0.34573208540678024,
+      0.35554077476263046,
+      0.34721195697784424,
+      0.36523211747407913,
+      0.34622102975845337
+    ],
+    "median_ms": 0.34890230745077133
+  },
+  "cpu_baseline": {
+    "file": "argpartition/source/argpartition_contract.py",
+    "source_sha256": "0ddb6a97b1dc177f4e1c36d445e0dfbde2311e23639acc347fa75204abc5400d",
+    "net": "argpartition_contract",
+    "t_cpu_ms": 0.01049041748046875,
+    "timing": {
+      "clock": "time.perf_counter",
+      "warmup_iterations": 3,
+      "measurement_iterations": 10,
+      "samples_ms": [
+        0.013910233974456787,
+        0.012380070984363556,
+        0.011489726603031158,
+        0.010759569704532623,
+        0.01049041748046875,
+        0.010379590094089508,
+        0.009969808161258698,
+        0.010279938578605652,
+        0.009990297257900238,
+        0.010089948773384094
+      ],
+      "median_ms": 0.01049041748046875
+    },
+    "n_elements": 512,
+    "output_shape": [
+      32,
+      16
+    ],
+    "cpu_threads": 1,
+    "cpu_threads_requested": 1,
+    "blas": {
+      "source": "threadpoolctl",
+      "effective_threads": 1,
+      "pools": [
+        {
+          "internal_api": "openblas",
+          "num_threads": 1,
+          "prefix": "libscipy_openblas",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "tsv110"
+        }
+      ]
+    },
+    "dtype": "int64"
+  },
+  "npu_process_blas": {
+    "source": "threadpoolctl",
+    "effective_threads": 64,
+    "pools": [
+      {
+        "internal_api": "openblas",
+        "num_threads": 64,
+        "prefix": "libscipy_openblas",
+        "version": "0.3.34.106.0",
+        "threading_layer": "pthreads",
+        "architecture": "tsv110"
+      }
+    ]
+  },
+  "artifact_inputs_executed": true,
+  "timing_scope": {
+    "classification": "device_resident_inputs_plus_d2h_sync",
+    "inputs_resident_on_device": true,
+    "includes_h2d": false,
+    "includes_d2h_sync_each_iteration": true,
+    "kernel_only": false,
+    "end_to_end": false,
+    "description": "forward 输入预先驻留设备；每轮计时包含递归 D2H 回传同步"
+  },
+  "input_comparison": {
+    "consistent": true,
+    "max_abs_diff": 0.0,
+    "max_rel_diff": 0.0,
+    "atol": 1e-05,
+    "rtol": 0.0001,
+    "failure_path": null,
+    "failure_index": null,
+    "reason": null,
+    "n_elements": 512
+  },
+  "kernel_comparison": {
+    "consistent": true,
+    "max_abs_diff": 0.0,
+    "max_rel_diff": 0.0,
+    "atol": 0.0,
+    "rtol": 0.0,
+    "failure_path": null,
+    "failure_index": null,
+    "reason": null,
+    "n_elements": 512
+  },
+  "artifact_comparison": {
+    "consistent": true,
+    "max_abs_diff": 0.0,
+    "max_rel_diff": 0.0,
+    "atol": 0.0,
+    "rtol": 0.0,
+    "failure_path": null,
+    "failure_index": null,
+    "reason": null,
+    "n_elements": 512
+  },
+  "baseline_output_comparison": {
+    "consistent": true,
+    "max_abs_diff": 0.0,
+    "max_rel_diff": 0.0,
+    "atol": 0.0,
+    "rtol": 0.0,
+    "failure_path": null,
+    "failure_index": null,
+    "reason": null,
+    "n_elements": 512
+  },
+  "baseline_compatible": true
+}

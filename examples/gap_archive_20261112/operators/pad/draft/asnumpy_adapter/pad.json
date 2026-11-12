@@ -1,0 +1,692 @@
+{
+  "schema": "numpilot.asnumpy-adapter.v1",
+  "schema_version": 1,
+  "manifest_kind": "operator_adapter_test",
+  "stage": "test_adapter_02",
+  "test_id": "test_adapter_02",
+  "gap_id": "pad-484a52aec253e456",
+  "api_name": "pad",
+  "file_stem": "pad",
+  "op_type": "Pad",
+  "qualified_api": "numpy.pad",
+  "public_api": "asnumpy.pad",
+  "module": "asnumpy",
+  "function": "pad",
+  "target": {
+    "soc": "Ascend910B3",
+    "cann_version": "9.2.0-beta.2"
+  },
+  "source": {
+    "contract_path": "pad/source/pad_contract.py",
+    "contract_sha256": "d14c80a52866f48e3188b71dfe039df27645432e420e1b2ccc02c2494ed5d956",
+    "gap_spec_sha256": "2bdb8a2681885d1b854b4f451455f8fabbeaa60c3d70e1fc964f2021f5815d27",
+    "semantic_source": "numpy.pad"
+  },
+  "status": {
+    "candidate": "unverified",
+    "claim_level": "unverified_candidate_only",
+    "qualification": "pending",
+    "activated": false,
+    "host_fallback_allowed": false,
+    "silent_cast_allowed": false,
+    "unverified_reason": "Adapter mapping and exact-profile contracts are generated; build, device execution, numerical qualification, whole-program validation, and activation remain pending deterministic validation."
+  },
+  "source_signature": {
+    "call_expression": "numpy.pad(<arg0>, <arg1>, mode=<redacted>)",
+    "positional_parameters": [
+      "a",
+      "pad_width"
+    ],
+    "positional_count": 2,
+    "keyword_parameters": [
+      "mode"
+    ],
+    "parameter_order": [
+      "a",
+      "pad_width",
+      "mode"
+    ],
+    "mode_keyword_only": true,
+    "mode_default": "constant",
+    "python_callable_signature": "pad(a, pad_width, *, mode='constant')"
+  },
+  "symbol_mapping": {
+    "public_api": "asnumpy.pad",
+    "python_wrapper": {
+      "module": "asnumpy",
+      "attribute": "pad",
+      "qualified_name": "asnumpy.pad"
+    },
+    "pybind": {
+      "module": "asnumpy._C",
+      "symbol": "pad",
+      "qualified_name": "asnumpy._C.pad"
+    },
+    "native": {
+      "namespace": "asnumpy",
+      "function": "pad",
+      "cxx_op_type": "Pad",
+      "file_stem": "pad"
+    },
+    "l0_aclnn": {
+      "header": "op_api/pad.h",
+      "symbol": "pad"
+    },
+    "l2_aclnn": {
+      "header": "op_api/aclnn_pad.h",
+      "get_workspace_size": "aclnnPadGetWorkspaceSize",
+      "execute": "aclnnPad"
+    },
+    "kernel": {
+      "entry": "pad",
+      "cxx_op_type": "Pad",
+      "argument_order": [
+        "inputs",
+        "outputs",
+        "workspace",
+        "tiling"
+      ]
+    }
+  },
+  "binding_contract": {
+    "public_to_native_parameters": {
+      "a": "x",
+      "pad_width": "pad_width_attribute",
+      "mode": "mode_attribute"
+    },
+    "tensor_inputs": [
+      {
+        "index": 0,
+        "public_name": "a",
+        "native_name": "x",
+        "dtype": "float32",
+        "shape": [
+          2048,
+          2048
+        ],
+        "rank": 2,
+        "layout": "c_contiguous",
+        "device": "npu",
+        "broadcast": false
+      }
+    ],
+    "tensor_outputs": [
+      {
+        "index": 0,
+        "public_name": "return",
+        "native_name": "y",
+        "dtype": "float32",
+        "shape": [
+          2050,
+          2052
+        ],
+        "rank": 2,
+        "layout": "c_contiguous",
+        "device": "npu",
+        "return_structure": "single_tensor"
+      }
+    ],
+    "non_tensor_arguments": [
+      {
+        "index": 1,
+        "public_name": "pad_width",
+        "native_name": "pad_width",
+        "kind": "int_array_attribute",
+        "value": [
+          [
+            1,
+            1
+          ],
+          [
+            2,
+            2
+          ]
+        ]
+      },
+      {
+        "index": 2,
+        "public_name": "mode",
+        "native_name": "mode",
+        "kind": "string_attribute",
+        "value": "constant"
+      }
+    ],
+    "implicit_numpy_defaults": {
+      "constant_values": {
+        "dtype": "float32",
+        "value": 0.0,
+        "signbit": false,
+        "exposed_as_keyword": false
+      }
+    }
+  },
+  "supported_profile": {
+    "profile_id": "pad_float32_2048x2048_constant_pad_1_2",
+    "input_dtype": "float32",
+    "input_shape": [
+      2048,
+      2048
+    ],
+    "input_rank": 2,
+    "input_layout": "c_contiguous",
+    "input_device": "npu",
+    "pad_width": [
+      [
+        1,
+        1
+      ],
+      [
+        2,
+        2
+      ]
+    ],
+    "pad_width_rank": 2,
+    "mode": "constant",
+    "constant_value": 0.0,
+    "constant_value_dtype": "float32",
+    "output_dtype": "float32",
+    "output_shape": [
+      2050,
+      2052
+    ],
+    "output_rank": 2,
+    "output_layout": "c_contiguous",
+    "output_structure": "single_tensor",
+    "broadcast": "none",
+    "dtype_promotion": "none",
+    "in_place": false,
+    "aliasing_allowed": false,
+    "host_fallback": false,
+    "cpu_fallback": false
+  },
+  "support_matrix": {
+    "supported_input_dtypes": [
+      "float32"
+    ],
+    "supported_output_dtypes": [
+      "float32"
+    ],
+    "supported_ranks": [
+      2
+    ],
+    "supported_layouts": [
+      "c_contiguous"
+    ],
+    "supported_modes": [
+      "constant"
+    ],
+    "supported_pad_widths": [
+      [
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          2
+        ]
+      ]
+    ],
+    "supported_input_shapes": [
+      [
+        2048,
+        2048
+      ]
+    ],
+    "supported_output_shapes": [
+      [
+        2050,
+        2052
+      ]
+    ],
+    "unsupported_input_dtypes": "reject_without_cast",
+    "unsupported_shapes_or_ranks": "reject",
+    "unsupported_layouts": "reject",
+    "unsupported_modes": "reject",
+    "unsupported_keywords": "reject",
+    "unsupported_signatures": "reject_without_host_fallback"
+  },
+  "shape_contract": {
+    "input_axes": [
+      {
+        "axis": 0,
+        "size": 2048,
+        "pad_before": 1,
+        "pad_after": 1,
+        "output_size_formula": "2048 + 1 + 1 = 2050"
+      },
+      {
+        "axis": 1,
+        "size": 2048,
+        "pad_before": 2,
+        "pad_after": 2,
+        "output_size_formula": "2048 + 2 + 2 = 2052"
+      }
+    ],
+    "output_shape_derivation": [
+      2050,
+      2052
+    ],
+    "interior_slice": {
+      "rows": [
+        1,
+        2049
+      ],
+      "columns": [
+        2,
+        2050
+      ],
+      "description": "out[1:2049, 2:2050] is an exact copy of the input"
+    },
+    "padding_regions": [
+      {
+        "name": "top",
+        "rows": [
+          0,
+          1
+        ],
+        "columns": [
+          0,
+          2052
+        ],
+        "value": 0.0
+      },
+      {
+        "name": "bottom",
+        "rows": [
+          2049,
+          2050
+        ],
+        "columns": [
+          0,
+          2052
+        ],
+        "value": 0.0
+      },
+      {
+        "name": "left",
+        "rows": [
+          1,
+          2049
+        ],
+        "columns": [
+          0,
+          2
+        ],
+        "value": 0.0
+      },
+      {
+        "name": "right",
+        "rows": [
+          1,
+          2049
+        ],
+        "columns": [
+          2050,
+          2052
+        ],
+        "value": 0.0
+      }
+    ]
+  },
+  "semantics": {
+    "operation": "Two-dimensional constant padding.",
+    "padding_value": 0.0,
+    "padding_value_sign": "positive_zero",
+    "interior": "Exact element copy from input to output interior.",
+    "dtype_behavior": "The single supported input dtype is float32 and the output dtype is float32; no promotion, cast, or scalar materialization other than the float32 positive-zero padding value is performed.",
+    "nan_behavior": "NaN values in the input interior are copied without numerical transformation.",
+    "infinity_behavior": "Positive and negative infinity values in the input interior are copied without numerical transformation.",
+    "signed_zero_behavior": "The sign bit of input negative zero is preserved in the interior. All newly materialized padding elements are positive zero.",
+    "boolean_outputs": {
+      "required": false,
+      "note": "The operator returns one float32 tensor. Comparison predicates used by tests return bool and are compared exactly."
+    },
+    "out_where_casting": "Unsupported and rejected; this adapter does not expose out, where, dtype, casting, or constant_values.",
+    "empty_input": "Rejected because the admitted profile requires shape [2048, 2048].",
+    "invalid_axes": "Rejected because the admitted profile is fixed-rank two-dimensional padding.",
+    "negative_pad_width": "Rejected with ValueError.",
+    "non_integral_pad_width": "Rejected with TypeError.",
+    "mode_other_than_constant": "Rejected with ValueError.",
+    "host_or_cpu_fallback": "Forbidden."
+  },
+  "admission_checks": [
+    {
+      "id": "check_public_api",
+      "requirement": "Call asnumpy.pad, not the private pybind module directly.",
+      "failure": "TypeError"
+    },
+    {
+      "id": "check_signature",
+      "requirement": "Exactly two positional arguments are accepted: a and pad_width. mode must be supplied only as a keyword.",
+      "failure": "TypeError"
+    },
+    {
+      "id": "check_keywords",
+      "requirement": "The only accepted keyword is mode.",
+      "failure": "TypeError"
+    },
+    {
+      "id": "check_mode",
+      "requirement": "mode must be the string 'constant'; omission is allowed and resolves to 'constant'.",
+      "failure": "ValueError"
+    },
+    {
+      "id": "check_dtype",
+      "requirement": "The input dtype must be float32 exactly. No implicit cast is permitted.",
+      "failure": "TypeError"
+    },
+    {
+      "id": "check_rank",
+      "requirement": "The input rank must be exactly 2.",
+      "failure": "ValueError"
+    },
+    {
+      "id": "check_shape",
+      "requirement": "The input shape must be exactly [2048, 2048].",
+      "failure": "ValueError"
+    },
+    {
+      "id": "check_layout",
+      "requirement": "The input must be C-contiguous.",
+      "failure": "ValueError"
+    },
+    {
+      "id": "check_device",
+      "requirement": "The input must be resident on the target NPU device.",
+      "failure": "ValueError"
+    },
+    {
+      "id": "check_pad_width",
+      "requirement": "pad_width must normalize exactly to [[1, 1], [2, 2]] with two non-negative integer pairs.",
+      "failure": "ValueError"
+    },
+    {
+      "id": "check_constant_values",
+      "requirement": "constant_values is not a supported keyword and must not be accepted or silently ignored.",
+      "failure": "TypeError"
+    }
+  ],
+  "rejection_cases": [
+    {
+      "case_id": "reject_float16",
+      "input_dtype": "float16",
+      "reason": "Only float32 is admitted; implicit casting is forbidden.",
+      "expected_exception": "TypeError"
+    },
+    {
+      "case_id": "reject_float64",
+      "input_dtype": "float64",
+      "reason": "Only float32 is admitted; implicit casting is forbidden.",
+      "expected_exception": "TypeError"
+    },
+    {
+      "case_id": "reject_bfloat16",
+      "input_dtype": "bfloat16",
+      "reason": "Only float32 is admitted; implicit casting is forbidden.",
+      "expected_exception": "TypeError"
+    },
+    {
+      "case_id": "reject_shape_2047x2048",
+      "input_shape": [
+        2047,
+        2048
+      ],
+      "reason": "Shape is outside the admitted exact profile.",
+      "expected_exception": "ValueError"
+    },
+    {
+      "case_id": "reject_shape_1d",
+      "input_shape": [
+        2048
+      ],
+      "reason": "Only rank 2 is admitted.",
+      "expected_exception": "ValueError"
+    },
+    {
+      "case_id": "reject_shape_3d",
+      "input_shape": [
+        2048,
+        2048,
+        1
+      ],
+      "reason": "Only rank 2 is admitted.",
+      "expected_exception": "ValueError"
+    },
+    {
+      "case_id": "reject_non_contiguous",
+      "input_layout": "non_contiguous",
+      "reason": "Only C-contiguous input is admitted.",
+      "expected_exception": "ValueError"
+    },
+    {
+      "case_id": "reject_pad_width_zero",
+      "pad_width": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "reason": "Only the observed pad_width [[1, 1], [2, 2]] is admitted.",
+      "expected_exception": "ValueError"
+    },
+    {
+      "case_id": "reject_pad_width_rank_mismatch",
+      "pad_width": [
+        1,
+        1
+      ],
+      "reason": "pad_width must contain exactly one pair per input axis.",
+      "expected_exception": "ValueError"
+    },
+    {
+      "case_id": "reject_negative_pad_width",
+      "pad_width": [
+        [
+          -1,
+          1
+        ],
+        [
+          2,
+          2
+        ]
+      ],
+      "reason": "Negative padding is invalid for the admitted profile.",
+      "expected_exception": "ValueError"
+    },
+    {
+      "case_id": "reject_non_integral_pad_width",
+      "pad_width": [
+        [
+          1.5,
+          1
+        ],
+        [
+          2,
+          2
+        ]
+      ],
+      "reason": "Padding values must be integers.",
+      "expected_exception": "TypeError"
+    },
+    {
+      "case_id": "reject_mode_reflect",
+      "mode": "reflect",
+      "reason": "Only constant mode is admitted.",
+      "expected_exception": "ValueError"
+    },
+    {
+      "case_id": "reject_mode_edge",
+      "mode": "edge",
+      "reason": "Only constant mode is admitted.",
+      "expected_exception": "ValueError"
+    },
+    {
+      "case_id": "reject_mode_wrap",
+      "mode": "wrap",
+      "reason": "Only constant mode is admitted.",
+      "expected_exception": "ValueError"
+    },
+    {
+      "case_id": "reject_positional_mode",
+      "call": "asnumpy.pad(a, pad_width, 'constant')",
+      "reason": "The declared source signature permits only two positional arguments.",
+      "expected_exception": "TypeError"
+    },
+    {
+      "case_id": "reject_constant_values_keyword",
+      "call": "asnumpy.pad(a, pad_width, mode='constant', constant_values=1.0)",
+      "reason": "constant_values is not in the admitted keyword set.",
+      "expected_exception": "TypeError"
+    },
+    {
+      "case_id": "reject_out_keyword",
+      "keyword": "out",
+      "reason": "out is not supported.",
+      "expected_exception": "TypeError"
+    },
+    {
+      "case_id": "reject_where_keyword",
+      "keyword": "where",
+      "reason": "where is not supported.",
+      "expected_exception": "TypeError"
+    },
+    {
+      "case_id": "reject_dtype_keyword",
+      "keyword": "dtype",
+      "reason": "dtype is not supported and no implicit cast is permitted.",
+      "expected_exception": "TypeError"
+    }
+  ],
+  "adapter_behavior": {
+    "dispatch": "asnumpy_adapter -> asnumpy.pad -> asnumpy._C.pad -> native Pad implementation -> aclnnPadGetWorkspaceSize/aclnnPad",
+    "input_validation_before_call": true,
+    "input_mutation": "none",
+    "output_allocation": "new contiguous output tensor",
+    "output_alias_input": false,
+    "stream_synchronization": "explicit synchronization on the active ACL stream after aclnnPad completes",
+    "acl_error_handling": "Check every ACLNN and runtime return code; propagate non-success codes with their numeric code and call site; never retry on host or CPU.",
+    "unknown_dtype_or_shape_policy": "Reject explicitly. Unresolved GapSpec dtype and shape rules are not permission to accept arbitrary profiles.",
+    "qualification_policy": "Only the exact observed float32 profile may be tested for qualification in this generation."
+  },
+  "numerical_tolerance": {
+    "float32": {
+      "rtol": 0.0,
+      "atol": 0.0,
+      "comparison": "bitwise_equal",
+      "array_equal": true,
+      "equal_nan": true,
+      "check_dtype": true,
+      "check_shape": true,
+      "check_layout": true,
+      "check_signed_zero": true,
+      "check_infinity": true,
+      "check_nan": true,
+      "justification": "Constant-mode pad only copies input elements and writes positive-zero padding. The output is exactly representable with no arithmetic, so exact equality is required."
+    },
+    "boolean_results": {
+      "comparison": "exact",
+      "note": "Any boolean predicate returned by test comparison logic must be compared exactly."
+    }
+  },
+  "test_case": {
+    "case_id": "admitted_exact_pad_float32_2048x2048",
+    "oracle_call": "numpy.pad(a, ((1, 1), (2, 2)), mode='constant')",
+    "adapter_call": "asnumpy.pad(a, ((1, 1), (2, 2)), mode='constant')",
+    "input_fixture": {
+      "evidence_ref": "observed-inputs.json#/callsites/0/operands/0",
+      "materialization": "The test harness must persist the exact float32 input bytes used for the device call and record their SHA-256.",
+      "dtype": "float32",
+      "shape": [
+        2048,
+        2048
+      ],
+      "rank": 2,
+      "layout": "c_contiguous"
+    },
+    "expected_output": {
+      "oracle": "numpy.pad",
+      "dtype": "float32",
+      "shape": [
+        2050,
+        2052
+      ],
+      "rank": 2,
+      "layout": "c_contiguous"
+    },
+    "checks": [
+      {
+        "id": "shape",
+        "requirement": "actual.shape == [2050, 2052]"
+      },
+      {
+        "id": "dtype",
+        "requirement": "actual.dtype == float32"
+      },
+      {
+        "id": "contiguity",
+        "requirement": "actual is C-contiguous"
+      },
+      {
+        "id": "interior_copy",
+        "requirement": "actual[1:2049, 2:2050] equals input bitwise"
+      },
+      {
+        "id": "padding_top_bottom",
+        "requirement": "actual[0, :] and actual[2049, :] are positive zero"
+      },
+      {
+        "id": "padding_left_right",
+        "requirement": "actual[1:2049, 0:2] and actual[1:2049, 2050:2052] are positive zero"
+      },
+      {
+        "id": "special_values",
+        "requirement": "NaN, positive infinity, negative infinity, positive zero, and negative zero in the input interior are preserved exactly; padding values have signbit false"
+      },
+      {
+        "id": "oracle_equality",
+        "requirement": "actual equals numpy.pad(..., mode='constant') exactly under the float32 zero-tolerance comparison"
+      },
+      {
+        "id": "repeatability",
+        "requirement": "Repeating the call with the same input yields the same output and does not mutate the input."
+      },
+      {
+        "id": "no_host_fallback",
+        "requirement": "Native ACLNN execution on Ascend910B3 is evidenced; no CPU fallback is permitted."
+      }
+    ]
+  },
+  "required_evidence": {
+    "build": "isolated build/import and public asnumpy.pad binding evidence",
+    "unit_and_boundary": "admitted-profile, unsupported-dtype, unsupported-shape, unsupported-keyword, unsupported-signature, and repeated-call lifecycle evidence",
+    "numerical": "saved exact input bytes, oracle output, device output, zero-tolerance comparison, NaN/Inf/signed-zero checks, and recorded tolerances",
+    "native_execution": "native ACLNN call evidence and real NPU profiler evidence with no host fallback",
+    "whole_program": "original program versus migrated program callsite profile and runtime guard evidence",
+    "performance": "separate performance receipt; not inferred from correctness",
+    "activation": "all required qualification gates passed before explicit activation"
+  },
+  "gap_spec_rules": {
+    "dtype_rules": [
+      "runtime_profile_required"
+    ],
+    "shape_rules": [
+      "runtime_profile_required"
+    ],
+    "resolution": "Exact observed profile admitted; all other dtype and shape facts remain unresolved and must be rejected until separately qualified."
+  },
+  "qualification": {
+    "build": "pending",
+    "unit_and_boundary": "pending",
+    "numerical": "pending",
+    "native_execution": "pending",
+    "whole_program": "pending",
+    "performance": "pending",
+    "activation": "pending",
+    "activated": false
+  }
+}

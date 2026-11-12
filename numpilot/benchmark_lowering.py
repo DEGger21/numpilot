@@ -144,7 +144,7 @@ class BenchmarkLowering:
 
 
 def lower_benchmark_program(
-    source: str, protected_helpers=None
+    source: str, protected_helpers=None, preserve=()
 ) -> BenchmarkLowering:
     """Adapt one benchmark program for analysis and migration.
 
@@ -154,7 +154,8 @@ def lower_benchmark_program(
     ``protected_helpers`` names top-level functions that must remain call
     boundaries.  ``None`` auto-detects ``numpilot.operator_spec`` helpers,
     which are intentional domain-operator boundaries rather than ordinary
-    inlineable helpers.
+    inlineable helpers.  ``preserve`` names NumPy APIs whose call form
+    must survive because an admitted custom operator implements them.
     """
 
     try:
@@ -191,7 +192,7 @@ def lower_benchmark_program(
             ),
         )
 
-    lowered = lower_equivalents(inlined)
+    lowered = lower_equivalents(inlined, preserve=preserve)
     combined = tuple(rewrites) + tuple(lowered.rewrites)
     notes = tuple(lowered.notes)
     source_changed = lowered.source != source

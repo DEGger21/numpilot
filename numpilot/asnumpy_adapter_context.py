@@ -20,7 +20,7 @@ from pathlib import Path, PurePosixPath
 import re
 import stat
 from types import MappingProxyType
-from typing import Dict, List, Mapping, Sequence, Tuple, Union
+from typing import Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
 
 MANIFEST_ARCHITECTURE = "manifest_generator"
@@ -300,6 +300,266 @@ _OFFICIAL_ACLNN_EXISTING_MODULE_PLANS = {
             ),
         },
         "signed_official_header": "SIGNED_OFFICIAL_HEADER/aclnn_pow.h",
+        "official_library_binding": {
+            "cmake_path": "bindings/python/CMakeLists.txt",
+            "target": "_core",
+            "link_item": "opapi",
+            "selected_library_basename": "libopapi.so",
+            "cmake_link_block": (
+                "target_link_libraries(_core\n"
+                "    PUBLIC\n"
+                "    ascendcl\n"
+                "    runtime\n"
+                "    nnopbase\n"
+                "    opapi\n"
+                "    Python::NumPy\n"
+                ")"
+            ),
+        },
+    },
+    # ``numpy.invert`` is dispatched from the existing AsNumPy ``logic``
+    # module.  The signed ACLNN surface exposes only the elementwise
+    # ``aclnnBitwiseNot`` pair (int8/16/32/64, uint8, bool); float inputs
+    # must be refused, and bool must stay logical NOT while integers keep
+    # two's-complement bit patterns.  No custom-ops path is permitted.
+    "invert": {
+        "context_paths": (
+            "include/asnumpy/logic/logic.hpp",
+            "csrc/logic/logic.cpp",
+            "bindings/python/bind_logic.cpp",
+            "bindings/python/CMakeLists.txt",
+            "include/asnumpy/utils/acl_executor.hpp",
+            "include/asnumpy/utils/acl_resource.hpp",
+            "include/asnumpy/utils/npu_array.hpp",
+            "include/asnumpy/utils/status_handler.hpp",
+            "src/asnumpy/logic.py",
+            "src/asnumpy/__init__.py",
+            "tests/asnumpy_tests/logic_tests/test_logic.py",
+        ),
+        "expected_overlay_paths": (
+            "include/asnumpy/logic/logic.hpp",
+            "csrc/logic/logic.cpp",
+            "bindings/python/bind_logic.cpp",
+            "src/asnumpy/logic.py",
+            "src/asnumpy/__init__.py",
+        ),
+        "prompt_dependencies": {
+            "include/asnumpy/logic/logic.hpp": (
+                ("reference", "include/asnumpy/utils/npu_array.hpp"),
+            ),
+            "csrc/logic/logic.cpp": (
+                ("generated_overlay", "include/asnumpy/logic/logic.hpp"),
+                ("reference", "include/asnumpy/utils/acl_executor.hpp"),
+                ("reference", "include/asnumpy/utils/status_handler.hpp"),
+                ("signed_official_header", "SIGNED_OFFICIAL_HEADER/aclnn_bitwise_not.h"),
+            ),
+            "bindings/python/bind_logic.cpp": (
+                ("generated_overlay", "include/asnumpy/logic/logic.hpp"),
+                ("generated_overlay", "csrc/logic/logic.cpp"),
+            ),
+            "src/asnumpy/logic.py": (
+                ("generated_overlay", "bindings/python/bind_logic.cpp"),
+            ),
+            "src/asnumpy/__init__.py": (
+                ("generated_overlay", "src/asnumpy/logic.py"),
+            ),
+        },
+        "signed_official_header": "SIGNED_OFFICIAL_HEADER/aclnn_bitwise_not.h",
+        "official_library_binding": {
+            "cmake_path": "bindings/python/CMakeLists.txt",
+            "target": "_core",
+            "link_item": "opapi",
+            "selected_library_basename": "libopapi.so",
+            "cmake_link_block": (
+                "target_link_libraries(_core\n"
+                "    PUBLIC\n"
+                "    ascendcl\n"
+                "    runtime\n"
+                "    nnopbase\n"
+                "    opapi\n"
+                "    Python::NumPy\n"
+                ")"
+            ),
+        },
+    },
+    # ``numpy.argsort`` is dispatched from the existing AsNumPy ``sorting``
+    # module, whose reviewed target link graph already names ``opapi``.
+    # The ACLNN pair returns int64 order indices for one dim; the Python
+    # surface must normalize axis, default to the last axis, and reject
+    # kind/order arguments it cannot honor instead of ignoring them.
+    "argsort": {
+        "context_paths": (
+            "include/asnumpy/sorting/sorting.hpp",
+            "csrc/sorting/sorting.cpp",
+            "bindings/python/bind_sorting.cpp",
+            "bindings/python/CMakeLists.txt",
+            "include/asnumpy/utils/acl_executor.hpp",
+            "include/asnumpy/utils/acl_resource.hpp",
+            "include/asnumpy/utils/npu_array.hpp",
+            "include/asnumpy/utils/status_handler.hpp",
+            "src/asnumpy/sorting.py",
+            "src/asnumpy/__init__.py",
+            "tests/asnumpy_tests/sort_tests/test_sorting.py",
+        ),
+        "expected_overlay_paths": (
+            "include/asnumpy/sorting/sorting.hpp",
+            "csrc/sorting/sorting.cpp",
+            "bindings/python/bind_sorting.cpp",
+            "src/asnumpy/sorting.py",
+            "src/asnumpy/__init__.py",
+        ),
+        "prompt_dependencies": {
+            "include/asnumpy/sorting/sorting.hpp": (
+                ("reference", "include/asnumpy/utils/npu_array.hpp"),
+            ),
+            "csrc/sorting/sorting.cpp": (
+                ("generated_overlay", "include/asnumpy/sorting/sorting.hpp"),
+                ("reference", "include/asnumpy/utils/acl_executor.hpp"),
+                ("reference", "include/asnumpy/utils/status_handler.hpp"),
+                ("signed_official_header", "SIGNED_OFFICIAL_HEADER/aclnn_argsort.h"),
+            ),
+            "bindings/python/bind_sorting.cpp": (
+                ("generated_overlay", "include/asnumpy/sorting/sorting.hpp"),
+                ("generated_overlay", "csrc/sorting/sorting.cpp"),
+            ),
+            "src/asnumpy/sorting.py": (
+                ("generated_overlay", "bindings/python/bind_sorting.cpp"),
+            ),
+            "src/asnumpy/__init__.py": (
+                ("generated_overlay", "src/asnumpy/sorting.py"),
+            ),
+        },
+        "signed_official_header": "SIGNED_OFFICIAL_HEADER/aclnn_argsort.h",
+        "official_library_binding": {
+            "cmake_path": "bindings/python/CMakeLists.txt",
+            "target": "_core",
+            "link_item": "opapi",
+            "selected_library_basename": "libopapi.so",
+            "cmake_link_block": (
+                "target_link_libraries(_core\n"
+                "    PUBLIC\n"
+                "    ascendcl\n"
+                "    runtime\n"
+                "    nnopbase\n"
+                "    opapi\n"
+                "    Python::NumPy\n"
+                ")"
+            ),
+        },
+    },
+    # ``numpy.searchsorted`` is dispatched from the existing AsNumPy
+    # ``sorting`` module.  The ACLNN pair takes an explicit right flag and
+    # a sorter operand; NumPy's default side='left' must be mapped to
+    # right=False, and the int64 index dtype plus the empty-sequence
+    # boundary must be proven by the API gate.
+    "searchsorted": {
+        "context_paths": (
+            "include/asnumpy/sorting/sorting.hpp",
+            "csrc/sorting/sorting.cpp",
+            "bindings/python/bind_sorting.cpp",
+            "bindings/python/CMakeLists.txt",
+            "include/asnumpy/utils/acl_executor.hpp",
+            "include/asnumpy/utils/acl_resource.hpp",
+            "include/asnumpy/utils/npu_array.hpp",
+            "include/asnumpy/utils/status_handler.hpp",
+            "src/asnumpy/sorting.py",
+            "src/asnumpy/__init__.py",
+            "tests/asnumpy_tests/sort_tests/test_sorting.py",
+        ),
+        "expected_overlay_paths": (
+            "include/asnumpy/sorting/sorting.hpp",
+            "csrc/sorting/sorting.cpp",
+            "bindings/python/bind_sorting.cpp",
+            "src/asnumpy/sorting.py",
+            "src/asnumpy/__init__.py",
+        ),
+        "prompt_dependencies": {
+            "include/asnumpy/sorting/sorting.hpp": (
+                ("reference", "include/asnumpy/utils/npu_array.hpp"),
+            ),
+            "csrc/sorting/sorting.cpp": (
+                ("generated_overlay", "include/asnumpy/sorting/sorting.hpp"),
+                ("reference", "include/asnumpy/utils/acl_executor.hpp"),
+                ("reference", "include/asnumpy/utils/status_handler.hpp"),
+                ("signed_official_header", "SIGNED_OFFICIAL_HEADER/aclnn_searchsorted.h"),
+            ),
+            "bindings/python/bind_sorting.cpp": (
+                ("generated_overlay", "include/asnumpy/sorting/sorting.hpp"),
+                ("generated_overlay", "csrc/sorting/sorting.cpp"),
+            ),
+            "src/asnumpy/sorting.py": (
+                ("generated_overlay", "bindings/python/bind_sorting.cpp"),
+            ),
+            "src/asnumpy/__init__.py": (
+                ("generated_overlay", "src/asnumpy/sorting.py"),
+            ),
+        },
+        "signed_official_header": "SIGNED_OFFICIAL_HEADER/aclnn_searchsorted.h",
+        "official_library_binding": {
+            "cmake_path": "bindings/python/CMakeLists.txt",
+            "target": "_core",
+            "link_item": "opapi",
+            "selected_library_basename": "libopapi.so",
+            "cmake_link_block": (
+                "target_link_libraries(_core\n"
+                "    PUBLIC\n"
+                "    ascendcl\n"
+                "    runtime\n"
+                "    nnopbase\n"
+                "    opapi\n"
+                "    Python::NumPy\n"
+                ")"
+            ),
+        },
+    },
+    # ``numpy.median`` is dispatched from the existing AsNumPy
+    # ``statistics`` module.  ``aclnnMedian`` reduces the flattened
+    # tensor to a single value and is exported only from ``libopapi.so``;
+    # axis/out/keepdims must be refused rather than approximated, and
+    # even-length midpoint averaging must match NumPy exactly.
+    "median": {
+        "context_paths": (
+            "include/asnumpy/statistics/averages_and_variances.hpp",
+            "csrc/statistics/averages_and_variances.cpp",
+            "bindings/python/bind_statistics.cpp",
+            "bindings/python/CMakeLists.txt",
+            "include/asnumpy/utils/acl_executor.hpp",
+            "include/asnumpy/utils/acl_resource.hpp",
+            "include/asnumpy/utils/npu_array.hpp",
+            "include/asnumpy/utils/status_handler.hpp",
+            "src/asnumpy/statistics.py",
+            "src/asnumpy/__init__.py",
+            "tests/asnumpy_tests/statistics_tests/test_averages_and_variances.py",
+        ),
+        "expected_overlay_paths": (
+            "include/asnumpy/statistics/averages_and_variances.hpp",
+            "csrc/statistics/averages_and_variances.cpp",
+            "bindings/python/bind_statistics.cpp",
+            "src/asnumpy/statistics.py",
+            "src/asnumpy/__init__.py",
+        ),
+        "prompt_dependencies": {
+            "include/asnumpy/statistics/averages_and_variances.hpp": (
+                ("reference", "include/asnumpy/utils/npu_array.hpp"),
+            ),
+            "csrc/statistics/averages_and_variances.cpp": (
+                ("generated_overlay", "include/asnumpy/statistics/averages_and_variances.hpp"),
+                ("reference", "include/asnumpy/utils/acl_executor.hpp"),
+                ("reference", "include/asnumpy/utils/status_handler.hpp"),
+                ("signed_official_header", "SIGNED_OFFICIAL_HEADER/aclnn_median.h"),
+            ),
+            "bindings/python/bind_statistics.cpp": (
+                ("generated_overlay", "include/asnumpy/statistics/averages_and_variances.hpp"),
+                ("generated_overlay", "csrc/statistics/averages_and_variances.cpp"),
+            ),
+            "src/asnumpy/statistics.py": (
+                ("generated_overlay", "bindings/python/bind_statistics.cpp"),
+            ),
+            "src/asnumpy/__init__.py": (
+                ("generated_overlay", "src/asnumpy/statistics.py"),
+            ),
+        },
+        "signed_official_header": "SIGNED_OFFICIAL_HEADER/aclnn_median.h",
         "official_library_binding": {
             "cmake_path": "bindings/python/CMakeLists.txt",
             "target": "_core",
@@ -941,16 +1201,29 @@ def plan_official_aclnn_adapter_context(
 
 def reviewed_official_adapter_prompt_dependencies(
     expected_overlay_paths: Sequence[str],
+    *,
+    api_name: Optional[str] = None,
 ) -> Dict[str, List[Dict[str, str]]]:
     """Return the reviewed prompt-dependency manifest for an overlay shape.
 
     This is a read-only lookup used by the provider gate.  It fails closed for
     any path tuple that is not one of the reviewed existing-module plans, so a
     caller cannot manufacture a dependency set for an unreviewed overlay.
+
+    ``argsort`` and ``searchsorted`` share the same sorting-module overlay
+    shape but bind different signed ACLNN headers, so a shape-only lookup
+    cannot disambiguate them.  When ``api_name`` is supplied the lookup is
+    restricted to that reviewed plan; shape-only callers keep the historical
+    first-match behavior.
     """
 
     paths = tuple(expected_overlay_paths)
-    for reviewed in _OFFICIAL_ACLNN_EXISTING_MODULE_PLANS.values():
+    if api_name is None:
+        candidates = tuple(_OFFICIAL_ACLNN_EXISTING_MODULE_PLANS.values())
+    else:
+        reviewed_plan = _OFFICIAL_ACLNN_EXISTING_MODULE_PLANS.get(api_name)
+        candidates = (reviewed_plan,) if reviewed_plan is not None else ()
+    for reviewed in candidates:
         if tuple(reviewed["expected_overlay_paths"]) != paths:
             continue
         return {

@@ -1,0 +1,36 @@
+{
+  "schema": "numpilot.operator_repair.v1",
+  "operator": "flip",
+  "repairs": [
+    {
+      "id": "tiling-contract",
+      "symptom": "flip_tiling.cpp assigns tiling->dim0/dim1; FlipTilingData has rows/cols",
+      "fix": "host writes rows/cols plus the flip mask; blockFactor is rows per core"
+    },
+    {
+      "id": "kernel-tiling-and-vector-reverse",
+      "symptom": "flip.h hard-codes 2048x2048 and reverses rows with scalar GetValue/SetValue without an MTE2 -> S hand-off",
+      "fix": "kernel reads rows/cols/blockFactor/ubFactor from tiling and reverses each tile with one byte-offset Gather"
+    }
+  ],
+  "files": [
+    {
+      "path": "op_host/arch22/flip_tiling.cpp",
+      "sha256_before": "1768cce9af581321d4ac2464aac72330d8c1a1ba3c15234ae025bb4284748804",
+      "sha256_after": "21b5d1f6db02617fe3cbf34798917e28812dc2e73cb1092dbaaf3c38187fdaff",
+      "edits": [
+        "tiling-data-field-names",
+        "rows-per-core-block-factor",
+        "used-core-count-from-rows",
+        "cap-ub-tile",
+        "max-ub-factor-constant"
+      ]
+    },
+    {
+      "path": "op_kernel/arch22/flip.h",
+      "sha256_before": "12573dd30252c8c32a2040b497b8662e33d237599e86e3a8558600fcafd19e80",
+      "sha256_after": "23a92ade8b5e91f2f23bb45ea5b22319463319d26b805c497e5a61b59b431f13",
+      "rewritten": true
+    }
+  ]
+}

@@ -146,11 +146,13 @@ class Orchestrator:
         engine=None,
         threshold=1_000_000,
         analysis_profiles=None,
+        custom_contracts=None,
     ):
         self.backend = backend if backend is not None else select_backend()
         self.engine = engine if engine is not None else AstRewriteEngine()
         self.threshold = threshold
         self.analysis_profiles = analysis_profiles
+        self.custom_contracts = custom_contracts
 
     def run(
         self,
@@ -211,7 +213,13 @@ class Orchestrator:
         oracle_source = (
             source if verification_source is None else verification_source
         )
-        preparation = prepare_program(source) if prepare_source else None
+        preparation = (
+            prepare_program(
+                source, preserve=tuple(self.custom_contracts or ())
+            )
+            if prepare_source
+            else None
+        )
         analysis_source = (
             preparation.analysis_source if preparation is not None else source
         )
@@ -233,6 +241,7 @@ class Orchestrator:
             analysis = AnalysisAgent(profile_resolver).analyze(
                 analysis_source, source_path, profiles=self.analysis_profiles,
                 strict_input_types=strict_input_types,
+                custom_contracts=self.custom_contracts,
             )
             program_ir = build_program_ir(analysis_source, source_path)
             gap_inventory = collect_gap_inventory(analysis)

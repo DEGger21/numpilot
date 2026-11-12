@@ -1,0 +1,54 @@
+{
+  "api_name": "pad",
+  "asnumpy_api": "asnumpy.pad",
+  "callsites": [
+    {
+      "call_expr": "numpy.pad(<arg0>, <arg1>, mode=<redacted>)",
+      "col_offset": 8,
+      "lineno": 10,
+      "qualified_api": "numpy.pad",
+      "reason": "API 不在静态覆盖集"
+    }
+  ],
+  "cann_version": "9.2.0-beta.2",
+  "dtype_rules": [
+    "runtime_profile_required"
+  ],
+  "gap_id": "pad-484a52aec253e456",
+  "qualified_api": "numpy.pad",
+  "reference_cases": [],
+  "route": "ascendc_registry_candidate",
+  "route_decisions": [
+    {
+      "reason": "requires a semantic composition resolver",
+      "route": "asnumpy_composite",
+      "status": "not_evaluated"
+    },
+    {
+      "reason": "check a pinned CANN operator catalog before new kernel work",
+      "route": "cann_existing",
+      "status": "review_required"
+    },
+    {
+      "reason": "explicit draft generation is allowed; execution remains gated",
+      "route": "ascendc_registry",
+      "status": "candidate_for_draft"
+    }
+  ],
+  "schema_version": 1,
+  "semantic_source": "numpy.pad",
+  "shape_rules": [
+    "runtime_profile_required"
+  ],
+  "signature_variants": [
+    {
+      "keyword_args": [
+        "mode"
+      ],
+      "positional_args": 2
+    }
+  ],
+  "source_path": "pad/source/pad_contract.py",
+  "source_sha256": "d14c80a52866f48e3188b71dfe039df27645432e420e1b2ccc02c2494ed5d956",
+  "target_soc": "Ascend910B3"
+}

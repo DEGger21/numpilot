@@ -942,7 +942,7 @@ def test_producer_loads_only_a_passed_transaction(tmp_path: Path) -> None:
 
 
 def test_producer_entry_specs_are_valid_scoped_profiles() -> None:
-    assert producer._ENTRY_ORDER == ENTRY_KEYS
+    assert producer._ENTRY_ORDER[: len(ENTRY_KEYS)] == ENTRY_KEYS
     for key in ENTRY_KEYS:
         spec = producer._ENTRY_SPECS[key]
         parsed = parse_profile_constraints(spec.constraints)
@@ -950,3 +950,24 @@ def test_producer_entry_specs_are_valid_scoped_profiles() -> None:
         assert spec.signatures
         assert len(set(spec.signatures)) == len(spec.signatures)
         assert spec.test_marker == key
+    assert producer._API_LANE == {
+        "invert",
+        "argsort",
+        "searchsorted",
+        "median",
+    }
+    for key in sorted(producer._API_LANE):
+        assert key in producer._ENTRY_ORDER
+        spec = producer._ENTRY_SPECS[key]
+        parsed = parse_profile_constraints(spec.constraints)
+        assert parsed["dtype"] in {"float32", "bool"}
+        assert parsed["contiguous"] is True
+        assert spec.signatures
+        assert len(set(spec.signatures)) == len(spec.signatures)
+        assert spec.test_marker is None
+        assert producer._TEST_FILES[key].startswith("tests/asnumpy_tests/")
+        assert producer._API_WRAPPER[key].endswith(".py")
+        assert producer._API_NATIVE[key][1].startswith("_")
+    assert parse_profile_constraints(
+        producer._ENTRY_SPECS["invert"].constraints
+    )["dtype"] == "bool"

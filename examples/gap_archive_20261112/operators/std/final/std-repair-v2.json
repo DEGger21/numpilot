@@ -1,0 +1,80 @@
+{
+  "schema": "numpilot.operator_repair.v1",
+  "operator": "std",
+  "repairs": [
+    {
+      "id": "dependent-template-call",
+      "file": "op_kernel/arch22/std.h",
+      "reason": "TQue member templates called on a dependent type"
+    },
+    {
+      "id": "optype-rename",
+      "from": "Std",
+      "to": "NumpyStd",
+      "kernel_entry": "numpy_std",
+      "reason": "kernel entry `std` collides with the C++ namespace std"
+    }
+  ],
+  "files": [
+    {
+      "path": "op_kernel/arch22/std.h",
+      "sha256_before": "8fedfc53d07355c9a16326b9896b73f997b06240cf188c17fd73e14b675b594c",
+      "sha256_after": "40ada84dbee44a34b2d2e66fbaf2310e5c8f88b5562a2a7fddd7ba3a3917db0e"
+    },
+    {
+      "path": "op_kernel/std_arch22.cpp",
+      "sha256_before": "eb278a2475ba30fe73daa333b29537d836373c12af1afb43252dc0f8f99207c8",
+      "sha256_after": "496740fbe27017f07795878434e00a2738b09999b1a3f25446a42a9fdeae0002"
+    },
+    {
+      "path": "op_host/std_def.cpp",
+      "sha256_before": "e42f5965c2dc3202d62dfc01cb7600b4aa91fdd3139733ee2266602f491bfd08",
+      "sha256_after": "f3ab36e513c6ef7e0d83ff576798ad84eaaf4dd99087110f3ff4f90e9a1390de"
+    },
+    {
+      "path": "op_host/arch22/std_tiling.cpp",
+      "sha256_before": "8c980f9f5373c2df23276f2a4c41bcae2bf1cb1623da5ee00ce04624f814389c",
+      "sha256_after": "8fa53705cb1826c67a18376d58d8f48ae5cd3bf5e3829c9fc7eca6e14bc17ffd"
+    },
+    {
+      "path": "op_host/std_infershape.cpp",
+      "sha256_before": "805fae0797282eac881143c857e475166380a73280e2979ca7d92ab9c3adc3e4",
+      "sha256_after": "f011788c1808dfbdf7ac2bb84406be47e84d73c54a8fec88e68a39548fbef123"
+    },
+    {
+      "path": "op_api/std.cpp",
+      "sha256_before": "73e8d11eb9249f0692056a36cd510470c8c9db4f849c946938861b0b63e8f7c5",
+      "sha256_after": "bb10aa501105a9ec269cd8e5df6b1e18d1cc02ea192764eba844b8c430e2add7"
+    },
+    {
+      "path": "op_api/aclnn_std.cpp",
+      "sha256_before": "632ba2b087299df3cd08a43011dadb00c545591e3a056a435cd262e70698f2a8",
+      "sha256_after": "9afc068492215ef2329814c68c2b367edaae50f028fd2b14f43a99f29a445a97"
+    },
+    {
+      "path": "op_api/aclnn_std.h",
+      "sha256_before": "b1f1e797efcdb0029e2cb77855745eb621bc5af0dd63de3abde65866adcbdfb3",
+      "sha256_after": "1071ed6cc92c20b16f271b1633d5daa68f66b41450a1ff31a53570e3fddc236e"
+    },
+    {
+      "path": "op_kernel/CMakeLists.txt",
+      "sha256_before": "587facdb20efe60f6b50e22eb1d150210597545107c0e1462dc1a8e055f42141",
+      "sha256_after": "9d69ff02fd75ef8cccce5aa083ff1f3a71d24ac9883e3a3bfb573e8a70c379d5"
+    },
+    {
+      "path": "op_host/CMakeLists.txt",
+      "sha256_before": "678f53f578cfcbe822cf8317c56c2ccfe198a852f50cadbb3df0f227224d6675",
+      "sha256_after": "e64820485f09a1b6d637b6f8bbd3beeeea31f8dc468635d849b3eeafa4262b60"
+    },
+    {
+      "path": "op_kernel/arch22/std_tiling_key.h",
+      "sha256_before": "dc4507591b49914ff3334378452eb947a8d5851bb97f16f280be64aeb36902e4",
+      "sha256_after": "9db7ab371c2d99ea46eaa6e853d061c4bf962c355bd3827abb43f16a072ee1fc"
+    },
+    {
+      "path": "asnumpy_adapter/std.json",
+      "sha256_before": "58036dc6a77a99980fc42747d532670cb3bc02f1be095d7eb33a6bdbfe3f1491",
+      "sha256_after": "e59799bac85997e5ce1ad6d882b296479739ba37ca0d30ffa9bbde1e60ffef7d"
+    }
+  ]
+}

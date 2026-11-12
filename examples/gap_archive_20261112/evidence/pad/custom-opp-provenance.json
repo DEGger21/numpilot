@@ -1,0 +1,26 @@
+{
+  "aclnn": {
+    "call_style": "two-stage",
+    "execute": "aclnnPad",
+    "get_workspace_size": "aclnnPadGetWorkspaceSize"
+  },
+  "header": {
+    "relative_path": "op_api/include/aclnn_pad.h",
+    "sha256": "48dceee1c291ebe0776b10927fd7a3e30c59e7da27486d1544f74c5c2de9294e"
+  },
+  "library": {
+    "relative_path": "op_api/lib/libcust_opapi.so",
+    "sha256": "ec4b88d3d57fae993877308f753a22d2ab588366960b28851b0f02c303e83905",
+    "size": 71600
+  },
+  "operator": "pad",
+  "receipt_sha256": "b0934dc4093cefc58603b5b21669ecf318d44985efe5c958637be031f63a3489",
+  "schema": "numpilot.custom-opp-provenance",
+  "schema_version": 1,
+  "vendor_root": "pad/custom-v1/deploy-v1/vendors/pad_custom",
+  "verification_scope": "read-only-filesystem-hash-and-header-declaration",
+  "version_info": {
+    "custom_opp_compiler_version": "9.2.0-beta.2"
+  },
+  "version_info_sha256": "7e5200644e61a2732438bd2fac2c3447ea8325e71ea36513499db8858bcb1b4b"
+}

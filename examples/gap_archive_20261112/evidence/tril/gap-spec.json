@@ -1,0 +1,52 @@
+{
+  "api_name": "tril",
+  "asnumpy_api": "asnumpy.tril",
+  "callsites": [
+    {
+      "call_expr": "numpy.tril(<arg0>)",
+      "col_offset": 8,
+      "lineno": 10,
+      "qualified_api": "numpy.tril",
+      "reason": "API 不在静态覆盖集"
+    }
+  ],
+  "cann_version": "9.2.0-beta.2",
+  "dtype_rules": [
+    "runtime_profile_required"
+  ],
+  "gap_id": "tril-9febcb163f0d6585",
+  "qualified_api": "numpy.tril",
+  "reference_cases": [],
+  "route": "ascendc_registry_candidate",
+  "route_decisions": [
+    {
+      "reason": "requires a semantic composition resolver",
+      "route": "asnumpy_composite",
+      "status": "not_evaluated"
+    },
+    {
+      "reason": "check a pinned CANN operator catalog before new kernel work",
+      "route": "cann_existing",
+      "status": "review_required"
+    },
+    {
+      "reason": "explicit draft generation is allowed; execution remains gated",
+      "route": "ascendc_registry",
+      "status": "candidate_for_draft"
+    }
+  ],
+  "schema_version": 1,
+  "semantic_source": "numpy.tril",
+  "shape_rules": [
+    "runtime_profile_required"
+  ],
+  "signature_variants": [
+    {
+      "keyword_args": [],
+      "positional_args": 1
+    }
+  ],
+  "source_path": "tril/source/tril_contract.py",
+  "source_sha256": "d916e98aa99223f185b6c6f6a4c5f24a47cc9cd50d774904e08f9b5fe55a1636",
+  "target_soc": "Ascend910B3"
+}

@@ -1,0 +1,393 @@
+{
+  "status": "pass",
+  "route": "direct_migration",
+  "source_path": "pad/source/pad_contract.py",
+  "source_sha256": "d14c80a52866f48e3188b71dfe039df27645432e420e1b2ccc02c2494ed5d956",
+  "analysis_source_sha256": "58038d605a3498980bdb5419a5df1d75f3056663120f76131b2f156cfc1df7e6",
+  "preparation": {
+    "applied": true,
+    "analysis_source_changed": true,
+    "normalized": true,
+    "rewrites": [],
+    "notes": [
+      "analysis surface normalized to straight-line SSA temporaries"
+    ],
+    "oracle_policy": "original_source_remains_the_numerical_oracle"
+  },
+  "translation_taskbook": {
+    "taskbook_id": "translation-taskbook-e2a2ae53819c41e9869eb6e86e6d17cafad8a3ce90ddb880dcb88b7e910685d1",
+    "json": {
+      "path": "pad/custom-v1/migrate-npu-ast-v1/TRANSLATION_TASKBOOK.json",
+      "sha256": "786f4a4a7854eeee8268f7512b226d692508689630d9493866ef839fdd169bef"
+    },
+    "markdown": {
+      "path": "pad/custom-v1/migrate-npu-ast-v1/TRANSLATION_TASKBOOK.md",
+      "sha256": "a1985336503aafd1737cfcf92dfc1f90ff86b42fa3a58f92a204a257a85c7b8c"
+    }
+  },
+  "unsupported": [],
+  "engine": "ast",
+  "rewrites": {
+    "pad": 1
+  },
+  "expected_rewrites": {
+    "pad": 1
+  },
+  "rewrite_integrity": true,
+  "model_receipt": {},
+  "model_identity": {},
+  "total_rewrites": 1,
+  "numerically_consistent": true,
+  "max_rel_diff": 0.0,
+  "max_abs_diff": 0.0,
+  "tol": 0.0001,
+  "atol": 1e-05,
+  "rtol": 0.0001,
+  "failure_path": null,
+  "failure_index": null,
+  "failure_reason": null,
+  "exception_phase": null,
+  "exception_type": null,
+  "exception_message": null,
+  "artifact_inputs_executed": true,
+  "input_consistent": true,
+  "kernel_consistent": true,
+  "artifact_consistent": true,
+  "comparisons": {
+    "inputs": {
+      "consistent": true,
+      "max_abs_diff": 0.0,
+      "max_rel_diff": 0.0,
+      "atol": 1e-05,
+      "rtol": 0.0001,
+      "failure_path": null,
+      "failure_index": null,
+      "reason": null,
+      "n_elements": 4194304
+    },
+    "kernel": {
+      "consistent": true,
+      "max_abs_diff": 0.0,
+      "max_rel_diff": 0.0,
+      "atol": 1e-05,
+      "rtol": 0.0001,
+      "failure_path": null,
+      "failure_index": null,
+      "reason": null,
+      "n_elements": 4206600
+    },
+    "artifact": {
+      "consistent": true,
+      "max_abs_diff": 0.0,
+      "max_rel_diff": 0.0,
+      "atol": 1e-05,
+      "rtol": 0.0001,
+      "failure_path": null,
+      "failure_index": null,
+      "reason": null,
+      "n_elements": 4206600
+    }
+  },
+  "backend_provenance": {
+    "schema_version": "1.1",
+    "backend": "npu",
+    "backend_version": "0.3.1",
+    "audit_id": "unaudited-asnumpy-version",
+    "environment": {
+      "cann_home": "/usr/local/Ascend/cann-9.2.0-beta.2",
+      "cann_version": "9.2.0-beta.2",
+      "module_path": "pad/custom-v1/adapter-build-v1/stage/asnumpy/__init__.py",
+      "python_version": "3.12.14",
+      "soc_version": "Ascend910B3"
+    },
+    "strict_npu": true,
+    "ok": true,
+    "preflight_ok": true,
+    "preflight_strict_npu": true,
+    "profile_status": "not_required",
+    "required_ops": [
+      "pad"
+    ],
+    "missing": [],
+    "non_strict": [],
+    "profile_scoped": [],
+    "runtime_profile_ok": true,
+    "runtime_profile_checks": {},
+    "runtime_target_integrity_ok": true,
+    "runtime_target_integrity_errors": [],
+    "capabilities": {
+      "pad": {
+        "name": "pad",
+        "available": true,
+        "provenance": "custom_npu",
+        "strict_npu": true,
+        "evidence": "custom-operator admission b2b58a653b8fba58b09745c68439f20558b13c51246d381819bf74ba758101e8; adapter manifest sha256 02760f1a81734f64b7308fc85cb59453e188cd8d9b0009884769ecf9998ef14c; adapter build receipt sha256 8d09507793bcc7fae989e9b0af6e568b0194924a6decf3b2bc718a8fada14c1c; wheel sha256 1fe77d06ae39f5db9ba4ea2d2cbff2d08fb3287a1b039907c9609cd40f2309d4; profile enforced by the adapter",
+        "constraints": [],
+        "signature_variants": []
+      }
+    },
+    "runtime_trace_ok": true,
+    "runtime_execution_ok": true,
+    "runtime_call_counts": {
+      "kernel": {
+        "pad": 1
+      },
+      "artifact": {
+        "pad": 1
+      }
+    }
+  },
+  "speedup": null,
+  "backend": "npu",
+  "backend_module": "pad/custom-v1/adapter-build-v1/stage/asnumpy/__init__.py",
+  "backend_version": "0.3.1",
+  "cpu_threads": null,
+  "t_orig_ms": null,
+  "t_mig_ms": null,
+  "n_elements": 4206600,
+  "strategy": "whole_forward_npu",
+  "program_ir": {
+    "n_nodes": 2,
+    "n_edges": 1,
+    "nodes": [
+      {
+        "id": "n1",
+        "kind": "input",
+        "label": "a",
+        "lineno": 7
+      },
+      {
+        "id": "n2",
+        "kind": "call",
+        "label": "np.pad",
+        "lineno": 8
+      }
+    ],
+    "edges": [
+      [
+        "n1",
+        "n2"
+      ]
+    ]
+  },
+  "gap_plan": {
+    "ready": true,
+    "n_tasks": 0,
+    "n_blocking": 0,
+    "tasks": []
+  },
+  "planning_requirements": [],
+  "gap_taskbook": null,
+  "diagnosis": null,
+  "repair_attempts": 0,
+  "validation_evidence": {
+    "status": "pass",
+    "numerically_consistent": true,
+    "input_consistent": true,
+    "kernel_consistent": true,
+    "artifact_consistent": true,
+    "artifact_inputs_executed": true,
+    "backend": "npu",
+    "backend_version": "0.3.1",
+    "backend_provenance": {
+      "schema_version": "1.1",
+      "backend": "npu",
+      "backend_version": "0.3.1",
+      "audit_id": "unaudited-asnumpy-version",
+      "environment": {
+        "cann_home": "/usr/local/Ascend/cann-9.2.0-beta.2",
+        "cann_version": "9.2.0-beta.2",
+        "module_path": "pad/custom-v1/adapter-build-v1/stage/asnumpy/__init__.py",
+        "python_version": "3.12.14",
+        "soc_version": "Ascend910B3"
+      },
+      "strict_npu": true,
+      "ok": true,
+      "preflight_ok": true,
+      "preflight_strict_npu": true,
+      "profile_status": "not_required",
+      "required_ops": [
+        "pad"
+      ],
+      "missing": [],
+      "non_strict": [],
+      "profile_scoped": [],
+      "runtime_profile_ok": true,
+      "runtime_profile_checks": {},
+      "runtime_target_integrity_ok": true,
+      "runtime_target_integrity_errors": [],
+      "capabilities": {
+        "pad": {
+          "name": "pad",
+          "available": true,
+          "provenance": "custom_npu",
+          "strict_npu": true,
+          "evidence": "custom-operator admission b2b58a653b8fba58b09745c68439f20558b13c51246d381819bf74ba758101e8; adapter manifest sha256 02760f1a81734f64b7308fc85cb59453e188cd8d9b0009884769ecf9998ef14c; adapter build receipt sha256 8d09507793bcc7fae989e9b0af6e568b0194924a6decf3b2bc718a8fada14c1c; wheel sha256 1fe77d06ae39f5db9ba4ea2d2cbff2d08fb3287a1b039907c9609cd40f2309d4; profile enforced by the adapter",
+          "constraints": [],
+          "signature_variants": []
+        }
+      },
+      "runtime_trace_ok": true,
+      "runtime_execution_ok": true,
+      "runtime_call_counts": {
+        "kernel": {
+          "pad": 1
+        },
+        "artifact": {
+          "pad": 1
+        }
+      }
+    },
+    "comparisons": {
+      "inputs": {
+        "consistent": true,
+        "max_abs_diff": 0.0,
+        "max_rel_diff": 0.0,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "failure_path": null,
+        "failure_index": null,
+        "reason": null,
+        "n_elements": 4194304
+      },
+      "kernel": {
+        "consistent": true,
+        "max_abs_diff": 0.0,
+        "max_rel_diff": 0.0,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "failure_path": null,
+        "failure_index": null,
+        "reason": null,
+        "n_elements": 4206600
+      },
+      "artifact": {
+        "consistent": true,
+        "max_abs_diff": 0.0,
+        "max_rel_diff": 0.0,
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "failure_path": null,
+        "failure_index": null,
+        "reason": null,
+        "n_elements": 4206600
+      }
+    },
+    "source_sha256": "d14c80a52866f48e3188b71dfe039df27645432e420e1b2ccc02c2494ed5d956",
+    "migrated_sha256": "dbf8dae200613160471252689ca864975c96a4e8b597e96e4483bc837a49dd0e"
+  },
+  "roles": [
+    {
+      "role": "analyzer",
+      "name": "① 分析智能体 Analyzer",
+      "stage": "understand",
+      "status": "ok",
+      "summary": "IR 2 节点/1 边；1 个调用点，缺口 0 个",
+      "model": "规则(无模型)",
+      "evidence": {
+        "n_calls": 1,
+        "unsupported": [],
+        "program_ir": {
+          "n_nodes": 2,
+          "n_edges": 1,
+          "nodes": [
+            {
+              "id": "n1",
+              "kind": "input",
+              "label": "a",
+              "lineno": 7
+            },
+            {
+              "id": "n2",
+              "kind": "call",
+              "label": "np.pad",
+              "lineno": 8
+            }
+          ],
+          "edges": [
+            [
+              "n1",
+              "n2"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "role": "planner",
+      "name": "② 规划智能体 Planner",
+      "stage": "understand",
+      "status": "ok",
+      "summary": "直迁（Direct Migration）",
+      "model": "规则(无模型)",
+      "evidence": {
+        "route": "direct_migration",
+        "strategy": "whole_forward_npu",
+        "threshold_elements": 1000000,
+        "placement": {
+          "pad": "NPU"
+        },
+        "gap_tasks": [],
+        "planning_requirements": [],
+        "translation_tasks": [],
+        "translation_taskbook_id": "translation-taskbook-e2a2ae53819c41e9869eb6e86e6d17cafad8a3ce90ddb880dcb88b7e910685d1"
+      }
+    },
+    {
+      "role": "gap_filler",
+      "name": "③ 缺口智能体 API Gap Filler",
+      "stage": "migrate",
+      "status": "ok",
+      "summary": "0 个任务，无阻断",
+      "model": "规则(无模型)",
+      "evidence": {
+        "ready": true,
+        "n_tasks": 0,
+        "n_blocking": 0,
+        "tasks": []
+      }
+    },
+    {
+      "role": "code_migrator",
+      "name": "④ 迁移智能体 Code Migrator",
+      "stage": "migrate",
+      "status": "ok",
+      "summary": "1 处改写，完整性=通过",
+      "model": "AST 确定性改写(规则,无模型)",
+      "evidence": {
+        "engine": "ast",
+        "rewrites": {
+          "pad": 1
+        },
+        "expected_rewrites": {
+          "pad": 1
+        },
+        "rewrite_integrity": true,
+        "model_identity": {},
+        "repair_attempts": 0
+      }
+    },
+    {
+      "role": "diagnostics",
+      "name": "⑤ 诊断智能体 Diagnostics Agent",
+      "stage": "validate",
+      "status": "skipped",
+      "summary": "验证通过，无需诊断",
+      "model": "规则(无模型)",
+      "evidence": {
+        "repair_attempts": 0
+      }
+    },
+    {
+      "role": "reporter",
+      "name": "⑥ 报告智能体 Migration Reporter",
+      "stage": "validate",
+      "status": "ok",
+      "summary": "已写出报告、验证证据与迁移产物",
+      "model": "规则(无模型)",
+      "evidence": {
+        "status": "pass"
+      }
+    }
+  ]
+}

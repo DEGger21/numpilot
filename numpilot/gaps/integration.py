@@ -740,6 +740,33 @@ _GATE_PROFILES = {
             "tests/asnumpy_tests/math_tests/test_exponents_and_logarithms.py"
         ),
     },
+    "numpy.invert": {
+        "api": "numpy.invert",
+        "minimum_oracle_comparisons": 8,
+        "minimum_cases": 10,
+        "candidate_tests": "tests/asnumpy_tests/logic_tests/test_logic.py",
+    },
+    "numpy.argsort": {
+        "api": "numpy.argsort",
+        "minimum_oracle_comparisons": 6,
+        "minimum_cases": 10,
+        "candidate_tests": "tests/asnumpy_tests/sort_tests/test_sorting.py",
+    },
+    "numpy.searchsorted": {
+        "api": "numpy.searchsorted",
+        "minimum_oracle_comparisons": 5,
+        "minimum_cases": 10,
+        "candidate_tests": "tests/asnumpy_tests/sort_tests/test_sorting.py",
+    },
+    "numpy.median": {
+        "api": "numpy.median",
+        "minimum_oracle_comparisons": 6,
+        "minimum_cases": 10,
+        "candidate_tests": (
+            "tests/asnumpy_tests/statistics_tests/"
+            "test_averages_and_variances.py"
+        ),
+    },
 }
 
 

@@ -1,0 +1,468 @@
+{
+  "schema": "numpilot.asnumpy_adapter",
+  "schema_version": 1,
+  "adapter_id": "ediff1d-d3bacc55a5c1886b",
+  "generated_stage": "17/17-test_adapter_02",
+  "op_name": "ediff1d",
+  "op_type": "Ediff1d",
+  "file_stem": "ediff1d",
+  "api_name": "ediff1d",
+  "asnumpy_api": "asnumpy.ediff1d",
+  "status": "unverified_candidate",
+  "claim_level": "unverified_candidate_only",
+  "source_binding": {
+    "semantic_source": "numpy.ediff1d",
+    "taskbook_id": "gap-taskbook-a8382351568f0edc89ea4b4c4e68feb8968fcf2020d2588d2afcf176d56ad642",
+    "gap_spec_sha256": "5efd6e190592ed72592fdb0f6ddf5f10e4eeeb93045b230ebbc18b20f57a00bd",
+    "source_path": "ediff1d/source/ediff1d_contract.py",
+    "source_sha256": "9681613c066b42bb13ca58d0173d1731d32e55617161e999468c0170f088f4d8"
+  },
+  "target": {
+    "soc": "Ascend910B3",
+    "cann_version": "9.2.0-beta.2",
+    "device_execution_status": "pending"
+  },
+  "public_api": {
+    "qualified_name": "asnumpy.ediff1d",
+    "module": "asnumpy",
+    "name": "ediff1d",
+    "accepted_call_forms": [
+      "asnumpy.ediff1d(a)"
+    ],
+    "signature": {
+      "positional_args": 1,
+      "keyword_args": [],
+      "variadic": false,
+      "return_structure": "single_tensor"
+    },
+    "source_parameter_order": [
+      "a"
+    ],
+    "source_parameter_order_note": "Only the first positional argument is admitted; NumPy to_end/to_begin arguments are not part of this candidate signature."
+  },
+  "name_mapping": {
+    "public_python": "asnumpy.ediff1d",
+    "python_wrapper_symbol": "asnumpy.ediff1d",
+    "pybind_module": "asnumpy._C",
+    "pybind_symbol": "asnumpy._C.ediff1d",
+    "cpp_op_type": "Ediff1d",
+    "cpp_file_stem": "ediff1d",
+    "kernel_entry": "ediff1d",
+    "kernel_launch_op_type": "Ediff1d",
+    "aclnn_l2_header": "aclnn_ediff1d.h",
+    "aclnn_l2_get_workspace_size": "aclnnEdiff1dGetWorkspaceSize",
+    "aclnn_l2_execute": "aclnnEdiff1d",
+    "aclnn_l0_header": "ediff1d.h",
+    "aclnn_l0_function": "l0op::Ediff1d"
+  },
+  "aclnn_signatures": {
+    "get_workspace_size": "aclnnStatus aclnnEdiff1dGetWorkspaceSize(const aclTensor* x, aclTensor* y, uint64_t* workspaceSize, aclOpExecutor** executor)",
+    "execute": "aclnnStatus aclnnEdiff1d(void* workspace, uint64_t workspaceSize, aclOpExecutor* executor, aclrtStream stream)"
+  },
+  "kernel_signature": {
+    "entry": "ediff1d",
+    "parameters": [
+      "GM_ADDR x",
+      "GM_ADDR y",
+      "GM_ADDR workspace",
+      "GM_ADDR tiling"
+    ],
+    "order": "inputs_then_outputs_then_workspace_then_tiling"
+  },
+  "tensor_contract": {
+    "input_count": 1,
+    "output_count": 1,
+    "inputs": [
+      {
+        "index": 0,
+        "public_name": "a",
+        "acl_name": "x",
+        "kernel_name": "x",
+        "acl_type": "aclTensor",
+        "dtype": "float32",
+        "rank": 2,
+        "shape": [
+          2048,
+          2048
+        ],
+        "layout": "ND",
+        "c_contiguous": true,
+        "optional": false
+      }
+    ],
+    "outputs": [
+      {
+        "index": 0,
+        "name": "y",
+        "acl_type": "aclTensor",
+        "dtype": "float32",
+        "rank": 1,
+        "shape": [
+          4194303
+        ],
+        "layout": "ND",
+        "c_contiguous": true
+      }
+    ],
+    "shape_relation": "out_length = numel(a) - 1",
+    "admitted_shape_relation": "input shape must be [2048, 2048] and output shape must be [4194303]"
+  },
+  "semantics": {
+    "operation": "Flatten the admitted input in C order and compute out[i] = flat[i + 1] - flat[i] for i in [0, numel(a)-2].",
+    "flatten_order": "C",
+    "axis": {
+      "status": "not_applicable",
+      "reason": "numpy.ediff1d has no axis parameter and flattens its input."
+    },
+    "to_begin": {
+      "status": "unsupported_rejected",
+      "default": "None",
+      "reason": "keyword args are not admitted by the observed signature."
+    },
+    "to_end": {
+      "status": "unsupported_rejected",
+      "default": "None",
+      "reason": "keyword args are not admitted by the observed signature."
+    },
+    "dtype_promotion": "none: input and output are both float32",
+    "scalar_input": "rejected; array input is required",
+    "broadcasting": "none; exact admitted shape only",
+    "empty_input": "rejected within this bounded candidate",
+    "special_values": "Compute IEEE-754 float32 subtraction and preserve NaN, Inf and signed zero according to the NumPy oracle."
+  },
+  "dispatch": {
+    "preflight_order": [
+      "validate positional argument count equals 1 and keyword argument count equals 0",
+      "validate input is an AsNumpy tensor operand",
+      "validate input dtype equals float32",
+      "validate input rank equals 2",
+      "validate input shape equals [2048, 2048]",
+      "validate input storage is C-contiguous",
+      "allocate a float32 output tensor with shape [4194303]",
+      "invoke asnumpy._C.ediff1d",
+      "return the output tensor"
+    ],
+    "on_unsupported_input": "raise a Python exception before any ACLNN launch",
+    "cpu_fallback": "forbidden",
+    "implicit_cast": "forbidden",
+    "implicit_reshape": "forbidden",
+    "silent_kwarg_drop": "forbidden"
+  },
+  "support_scope": {
+    "strategy": "observed_profile_specialization",
+    "qualified_profiles": [],
+    "candidate_admitted_profiles": [
+      {
+        "profile_id": "observed_cpu_float32_2048x2048_c",
+        "source": "observed_cpu_execution",
+        "input_dtype": "float32",
+        "input_rank": 2,
+        "input_shape": [
+          2048,
+          2048
+        ],
+        "input_layout": "c_contiguous",
+        "output_dtype": "float32",
+        "output_rank": 1,
+        "output_shape": [
+          4194303
+        ],
+        "output_layout": "c_contiguous"
+      }
+    ],
+    "unresolved_facts": {
+      "general_dtype_support": "runtime_profile_required",
+      "general_shape_support": "runtime_profile_required",
+      "axis": "unknown_not_applicable_to_admitted_call",
+      "numerical_tolerances": "proposed_pending_numerical_gate"
+    },
+    "rejection_rules": {
+      "unsupported_dtype": "TypeError before ACLNN launch; no cast; no CPU fallback",
+      "unsupported_shape": "ValueError before ACLNN launch; no reshape, truncate, or pad",
+      "unsupported_rank": "ValueError before ACLNN launch",
+      "non_contiguous": "ValueError before ACLNN launch",
+      "keyword_args": "TypeError before ACLNN launch",
+      "extra_positional_args": "TypeError before ACLNN launch",
+      "missing_positional_args": "TypeError before ACLNN launch",
+      "empty_input": "ValueError within this bounded candidate"
+    }
+  },
+  "numerical_policy": {
+    "status": "proposed_pending_numerical_gate",
+    "oracle": "numpy.ediff1d",
+    "dtype_specific": {
+      "float32": {
+        "rtol": 1e-06,
+        "atol": 1e-06,
+        "equal_nan": true,
+        "compare_dtype": true,
+        "compare_shape": true
+      }
+    },
+    "boolean_outputs": {
+      "present": false,
+      "comparison": "not_applicable"
+    },
+    "special_values": {
+      "nan": "must_match_nan_positions_and_equal_nan",
+      "positive_infinity": "must_match_exactly",
+      "negative_infinity": "must_match_exactly",
+      "positive_zero": "must_match_signbit",
+      "negative_zero": "must_match_signbit",
+      "subnormals": "must_match_within_declared_tolerance"
+    },
+    "signbit": "preserved_and_checked",
+    "host_oracle_usage": "test_only"
+  },
+  "integration": {
+    "route": "ascendc_registry_invoke",
+    "acl_two_stage": true,
+    "workspace_size_source": "aclnnEdiff1dGetWorkspaceSize",
+    "execute_symbol": "aclnnEdiff1d",
+    "error_handling": "check aclnnStatus at both stages and propagate failures; no CPU fallback",
+    "synchronization": "caller synchronizes the supplied stream before reading the output; synchronization failures are propagated",
+    "system_cann_mutation": "forbidden",
+    "shared_asnumpy_mutation": "forbidden",
+    "activation": "blocked_until_all_gates_pass"
+  },
+  "conformance_cases": [
+    {
+      "id": "positive_observed_profile_arange",
+      "kind": "positive",
+      "call": "asnumpy.ediff1d(a)",
+      "input": {
+        "dtype": "float32",
+        "shape": [
+          2048,
+          2048
+        ],
+        "layout": "c_contiguous",
+        "materialization": "np.arange(4194304, dtype=np.float32).reshape(2048, 2048, order='C')"
+      },
+      "expected": {
+        "oracle": "numpy.ediff1d",
+        "dtype": "float32",
+        "shape": [
+          4194303
+        ],
+        "comparison": "float32_numeric"
+      },
+      "assertions": [
+        "output dtype is float32",
+        "output shape is [4194303]",
+        "every output element equals 1.0"
+      ]
+    },
+    {
+      "id": "positive_special_values_observed_profile",
+      "kind": "positive",
+      "call": "asnumpy.ediff1d(a)",
+      "input": {
+        "dtype": "float32",
+        "shape": [
+          2048,
+          2048
+        ],
+        "layout": "c_contiguous",
+        "materialization": "a = np.linspace(-100.0, 100.0, 4194304, dtype=np.float32).reshape(2048, 2048); a[0, 0] = np.nan; a[0, 1] = np.inf; a[0, 2] = -np.inf; a[0, 3] = 0.0; a[0, 4] = -0.0; a[0, 5] = np.finfo(np.float32).max; a[0, 6] = np.finfo(np.float32).tiny; a[0, 7] = -np.finfo(np.float32).tiny"
+      },
+      "expected": {
+        "oracle": "numpy.ediff1d",
+        "dtype": "float32",
+        "shape": [
+          4194303
+        ],
+        "comparison": "float32_special_values"
+      },
+      "assertions": [
+        "out[0] is NaN",
+        "out[1] is negative infinity",
+        "out[2] is positive infinity",
+        "out[3] is negative zero with the sign bit set",
+        "out[4] is finite and matches the oracle within tolerance",
+        "out[5] and out[6] match the oracle within tolerance",
+        "all remaining positions match the oracle within tolerance"
+      ]
+    },
+    {
+      "id": "positive_repeated_call_lifecycle",
+      "kind": "lifecycle",
+      "call": "asnumpy.ediff1d(a)",
+      "input": {
+        "dtype": "float32",
+        "shape": [
+          2048,
+          2048
+        ],
+        "layout": "c_contiguous",
+        "materialization": "np.arange(4194304, dtype=np.float32).reshape(2048, 2048, order='C')"
+      },
+      "expected": {
+        "oracle": "numpy.ediff1d",
+        "dtype": "float32",
+        "shape": [
+          4194303
+        ],
+        "comparison": "float32_numeric"
+      },
+      "assertions": [
+        "two sequential calls with the same input yield identical outputs",
+        "the input tensor remains unchanged after both calls",
+        "no host fallback or implicit cast occurs between calls"
+      ]
+    }
+  ],
+  "negative_cases": [
+    {
+      "id": "missing_argument",
+      "call": "asnumpy.ediff1d()",
+      "expected_error": "TypeError",
+      "reason": "exactly one positional argument is required"
+    },
+    {
+      "id": "extra_positional_argument",
+      "call": "asnumpy.ediff1d(a, a)",
+      "expected_error": "TypeError",
+      "reason": "the signature admits one positional argument"
+    },
+    {
+      "id": "keyword_to_begin",
+      "call": "asnumpy.ediff1d(a, to_begin=0.0)",
+      "expected_error": "TypeError",
+      "reason": "keyword_args must be empty"
+    },
+    {
+      "id": "keyword_to_end",
+      "call": "asnumpy.ediff1d(a, to_end=0.0)",
+      "expected_error": "TypeError",
+      "reason": "keyword_args must be empty"
+    },
+    {
+      "id": "keyword_axis",
+      "call": "asnumpy.ediff1d(a, axis=0)",
+      "expected_error": "TypeError",
+      "reason": "keyword_args must be empty and numpy.ediff1d has no axis parameter"
+    },
+    {
+      "id": "unsupported_dtype_float64",
+      "input": {
+        "dtype": "float64",
+        "shape": [
+          2048,
+          2048
+        ],
+        "layout": "c_contiguous"
+      },
+      "expected_error": "TypeError",
+      "reason": "only float32 is admitted"
+    },
+    {
+      "id": "unsupported_dtype_float16",
+      "input": {
+        "dtype": "float16",
+        "shape": [
+          2048,
+          2048
+        ],
+        "layout": "c_contiguous"
+      },
+      "expected_error": "TypeError",
+      "reason": "only float32 is admitted"
+    },
+    {
+      "id": "unsupported_dtype_int32",
+      "input": {
+        "dtype": "int32",
+        "shape": [
+          2048,
+          2048
+        ],
+        "layout": "c_contiguous"
+      },
+      "expected_error": "TypeError",
+      "reason": "only float32 is admitted"
+    },
+    {
+      "id": "unsupported_dtype_bool",
+      "input": {
+        "dtype": "bool",
+        "shape": [
+          2048,
+          2048
+        ],
+        "layout": "c_contiguous"
+      },
+      "expected_error": "TypeError",
+      "reason": "only float32 is admitted"
+    },
+    {
+      "id": "unsupported_rank_1",
+      "input": {
+        "dtype": "float32",
+        "shape": [
+          4194304
+        ],
+        "layout": "c_contiguous"
+      },
+      "expected_error": "ValueError",
+      "reason": "rank 2 is the only admitted rank"
+    },
+    {
+      "id": "unsupported_shape",
+      "input": {
+        "dtype": "float32",
+        "shape": [
+          2048,
+          2047
+        ],
+        "layout": "c_contiguous"
+      },
+      "expected_error": "ValueError",
+      "reason": "only the observed shape [2048, 2048] is admitted"
+    },
+    {
+      "id": "non_contiguous",
+      "input": {
+        "dtype": "float32",
+        "shape": [
+          2048,
+          2048
+        ],
+        "layout": "non_contiguous",
+        "materialization": "np.arange(4194304, dtype=np.float32).reshape(2048, 2048).T"
+      },
+      "expected_error": "ValueError",
+      "reason": "only C-contiguous storage is admitted"
+    },
+    {
+      "id": "empty_input",
+      "input": {
+        "dtype": "float32",
+        "shape": [
+          0,
+          0
+        ],
+        "layout": "c_contiguous"
+      },
+      "expected_error": "ValueError",
+      "reason": "empty input is outside the bounded admitted profile"
+    }
+  ],
+  "gates": {
+    "build": "pending",
+    "unit_and_boundary": "pending",
+    "numerical": "pending",
+    "native_execution": "pending",
+    "whole_program": "pending",
+    "performance": "pending",
+    "activation": "pending"
+  },
+  "unresolved": [
+    "numerical qualification on Ascend910B3",
+    "device execution evidence",
+    "general float32 shapes beyond [2048, 2048]",
+    "general dtype support beyond float32",
+    "whole-program migration evidence",
+    "performance receipt"
+  ]
+}

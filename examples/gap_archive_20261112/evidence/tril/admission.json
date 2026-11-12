@@ -1,0 +1,34 @@
+{
+  "cann_version": "9.2.0-beta.2",
+  "entries": [
+    {
+      "asnumpy_api": "asnumpy.tril",
+      "contract": {
+        "allowed_keywords": [],
+        "positional_limit": 1,
+        "positional_names": [
+          "a"
+        ],
+        "required": [
+          "a"
+        ]
+      },
+      "evidence": {
+        "adapter_build_receipt": {
+          "path": "evidence/adapter-build-receipt.json",
+          "sha256": "12a04c544d9eae7de0e367ed3de7af8487ba54d1a6eb03f9ea1804e9243dd6bc"
+        },
+        "adapter_manifest": {
+          "path": "evidence/adapter-manifest.json",
+          "sha256": "1b630858704fa1efe47b04b2e3c11655adcf30adda0e302708201a1895e23540"
+        },
+        "wheel_sha256": "0846a67dada73aebaa395093daeab4dfcf678d5256eddb010c3e7c1a487832c4"
+      },
+      "name": "tril",
+      "source_api": "numpy.tril"
+    }
+  ],
+  "schema": "numpilot.custom-operator-admission",
+  "schema_version": 1,
+  "target_soc": "Ascend910B3"
+}

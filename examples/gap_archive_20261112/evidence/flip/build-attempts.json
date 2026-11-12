@@ -1,0 +1,35 @@
+{
+  "count": 5,
+  "attempts": [
+    {
+      "attempt": "1",
+      "bytes": 1580,
+      "mtime": "2026-11-12T20:38:08",
+      "sha256": "180efc49ea8b68d5289bf7f63b3a922dc1ce39cf9b3d9c056a89aad229e2b8a9"
+    },
+    {
+      "attempt": "2",
+      "bytes": 58104,
+      "mtime": "2026-11-12T20:38:56",
+      "sha256": "cd9a35562e676a7628260deec5d581bbae426ff1de9d8259026b31aa7cdd4660"
+    },
+    {
+      "attempt": "3",
+      "bytes": 14505,
+      "mtime": "2026-11-12T20:39:41",
+      "sha256": "232869ff35245dcc136c69bcd3414fcf1c6551c68fa5f6cb7ccf9a68cbc5e21d"
+    },
+    {
+      "attempt": "4",
+      "bytes": 19806,
+      "mtime": "2026-11-12T20:40:59",
+      "sha256": "d8c1cbc7b9f7cf28e052368001d8a1280c0a800c4262fc1f0d92e972c84dc29b"
+    },
+    {
+      "attempt": "5",
+      "bytes": 7935,
+      "mtime": "2026-11-12T20:42:34",
+      "sha256": "32f7babee766de597e13f0f446a0e9936309a66bb2ebe773bf8c492e65621af1"
+    }
+  ]
+}

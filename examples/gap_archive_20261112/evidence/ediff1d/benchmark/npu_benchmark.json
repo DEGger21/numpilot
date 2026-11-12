@@ -1,0 +1,276 @@
+{
+  "schema_version": 1,
+  "status": "pass",
+  "file": "ediff1d/source/ediff1d_contract.py",
+  "source_sha256": "9681613c066b42bb13ca58d0173d1731d32e55617161e999468c0170f088f4d8",
+  "migrated_sha256": "57994ac02a16216a243ee765666e803e986d0520d528037187e13ee6c001cd9b",
+  "net": "ediff1d_contract",
+  "engine": "ast",
+  "backend": "npu",
+  "backend_version": "0.3.1",
+  "backend_module": "ediff1d/custom-v1/adapter-build-v1/stage/asnumpy/__init__.py",
+  "rewrites": {
+    "ediff1d": 1
+  },
+  "expected_rewrites": {
+    "ediff1d": 1
+  },
+  "rewrite_integrity": true,
+  "model_receipt": {},
+  "model_identity": {},
+  "allow_cpu_fallback": false,
+  "fallback_override_used": false,
+  "provenance": {
+    "ok": true,
+    "audit_source": "NpuBackend.prepare_profile_guard",
+    "audit_error": null,
+    "required_ops": [
+      "ediff1d"
+    ],
+    "planned_cpu_ops": [],
+    "cpu_fallback_ops": [],
+    "unknown_ops": [],
+    "backend_version": "0.3.1",
+    "audit_id": "unaudited-asnumpy-version",
+    "environment": {
+      "cann_home": "/usr/local/Ascend/cann-9.2.0-beta.2",
+      "cann_version": "9.2.0-beta.2",
+      "module_path": "ediff1d/custom-v1/adapter-build-v1/stage/asnumpy/__init__.py",
+      "python_version": "3.12.14",
+      "soc_version": "Ascend910B3"
+    },
+    "strict_npu": true,
+    "profile_status": "not_required",
+    "profile_guard_integrity_error": false,
+    "provenance_by_op": {
+      "ediff1d": "custom_npu"
+    },
+    "capabilities": {
+      "ediff1d": {
+        "name": "ediff1d",
+        "available": true,
+        "provenance": "custom_npu",
+        "strict_npu": true,
+        "evidence": "custom-operator admission 50c59ef61a65d4bbff947107e46747067fdbcf149cbb9179e999755858a98b54; adapter manifest sha256 188ebc8fa1c4337aaa4e4cd801f4193d490a9e34e1a42a434600540d8d00c7f4; adapter build receipt sha256 da5f2b66968d66007f35ca54b4f24ff868baf2ee6a1e6a1bf7a3c9a5aeeb3f91; wheel sha256 23758e4e68633af8f93adc2e149d74b0ec4c38c573a846e5bea608cd6ba8a346; profile enforced by the adapter",
+        "constraints": [],
+        "signature_variants": []
+      }
+    },
+    "issues": [],
+    "static_forward_surface": {
+      "ok": true,
+      "ap_calls": {
+        "ediff1d": 1
+      },
+      "violations": []
+    },
+    "profile_scoped": [],
+    "runtime_profile_checks": {},
+    "runtime_call_counts": {
+      "kernel": {
+        "ediff1d": 1
+      },
+      "artifact": {
+        "ediff1d": 1
+      }
+    },
+    "runtime_trace_ok": true,
+    "schema_version": "1.1",
+    "backend": "npu",
+    "preflight_ok": true,
+    "preflight_strict_npu": true,
+    "missing": [],
+    "non_strict": [],
+    "runtime_profile_ok": true,
+    "runtime_target_integrity_ok": true,
+    "runtime_target_integrity_errors": [],
+    "profile_guard": {
+      "schema_version": "1.1",
+      "backend": "npu",
+      "backend_version": "0.3.1",
+      "audit_id": "unaudited-asnumpy-version",
+      "environment": {
+        "cann_home": "/usr/local/Ascend/cann-9.2.0-beta.2",
+        "cann_version": "9.2.0-beta.2",
+        "module_path": "ediff1d/custom-v1/adapter-build-v1/stage/asnumpy/__init__.py",
+        "python_version": "3.12.14",
+        "soc_version": "Ascend910B3"
+      },
+      "strict_npu": true,
+      "ok": true,
+      "preflight_ok": true,
+      "preflight_strict_npu": true,
+      "profile_status": "not_required",
+      "required_ops": [
+        "ediff1d"
+      ],
+      "missing": [],
+      "non_strict": [],
+      "profile_scoped": [],
+      "runtime_profile_ok": true,
+      "runtime_profile_checks": {},
+      "runtime_target_integrity_ok": true,
+      "runtime_target_integrity_errors": [],
+      "capabilities": {
+        "ediff1d": {
+          "name": "ediff1d",
+          "available": true,
+          "provenance": "custom_npu",
+          "strict_npu": true,
+          "evidence": "custom-operator admission 50c59ef61a65d4bbff947107e46747067fdbcf149cbb9179e999755858a98b54; adapter manifest sha256 188ebc8fa1c4337aaa4e4cd801f4193d490a9e34e1a42a434600540d8d00c7f4; adapter build receipt sha256 da5f2b66968d66007f35ca54b4f24ff868baf2ee6a1e6a1bf7a3c9a5aeeb3f91; wheel sha256 23758e4e68633af8f93adc2e149d74b0ec4c38c573a846e5bea608cd6ba8a346; profile enforced by the adapter",
+          "constraints": [],
+          "signature_variants": []
+        }
+      }
+    },
+    "runtime_execution_ok": true
+  },
+  "performance_valid": true,
+  "performance_issues": [],
+  "speedup": 2.691834400578349,
+  "comparison": {
+    "consistent": true,
+    "max_abs_diff": 0.0,
+    "max_rel_diff": 0.0,
+    "atol": 1e-05,
+    "rtol": 0.0001,
+    "failure_path": null,
+    "failure_index": null,
+    "reason": null,
+    "n_elements": 4194303
+  },
+  "t_cpu_ms": 4.480339586734772,
+  "t_npu_ms": 1.6644187271595001,
+  "npu_timing": {
+    "clock": "time.perf_counter",
+    "warmup_iterations": 3,
+    "measurement_iterations": 10,
+    "samples_ms": [
+      1.667606644332409,
+      1.6644187271595001,
+      1.6612280160188675,
+      1.6529271379113197,
+      1.6597583889961243,
+      1.660437323153019,
+      1.6777673736214638,
+      1.6658985987305641,
+      1.6598077490925789,
+      1.6664378345012665
+    ],
+    "median_ms": 1.6644187271595001
+  },
+  "cpu_baseline": {
+    "file": "ediff1d/source/ediff1d_contract.py",
+    "source_sha256": "9681613c066b42bb13ca58d0173d1731d32e55617161e999468c0170f088f4d8",
+    "net": "ediff1d_contract",
+    "t_cpu_ms": 4.480339586734772,
+    "timing": {
+      "clock": "time.perf_counter",
+      "warmup_iterations": 3,
+      "measurement_iterations": 10,
+      "samples_ms": [
+        6.074297241866589,
+        4.557250998914242,
+        4.454520530998707,
+        4.485759884119034,
+        4.439780488610268,
+        4.480339586734772,
+        4.446149803698063,
+        4.480821080505848,
+        4.445699974894524,
+        4.464970901608467
+      ],
+      "median_ms": 4.480339586734772
+    },
+    "n_elements": 4194303,
+    "output_shape": [
+      4194303
+    ],
+    "cpu_threads": 1,
+    "cpu_threads_requested": 1,
+    "blas": {
+      "source": "threadpoolctl",
+      "effective_threads": 1,
+      "pools": [
+        {
+          "internal_api": "openblas",
+          "num_threads": 1,
+          "prefix": "libscipy_openblas",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "tsv110"
+        }
+      ]
+    },
+    "dtype": "float32"
+  },
+  "npu_process_blas": {
+    "source": "threadpoolctl",
+    "effective_threads": 64,
+    "pools": [
+      {
+        "internal_api": "openblas",
+        "num_threads": 64,
+        "prefix": "libscipy_openblas",
+        "version": "0.3.34.106.0",
+        "threading_layer": "pthreads",
+        "architecture": "tsv110"
+      }
+    ]
+  },
+  "artifact_inputs_executed": true,
+  "timing_scope": {
+    "classification": "device_resident_inputs_plus_d2h_sync",
+    "inputs_resident_on_device": true,
+    "includes_h2d": false,
+    "includes_d2h_sync_each_iteration": true,
+    "kernel_only": false,
+    "end_to_end": false,
+    "description": "forward 输入预先驻留设备；每轮计时包含递归 D2H 回传同步"
+  },
+  "input_comparison": {
+    "consistent": true,
+    "max_abs_diff": 0.0,
+    "max_rel_diff": 0.0,
+    "atol": 1e-05,
+    "rtol": 0.0001,
+    "failure_path": null,
+    "failure_index": null,
+    "reason": null,
+    "n_elements": 4194304
+  },
+  "kernel_comparison": {
+    "consistent": true,
+    "max_abs_diff": 0.0,
+    "max_rel_diff": 0.0,
+    "atol": 1e-05,
+    "rtol": 0.0001,
+    "failure_path": null,
+    "failure_index": null,
+    "reason": null,
+    "n_elements": 4194303
+  },
+  "artifact_comparison": {
+    "consistent": true,
+    "max_abs_diff": 0.0,
+    "max_rel_diff": 0.0,
+    "atol": 1e-05,
+    "rtol": 0.0001,
+    "failure_path": null,
+    "failure_index": null,
+    "reason": null,
+    "n_elements": 4194303
+  },
+  "baseline_output_comparison": {
+    "consistent": true,
+    "max_abs_diff": 0.0,
+    "max_rel_diff": 0.0,
+    "atol": 1e-05,
+    "rtol": 0.0001,
+    "failure_path": null,
+    "failure_index": null,
+    "reason": null,
+    "n_elements": 4194303
+  },
+  "baseline_compatible": true
+}

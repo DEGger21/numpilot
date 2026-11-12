@@ -252,9 +252,24 @@ _OFFICIAL_EXACT_EDIT_TARGET_WINDOWS = {
             "    from .io import load, save, savez, savez_compressed",
         ),
         (
+            "type_checking_logic_imports",
+            "    from .logic import (",
+            "    from .math import (",
+        ),
+        (
             "type_checking_math_imports",
             "    from .math import (",
             "    from .nn import softmax",
+        ),
+        (
+            "type_checking_sorting_imports",
+            "    from .sorting import sort",
+            "    from .statistics import mean",
+        ),
+        (
+            "type_checking_statistics_imports",
+            "    from .statistics import mean",
+            "    from .utils import broadcast_shape, ndarray",
         ),
         (
             "lazy_array_exports",
@@ -262,9 +277,24 @@ _OFFICIAL_EXACT_EDIT_TARGET_WINDOWS = {
             "    # .linalg\n",
         ),
         (
+            "lazy_logic_exports",
+            "    # .logic\n",
+            "    # .math\n",
+        ),
+        (
             "lazy_math_exports",
             "    # .math\n",
             "    # .random\n",
+        ),
+        (
+            "lazy_sorting_exports",
+            "    # .sorting\n",
+            "    # .statistics\n",
+        ),
+        (
+            "lazy_statistics_exports",
+            "    # .statistics\n",
+            "    # .nn\n",
         ),
     ),
     "tests/asnumpy_tests/creation_tests/test_basic.py": (
@@ -298,6 +328,67 @@ _OFFICIAL_EXACT_EDIT_TARGET_WINDOWS = {
     ),
     "tests/asnumpy_tests/math_tests/test_exponents_and_logarithms.py": (
         ("complete_math_exponents_test_module", None, None),
+    ),
+    # ``numpy.invert`` lives in the existing logic module.  The C++ file may
+    # only touch its include block and append before the namespace close; the
+    # header, binding, dispatch module and __init__ stay bounded below.
+    "include/asnumpy/logic/logic.hpp": (
+        ("complete_logic_header", None, None),
+    ),
+    "csrc/logic/logic.cpp": (
+        (
+            "includes",
+            "#include <asnumpy/logic/logic.hpp>",
+            "namespace asnumpy {",
+        ),
+        (
+            "invert_implementation",
+            "} // namespace asnumpy",
+            None,
+        ),
+    ),
+    "bindings/python/bind_logic.cpp": (
+        ("complete_logic_binding_module", None, None),
+    ),
+    "src/asnumpy/logic.py": (
+        ("complete_logic_dispatch_module", None, None),
+    ),
+    # ``numpy.argsort`` and ``numpy.searchsorted`` live in the small sorting
+    # module, which is replaced as a whole reviewed file per API.
+    "include/asnumpy/sorting/sorting.hpp": (
+        ("complete_sorting_header", None, None),
+    ),
+    "csrc/sorting/sorting.cpp": (
+        ("complete_sorting_implementation", None, None),
+    ),
+    "bindings/python/bind_sorting.cpp": (
+        ("complete_sorting_binding_module", None, None),
+    ),
+    "src/asnumpy/sorting.py": (
+        ("complete_sorting_dispatch_module", None, None),
+    ),
+    # ``numpy.median`` joins the existing statistics averages module; only the
+    # include block and the tail before the namespace close are editable.
+    "include/asnumpy/statistics/averages_and_variances.hpp": (
+        ("complete_statistics_header", None, None),
+    ),
+    "csrc/statistics/averages_and_variances.cpp": (
+        (
+            "includes",
+            "#include <asnumpy/statistics/averages_and_variances.hpp>",
+            "namespace asnumpy {",
+        ),
+        (
+            "median_implementation",
+            "} // namespace asnumpy",
+            None,
+        ),
+    ),
+    "bindings/python/bind_statistics.cpp": (
+        ("complete_statistics_binding_module", None, None),
+    ),
+    "src/asnumpy/statistics.py": (
+        ("complete_statistics_dispatch_module", None, None),
     ),
 }
 _GENERATION_FIELDS_V1 = frozenset({
@@ -456,7 +547,10 @@ Follow these rules:
    op_kernel, op_api, tests, and asnumpy_adapter.
 3. Kernel parameters are inputs, outputs, workspace, tiling in that order.
 4. Include shape/dtype checks, tiling, CPU golden tests, ACLNN two-stage API,
-   and an explicit AsNumpy name mapping manifest.
+   and exactly one asnumpy_adapter/<name>.json manifest using schema
+   "asnumpy.adapter.manifest.v1": operator.source_api must equal the supplied
+   qualified NumPy API, operator.public_api the AsNumpy public API, and
+   name_mapping.python.public_symbol the public symbol.
 5. Do not invent undocumented Ascend C or ACLNN APIs. If an API cannot be
    verified from the supplied contract, leave a compile-failing
    TODO_VERIFY_CANN_API marker and explain it in README.md.
@@ -557,9 +651,11 @@ END_WINDOW_REPLACE
 Emit every reviewed window exactly once, in the supplied order. WINDOW_COUNT must
 be a positive ASCII decimal equal to the number of BEGIN_WINDOW blocks. LABEL must
 be copied exactly. CONTENT must contain the complete replacement for that window,
-including unchanged context when the window covers a complete module. The local
-validator computes the original window hashes and permits changes only inside the
-reviewed windows. Do not return a complete-file envelope, a diff, OLD/NEW blocks,
+including unchanged context when the window covers a complete module. If the
+reviewed window ends with a newline, end the CONTENT with a newline as well; the
+framework restores one missing final line terminator at a line boundary. The
+local validator computes the original window hashes and permits changes only
+inside the reviewed windows. Do not return a complete-file envelope, a diff, OLD/NEW blocks,
 line numbers, TODOs, CPU fallbacks, network operations, installation, or build/NPU
 success claims. Never put a line equal to END_WINDOW N inside window content.
 """
@@ -1141,6 +1237,32 @@ def _validate_rebuilt_python_syntax(path: str, content: str) -> None:
         ) from exc
 
 
+_OFFICIAL_SYMBOL_PATTERNS = (
+    re.compile(r'\.def\(\s*"([A-Za-z_][A-Za-z0-9_]*)"'),
+    re.compile(r"^[ \t]*def[ \t]+([A-Za-z_][A-Za-z0-9_]*)[ \t]*\("),
+    re.compile(r"^[ \t]*class[ \t]+([A-Za-z_][A-Za-z0-9_]*)\b"),
+)
+
+
+def _official_symbol_names(content: str) -> "set[str]":
+    """Collect existing exported names a bounded edit must preserve."""
+
+    names = set()
+    for line in content.splitlines():
+        stripped = line.lstrip()
+        if stripped.startswith(("//", "#", "*", "/*")):
+            continue
+        for pattern in _OFFICIAL_SYMBOL_PATTERNS:
+            names.update(pattern.findall(line))
+    return names
+
+
+def _official_lost_symbols(base_content: str, updated_content: str) -> "set[str]":
+    return _official_symbol_names(base_content) - _official_symbol_names(
+        updated_content
+    )
+
+
 def _apply_official_window_replace_response(
     payload: str,
     *,
@@ -1195,9 +1317,14 @@ def _apply_official_window_replace_response(
             "official window-replace target window plan is missing"
         )
     expected_labels = tuple(item[0] for item in specifications)
+    _window_context, rendered_intervals = _render_official_exact_edit_target_windows(
+        target_path=expected_path, base_content=base_content
+    )
     if allowed_intervals is None:
-        _window_context, allowed_intervals = _render_official_exact_edit_target_windows(
-            target_path=expected_path, base_content=base_content
+        allowed_intervals = rendered_intervals
+    elif tuple(allowed_intervals) != tuple(rendered_intervals):
+        raise DraftGenerationError(
+            "official window-replace changed content outside target windows"
         )
     if (
         not isinstance(allowed_intervals, tuple)
@@ -1319,14 +1446,16 @@ def _apply_official_window_replace_response(
     original_windows = [
         base_content[start:end] for start, end in normalized_intervals
     ]
+    adjusted_replacements = []
     for index, ((start, end), original, replacement) in enumerate(
         zip(normalized_intervals, original_windows, replacements), start=1
     ):
         if original.endswith("\n") and not replacement.endswith("\n"):
-            raise DraftGenerationError(
-                "official window-replace content %d must end with a newline "
-                "because its target window ends at a line boundary" % index
-            )
+            # Models routinely drop the final line terminator of a window that
+            # ends exactly at a line boundary.  The boundary already sits at an
+            # end of line, so restoring one "\n" is pure normalization and can
+            # never merge the content with the following line.
+            replacement = replacement + "\n"
         if (
             not original.endswith("\n")
             and end < len(base_content)
@@ -1341,6 +1470,8 @@ def _apply_official_window_replace_response(
                 "because its target window ends in the middle of a line "
                 "before an import statement" % index
             )
+        adjusted_replacements.append(replacement)
+    replacements = adjusted_replacements
     if replacements == original_windows and not allow_unchanged:
         raise DraftGenerationError("official window-replace response is a no-op")
     rebuilt = []
@@ -1365,17 +1496,30 @@ def _apply_official_window_replace_response(
         raise DraftGenerationError(
             "official window-replace rebuilt file contains a forbidden placeholder"
         )
-    matcher = difflib.SequenceMatcher(None, base_content, result, autojunk=False)
-    for tag, old_start, old_end, _new_start, _new_end in matcher.get_opcodes():
-        if tag == "equal":
-            continue
-        if not any(
-            window_start <= old_start and old_end <= window_end
-            for window_start, window_end in normalized_intervals
-        ):
+    # Each replacement is inserted verbatim at its reviewed interval, so every
+    # untouched region must stay byte-identical.  Walk those regions directly:
+    # a char-level diff can align identical lines from adjacent windows and
+    # report an out-of-window change for a valid, strictly bounded edit.
+    cursor = 0
+    shifted = 0
+    for (start, end), replacement in zip(normalized_intervals, replacements):
+        segment = base_content[cursor:start]
+        if result[shifted:shifted + len(segment)] != segment:
             raise DraftGenerationError(
                 "official window-replace changed content outside target windows"
             )
+        shifted += len(segment) + len(replacement)
+        cursor = end
+    if result[shifted:] != base_content[cursor:]:
+        raise DraftGenerationError(
+            "official window-replace changed content outside target windows"
+        )
+    lost = _official_lost_symbols(base_content, result)
+    if lost:
+        raise DraftGenerationError(
+            "official window-replace removed existing symbols: "
+            + ",".join(sorted(lost))
+        )
     return result
 
 def _apply_official_exact_edit_response(
@@ -2395,8 +2539,17 @@ def _validate_official_exact_edit_inputs(
     )
 
     try:
+        qualified_api = operator_artifact.get("qualified_api")
+        api_name = (
+            qualified_api.removeprefix("numpy.")
+            if isinstance(qualified_api, str)
+            and qualified_api.startswith("numpy.")
+            else None
+        )
         expected_prompt_dependencies = (
-            reviewed_official_adapter_prompt_dependencies(normalized_paths)
+            reviewed_official_adapter_prompt_dependencies(
+                normalized_paths, api_name=api_name
+            )
         )
     except ValueError as exc:
         raise DraftGenerationError(

@@ -1,0 +1,45 @@
+{
+  "file": "ediff1d/source/ediff1d_contract.py",
+  "source_sha256": "9681613c066b42bb13ca58d0173d1731d32e55617161e999468c0170f088f4d8",
+  "net": "ediff1d_contract",
+  "t_cpu_ms": 4.480339586734772,
+  "timing": {
+    "clock": "time.perf_counter",
+    "warmup_iterations": 3,
+    "measurement_iterations": 10,
+    "samples_ms": [
+      6.074297241866589,
+      4.557250998914242,
+      4.454520530998707,
+      4.485759884119034,
+      4.439780488610268,
+      4.480339586734772,
+      4.446149803698063,
+      4.480821080505848,
+      4.445699974894524,
+      4.464970901608467
+    ],
+    "median_ms": 4.480339586734772
+  },
+  "n_elements": 4194303,
+  "output_shape": [
+    4194303
+  ],
+  "cpu_threads": 1,
+  "cpu_threads_requested": 1,
+  "blas": {
+    "source": "threadpoolctl",
+    "effective_threads": 1,
+    "pools": [
+      {
+        "internal_api": "openblas",
+        "num_threads": 1,
+        "prefix": "libscipy_openblas",
+        "version": "0.3.34.106.0",
+        "threading_layer": "pthreads",
+        "architecture": "tsv110"
+      }
+    ]
+  },
+  "dtype": "float32"
+}

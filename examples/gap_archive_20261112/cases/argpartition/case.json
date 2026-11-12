@@ -1,0 +1,81 @@
+{
+  "case": "argpartition",
+  "gap_operator": "argpartition",
+  "numpy_call": "numpy.argpartition(a, kth, axis=-1)",
+  "gap_id": "argpartition-7d840c819f30b573",
+  "route": "ascendc_registry_candidate",
+  "source_sha256": "0ddb6a97b1dc177f4e1c36d445e0dfbde2311e23639acc347fa75204abc5400d",
+  "migrated_sha256": "7f185e9d91bea87f9e5d60135d8ffa2e2ca92faf657772610fc7831c7d8f7438",
+  "archive": {
+    "draft_files": 18,
+    "final_files": 18,
+    "adapter_files": 6
+  },
+  "metrics": {
+    "generation_s": 907,
+    "completion_build_deploy_verify_s": 1022,
+    "generation_plus_completion_s": 1929,
+    "adapter_build_plus_tests_s": 100,
+    "migrate_command_s": 7,
+    "bench_s": 7,
+    "end_to_end_s": 2290,
+    "build_attempts": 1,
+    "adapter_tests_passed": 19,
+    "timeline_stage_elapsed_s": {
+      "opp-build-attempt1": [
+        20
+      ],
+      "opp-deploy": [
+        1
+      ],
+      "adapter-wheel": [
+        93
+      ],
+      "adapter-stage": [
+        1
+      ],
+      "adapter-tests": [
+        6
+      ],
+      "migrate-npu-ast": [
+        7
+      ],
+      "bench-cpu": [
+        0
+      ],
+      "bench-npu": [
+        7
+      ]
+    }
+  },
+  "migration": {
+    "engine": "ast",
+    "status": "pass",
+    "rewrites": {
+      "argpartition": 1
+    },
+    "numerically_consistent": true,
+    "max_abs_diff": 0.0,
+    "max_rel_diff": 0.0,
+    "admission_id": "48c1d6929e41cd34d66fbb92e221dd4f0711f7d9df8d116e28dede7cfa83c1f7"
+  },
+  "benchmark": {
+    "status": "pass",
+    "engine": "ast",
+    "backend": "npu",
+    "n_elements": 512,
+    "t_cpu_ms": 0.01049041748046875,
+    "t_npu_ms": 0.34890230745077133,
+    "speedup": 0.030066919181808233,
+    "max_abs_diff": 0.0,
+    "max_rel_diff": 0.0,
+    "atol": 0.0,
+    "rtol": 0.0
+  },
+  "notes": [
+    "1 build attempt.",
+    "The model draft sorted each row; a full sort is a valid argpartition but a different permutation than numpy's introselect, so elementwise comparison failed. The final kernel is a line-for-line transcription of numpy 2.5.4 introselect (arg=true), validated against np.argpartition on 5256 adversarial rows in Python before the Ascend C rewrite. This is a deterministic repair, not model output; the draft is preserved under operators/argpartition/draft.",
+    "19 adapter tests pass, including NaN/inf/-0, duplicates, negative kth and rejection profiles; exact index equality.",
+    "512-element workload: NPU time is dominated by launch + per-round D2H sync, so the ratio is 0.03x. Record as a correctness/completeness case, not a speedup case."
+  ]
+}

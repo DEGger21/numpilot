@@ -1,0 +1,93 @@
+# 含真实缺口算子的完整程序迁移性能清单（6 例）
+
+本表覆盖 2026-11-12 批次中的 **6 个完整 NumPy 程序 → 6 个完整 AsNumpy 程序**：
+每个 `program.py` 都包含 `build_inputs()` 与 `forward()`，迁移后的 `migrated.py`
+保持同一程序结构与全部输入输出，只把 NumPy 调用替换为 AsNumpy 调用。
+六个程序各含 1 个真实缺口 API；缺口算子本身的生成与补全耗时单列在第二张表。
+
+```
+缺口发现 → LLM 生成 Ascend C 算子草稿 → 构建/修复 → 部署 → 数值验证
+         → AsNumpy 适配层构建+单测 → 准入 → NumPilot 6 智能体迁移完整程序
+         → strict-NPU 执行 → 全程序 CPU/NPU 基准
+```
+
+## 测试环境
+
+| 项目 | 配置 |
+| --- | --- |
+| CANN | 9.2.0-beta.2 |
+| NPU | Ascend 910B3 |
+| CPU 基线 | 单核（BLAS/OMP 线程数 = 1），numpy 2.5.4 |
+| AsNumpy | 0.3.1（为每个缺口算子构建的 overlay wheel） |
+| 生成模型 | `deepseek-flash`（每次生成前通过 `llm.json` 真实远端调用；调用前已获批） |
+| 计时 | 墙钟；构建/部署/适配/迁移/基准由 `stage_timer.sh` 记录 |
+
+## 口径
+
+| 字段 | 定义 |
+| --- | --- |
+| 迁移耗时 | 对完整 `program.py` 执行一次 `python -m numpilot migrate` 的墙钟时间；输出是完整 `migrated.py`，不是只替换缺口调用。本批使用 AST 引擎（确定性），模型调用发生在缺口生成阶段 |
+| 生成 | `numpilot complete-gaps --provider llm` 从 preflight 到草稿落盘的墙钟时间（含真实模型调用） |
+| 补全 | 草稿落盘后，确定性构建/修复/部署/数值验证到 provenance 生成的墙钟时间。**修复不是模型输出**；模型原始草稿保存在 `operators/<case>/draft/`，最终可构建版本保存在 `operators/<case>/final/` |
+| 生成+补全 | 上面两段之和，即从模型调用开始到缺口算子通过数值验证的总耗时 |
+| 适配层 | 为 AsNumpy 构建 overlay wheel、安装并执行算子单测的耗时（pad 的适配层测试与后续构建修复交错，分段耗时不严格可加） |
+| 构建次数 | `build-attempt*.log` 的数量，反映草稿修复轮次 |
+| 加速比 | `t_cpu_ms / t_npu_ms`，完整程序在 CPU 单核 vs NPU strict-asnumpy 上的 `forward()` 耗时（输入驻留设备，含 D2H 同步） |
+
+## 主表：完整程序迁移
+
+| # | 源码 NumPy 程序（相对路径） | 迁移后 AsNumpy 程序（相对路径） | 数据规模 | 替换的 API | 迁移耗时 | CPU / NPU (ms) | 加速比 |
+| ---: | --- | --- | --- | --- | ---: | ---: | ---: |
+| 1 | `examples/gap_archive_20261112/cases/std/program.py` | `examples/gap_archive_20261112/cases/std/migrated.py` | 2048 × 2048 float32；4,194,304 元素；沿 axis=1 求标准差 | `np.std` | 7 s | 15.96 / 0.3718 | **42.92x** |
+| 2 | `examples/gap_archive_20261112/cases/flip/program.py` | `examples/gap_archive_20261112/cases/flip/migrated.py` | 2048 × 2048 float32；4,194,304 元素；沿 axis=1 翻转 | `np.flip` | 8 s | 0.007381 / 1.756 | 0.0042x |
+| 3 | `examples/gap_archive_20261112/cases/ediff1d/program.py` | `examples/gap_archive_20261112/cases/ediff1d/migrated.py` | 2048 × 2048 float32；4,194,304 元素展平；输出 4,194,303 个相邻差分 | `np.ediff1d` | 6 s | 4.48 / 1.664 | **2.69x** |
+| 4 | `examples/gap_archive_20261112/cases/pad/program.py` | `examples/gap_archive_20261112/cases/pad/migrated.py` | 2048 × 2048 float32；constant 填充 ((1,1),(2,2))；输出 2050 × 2052 | `np.pad` | 7 s | 4.117 / 1.724 | **2.39x** |
+| 5 | `examples/gap_archive_20261112/cases/tril/program.py` | `examples/gap_archive_20261112/cases/tril/migrated.py` | 2048 × 2048 float32；4,194,304 元素；默认 k=0 下三角 | `np.tril` | 8 s | 14.16 / 1.649 | **8.59x** |
+| 6 | `examples/gap_archive_20261112/cases/argpartition/program.py` | `examples/gap_archive_20261112/cases/argpartition/migrated.py` | 32 × 16 float32；512 元素；沿 axis=1、kth=3 分区 | `np.argpartition` | 7 s | 0.01049 / 0.3489 | 0.03x |
+
+## 缺口算子生成/补全明细
+
+| 案例 | 缺口 API | 生成 | 补全（构建/部署/验证） | 生成+补全 | 适配层 | 构建次数 | 单测 |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `std` | `numpy.std(a, axis=None)` | 15.8 min | 41.4 min | 57.2 min | 2.4 min | 6 | 14 |
+| `flip` | `numpy.flip(a, axis=0)` | 14.7 min | 32.7 min | 47.4 min | 2.1 min | 5 | 13 |
+| `ediff1d` | `numpy.ediff1d(a)` | 14.7 min | 18.0 min | 32.7 min | 2.4 min | 2 | 10 |
+| `pad` | `numpy.pad(a, pad_width, mode='constant')` | 16.9 min | 28.5 min | 45.3 min | 1.9 min | 13 | 15 |
+| `tril` | `numpy.tril(a, k=0)` | 14.5 min | 21.9 min | 36.4 min | 1.7 min | 2 | 13 |
+| `argpartition` | `numpy.argpartition(a, kth, axis=-1)` | 15.1 min | 17.0 min | 32.1 min | 1.7 min | 1 | 19 |
+
+## 汇总
+
+| 指标 | 数值 |
+| --- | --- |
+| 覆盖完整迁移程序 | 6 |
+| 含真实缺口算子的程序 | 6 |
+| 完整 `migrated.py` 生成 | 6 / 6 |
+| 全程序数值对拍通过 | 6 / 6（std 为 2.38e-7，其余最大绝对误差为 0） |
+| 适配层单测 | 84 passed |
+| 生成耗时范围 | 14.5–16.9 min（均值 15.3 min） |
+| 生成+补全范围 | 32.1–57.2 min（均值 41.9 min） |
+| 迁移命令范围 | 6–8 s |
+| 端到端范围 | 38.2–90.9 min（均值 58.4 min） |
+| 加速比 | 42.92x、0.0042x、2.69x、2.39x、8.59x、0.03x |
+| 加速比 > 1x | 4 / 6 |
+
+## 必须如实说明的两个案例
+
+- **`flip`（0.0042x）**：CPU 基线是 `numpy.flip`，它返回 view，耗时是 O(1) 的
+  视图构造（约 0.007 ms）；NPU 算子需要真实搬运 4 Mi 元素（约 1.76 ms）。
+  两者不是等价工作量，**该比值不能当成“NPU 比 CPU 慢 238 倍”的性能结论**。
+- **`argpartition`（0.03x）**：输入只有 512 个元素，NPU 时间由 kernel launch
+  和每轮 D2H 同步主导（0.349 ms），CPU 是 0.010 ms。该案例的价值是
+  **正确性/补全能力**：最终 kernel 逐行复刻 numpy 2.5.4 的 introselect
+  （arg=true），在 5256 组对抗样例上与 `np.argpartition` 完全一致，并通过
+  19 个适配层单测。不要把它放进“加速比”宣传口径。
+
+## 可复现路径
+
+- 原始程序：`cases/<case>/program.py`
+- 迁移后程序：`cases/<case>/migrated.py`
+- 模型生成草稿：`operators/<case>/draft/`
+- 最终可构建算子：`operators/<case>/final/{op_host,op_kernel,op_api,asnumpy_adapter}`
+- 生成的 AsNumpy 适配层：`operators/<case>/adapter/`
+- 证据：`evidence/<case>/{gap-spec,generation-preflight,admission,custom-opp-provenance,migrate-report,migrate.log,benchmark/*}`

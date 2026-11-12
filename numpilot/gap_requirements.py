@@ -78,6 +78,183 @@ def _unknown_profiles() -> dict:
     return {field: {"status": "unknown", "evidence": None} for field in _PROFILE_FIELDS}
 
 
+_OBSERVED_PROFILE_FIELDS = frozenset(
+    {"callsite", "signature", "operands", "unprofiled_operands", "output"}
+)
+_TENSOR_PROFILE_FIELDS = frozenset({"dtype", "shape", "rank", "c_contiguous"})
+_OPERAND_PROFILE_FIELDS = _TENSOR_PROFILE_FIELDS | {"name"}
+
+
+def _observed_matches(spec, observed) -> list:
+    """Return observed callsites bound to this exact GapSpec, or raise."""
+
+    if observed is None:
+        return []
+    if getattr(observed, "source_sha256", None) != spec.source_sha256:
+        raise ValueError("observed inputs do not match the GapSpec source SHA-256")
+    payload = observed.to_dict()
+    raw_calls = payload.get("callsites")
+    if not isinstance(raw_calls, list):
+        raise ValueError("observed inputs have no callsite list")
+    writable = [
+        (index, item) for index, item in enumerate(raw_calls)
+        if isinstance(item, dict)
+        and item.get("qualified_api") == spec.qualified_api
+    ]
+    matched = []
+    by_line = {}
+    for index, item in writable:
+        by_line.setdefault(item.get("lineno"), []).append((index, item))
+    for site in spec.callsites:
+        candidates = by_line.get(site.lineno, [])
+        if len(candidates) == 1:
+            matched.append(candidates[0][1])
+            continue
+        for index, item in candidates:
+            signature = {
+                "positional_args": item.get("positional_args"),
+                "keyword_args": sorted(item.get("keyword_args") or []),
+            }
+            if any(
+                int(variant.get("positional_args", -1)) == signature["positional_args"]
+                and sorted(variant.get("keyword_args") or []) == signature["keyword_args"]
+                for variant in spec.signature_variants
+            ):
+                matched.append(item)
+                break
+    return matched
+
+
+def _observed_call_entry(item) -> dict:
+    return {
+        "callsite": {"lineno": int(item["lineno"]), "col_offset": None},
+        "signature": {
+            "positional_args": int(item["positional_args"]),
+            "keyword_args": list(item.get("keyword_args") or []),
+        },
+        "operands": [dict(value) for value in item.get("inputs") or []],
+        "unprofiled_operands": list(item.get("unprofiled_operands") or []),
+        "output": dict(item["output"]) if item.get("output") is not None else None,
+    }
+
+
+def _observed_facts(entries) -> dict:
+    """Summarize observed operands into the taskbook's fixed profile fields."""
+
+    facts = _unknown_profiles()
+    if not entries:
+        return facts
+    operands = [operand for entry in entries for operand in entry["operands"]]
+    outputs = [entry["output"] for entry in entries if entry["output"] is not None]
+    dtypes = sorted({operand["dtype"] for operand in operands})
+    shapes = [tuple(operand["shape"]) for operand in operands]
+    ranks = {operand["rank"] for operand in operands}
+    contiguous = [operand["c_contiguous"] for operand in operands]
+    evidence = "observed-inputs.json#callsites"
+    if dtypes:
+        facts["input_dtype"] = {
+            "status": "observed" if len(dtypes) == 1 else "observed_multi_dtype",
+            "value": dtypes[0] if len(dtypes) == 1 else dtypes,
+            "evidence": evidence,
+        }
+    if shapes:
+        uniform = len(set(shapes)) == 1
+        facts["input_shape"] = {
+            "status": "observed" if uniform else "observed_per_callsite",
+            "value": list(shapes[0]) if uniform else [list(shape) for shape in shapes],
+            "evidence": evidence,
+        }
+    if ranks:
+        rank_values = sorted(ranks)
+        facts["input_rank"] = {
+            "status": "observed" if len(rank_values) == 1 else "observed_per_callsite",
+            "value": rank_values[0] if len(rank_values) == 1 else rank_values,
+            "evidence": evidence,
+        }
+    if contiguous:
+        facts["layout"] = {
+            "status": "observed",
+            "value": "c_contiguous" if all(contiguous) else "observed_mixed",
+            "evidence": evidence,
+        }
+    if shapes:
+        facts["broadcast"] = {
+            "status": "observed",
+            "value": "no_broadcast_observed" if len(set(shapes)) == 1 else "multi_shape_observed",
+            "evidence": evidence,
+        }
+    if outputs:
+        output_dtypes = sorted({item["dtype"] for item in outputs})
+        output_shapes = [tuple(item["shape"]) for item in outputs]
+        facts["output_dtype"] = {
+            "status": "observed" if len(output_dtypes) == 1 else "observed_per_callsite",
+            "value": output_dtypes[0] if len(output_dtypes) == 1 else output_dtypes,
+            "evidence": evidence,
+        }
+        facts["output_shape"] = {
+            "status": "observed" if len(set(output_shapes)) == 1 else "observed_per_callsite",
+            "value": list(output_shapes[0]) if len(set(output_shapes)) == 1 else [list(shape) for shape in output_shapes],
+            "evidence": evidence,
+        }
+        facts["return_structure"] = {"status": "observed", "value": "single_tensor",
+                                     "evidence": evidence}
+    return facts
+
+
+def _validate_observed_contract(contract: Mapping) -> None:
+    if not isinstance(contract, Mapping):
+        raise ValueError("taskbook call_contract must be an object")
+    profiles = contract.get("observed_profiles")
+    if not isinstance(profiles, list):
+        raise ValueError("taskbook observed_profiles must be a list")
+    if len(profiles) > 64:
+        raise ValueError("taskbook observed_profiles exceeds the bound")
+    for entry in profiles:
+        if not isinstance(entry, Mapping) or frozenset(entry) != _OBSERVED_PROFILE_FIELDS:
+            raise ValueError("taskbook observed profile fields are invalid")
+        site = entry["callsite"]
+        if (not isinstance(site, Mapping) or frozenset(site) != {"lineno", "col_offset"}
+                or isinstance(site["lineno"], bool) or not isinstance(site["lineno"], int)):
+            raise ValueError("taskbook observed callsite is invalid")
+        signature = entry["signature"]
+        if (not isinstance(signature, Mapping)
+                or frozenset(signature) != {"positional_args", "keyword_args"}
+                or isinstance(signature["positional_args"], bool)
+                or not isinstance(signature["positional_args"], int)
+                or not isinstance(signature["keyword_args"], list)):
+            raise ValueError("taskbook observed signature is invalid")
+        for operand in entry["operands"]:
+            if not isinstance(operand, Mapping) or frozenset(operand) != _OPERAND_PROFILE_FIELDS:
+                raise ValueError("taskbook observed operand fields are invalid")
+            if not isinstance(operand["name"], str) or not operand["name"]:
+                raise ValueError("taskbook observed operand name is invalid")
+            if not isinstance(operand["dtype"], str) or not operand["dtype"]:
+                raise ValueError("taskbook observed operand dtype is invalid")
+            if (not isinstance(operand["shape"], list)
+                    or any(isinstance(size, bool) or not isinstance(size, int) or size < 0
+                           for size in operand["shape"])
+                    or operand["rank"] != len(operand["shape"])
+                    or not isinstance(operand["c_contiguous"], bool)):
+                raise ValueError("taskbook observed operand values are invalid")
+        output = entry["output"]
+        if output is not None:
+            if not isinstance(output, Mapping) or frozenset(output) != _TENSOR_PROFILE_FIELDS:
+                raise ValueError("taskbook observed output fields are invalid")
+            if (not isinstance(output["shape"], list)
+                    or output["rank"] != len(output["shape"])):
+                raise ValueError("taskbook observed output values are invalid")
+    facts = contract.get("tensor_facts")
+    if not isinstance(facts, Mapping) or frozenset(facts) != frozenset(_PROFILE_FIELDS):
+        raise ValueError("taskbook tensor_facts fields are invalid")
+    for field, fact in facts.items():
+        if not isinstance(fact, Mapping) or "status" not in fact:
+            raise ValueError("taskbook tensor fact is invalid: %s" % field)
+    if profiles and contract.get("observation_status") == "observed":
+        if (facts["input_dtype"].get("status") != "observed"
+                or facts["input_dtype"].get("value") != "float32"):
+            raise ValueError("taskbook observed input dtype contradicts float32 scope")
+
+
 def _scope() -> dict:
     return {
         "status": "requested_unverified",
@@ -165,8 +342,15 @@ def _dtype_conflicts(spec: GapSpec, call_contract: list) -> list:
     return sorted(set(conflicts))
 
 
-def build_gap_taskbook(spec: GapSpec, *, source: str | None = None) -> dict:
-    """Make a requirements artifact from a canonical GapSpec, without execution."""
+def build_gap_taskbook(spec: GapSpec, *, source: str | None = None,
+                       observed=None) -> dict:
+    """Make a requirements artifact from a canonical GapSpec.
+
+    ``observed`` is an optional, hash-bound input-observation receipt produced
+    by the Planner's explicit observation stage.  It records the concrete
+    dtype/shape that reached each gap callsite while the original NumPy
+    program ran on the CPU; it never claims device execution.
+    """
     from numpilot.gaps.models import GapSpec
 
     if not isinstance(spec, GapSpec):
@@ -195,15 +379,35 @@ def build_gap_taskbook(spec: GapSpec, *, source: str | None = None) -> dict:
         calls.append({"lineno": site.lineno, "col_offset": site.col_offset,
                       "arguments": _call_arguments(expression)})
     conflicts = _dtype_conflicts(spec, calls)
+    observed_status = getattr(observed, "status", None) if observed is not None else None
+    matched = _observed_matches(spec, observed)
+    usable = observed_status in {"observed", "unsupported_dtype"}
+    observed_entries = [_observed_call_entry(item) for item in matched] if usable else []
+    observed_facts = _observed_facts(observed_entries)
+    if observed_entries and observed_status == "unsupported_dtype":
+        conflicts = list(conflicts) + [
+            "observed operand dtype is outside the float32 development scope"
+        ]
     oracle = {"status": "inputs_required", "semantic_source_ref": "#/gap_spec/semantic_source",
               "reference_cases_ref": "#/gap_spec/reference_cases", "whole_program_ref": "#/source",
               "input_materialization": "save reproducible inputs for each requested profile; no inputs have been executed by Planner"}
+    if observed_entries:
+        oracle["status"] = "inputs_observed_cpu"
+        oracle["input_materialization"] = (
+            "observed-inputs.json records the concrete operands that reached the gap "
+            "callsite while the original NumPy program ran on the CPU; the device "
+            "region was not executed by AsNumpy and remains unverified"
+        )
     if spec.qualified_api.startswith("numpy."):
         oracle["python"] = ("import numpy as np\n\ndef numpy_oracle(*args, **kwargs):\n"
                             "    return np.%s(*args, **kwargs)\n" % spec.api_name)
     else:
         oracle["status"] = "declared_operator_oracle_required"
         oracle["python"] = None
+    support_scope = {**_scope(), "signatures_ref": "#/gap_spec/signature_variants",
+                     "shape_rules_ref": "#/gap_spec/shape_rules"}
+    if observed_entries:
+        support_scope["dtype_source"] = "observed_cpu_execution"
     value = {
         "schema": SCHEMA, "schema_version": 1, "mode": "gap_spec_requirements",
         "status": "requirements_blocked" if conflicts else "requirements_prepared_unverified",
@@ -214,17 +418,20 @@ def build_gap_taskbook(spec: GapSpec, *, source: str | None = None) -> dict:
                 "callsites_ref": "#/gap_spec/callsites", "route_ref": "#/gap_spec/route",
                 "route_decisions_ref": "#/gap_spec/route_decisions"},
         "call_contract": {"signature_variants_ref": "#/gap_spec/signature_variants",
-                          "callsites": calls, "observed_profiles": [], "tensor_facts": _unknown_profiles(),
+                          "callsites": calls, "observed_profiles": observed_entries,
+                          "tensor_facts": observed_facts,
+                          "observation_status": observed_status or "not_requested",
                           "shape_rules_ref": "#/gap_spec/shape_rules", "dtype_rules_ref": "#/gap_spec/dtype_rules"},
         "semantics": _semantics("#/gap_spec/semantic_source"),
-        "support_scope": {**_scope(), "signatures_ref": "#/gap_spec/signature_variants",
-                          "shape_rules_ref": "#/gap_spec/shape_rules"},
+        "support_scope": support_scope,
         "integration": _integration(spec.target_soc, spec.cann_version),
         "acceptance": _acceptance(oracle), "responsibility": _responsibility(),
         "generation": {"allowed": not conflicts, "blockers": conflicts,
                        "claim_level": "unverified_candidate_only"},
-        "unresolved": list(_PROFILE_FIELDS) + ["oracle_inputs", "numerical_tolerances",
-                                              "candidate_support_and_rejection_profiles"],
+        "unresolved": [field for field in _PROFILE_FIELDS
+                       if observed_facts[field]["status"] == "unknown"]
+                      + ["oracle_inputs", "numerical_tolerances",
+                         "candidate_support_and_rejection_profiles"],
     }
     return _seal(value)
 
@@ -301,10 +508,23 @@ def validate_gap_taskbook(taskbook: Mapping) -> dict:
                 or value.get("source", {}).get("path") != spec.source_path):
             raise ValueError("taskbook GapSpec/source binding mismatch")
         conflicts = _dtype_conflicts(spec, value["call_contract"]["callsites"])
-        if (value.get("generation") != {"allowed": not conflicts, "blockers": conflicts,
+        observed = value["call_contract"].get("observed_profiles")
+        if observed:
+            conflicts = list(conflicts)
+            if value["call_contract"].get("observation_status") == "unsupported_dtype":
+                conflicts.append(
+                    "observed operand dtype is outside the float32 development scope"
+                )
+        if (value.get("generation") != {"allowed": not conflicts, "blockers": sorted(set(conflicts)),
                                        "claim_level": "unverified_candidate_only"}
                 or value.get("status") != ("requirements_blocked" if conflicts else "requirements_prepared_unverified")):
             raise ValueError("taskbook generation scope does not match declared dtype requirements")
+        _validate_observed_contract(value["call_contract"])
+        if observed and value["call_contract"].get("observation_status") not in {
+            "observed", "unsupported_dtype", "profile_missing",
+            "nondeterministic", "observation_failed",
+        }:
+            raise ValueError("taskbook observation status is invalid")
     elif value.get("generation", {}).get("allowed") is not False:
         raise ValueError("analysis-only taskbook cannot authorize generation")
     if (value.get("support_scope", {}).get("input_dtype") != "float32"
@@ -356,17 +576,56 @@ def render_gap_taskbook_markdown(taskbook: Mapping) -> str:
             lines += ["  - `%s=%s`（%s）。" % (inline(arg["name"]), inline(arg.get("expression", "unknown")), arg["status"])]
         if args["status"] == "unknown":
             lines += ["  - 调用表达式不完整，需回到绑定源码确认参数。"]
-    lines += ["", "- 未确认：%s。" % ", ".join(value["unresolved"]),
-              "- 已观测运行时 profiles：无。请记录实际输入、输出和调用位置，再提交资格验证。", "",
+    observed = value.get("call_contract", {}).get("observed_profiles") or []
+    observation_status = value.get("call_contract", {}).get("observation_status", "not_requested")
+    lines += ["", "- 未确认：%s。" % ", ".join(value["unresolved"])]
+    if observed:
+        lines += ["- 已观测运行时 profiles：`%s`。观测方式是在 CPU 上执行原 NumPy 程序并记录调用点实参，"
+                  "源码 SHA-256 与任务书绑定。" % observation_status, "",
+                  "| 调用点 | 参数名 | dtype | shape | rank | C 连续 |",
+                  "| --- | --- | --- | --- | --- | --- |"]
+        for entry in observed:
+            site = "行 %s `%s`" % (entry["callsite"]["lineno"],
+                                   inline(spec.get("qualified_api", "?")))
+            for operand in entry["operands"]:
+                lines += ["| %s | `%s` | `%s` | `%s` | %s | %s |" % (
+                    site, inline(operand["name"]), inline(operand["dtype"]),
+                    inline(list(operand["shape"])), operand["rank"], operand["c_contiguous"])]
+            output = entry["output"]
+            if output is not None:
+                lines += ["| %s | 输出 | `%s` | `%s` | %s | %s |" % (
+                    site, inline(output["dtype"]), inline(list(output["shape"])),
+                    output["rank"], output["c_contiguous"])]
+        lines += ["", "观测只覆盖 CPU 上实际执行到的调用点；设备区域在迁移验收前未被 AsNumpy 执行。"]
+    else:
+        if observation_status not in {"not_requested", None}:
+            lines += ["- 已观测运行时 profiles：无（观测状态 `%s`）。不能据此声称已知输入，"
+                      "重试观测或手工记录实际输入后重新提交。" % inline(observation_status)]
+        else:
+            lines += ["- 已观测运行时 profiles：无。请记录实际输入、输出和调用位置，再提交资格验证。"]
+    lines += ["",
               "## 3. NumPy 语义", "",
               "语义来源：`%s`。" % inline(spec.get("semantic_source", "原始源码；GapSpec 尚未建立")), ""]
     lines += ["- " + item for item in value["semantics"]["checklist"]]
+    dtype_line = ("- 输入 dtype：**float32**（已观测，见第 2 节）。" if observed
+                  else "- 请求输入 dtype：**float32**。这是本批开发政策，不是已观测 dtype。")
     lines += ["", "## 4. 本批最小支持范围与拒绝范围", "",
-              "- 请求输入 dtype：**float32**。这是本批开发政策，不是已观测 dtype。",
+              dtype_line,
               "- 输出 dtype/返回结构服从 NumPy oracle；比较接口可以返回 bool，不能强转为 float32。",
               "- 其他输入 dtype 显式拒绝或留待后续，不能静默 cast，也不能静默回退 CPU。",
               "- 调用签名和 shape/dtype 声明只引用原 GapSpec；未知 rank/shape/layout 不等于任意范围已支持。",
-              "- 生成者须明确本候选支持哪些 profiles、拒绝哪些输入，并分别写正反测试。最终资格只覆盖实测范围。", "",
+              "- 生成者须明确本候选支持哪些 profiles、拒绝哪些输入，并分别写正反测试。最终资格只覆盖实测范围。"]
+    if observed:
+        lines += ["- 本候选只需支持第 2 节已观测的输入 dtype/shape/rank/连续性组合；这是针对目标输入的"
+                  "定向特化算子，范围外输入必须显式拒绝，不做泛化承诺。"]
+    if observed:
+        oracle_line = ("Oracle 状态：`%s`；输入已在 CPU 上由原程序实际执行并记录（见第 2 节），"
+                       "设备区域仍须由确定性验证对拍。"
+                       % value["acceptance"]["oracle"]["status"])
+    else:
+        oracle_line = ("Oracle 状态：`%s`；输入仍需从原程序/声明参考样例获取并落盘，Planner 没有执行源程序。"
+                       % value["acceptance"]["oracle"]["status"])
+    lines += ["",
               "## 5. 官方优先与源码接入边界", "",
               "- 目标 SoC：`%s`；CANN：`%s`。未提供时先补齐，不能自行猜测。" % (inline(value["integration"]["target_soc"]), inline(value["integration"]["cann_version"])),
               "- " + value["integration"]["strategy"], "- " + value["integration"]["source_boundary"],
@@ -375,7 +634,7 @@ def render_gap_taskbook_markdown(taskbook: Mapping) -> str:
               "- 接入依据引用：%s。" % "; ".join(value["integration"]["dependency_refs"]),
               "- 禁止隐式改系统 CANN/共享 AsNumpy、CPU fallback 或激活未验证包。", "",
               "## 6. 可执行 Oracle 与验收", "",
-              "Oracle 状态：`%s`；输入仍需从原程序/声明参考样例获取并落盘，Planner 没有执行源程序。" % value["acceptance"]["oracle"]["status"], ""]
+              oracle_line, ""]
     oracle_code = value["acceptance"]["oracle"].get("python")
     if oracle_code:
         lines += ["```python", oracle_code.rstrip(), "```", ""]

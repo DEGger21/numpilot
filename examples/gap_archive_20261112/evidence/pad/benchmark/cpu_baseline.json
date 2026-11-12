@@ -1,0 +1,46 @@
+{
+  "file": "pad/source/pad_contract.py",
+  "source_sha256": "d14c80a52866f48e3188b71dfe039df27645432e420e1b2ccc02c2494ed5d956",
+  "net": "pad_contract",
+  "t_cpu_ms": 4.11652959883213,
+  "timing": {
+    "clock": "time.perf_counter",
+    "warmup_iterations": 3,
+    "measurement_iterations": 10,
+    "samples_ms": [
+      5.555015057325363,
+      4.14911936968565,
+      4.1123684495687485,
+      4.330730065703392,
+      4.128898493945599,
+      4.104078747332096,
+      4.107308574020863,
+      4.076899029314518,
+      4.079057835042477,
+      4.11652959883213
+    ],
+    "median_ms": 4.11652959883213
+  },
+  "n_elements": 4206600,
+  "output_shape": [
+    2050,
+    2052
+  ],
+  "cpu_threads": 1,
+  "cpu_threads_requested": 1,
+  "blas": {
+    "source": "threadpoolctl",
+    "effective_threads": 1,
+    "pools": [
+      {
+        "internal_api": "openblas",
+        "num_threads": 1,
+        "prefix": "libscipy_openblas",
+        "version": "0.3.34.106.0",
+        "threading_layer": "pthreads",
+        "architecture": "tsv110"
+      }
+    ]
+  },
+  "dtype": "float32"
+}

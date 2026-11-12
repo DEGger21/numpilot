@@ -1,0 +1,31 @@
+{
+  "schema": "numpilot.operator_repair.v1",
+  "operator": "std",
+  "repairs": [
+    {
+      "id": "aclnn-symbol-alignment",
+      "from": "aclnnStdGetWorkspaceSize/aclnnStd",
+      "to": "aclnnNumpyStdGetWorkspaceSize/aclnnNumpyStd",
+      "reason": "opbuild regenerates the installed ACLNN header from the OpType; the exported symbols must match it"
+    }
+  ],
+  "files": [
+    {
+      "path": "op_api/aclnn_std.h",
+      "replacements": 6,
+      "sha256_before": "1071ed6cc92c20b16f271b1633d5daa68f66b41450a1ff31a53570e3fddc236e",
+      "sha256_after": "325e1f906052ca8c0b8ff2bcb08ffdf8360fe4e3b801566853b9e1d05e05b4f6"
+    },
+    {
+      "path": "op_api/aclnn_std.cpp",
+      "replacements": 11,
+      "sha256_before": "9afc068492215ef2329814c68c2b367edaae50f028fd2b14f43a99f29a445a97",
+      "sha256_after": "485555b76f1c47d4a99a0c74e25b953b32ba7844bac0383084c699c77a2cc085"
+    },
+    {
+      "path": "asnumpy_adapter/std.json",
+      "sha256_before": "e59799bac85997e5ce1ad6d882b296479739ba37ca0d30ffa9bbde1e60ffef7d",
+      "sha256_after": "c1df95ffb4a7d8fc91b70a8e502390b31533e9742ca318ec14cb21c400c41d47"
+    }
+  ]
+}

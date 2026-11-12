@@ -431,6 +431,45 @@ def test_reviewed_official_prompt_dependencies_fail_closed():
         )
 
 
+def test_reviewed_official_prompt_dependencies_bind_the_reviewed_api():
+    from numpilot.asnumpy_adapter_context import (
+        _OFFICIAL_ACLNN_EXISTING_MODULE_PLANS,
+        reviewed_official_adapter_prompt_dependencies,
+    )
+
+    argsort_paths = tuple(
+        _OFFICIAL_ACLNN_EXISTING_MODULE_PLANS["argsort"][
+            "expected_overlay_paths"
+        ]
+    )
+    searchsorted_paths = tuple(
+        _OFFICIAL_ACLNN_EXISTING_MODULE_PLANS["searchsorted"][
+            "expected_overlay_paths"
+        ]
+    )
+    # The two APIs share one overlay shape; only the signed header differs.
+    assert argsort_paths == searchsorted_paths
+    argsort = reviewed_official_adapter_prompt_dependencies(
+        argsort_paths, api_name="argsort"
+    )
+    searchsorted = reviewed_official_adapter_prompt_dependencies(
+        argsort_paths, api_name="searchsorted"
+    )
+    header_slot = "csrc/sorting/sorting.cpp"
+    assert argsort[header_slot][-1] == {
+        "source": "signed_official_header",
+        "path": "SIGNED_OFFICIAL_HEADER/aclnn_argsort.h",
+    }
+    assert searchsorted[header_slot][-1] == {
+        "source": "signed_official_header",
+        "path": "SIGNED_OFFICIAL_HEADER/aclnn_searchsorted.h",
+    }
+    with pytest.raises(AsnumpyAdapterContextError, match="not reviewed"):
+        reviewed_official_adapter_prompt_dependencies(
+            argsort_paths, api_name="not_a_reviewed_api"
+        )
+
+
 def test_official_aclnn_planner_rejects_unreviewed_api_before_reading_tree(
     tmp_path,
 ):

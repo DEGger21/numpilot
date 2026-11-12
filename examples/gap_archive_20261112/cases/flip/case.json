@@ -1,0 +1,55 @@
+{
+  "case": "flip",
+  "gap_operator": "flip",
+  "numpy_call": "numpy.flip(a, axis=0)",
+  "gap_id": "flip-90b571f77ade33f6",
+  "route": "ascendc_registry_candidate",
+  "source_sha256": "d89f11b95c02dc443cb12edbb853bf769856286eed87ac667a8d602bfe84d9d0",
+  "migrated_sha256": "69c3b83eccdeebd728fa40d6ca62dd79b2dc0bb699ecb4062f21280149c45d8f",
+  "archive": {
+    "draft_files": 19,
+    "final_files": 20,
+    "adapter_files": 6
+  },
+  "metrics": {
+    "generation_s": 881,
+    "completion_build_deploy_verify_s": 1964,
+    "generation_plus_completion_s": 2845,
+    "adapter_build_plus_tests_s": 124,
+    "migrate_command_s": 8,
+    "bench_s": null,
+    "end_to_end_s": 4516,
+    "build_attempts": 5,
+    "adapter_tests_passed": 13,
+    "timeline_stage_elapsed_s": {}
+  },
+  "migration": {
+    "engine": "ast",
+    "status": "pass",
+    "rewrites": {
+      "flip": 1
+    },
+    "numerically_consistent": true,
+    "max_abs_diff": 0.0,
+    "max_rel_diff": 0.0,
+    "admission_id": "8abae428c1fc5542a37f0e9788dad1eb5d1fa4dc2a71dc037aa81627fcd8cfeb"
+  },
+  "benchmark": {
+    "status": "pass",
+    "engine": "ast",
+    "backend": "npu",
+    "n_elements": 4194304,
+    "t_cpu_ms": 0.007380731403827667,
+    "t_npu_ms": 1.7561381682753563,
+    "speedup": 0.004202819309528494,
+    "max_abs_diff": 0.0,
+    "max_rel_diff": 0.0,
+    "atol": 1e-05,
+    "rtol": 0.0001
+  },
+  "notes": [
+    "Model draft reached a working kernel after 5 build attempts.",
+    "13 adapter tests pass; exact equality with numpy.",
+    "CPU baseline uses numpy.flip, which returns a view in O(1); the NPU operator materialises a 4 Mi-element copy. The 0.0042x ratio therefore compares view creation against data movement, not equal work. Use the absolute times only."
+  ]
+}

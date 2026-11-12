@@ -3454,6 +3454,40 @@ def test_asnumpy_adapter_manifest_v1_identity_is_accepted():
     assert cli._resolve_asnumpy_adapter_api_name(manifest, spec) == "softplus"
 
 
+def test_asnumpy_adapter_draft_operator_manifest_identity_is_accepted():
+    from numpilot import __main__ as cli
+
+    spec = SimpleNamespace(
+        api_name="diff",
+        qualified_api="numpy.diff",
+        asnumpy_api="asnumpy.diff",
+    )
+    manifest = {
+        "schema": "numpilot.asnumpy_adapter.operator",
+        "api": {"numpy": "numpy.diff", "asnumpy": "asnumpy.diff"},
+        "names": {"python_wrapper_callable": "diff"},
+    }
+
+    assert cli._resolve_asnumpy_adapter_api_name(manifest, spec) == "diff"
+
+
+def test_asnumpy_adapter_draft_operator_manifest_identity_mismatch_is_rejected():
+    from numpilot import __main__ as cli
+
+    spec = SimpleNamespace(
+        api_name="diff",
+        qualified_api="numpy.diff",
+        asnumpy_api="asnumpy.diff",
+    )
+    manifest = {
+        "schema": "numpilot.asnumpy_adapter.operator",
+        "api": {"numpy": "numpy.gradient", "asnumpy": "asnumpy.diff"},
+        "names": {"python_wrapper_callable": "diff"},
+    }
+
+    assert cli._resolve_asnumpy_adapter_api_name(manifest, spec) is None
+
+
 def test_asnumpy_adapter_manifest_v1_operator_nested_mapping_is_accepted():
     from numpilot import __main__ as cli
 

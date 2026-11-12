@@ -1,0 +1,33 @@
+{
+  "schema": "numpilot.operator_repair.v1",
+  "operator": "std",
+  "repairs": [
+    {
+      "id": "gm-output-dma",
+      "symptom": "first launch per process leaves a random subset of output rows at the caller's pre-fill value",
+      "root_cause": "outputGM.SetValue scalar stores stay in the AI-core L2 and are not visible to the D2H DMA copy",
+      "fix": "chained DataCopyPad (MTE3) flush of a UB output tile"
+    },
+    {
+      "id": "ub-block-alignment",
+      "symptom": "16-byte TQue tile when the reduction is 4 columns",
+      "fix": "round tile bytes up to the 32-byte UB block size"
+    }
+  ],
+  "files": [
+    {
+      "path": "op_kernel/arch22/std.h",
+      "edits": [
+        "members",
+        "buffer-alloc",
+        "declarations",
+        "compute-row-signature",
+        "compute-row-tail",
+        "drop-copy-out",
+        "process"
+      ],
+      "sha256_before": "40ada84dbee44a34b2d2e66fbaf2310e5c8f88b5562a2a7fddd7ba3a3917db0e",
+      "sha256_after": "ae60ddf49b4feb3b56584f5dece3443c59e2dd3a9ee9bb2d69b28960c84013f7"
+    }
+  ]
+}

@@ -1,0 +1,125 @@
+{
+  "case": "pad",
+  "gap_operator": "pad",
+  "numpy_call": "numpy.pad(a, pad_width, mode='constant')",
+  "gap_id": "pad-484a52aec253e456",
+  "route": "ascendc_registry_candidate",
+  "source_sha256": "d14c80a52866f48e3188b71dfe039df27645432e420e1b2ccc02c2494ed5d956",
+  "migrated_sha256": "f0bd65e1862a09fe7187254e723090800ddfd25557127fb020309c089a22f130",
+  "archive": {
+    "draft_files": 18,
+    "final_files": 18,
+    "adapter_files": 6
+  },
+  "metrics": {
+    "generation_s": 1011,
+    "completion_build_deploy_verify_s": 1708,
+    "generation_plus_completion_s": 2719,
+    "adapter_build_plus_tests_s": 111,
+    "migrate_command_s": 7,
+    "bench_s": 10,
+    "end_to_end_s": 2819,
+    "build_attempts": 13,
+    "adapter_tests_passed": 15,
+    "timeline_stage_elapsed_s": {
+      "opp-build-attempt1": [
+        2
+      ],
+      "opp-build-attempt2": [
+        6
+      ],
+      "opp-build-attempt3": [
+        11
+      ],
+      "opp-build-attempt4": [
+        15
+      ],
+      "opp-build-attempt5": [
+        15
+      ],
+      "opp-build-attempt6": [
+        15
+      ],
+      "opp-build-attempt7": [
+        5
+      ],
+      "opp-build-attempt8": [
+        19
+      ],
+      "opp-deploy": [
+        1,
+        1,
+        2,
+        1,
+        1
+      ],
+      "opp-build-attempt9": [
+        17
+      ],
+      "provenance-verify": [
+        0
+      ],
+      "adapter-wheel": [
+        91
+      ],
+      "adapter-stage": [
+        1
+      ],
+      "adapter-tests": [
+        6,
+        6,
+        7
+      ],
+      "opp-build-attempt10": [
+        19
+      ],
+      "opp-build-attempt11": [
+        20
+      ],
+      "opp-build-attempt12": [
+        20
+      ],
+      "opp-build-attempt13": [
+        19
+      ],
+      "migrate-npu-ast": [
+        7
+      ],
+      "bench-cpu": [
+        1
+      ],
+      "bench-npu": [
+        9
+      ]
+    }
+  },
+  "migration": {
+    "engine": "ast",
+    "status": "pass",
+    "rewrites": {
+      "pad": 1
+    },
+    "numerically_consistent": true,
+    "max_abs_diff": 0.0,
+    "max_rel_diff": 0.0,
+    "admission_id": "b2b58a653b8fba58b09745c68439f20558b13c51246d381819bf74ba758101e8"
+  },
+  "benchmark": {
+    "status": "pass",
+    "engine": "ast",
+    "backend": "npu",
+    "n_elements": 4206600,
+    "t_cpu_ms": 4.11652959883213,
+    "t_npu_ms": 1.7243782058358192,
+    "speedup": 2.387254481006861,
+    "max_abs_diff": 0.0,
+    "max_rel_diff": 0.0,
+    "atol": 1e-05,
+    "rtol": 0.0001
+  },
+  "notes": [
+    "Model draft needed 13 build attempts; adapter tests were re-run after the later deploys, so the build lane and the adapter lane overlap in wall clock.",
+    "15 adapter tests pass; exact equality.",
+    "4.2 Mi-element constant pad; 2.39x speedup."
+  ]
+}

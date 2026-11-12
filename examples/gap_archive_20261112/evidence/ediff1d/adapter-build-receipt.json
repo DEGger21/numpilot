@@ -1,0 +1,25 @@
+{
+  "cann_version": "9.2.0-beta.2",
+  "native_core": "_core.cpython-312-aarch64-linux-gnu.so",
+  "native_core_sha256": "8285a9852fc181978506c929445e9c9e23ceb25a8a116003fe057b91f99fa927",
+  "operator": "ediff1d",
+  "schema": "numpilot.adapter_build_receipt",
+  "schema_version": 1,
+  "status": "pass",
+  "target_soc": "Ascend910B3",
+  "tests": {
+    "command": "ASCEND_CUSTOM_OPP_PATH=<vendor> PYTHONPATH=<stage> python -m pytest tests/asnumpy_tests/custom_ops_tests/test_ediff1d.py -q",
+    "failed": 0,
+    "log": "custom-v1/adapter-build-v1/tests.log",
+    "passed": 10,
+    "skipped": 0
+  },
+  "vendor": "custom-v1/deploy-v1/vendors/ediff1d_custom",
+  "vendor_provenance": {
+    "path": "custom-v1/verify-v1/custom-opp-provenance.json",
+    "sha256": "1a8eee43ed5a2bc41fb20bcb1900318864e87e2594bbb6bac32392453a01af4d"
+  },
+  "wheel": "asnumpy-0.3.1-cp312-cp312-linux_aarch64.whl",
+  "wheel_sha256": "23758e4e68633af8f93adc2e149d74b0ec4c38c573a846e5bea608cd6ba8a346",
+  "wheel_size_bytes": 684365
+}

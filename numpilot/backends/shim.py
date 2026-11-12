@@ -101,15 +101,43 @@ _OVERLAY_STANDINS = {
 }
 
 
-def install_overlay_ops(module, names):
+def _numpy_fallback_standin(name):
+    """NumPy-equivalent stand-in for an explicitly admitted operator.
+
+    Only names carried by a validated custom-operator admission file
+    reach this factory.  The shim is the offline numerical oracle, so
+    the stand-in delegates to the NumPy function of the same name; an
+    unknown name is still rejected instead of being fabricated.
+    """
+
+    npfunc = getattr(np, name, None)
+    if not callable(npfunc):
+        raise ValueError("shim backend has no NumPy equivalent for %s" % name)
+
+    def standin(*args, **kwargs):
+        return _wrap_result(
+            npfunc(
+                *[_unwrap(item) for item in args],
+                **{key: _unwrap(value) for key, value in kwargs.items()},
+            )
+        )
+
+    standin.__name__ = name
+    return standin
+
+
+def install_overlay_ops(module, names, numpy_fallbacks=()):
+    fallbacks = frozenset(str(name) for name in numpy_fallbacks)
     for name in names:
         if hasattr(module, name):
             continue
         factory = _OVERLAY_STANDINS.get(str(name))
         if factory is None:
-            raise ValueError(
-                "shim backend has no overlay stand-in for %s" % name
-            )
+            if str(name) not in fallbacks:
+                raise ValueError(
+                    "shim backend has no overlay stand-in for %s" % name
+                )
+            factory = _numpy_fallback_standin(str(name))
         setattr(module, name, factory)
     return module
 
@@ -506,9 +534,16 @@ def _make_module():
 class ShimBackend(ExecutionBackend):
     name = "shim"
 
-    def __init__(self, extra_ops=(), analysis_profile_resolver=None):
+    def __init__(
+        self,
+        extra_ops=(),
+        analysis_profile_resolver=None,
+        numpy_fallback_ops=(),
+    ):
         self._module = install_overlay_ops(
-            _make_module(), tuple(extra_ops or ())
+            _make_module(),
+            tuple(extra_ops or ()),
+            tuple(numpy_fallback_ops or ()),
         )
         self._analysis_profile_resolver = analysis_profile_resolver
 

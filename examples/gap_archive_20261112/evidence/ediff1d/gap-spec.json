@@ -1,0 +1,52 @@
+{
+  "api_name": "ediff1d",
+  "asnumpy_api": "asnumpy.ediff1d",
+  "callsites": [
+    {
+      "call_expr": "numpy.ediff1d(<arg0>)",
+      "col_offset": 8,
+      "lineno": 10,
+      "qualified_api": "numpy.ediff1d",
+      "reason": "API 不在静态覆盖集"
+    }
+  ],
+  "cann_version": "9.2.0-beta.2",
+  "dtype_rules": [
+    "runtime_profile_required"
+  ],
+  "gap_id": "ediff1d-d3bacc55a5c1886b",
+  "qualified_api": "numpy.ediff1d",
+  "reference_cases": [],
+  "route": "ascendc_registry_candidate",
+  "route_decisions": [
+    {
+      "reason": "requires a semantic composition resolver",
+      "route": "asnumpy_composite",
+      "status": "not_evaluated"
+    },
+    {
+      "reason": "check a pinned CANN operator catalog before new kernel work",
+      "route": "cann_existing",
+      "status": "review_required"
+    },
+    {
+      "reason": "explicit draft generation is allowed; execution remains gated",
+      "route": "ascendc_registry",
+      "status": "candidate_for_draft"
+    }
+  ],
+  "schema_version": 1,
+  "semantic_source": "numpy.ediff1d",
+  "shape_rules": [
+    "runtime_profile_required"
+  ],
+  "signature_variants": [
+    {
+      "keyword_args": [],
+      "positional_args": 1
+    }
+  ],
+  "source_path": "ediff1d/source/ediff1d_contract.py",
+  "source_sha256": "9681613c066b42bb13ca58d0173d1731d32e55617161e999468c0170f088f4d8",
+  "target_soc": "Ascend910B3"
+}

@@ -1,0 +1,578 @@
+{
+  "schema": "numpilot.asnumpy_adapter",
+  "schema_version": 1,
+  "artifact": "asnumpy_adapter/argpartition.json",
+  "stage": "test_adapter_02",
+  "generation_stage": "17/17",
+  "gap_id": "argpartition-7d840c819f30b573",
+  "status": "unverified_candidate",
+  "qualified": false,
+  "activation": "blocked_pending_all_gates",
+  "target": {
+    "soc": "Ascend910B3",
+    "cann_version": "9.2.0-beta.2"
+  },
+  "operator": {
+    "numpy_api": "numpy.argpartition",
+    "asnumpy_api": "asnumpy.argpartition",
+    "cpp_op_type": "Argpartition",
+    "file_stem": "argpartition",
+    "route": "ascendc_registry_candidate",
+    "semantic_source": "numpy.argpartition"
+  },
+  "adapter": {
+    "dispatch": "registry_invoke",
+    "registry_key": "Argpartition",
+    "python_module": "asnumpy",
+    "python_attribute": "argpartition",
+    "descriptor_path": "asnumpy_adapter/argpartition.json",
+    "no_cpu_fallback": true,
+    "no_implicit_cast": true,
+    "no_implicit_contiguous_copy": true
+  },
+  "public_api": {
+    "name": "asnumpy.argpartition",
+    "python_signature": "asnumpy.argpartition(a, kth, axis=-1)",
+    "call_signature": {
+      "positional_args": 2,
+      "keyword_args": [
+        "axis"
+      ],
+      "exact_for_gap_callsite": true
+    },
+    "parameter_order": [
+      "a",
+      "kth",
+      "axis"
+    ],
+    "parameters": [
+      {
+        "name": "a",
+        "position": 0,
+        "occurrence": "positional",
+        "kind": "input_tensor",
+        "dtype": "float32",
+        "rank": 2,
+        "shape": [
+          32,
+          16
+        ],
+        "layout": "c_contiguous",
+        "required": true,
+        "implicit_cast": false
+      },
+      {
+        "name": "kth",
+        "position": 1,
+        "occurrence": "positional",
+        "kind": "integer_scalar",
+        "required": true,
+        "normalization": "numpy_kth_normalization",
+        "admitted_normalized_values": [
+          3
+        ],
+        "sequence_values": false,
+        "implicit_cast": false
+      },
+      {
+        "name": "axis",
+        "position": null,
+        "occurrence": "keyword",
+        "kind": "integer_scalar",
+        "required": false,
+        "default": -1,
+        "normalization": "numpy_axis_normalization",
+        "admitted_normalized_values": [
+          1
+        ],
+        "implicit_cast": false
+      }
+    ],
+    "return": {
+      "count": 1,
+      "structure": "single_tensor",
+      "tensor": {
+        "name": "out",
+        "dtype": "int64",
+        "rank": 2,
+        "shape": [
+          32,
+          16
+        ],
+        "layout": "c_contiguous",
+        "role": "argpartition_indices",
+        "bool": false
+      },
+      "bool_tensor_outputs": [],
+      "comparison_results_may_be_bool_only": true
+    }
+  },
+  "dtype_contract": {
+    "dtype_rules_declared_by_gap_spec": [
+      "runtime_profile_required"
+    ],
+    "input": {
+      "admitted_dtypes": [
+        "float32"
+      ],
+      "other_dtypes": "reject_without_cast",
+      "implicit_cast": false,
+      "error_type": "TypeError"
+    },
+    "kth": {
+      "admitted_kind": "integer_scalar",
+      "admitted_normalized_values": [
+        3
+      ],
+      "rejected_kinds": [
+        "float",
+        "bool",
+        "sequence",
+        "non_scalar"
+      ],
+      "implicit_cast": false,
+      "error_type": "TypeError"
+    },
+    "axis": {
+      "admitted_kind": "integer_scalar",
+      "admitted_normalized_values": [
+        1
+      ],
+      "rejected_kinds": [
+        "float",
+        "bool",
+        "none",
+        "out_of_range"
+      ],
+      "implicit_cast": false,
+      "error_type": "TypeError"
+    },
+    "output": {
+      "count": 1,
+      "dtype": "int64",
+      "source": "numpy.argpartition",
+      "bool_tensor_outputs": [],
+      "comparison_results_may_be_bool": true
+    }
+  },
+  "shape_contract": {
+    "shape_rules_declared_by_gap_spec": [
+      "runtime_profile_required"
+    ],
+    "runtime_profile_required": true,
+    "profile_matching": "exact_only",
+    "broadcast": "rejected",
+    "layout": "c_contiguous_only",
+    "empty_input": "rejected_out_of_profile",
+    "admitted_profiles": [
+      {
+        "profile_id": "line10_observed_cpu",
+        "source": "gap-taskbook.observed_profiles[0]",
+        "input": {
+          "name": "arg[0]",
+          "dtype": "float32",
+          "shape": [
+            32,
+            16
+          ],
+          "rank": 2,
+          "layout": "c_contiguous",
+          "broadcast": false
+        },
+        "kth": {
+          "raw": 3,
+          "normalized": 3,
+          "raw_equivalent_values": [
+            3,
+            -13
+          ]
+        },
+        "axis": {
+          "raw": 1,
+          "normalized": 1,
+          "raw_equivalent_values": [
+            1,
+            -1
+          ]
+        },
+        "output": {
+          "name": "out",
+          "dtype": "int64",
+          "shape": [
+            32,
+            16
+          ],
+          "rank": 2,
+          "layout": "c_contiguous"
+        }
+      }
+    ],
+    "rejected_profiles": [
+      "any input dtype other than float32",
+      "any rank other than 2",
+      "any shape other than [32, 16]",
+      "any non-C-contiguous layout",
+      "any broadcasted input",
+      "any empty input",
+      "any normalized axis other than 1",
+      "any normalized kth other than 3"
+    ]
+  },
+  "semantic_contract": {
+    "definition": "Return an int64 index tensor of the same shape as a such that selecting values from a with those indices along normalized axis yields a valid NumPy argpartition result at normalized kth.",
+    "axis_normalization": "If axis < 0, add a.ndim. A normalized axis must satisfy 0 <= axis < a.ndim. The admitted profile normalizes axis to 1.",
+    "kth_normalization": "If kth < 0, add a.shape[normalized_axis]. A normalized kth must satisfy 0 <= kth < a.shape[normalized_axis]. The admitted profile normalizes kth to 3.",
+    "normalized_axis": 1,
+    "normalized_kth": 3,
+    "axis_length": 16,
+    "partition_order": "NumPy total order: -inf < finite values < +inf < NaN. Negative zero and positive zero compare equal for partition ordering.",
+    "partition_predicate": "For every index i < normalized_kth and every index j > normalized_kth along the normalized axis, order(value[i]) <= order(value[normalized_kth]) and order(value[normalized_kth]) <= order(value[j]).",
+    "index_permutation": "Each slice along the normalized axis must be a permutation of the integer range [0, axis_length).",
+    "value_preservation": "Selected values must retain the exact original float32 bit patterns, including signbit and NaN payload.",
+    "ties": "Exact index sequence equality with numpy.argpartition is not required because argpartition is non-unique. The partition predicate, index permutation, and value-bit preservation are required.",
+    "return_structure": "single_tensor",
+    "bool_tensor_outputs": []
+  },
+  "name_mapping": {
+    "public_python": "asnumpy.argpartition",
+    "python_wrapper": "asnumpy.argpartition",
+    "pybind_callable": "asnumpy._C.argpartition",
+    "native_implementation": "asnumpy::native::argpartition",
+    "aclnn_l2_get_workspace_size": "aclnnArgpartitionGetWorkspaceSize",
+    "aclnn_l2_execute": "aclnnArgpartition",
+    "cpp_op_type": "Argpartition",
+    "kernel_entry": "argpartition",
+    "file_stem": "argpartition"
+  },
+  "acl_api": {
+    "l2": {
+      "header": "aclnn_argpartition.h",
+      "get_workspace_size": {
+        "symbol": "aclnnArgpartitionGetWorkspaceSize",
+        "argument_order": [
+          "a",
+          "kth",
+          "axis",
+          "out",
+          "workspaceSize",
+          "executor"
+        ]
+      },
+      "execute": {
+        "symbol": "aclnnArgpartition",
+        "argument_order": [
+          "workspace",
+          "workspaceSize",
+          "executor",
+          "stream"
+        ]
+      }
+    },
+    "l0": {
+      "header": "argpartition.h",
+      "get_workspace_size": "argpartitionGetWorkspaceSize",
+      "execute": "argpartition"
+    },
+    "synchronization": "The execute call is asynchronous on the supplied stream. The caller must synchronize the stream before host-side comparison.",
+    "error_handling": "Check aclnnStatus after GetWorkspaceSize and execute. On failure, do not fall back to CPU or NumPy; release executor/workspace and propagate the error.",
+    "no_host_fallback": true
+  },
+  "kernel_contract": {
+    "entry": "argpartition",
+    "cpp_op_type": "Argpartition",
+    "stage_order": [
+      "Init",
+      "CopyIn",
+      "Compute",
+      "CopyOut"
+    ],
+    "kernel_argument_order": [
+      "a",
+      "out",
+      "workspace",
+      "tiling"
+    ],
+    "tensor_inputs": [
+      "a"
+    ],
+    "scalar_inputs_via_tiling": [
+      "kth",
+      "axis"
+    ],
+    "tensor_outputs": [
+      "out"
+    ],
+    "tiling_fields": [
+      "rank",
+      "axis",
+      "axis_length",
+      "kth",
+      "rows"
+    ],
+    "output_dtype": "int64",
+    "host_fallback": false
+  },
+  "numerical_oracle": {
+    "golden_call": "numpy.argpartition(a, kth, axis=axis)",
+    "semantic_source": "numpy.argpartition",
+    "oracle_status": "inputs_observed_cpu",
+    "device_execution_status": "not_run",
+    "tolerances": {
+      "int64_indices": {
+        "rtol": 0.0,
+        "atol": 0,
+        "exact_dtype_and_shape": true,
+        "exact_index_sequence_against_numpy": false,
+        "reason": "argpartition index order is non-unique within the two partition sides"
+      },
+      "selected_float_values": {
+        "rtol": 0.0,
+        "atol": 0.0,
+        "exact_bits": true,
+        "equal_nan": true
+      }
+    },
+    "required_checks": [
+      {
+        "id": "shape_and_dtype",
+        "rule": "out.shape == a.shape and out.dtype == int64"
+      },
+      {
+        "id": "index_range",
+        "rule": "0 <= out[i] < a.shape[normalized_axis] for every index"
+      },
+      {
+        "id": "index_permutation",
+        "rule": "Each slice of out along normalized_axis is a permutation of [0, axis_length)"
+      },
+      {
+        "id": "selected_value_bits",
+        "rule": "For each row, the multiset of 32-bit patterns in take_along_axis(a, out, normalized_axis) equals the multiset of 32-bit patterns in the input row"
+      },
+      {
+        "id": "partition_predicate",
+        "rule": "All values before normalized_kth are <= the pivot and all values after normalized_kth are >= the pivot under the NumPy total order"
+      }
+    ],
+    "expected_actual_record": [
+      "input a",
+      "actual int64 indices",
+      "numpy.argpartition diagnostic indices",
+      "partition predicate result",
+      "selected-value bit multiset result"
+    ],
+    "special_values": {
+      "nan": "NaNs sort after +inf under NumPy order. Selected values must retain original NaN bit patterns.",
+      "positive_inf": "Ordered after finite values and before NaN.",
+      "negative_inf": "Ordered before all finite values.",
+      "signed_zero": "Negative zero and positive zero compare equal for partitioning, but the selected 32-bit pattern must preserve the original signbit.",
+      "check": "Use bit-multiset equality plus the partition predicate."
+    }
+  },
+  "rejection_contract": {
+    "unsupported_dtypes": [
+      "float16",
+      "bfloat16",
+      "float64",
+      "int8",
+      "int16",
+      "int32",
+      "int64",
+      "uint8",
+      "uint16",
+      "uint32",
+      "uint64",
+      "bool",
+      "complex64",
+      "complex128"
+    ],
+    "unsupported_shapes": "Any shape other than [32, 16].",
+    "unsupported_ranks": [
+      0,
+      1,
+      3,
+      4
+    ],
+    "unsupported_layouts": [
+      "non_c_contiguous",
+      "strided",
+      "broadcasted"
+    ],
+    "unsupported_axis": "Any normalized axis other than 1.",
+    "unsupported_kth": "Any normalized kth other than 3, and any non-scalar or sequence kth.",
+    "unsupported_keywords": [
+      "kind",
+      "order",
+      "out",
+      "where",
+      "casting",
+      "dtype"
+    ],
+    "error_policy": {
+      "unsupported_dtype": "TypeError",
+      "unsupported_kth_type": "TypeError",
+      "unsupported_axis_type": "TypeError",
+      "unsupported_shape_or_rank": "ValueError",
+      "non_contiguous": "ValueError",
+      "axis_out_of_range": "ValueError",
+      "kth_out_of_range": "ValueError",
+      "unsupported_keyword": "TypeError",
+      "no_implicit_cast": true,
+      "no_cpu_fallback": true,
+      "message_must_name_api_and_rejected_parameter": true
+    }
+  },
+  "adapter_tests": {
+    "test_id": "test_adapter_02",
+    "mode": "public_api_and_native_contract",
+    "cases": [
+      {
+        "id": "public_binding",
+        "call": "asnumpy.argpartition",
+        "expect": "callable public symbol"
+      },
+      {
+        "id": "admitted_profile_axis1_kth3",
+        "input_profile": "line10_observed_cpu",
+        "expect": "native call succeeds and all numerical checks pass"
+      },
+      {
+        "id": "admitted_axis_minus1",
+        "axis": -1,
+        "expect": "normalized to 1 and accepted"
+      },
+      {
+        "id": "admitted_kth_minus13",
+        "kth": -13,
+        "expect": "normalized to 3 and accepted"
+      },
+      {
+        "id": "reject_float64",
+        "dtype": "float64",
+        "expect": "TypeError without cast"
+      },
+      {
+        "id": "reject_float16",
+        "dtype": "float16",
+        "expect": "TypeError without cast"
+      },
+      {
+        "id": "reject_shape",
+        "shape": [
+          32,
+          15
+        ],
+        "expect": "ValueError without host fallback"
+      },
+      {
+        "id": "reject_rank3",
+        "shape": [
+          2,
+          16,
+          2
+        ],
+        "expect": "ValueError"
+      },
+      {
+        "id": "reject_non_contiguous",
+        "layout": "strided",
+        "expect": "ValueError without implicit contiguous copy"
+      },
+      {
+        "id": "reject_axis",
+        "axis": 0,
+        "expect": "ValueError"
+      },
+      {
+        "id": "reject_kth",
+        "kth": 4,
+        "expect": "ValueError"
+      },
+      {
+        "id": "reject_sequence_kth",
+        "kth": [
+          3
+        ],
+        "expect": "TypeError"
+      },
+      {
+        "id": "reject_kind_order_out_where_casting_dtype",
+        "keywords": [
+          "kind",
+          "order",
+          "out",
+          "where",
+          "casting",
+          "dtype"
+        ],
+        "expect": "TypeError and no silent drop"
+      },
+      {
+        "id": "special_values",
+        "input": "float32 [32,16] containing NaN, +Inf, -Inf, +0.0, and -0.0",
+        "expect": "partition predicate and selected-value bit multiset pass"
+      },
+      {
+        "id": "repeated_lifecycle",
+        "call_count": 2,
+        "expect": "second call succeeds and first call does not mutate the input"
+      }
+    ]
+  },
+  "gates": {
+    "build": {
+      "status": "pending",
+      "evidence": null
+    },
+    "unit_and_boundary": {
+      "status": "pending",
+      "evidence": null
+    },
+    "numerical": {
+      "status": "pending",
+      "evidence": null
+    },
+    "native_execution": {
+      "status": "pending",
+      "evidence": null,
+      "requires_real_npu": true
+    },
+    "whole_program": {
+      "status": "pending",
+      "evidence": null
+    },
+    "performance": {
+      "status": "pending",
+      "evidence": null,
+      "claimed": false,
+      "requires_separate_receipt": true
+    },
+    "activation": {
+      "status": "pending",
+      "evidence": null,
+      "requires_explicit_approval": true
+    }
+  },
+  "unresolved": [
+    "runtime_profiles other than float32 [32,16] C-contiguous with normalized axis 1 and normalized kth 3",
+    "dtype support for inputs other than float32",
+    "shape support other than [32,16]",
+    "axis values other than normalized 1",
+    "kth values other than normalized 3",
+    "device numerical tolerances until exact-profile device execution",
+    "performance qualification and activation"
+  ],
+  "provenance": {
+    "gap_spec_sha256": "dc4a696fc0a6c66aaf2f022d8d11fce9f6c141899411ed8032fe2d8e90714d79",
+    "source_sha256": "0ddb6a97b1dc177f4e1c36d445e0dfbde2311e23639acc347fa75204abc5400d",
+    "taskbook_id": "gap-taskbook-80c6eb36e0b26e35bf6ec58c175daa9bf6680365bff2c08b72e864b196f9a0d3",
+    "skill_bundle_sha256": "da0ee3d6a12561da0d630125d7f4ae8602848dbd4c6f1b3f7150b26a57ead79f",
+    "generated_from": [
+      "gap-spec.json",
+      "gap-taskbook",
+      "embedded CANNBot skill bundle"
+    ],
+    "external_repository_dependency": false,
+    "network_required": false
+  }
+}

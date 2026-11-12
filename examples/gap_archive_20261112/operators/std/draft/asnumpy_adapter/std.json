@@ -1,0 +1,452 @@
+{
+  "schema": "numpilot.asnumpy_adapter",
+  "schema_version": 1,
+  "record_type": "test_adapter_manifest",
+  "stage": "17/17:test_adapter_02",
+  "generation_status": "unverified_candidate",
+  "qualification_status": "pending",
+  "activation_status": "not_activated",
+  "name": "std",
+  "api": "std",
+  "api_name": "std",
+  "api_stem": "std",
+  "file_stem": "std",
+  "numpy_api": "numpy.std",
+  "asnumpy_api": "asnumpy.std",
+  "public_api": "asnumpy.std",
+  "op_type": "Std",
+  "gap_id": "std-7af7d72ee3a16eba",
+  "target_soc": "Ascend910B3",
+  "cann_version": "9.2.0-beta.2",
+  "semantic_source": "numpy.std",
+  "route": "ascendc_registry_candidate",
+  "name_mapping": {
+    "public_python_api": "asnumpy.std",
+    "python_wrapper": "asnumpy_adapter.std",
+    "python_wrapper_file": "asnumpy_adapter/std.py",
+    "pybind_entry_symbol": "std",
+    "cxx_op_type": "Std",
+    "cxx_file_stem": "std",
+    "kernel_entry_symbol": "std",
+    "l0_api_symbol": "l0op::Std",
+    "l0_aicore_symbol": "StdAiCore",
+    "aclnn_get_workspace_size_symbol": "aclnnStdGetWorkspaceSize",
+    "aclnn_execute_symbol": "aclnnStd"
+  },
+  "signature": {
+    "supported_python_form": "asnumpy.std(a, axis=1)",
+    "positional_count": 1,
+    "positional_parameters": [
+      {
+        "index": 0,
+        "name": "a",
+        "kind": "tensor",
+        "required": true,
+        "admitted_dtype": "float32"
+      }
+    ],
+    "keyword_parameters": [
+      {
+        "name": "axis",
+        "kind": "integer",
+        "required_for_admitted_profile": true,
+        "accepted_python_type": "int",
+        "bool_is_not_accepted_as_int": true,
+        "admitted_values": [
+          1
+        ],
+        "omitted_axis_policy": "reject",
+        "numpy_default_axis_is_outside_supported_scope": true
+      }
+    ],
+    "extra_positional_arguments": "reject",
+    "extra_keyword_arguments": "reject",
+    "numpy_parameter_order_reference": [
+      "a",
+      "axis",
+      "dtype",
+      "out",
+      "ddof",
+      "keepdims",
+      "where",
+      "mean",
+      "correction"
+    ],
+    "supported_parameters_only": [
+      "a",
+      "axis"
+    ],
+    "unsupported_numpy_parameters": {
+      "dtype": "reject_no_cast",
+      "out": "reject",
+      "ddof": "reject_nonzero",
+      "keepdims": "reject_non_default",
+      "where": "reject",
+      "mean": "reject",
+      "correction": "reject"
+    }
+  },
+  "io_contract": {
+    "input_count": 1,
+    "output_count": 1,
+    "inputs": [
+      {
+        "index": 0,
+        "name": "a",
+        "role": "data",
+        "dtype": "float32",
+        "rank": 2,
+        "shape": [
+          2048,
+          2048
+        ],
+        "layout": "c_contiguous",
+        "c_contiguous": true,
+        "implicit_cast_allowed": false
+      }
+    ],
+    "outputs": [
+      {
+        "index": 0,
+        "name": "out",
+        "role": "data",
+        "dtype": "float32",
+        "rank": 1,
+        "shape": [
+          2048
+        ],
+        "layout": "c_contiguous",
+        "c_contiguous": true,
+        "return_structure": "single_tensor"
+      }
+    ],
+    "workspace_and_tiling_are_not_user_visible": true
+  },
+  "declared_gap_spec_rules": {
+    "dtype_rules": [
+      "runtime_profile_required"
+    ],
+    "dtype_rule_status": "unresolved",
+    "shape_rules": [
+      "runtime_profile_required"
+    ],
+    "shape_rule_status": "unresolved",
+    "unresolved_markers_are_not_dtypes": true,
+    "unresolved_markers_are_not_shapes": true
+  },
+  "dtype_contract": {
+    "declared_rule": "runtime_profile_required",
+    "admitted_input_dtype": "float32",
+    "admitted_output_dtype": "float32",
+    "output_dtype_source": "numpy_oracle",
+    "implicit_cast": "forbidden",
+    "other_input_dtypes": "reject_without_cpu_fallback",
+    "boolean_outputs_required": false,
+    "comparison_results_are_boolean_outside_the_operator": true
+  },
+  "shape_contract": {
+    "declared_rule": "runtime_profile_required",
+    "admitted_profile": {
+      "input_shape": [
+        2048,
+        2048
+      ],
+      "input_rank": 2,
+      "axis": 1,
+      "keepdims": false,
+      "ddof": 0,
+      "output_shape": [
+        2048
+      ],
+      "output_rank": 1
+    },
+    "other_shapes": "reject_without_cpu_fallback",
+    "empty_input": "reject",
+    "non_c_contiguous_input": "reject"
+  },
+  "semantics": {
+    "operation": "standard_deviation",
+    "population_standard_deviation": true,
+    "ddof": 0,
+    "correction": 0,
+    "keepdims": false,
+    "axis": 1,
+    "formula": "sqrt(mean((a - mean(a, axis=1))^2, axis=1))",
+    "return_structure": "single_tensor",
+    "nan_policy": "propagate_like_numpy_std",
+    "infinity_policy": "match_numpy_std_without_clamping_or_sanitizing",
+    "signed_zero_policy": "match_numpy_oracle_oracle_value_exactly",
+    "nonnegative_result": true,
+    "special_values_must_match_oracle": true
+  },
+  "numerical_contract": {
+    "oracle": "numpy.std",
+    "oracle_call_for_admitted_profile": "numpy.std(a, axis=1)",
+    "comparison_dtype": "float32",
+    "tolerances": {
+      "float32": {
+        "rtol": 1e-05,
+        "atol": 1e-05
+      }
+    },
+    "tolerance_status": "declared_pending_numerical_gate",
+    "equal_nan": true,
+    "check_signed_zero": true,
+    "check_positive_infinity": true,
+    "check_negative_infinity": true,
+    "boolean_outputs_compared_exactly": true,
+    "device_result_must_come_from_native_npu_execution": true,
+    "cpu_fallback_allowed": false
+  },
+  "support_scope": {
+    "status": "requested_unverified",
+    "qualification_scope": "only_the_observed_float32_2048x2048_c_contiguous_axis1_profile",
+    "admitted_profiles": [
+      {
+        "id": "std_float32_2048x2048_axis1",
+        "input_dtype": "float32",
+        "input_shape": [
+          2048,
+          2048
+        ],
+        "input_rank": 2,
+        "layout": "c_contiguous",
+        "axis": 1,
+        "output_dtype": "float32",
+        "output_shape": [
+          2048
+        ],
+        "output_rank": 1,
+        "ddof": 0,
+        "keepdims": false,
+        "return_structure": "single_tensor"
+      }
+    ],
+    "other_input_dtypes": "reject_or_defer_without_implicit_cast",
+    "other_shapes_and_axes": "reject_or_defer_without_host_fallback",
+    "unsupported_signatures": "explicit_rejection_no_host_fallback"
+  },
+  "rejection_policy": {
+    "silent_cast": false,
+    "silent_cpu_fallback": false,
+    "silent_shape_relaxation": false,
+    "silent_numpy_default_axis": false,
+    "drop_unsupported_keywords": false,
+    "allow_other_rank": false,
+    "allow_other_c_contiguous_layout_variants": false,
+    "error_must_be_explicit": true
+  },
+  "test_manifest": {
+    "input_materialization": {
+      "source": "saved_oracle_inputs",
+      "device_for_oracle": "cpu",
+      "device_for_candidate": "npu",
+      "exact_observed_profile_required": true,
+      "input_file_hint": "observed-inputs.json#callsites"
+    },
+    "positive_cases": [
+      {
+        "id": "admitted_std_float32_2048x2048_axis1",
+        "input": {
+          "name": "a",
+          "dtype": "float32",
+          "shape": [
+            2048,
+            2048
+          ],
+          "layout": "c_contiguous"
+        },
+        "call": "asnumpy.std(a, axis=1)",
+        "expected_oracle": "numpy.std(a, axis=1)",
+        "expected_output_dtype": "float32",
+        "expected_output_shape": [
+          2048
+        ],
+        "expected_return_structure": "single_tensor",
+        "comparison": "float32 rtol=1e-05 atol=1e-05 with equal_nan=true"
+      }
+    ],
+    "negative_cases": [
+      {
+        "id": "reject_float64_input",
+        "mutation": {
+          "input_dtype": "float64"
+        },
+        "expected_result": "explicit_error",
+        "preferred_exception": "TypeError",
+        "must_not_silently_cast_to_float32": true
+      },
+      {
+        "id": "reject_float16_input",
+        "mutation": {
+          "input_dtype": "float16"
+        },
+        "expected_result": "explicit_error",
+        "preferred_exception": "TypeError"
+      },
+      {
+        "id": "reject_bfloat16_input",
+        "mutation": {
+          "input_dtype": "bfloat16"
+        },
+        "expected_result": "explicit_error",
+        "preferred_exception": "TypeError"
+      },
+      {
+        "id": "reject_integer_input",
+        "mutation": {
+          "input_dtype": "int32"
+        },
+        "expected_result": "explicit_error",
+        "preferred_exception": "TypeError"
+      },
+      {
+        "id": "reject_rank1_input",
+        "mutation": {
+          "input_shape": [
+            2048
+          ]
+        },
+        "expected_result": "explicit_error",
+        "preferred_exception": "ValueError"
+      },
+      {
+        "id": "reject_rank3_input",
+        "mutation": {
+          "input_shape": [
+            32,
+            64,
+            64
+          ]
+        },
+        "expected_result": "explicit_error",
+        "preferred_exception": "ValueError"
+      },
+      {
+        "id": "reject_unobserved_2d_shape",
+        "mutation": {
+          "input_shape": [
+            4,
+            8
+          ]
+        },
+        "expected_result": "explicit_error",
+        "preferred_exception": "ValueError"
+      },
+      {
+        "id": "reject_axis0",
+        "mutation": {
+          "axis": 0
+        },
+        "expected_result": "explicit_error",
+        "preferred_exception": "ValueError"
+      },
+      {
+        "id": "reject_axis_negative1",
+        "mutation": {
+          "axis": -1
+        },
+        "expected_result": "explicit_error",
+        "preferred_exception": "ValueError"
+      },
+      {
+        "id": "reject_omitted_axis",
+        "mutation": {
+          "axis": "omitted"
+        },
+        "expected_result": "explicit_error",
+        "preferred_exception": "ValueError"
+      },
+      {
+        "id": "reject_axis_as_second_positional",
+        "call": "asnumpy.std(a, 1)",
+        "expected_result": "explicit_error",
+        "preferred_exception": "TypeError"
+      },
+      {
+        "id": "reject_non_c_contiguous_input",
+        "mutation": {
+          "layout": "non_c_contiguous"
+        },
+        "expected_result": "explicit_error",
+        "preferred_exception": "ValueError"
+      },
+      {
+        "id": "reject_dtype_keyword",
+        "call": "asnumpy.std(a, axis=1, dtype=numpy.float32)",
+        "expected_result": "explicit_error",
+        "preferred_exception": "TypeError"
+      },
+      {
+        "id": "reject_out_keyword",
+        "call": "asnumpy.std(a, axis=1, out=out)",
+        "expected_result": "explicit_error",
+        "preferred_exception": "TypeError"
+      },
+      {
+        "id": "reject_ddof_keyword",
+        "call": "asnumpy.std(a, axis=1, ddof=1)",
+        "expected_result": "explicit_error",
+        "preferred_exception": "TypeError"
+      },
+      {
+        "id": "reject_keepdims_keyword",
+        "call": "asnumpy.std(a, axis=1, keepdims=True)",
+        "expected_result": "explicit_error",
+        "preferred_exception": "TypeError"
+      },
+      {
+        "id": "reject_where_keyword",
+        "call": "asnumpy.std(a, axis=1, where=mask)",
+        "expected_result": "explicit_error",
+        "preferred_exception": "TypeError"
+      }
+    ],
+    "special_value_cases": [
+      {
+        "id": "nan_propagation",
+        "description": "NaN in the reduced row must produce NaN at the matching output index, as numpy.std does.",
+        "comparison": "equal_nan"
+      },
+      {
+        "id": "positive_infinity",
+        "description": "Positive infinity must follow numpy.std non-finite propagation and must not be clamped.",
+        "comparison": "equal_nan"
+      },
+      {
+        "id": "negative_infinity",
+        "description": "Negative infinity must follow numpy.std non-finite propagation and must not be sanitized.",
+        "comparison": "equal_nan"
+      },
+      {
+        "id": "signed_zero",
+        "description": "Zero standard deviation must match the NumPy oracle signed-zero bit pattern exactly."
+      }
+    ],
+    "lifecycle_cases": [
+      {
+        "id": "repeated_input_lifecycle",
+        "description": "Repeated calls with the same admitted input must not mutate the input and must return independent output storage."
+      },
+      {
+        "id": "native_execution_evidence",
+        "description": "The adapter test must record a real NPU execution path and must not use host NumPy as the implementation fallback."
+      }
+    ]
+  },
+  "runtime_gates": {
+    "build": "pending",
+    "unit_and_boundary": "pending",
+    "numerical": "pending",
+    "native_execution": "pending",
+    "whole_program": "pending",
+    "performance": "pending_separate_receipt",
+    "activation": "pending"
+  },
+  "provenance": {
+    "gap_spec_sha256": "c6df9ccc1e6b57921abe2840b871b9b0e260330a002ccf6585d0a86bb09cbbb9",
+    "taskbook_id": "gap-taskbook-e8aa570154558ffadc8e62050630fbf177e971520d106864b82b7653b06058bc",
+    "source_path": "std/source/std_contract.py",
+    "source_sha256": "b3526fd459981a66b39f98a77be9964fcd9372f332849b4872c080131c1baf94"
+  }
+}
