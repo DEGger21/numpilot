@@ -3,16 +3,20 @@
 本目录保存 **6 个完整 NumPy 程序 → 6 个完整 AsNumpy 程序**的迁移证据链。
 每个 `program.py` 都包含 `build_inputs()` 与 `forward()`；迁移后的 `migrated.py`
 保持同一程序结构，只把 NumPy 调用替换为 AsNumpy 调用。六个程序各含 1 个真实
-缺口 API，缺口算子的生成/补全耗时见 `BENCHMARK_TABLE.md` 的第二张表。
+缺口 API，缺口算子的生成/补全耗时见 `BENCHMARK_TABLE.md` 的第二张表；下表耗时列
+为从算子生成到基准完成的完整端到端时间。
 
-| # | NumPy 程序 | AsNumpy 程序 | 数据规模 | 替换的 API | 迁移耗时 | CPU / NPU (ms) | 加速比 |
+| # | NumPy 程序 | AsNumpy 程序 | 数据规模 | 替换的 API | 完整端到端 | CPU / NPU (ms) | 加速比 |
 | ---: | --- | --- | --- | --- | ---: | ---: | ---: |
-| 1 | `cases/std/program.py` | `cases/std/migrated.py` | 2048 × 2048 float32；沿 axis=1 求标准差 | `np.std` | 7 s | 15.96 / 0.3718 | **42.92x** |
-| 2 | `cases/flip/program.py` | `cases/flip/migrated.py` | 2048 × 2048 float32；沿 axis=1 翻转 | `np.flip` | 8 s | 0.007381 / 1.756 | 0.0042x（口径见下） |
-| 3 | `cases/ediff1d/program.py` | `cases/ediff1d/migrated.py` | 2048 × 2048 float32 展平；4,194,303 个相邻差分 | `np.ediff1d` | 6 s | 4.48 / 1.664 | **2.69x** |
-| 4 | `cases/pad/program.py` | `cases/pad/migrated.py` | 2048 × 2048 float32；constant 填充；输出 2050 × 2052 | `np.pad` | 7 s | 4.117 / 1.724 | **2.39x** |
-| 5 | `cases/tril/program.py` | `cases/tril/migrated.py` | 2048 × 2048 float32；默认 k=0 下三角 | `np.tril` | 8 s | 14.16 / 1.649 | **8.59x** |
-| 6 | `cases/argpartition/program.py` | `cases/argpartition/migrated.py` | 32 × 16 float32；沿 axis=1、kth=3 分区 | `np.argpartition` | 7 s | 0.01049 / 0.3489 | 0.03x（口径见下） |
+| 1 | `cases/std/program.py` | `cases/std/migrated.py` | 2048 × 2048 float32；沿 axis=1 求标准差 | `np.std` | 90.9 min | 15.96 / 0.3718 | **42.92x** |
+| 2 | `cases/flip/program.py` | `cases/flip/migrated.py` | 2048 × 2048 float32；沿 axis=1 翻转 | `np.flip` | 75.3 min | 0.007381 / 1.756 | 0.0042x（口径见下） |
+| 3 | `cases/ediff1d/program.py` | `cases/ediff1d/migrated.py` | 2048 × 2048 float32 展平；4,194,303 个相邻差分 | `np.ediff1d` | 60.7 min | 4.48 / 1.664 | **2.69x** |
+| 4 | `cases/pad/program.py` | `cases/pad/migrated.py` | 2048 × 2048 float32；constant 填充；输出 2050 × 2052 | `np.pad` | 47.0 min | 4.117 / 1.724 | **2.39x** |
+| 5 | `cases/tril/program.py` | `cases/tril/migrated.py` | 2048 × 2048 float32；默认 k=0 下三角 | `np.tril` | 38.4 min | 14.16 / 1.649 | **8.59x** |
+| 6 | `cases/argpartition/program.py` | `cases/argpartition/migrated.py` | 32 × 16 float32；沿 axis=1、kth=3 分区 | `np.argpartition` | 38.2 min | 0.01049 / 0.3489 | 0.03x（口径见下） |
+
+完整端到端从真实算子生成调用开始，包含构建/修复/部署/数值验证、适配层、完整程序
+迁移和 CPU/NPU 基准；迁移命令本身为 6–8 s。
 
 每个案例都**完全走 NumPilot 流水线**，不是手工替换后补一份报告：
 

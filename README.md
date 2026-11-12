@@ -113,12 +113,16 @@ Six complete programs whose NumPy call is a real API gap. Each operator was gene
 configured model (`llm.json`), built, deployed, numerically validated and admitted before the
 whole program was migrated through NumPilot's six-role pipeline. The four positive speedups:
 
-| Program | Gap API | Workload | Migration time | CPU / NPU (ms) | Speedup |
+| Program | Gap API | Workload | End-to-end time | CPU / NPU (ms) | Speedup |
 | --- | --- | --- | ---: | ---: | ---: |
-| `std` | `np.std` | 2048 × 2048 float32; std over axis=1 | 7 s | 15.96 / 0.3718 | **42.92x** |
-| `tril` | `np.tril` | 2048 × 2048 float32; lower triangle | 8 s | 14.16 / 1.649 | **8.59x** |
-| `ediff1d` | `np.ediff1d` | 2048 × 2048 float32 flattened; 4,194,303 differences | 6 s | 4.48 / 1.664 | **2.69x** |
-| `pad` | `np.pad` | 2048 × 2048 float32; constant pad | 7 s | 4.117 / 1.724 | **2.39x** |
+| `std` | `np.std` | 2048 × 2048 float32; std over axis=1 | 90.9 min | 15.96 / 0.3718 | **42.92x** |
+| `tril` | `np.tril` | 2048 × 2048 float32; lower triangle | 38.4 min | 14.16 / 1.649 | **8.59x** |
+| `ediff1d` | `np.ediff1d` | 2048 × 2048 float32 flattened; 4,194,303 differences | 60.7 min | 4.48 / 1.664 | **2.69x** |
+| `pad` | `np.pad` | 2048 × 2048 float32; constant pad | 47.0 min | 4.117 / 1.724 | **2.39x** |
+
+End-to-end time starts at the real operator-generation call and includes build, repair, deployment,
+numerical validation, adapter build and tests, complete-program migration, and the CPU/NPU
+benchmark. The migration command itself takes 6–8 s.
 
 All 6/6 programs pass whole-program numerical comparison; 84 adapter tests pass. The full table
 also records `flip` (0.0042x, CPU view baseline) and `argpartition` (0.03x, 512-element

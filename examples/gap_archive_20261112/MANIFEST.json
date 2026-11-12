@@ -467,13 +467,13 @@
   "files": [
     {
       "path": "BENCHMARK_TABLE.md",
-      "bytes": 6623,
-      "sha256": "b851eadf6e53a8073a2689d539c5b78de65b86e9ad1a1cdf93d9904700f7ae1c"
+      "bytes": 6987,
+      "sha256": "2c26f1dbf72b2acea3db0524c37fa70d21ca994d3480a1547519e88089c97665"
     },
     {
       "path": "README.md",
-      "bytes": 6001,
-      "sha256": "f19f5202129de435b8225a2a8ceb80c5c68c5bf6dbff7a020df430e84e34d616"
+      "bytes": 6289,
+      "sha256": "b677f97479e593abe5e7b0f62be1632c33beee903d0e0533622350cfdf161607"
     },
     {
       "path": "cases/argpartition/case.json",

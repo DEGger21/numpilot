@@ -3,7 +3,8 @@
 本表覆盖 2026-11-12 批次中的 **6 个完整 NumPy 程序 → 6 个完整 AsNumpy 程序**：
 每个 `program.py` 都包含 `build_inputs()` 与 `forward()`，迁移后的 `migrated.py`
 保持同一程序结构与全部输入输出，只把 NumPy 调用替换为 AsNumpy 调用。
-六个程序各含 1 个真实缺口 API；缺口算子本身的生成与补全耗时单列在第二张表。
+六个程序各含 1 个真实缺口 API；缺口算子本身的生成与补全耗时单列在第二张表，
+主表的“完整端到端”列给出从模型生成开始到全程序基准完成的总时间。
 
 ```
 缺口发现 → LLM 生成 Ascend C 算子草稿 → 构建/修复 → 部署 → 数值验证
@@ -30,20 +31,21 @@
 | 生成 | `numpilot complete-gaps --provider llm` 从 preflight 到草稿落盘的墙钟时间（含真实模型调用） |
 | 补全 | 草稿落盘后，确定性构建/修复/部署/数值验证到 provenance 生成的墙钟时间。**修复不是模型输出**；模型原始草稿保存在 `operators/<case>/draft/`，最终可构建版本保存在 `operators/<case>/final/` |
 | 生成+补全 | 上面两段之和，即从模型调用开始到缺口算子通过数值验证的总耗时 |
+| 完整端到端 | 从模型生成开始到全程序 CPU/NPU 基准完成的墙钟时间；包含生成、构建/修复/部署/验证、适配层、迁移命令与基准 |
 | 适配层 | 为 AsNumpy 构建 overlay wheel、安装并执行算子单测的耗时（pad 的适配层测试与后续构建修复交错，分段耗时不严格可加） |
 | 构建次数 | `build-attempt*.log` 的数量，反映草稿修复轮次 |
 | 加速比 | `t_cpu_ms / t_npu_ms`，完整程序在 CPU 单核 vs NPU strict-asnumpy 上的 `forward()` 耗时（输入驻留设备，含 D2H 同步） |
 
 ## 主表：完整程序迁移
 
-| # | 源码 NumPy 程序（相对路径） | 迁移后 AsNumpy 程序（相对路径） | 数据规模 | 替换的 API | 迁移耗时 | CPU / NPU (ms) | 加速比 |
-| ---: | --- | --- | --- | --- | ---: | ---: | ---: |
-| 1 | `examples/gap_archive_20261112/cases/std/program.py` | `examples/gap_archive_20261112/cases/std/migrated.py` | 2048 × 2048 float32；4,194,304 元素；沿 axis=1 求标准差 | `np.std` | 7 s | 15.96 / 0.3718 | **42.92x** |
-| 2 | `examples/gap_archive_20261112/cases/flip/program.py` | `examples/gap_archive_20261112/cases/flip/migrated.py` | 2048 × 2048 float32；4,194,304 元素；沿 axis=1 翻转 | `np.flip` | 8 s | 0.007381 / 1.756 | 0.0042x |
-| 3 | `examples/gap_archive_20261112/cases/ediff1d/program.py` | `examples/gap_archive_20261112/cases/ediff1d/migrated.py` | 2048 × 2048 float32；4,194,304 元素展平；输出 4,194,303 个相邻差分 | `np.ediff1d` | 6 s | 4.48 / 1.664 | **2.69x** |
-| 4 | `examples/gap_archive_20261112/cases/pad/program.py` | `examples/gap_archive_20261112/cases/pad/migrated.py` | 2048 × 2048 float32；constant 填充 ((1,1),(2,2))；输出 2050 × 2052 | `np.pad` | 7 s | 4.117 / 1.724 | **2.39x** |
-| 5 | `examples/gap_archive_20261112/cases/tril/program.py` | `examples/gap_archive_20261112/cases/tril/migrated.py` | 2048 × 2048 float32；4,194,304 元素；默认 k=0 下三角 | `np.tril` | 8 s | 14.16 / 1.649 | **8.59x** |
-| 6 | `examples/gap_archive_20261112/cases/argpartition/program.py` | `examples/gap_archive_20261112/cases/argpartition/migrated.py` | 32 × 16 float32；512 元素；沿 axis=1、kth=3 分区 | `np.argpartition` | 7 s | 0.01049 / 0.3489 | 0.03x |
+| # | 源码 NumPy 程序（相对路径） | 迁移后 AsNumpy 程序（相对路径） | 数据规模 | 替换的 API | 迁移耗时 | 完整端到端 | CPU / NPU (ms) | 加速比 |
+| ---: | --- | --- | --- | --- | ---: | ---: | ---: | ---: |
+| 1 | `examples/gap_archive_20261112/cases/std/program.py` | `examples/gap_archive_20261112/cases/std/migrated.py` | 2048 × 2048 float32；4,194,304 元素；沿 axis=1 求标准差 | `np.std` | 7 s | 90.9 min | 15.96 / 0.3718 | **42.92x** |
+| 2 | `examples/gap_archive_20261112/cases/flip/program.py` | `examples/gap_archive_20261112/cases/flip/migrated.py` | 2048 × 2048 float32；4,194,304 元素；沿 axis=1 翻转 | `np.flip` | 8 s | 75.3 min | 0.007381 / 1.756 | 0.0042x |
+| 3 | `examples/gap_archive_20261112/cases/ediff1d/program.py` | `examples/gap_archive_20261112/cases/ediff1d/migrated.py` | 2048 × 2048 float32；4,194,304 元素展平；输出 4,194,303 个相邻差分 | `np.ediff1d` | 6 s | 60.7 min | 4.48 / 1.664 | **2.69x** |
+| 4 | `examples/gap_archive_20261112/cases/pad/program.py` | `examples/gap_archive_20261112/cases/pad/migrated.py` | 2048 × 2048 float32；constant 填充 ((1,1),(2,2))；输出 2050 × 2052 | `np.pad` | 7 s | 47.0 min | 4.117 / 1.724 | **2.39x** |
+| 5 | `examples/gap_archive_20261112/cases/tril/program.py` | `examples/gap_archive_20261112/cases/tril/migrated.py` | 2048 × 2048 float32；4,194,304 元素；默认 k=0 下三角 | `np.tril` | 8 s | 38.4 min | 14.16 / 1.649 | **8.59x** |
+| 6 | `examples/gap_archive_20261112/cases/argpartition/program.py` | `examples/gap_archive_20261112/cases/argpartition/migrated.py` | 32 × 16 float32；512 元素；沿 axis=1、kth=3 分区 | `np.argpartition` | 7 s | 38.2 min | 0.01049 / 0.3489 | 0.03x |
 
 ## 缺口算子生成/补全明细
 
