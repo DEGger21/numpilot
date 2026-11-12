@@ -1,0 +1,8 @@
+{
+  "case": "F007_sort_kind_2048x2048",
+  "base_case": "F007_sort_kind",
+  "kind": "scaled_performance_variant",
+  "note": "F007_sort_kind: 2,048 x 2,048 float32 stable row sort.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+  "scalable": true
+}

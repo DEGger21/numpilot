@@ -21,6 +21,7 @@ NumPilot 将 NumPy 程序的静态分析、迁移候选生成、数值验证和 
 - [混合程序的基础 API 资格](baseline-api-qualification.zh-CN.md)：源码继承、真实设备 probes、精确 profile 和双证书组合；
 - [官方资格进入 benchmark](scoped-benchmark.zh-CN.md)：按样例验证隔离 runtime、批量回执、离线审计及正式性能边界；
 - [本地 Codex adapter 真机接入](codex-adapter-walkthrough.zh-CN.md)：生成、隔离构建、路由验证、I006 诊断与下一步；
+- [cbrt 官方 ACLNN 候选审计](cbrt-official-audit.zh-CN.md)：无原生 `aclnnCbrt`，精确绑定 `aclnnPowTensorScalar`、符号位/有符号零/dtype 边界，并记录 `integration-v4` 与 I001 资格回执；
 - [系统架构](architecture.md)：ordinary 脚本路径、能力判定和缺口恢复边界；
 - [脚本数值验证](script-verification.md)：隔离 worker、输出比较和回执绑定；
 - [Benchmark 路由与回执](benchmark-routing.zh-CN.md)：150 例的预期路由、输入克隆、

@@ -1,0 +1,24 @@
+{
+  "case": "A009_matrix_chain",
+  "elapsed_s": 2.07,
+  "engine": "llm",
+  "expected_rewrites": {
+    "matmul": 2
+  },
+  "group": "A_direct_simple",
+  "migrated": "cases/A009_matrix_chain/migrated.py",
+  "migrated_sha256": "2297244f4bf48fa503b44b9eb6d8ed9290c90af55a5601aeb784f0b90951de38",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 15,
+  "numerically_consistent": true,
+  "repair_attempts": 0,
+  "route": "direct_migration",
+  "source": "cases/A009_matrix_chain/program.py",
+  "source_sha256": "2cf785dd5ed304955f461dc242286be42f1f5aaed8dce3d46341dc2e65dabd72",
+  "status": "pass",
+  "total_rewrites": 2
+}

@@ -1,0 +1,8 @@
+{
+  "case": "B013_three_axis_broadcast_64x64x1024",
+  "base_case": "B013_three_axis_broadcast",
+  "kind": "scaled_performance_variant",
+  "note": "B013_three_axis_broadcast: 64 x 1 x 1,024 broadcast with 1 x 64 x 1.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+  "scalable": true
+}

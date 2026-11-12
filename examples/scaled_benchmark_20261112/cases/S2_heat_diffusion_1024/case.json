@@ -1,0 +1,7 @@
+{
+  "case": "S2_heat_diffusion_1024",
+  "base_case": "C001_heat_diffusion",
+  "kind": "scaled_performance_variant",
+  "note": "C001 stencil graph on a 1024x1024 float32 grid.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed."
+}

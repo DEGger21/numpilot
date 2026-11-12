@@ -1,0 +1,8 @@
+{
+  "case": "C005_distance_refinement_16384x256",
+  "base_case": "C005_distance_refinement",
+  "kind": "scaled_performance_variant",
+  "note": "C005_distance_refinement: 16,384 x 256 float32; five contraction steps.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+  "scalable": true
+}

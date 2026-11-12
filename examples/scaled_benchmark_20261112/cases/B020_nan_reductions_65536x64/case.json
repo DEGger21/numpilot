@@ -1,0 +1,8 @@
+{
+  "case": "B020_nan_reductions_65536x64",
+  "base_case": "B020_nan_reductions",
+  "kind": "scaled_performance_variant",
+  "note": "B020_nan_reductions: 65,536 x 64 float32 with NaN/Inf rows.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+  "scalable": true
+}

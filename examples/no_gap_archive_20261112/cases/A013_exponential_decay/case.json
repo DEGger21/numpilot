@@ -1,0 +1,26 @@
+{
+  "case": "A013_exponential_decay",
+  "elapsed_s": 2.02,
+  "engine": "llm",
+  "expected_rewrites": {
+    "exp": 1,
+    "negative": 1,
+    "square": 1
+  },
+  "group": "A_direct_simple",
+  "migrated": "cases/A013_exponential_decay/migrated.py",
+  "migrated_sha256": "a0aa2dcc6cb32464863a023f6ab0dc00b904e94c92c9b8b89625c61c429ba2f6",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 96,
+  "numerically_consistent": true,
+  "repair_attempts": 0,
+  "route": "direct_migration",
+  "source": "cases/A013_exponential_decay/program.py",
+  "source_sha256": "3bfd4e5511ff8a797f2ddb69d18646f88a100219718a41666945e909a575e43f",
+  "status": "pass",
+  "total_rewrites": 3
+}

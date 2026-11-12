@@ -1,0 +1,8 @@
+{
+  "case": "I001_cube_root_4m",
+  "base_case": "I001_cube_root",
+  "kind": "scaled_performance_variant",
+  "note": "I001_cube_root: 4,000,000 float32 elements; signed zero retained.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+  "scalable": true
+}

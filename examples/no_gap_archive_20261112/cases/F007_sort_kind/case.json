@@ -1,0 +1,25 @@
+{
+  "case": "F007_sort_kind",
+  "elapsed_s": 2.57,
+  "engine": "llm",
+  "expected_rewrites": {
+    "cumsum": 1,
+    "sort": 1
+  },
+  "group": "F_partial_consent",
+  "migrated": "cases/F007_sort_kind/migrated.py",
+  "migrated_sha256": "b271ea6e3eaf63ec10acc4e009a2ea6a43b3816e34afa0b14c2f8acd3edad6ab",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 16,
+  "numerically_consistent": true,
+  "repair_attempts": 0,
+  "route": "direct_migration",
+  "source": "cases/F007_sort_kind/program.py",
+  "source_sha256": "e3eef697aa31b37e3684c7214ced27c5310bb56e6ac1946b374cd2eab4179b07",
+  "status": "pass",
+  "total_rewrites": 2
+}

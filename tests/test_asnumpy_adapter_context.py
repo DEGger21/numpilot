@@ -76,6 +76,28 @@ OFFICIAL_CONCATENATE_OVERLAY_PATHS = (
     "src/asnumpy/__init__.py",
     "tests/asnumpy_tests/creation_tests/test_basic.py",
 )
+OFFICIAL_CBRT_CONTEXT_PATHS = (
+    "include/asnumpy/math/exponents_and_logarithms.hpp",
+    "csrc/math/exponents_and_logarithms.cpp",
+    "bindings/python/bind_math.cpp",
+    "bindings/python/CMakeLists.txt",
+    "include/asnumpy/utils/acl_executor.hpp",
+    "include/asnumpy/utils/acl_resource.hpp",
+    "include/asnumpy/utils/npu_array.hpp",
+    "include/asnumpy/utils/status_handler.hpp",
+    "include/asnumpy/utils/dtype_promotion.hpp",
+    "src/asnumpy/math.py",
+    "src/asnumpy/__init__.py",
+    "tests/asnumpy_tests/math_tests/test_exponents_and_logarithms.py",
+)
+OFFICIAL_CBRT_OVERLAY_PATHS = (
+    "include/asnumpy/math/exponents_and_logarithms.hpp",
+    "csrc/math/exponents_and_logarithms.cpp",
+    "bindings/python/bind_math.cpp",
+    "src/asnumpy/math.py",
+    "src/asnumpy/__init__.py",
+    "tests/asnumpy_tests/math_tests/test_exponents_and_logarithms.py",
+)
 OFFICIAL_MATMUL_LIBRARY_SHA256 = "a" * 64
 OFFICIAL_MATMUL_LINK_BLOCK = (
     "target_link_libraries(_core\n"
@@ -308,6 +330,87 @@ def test_official_aclnn_concatenate_uses_reviewed_existing_module_plan(
     )
 
 
+def test_official_aclnn_cbrt_uses_reviewed_existing_module_plan(tmp_path):
+    root = tmp_path / "official-cbrt-asnumpy"
+    _write_context(root, OFFICIAL_CBRT_CONTEXT_PATHS)
+    (root / "bindings/python/CMakeLists.txt").write_text(
+        OFFICIAL_MATMUL_LINK_BLOCK,
+        encoding="utf-8",
+    )
+
+    plan = plan_official_aclnn_adapter_context(
+        root,
+        "cbrt",
+        selected_library_relative_path=OFFICIAL_MATMUL_LIBRARY,
+        selected_library_sha256=OFFICIAL_MATMUL_LIBRARY_SHA256,
+    )
+
+    assert plan.architecture == OFFICIAL_ACLNN_ARCHITECTURE
+    assert plan.mode == EXISTING_MODULE_MODE
+    assert plan.schema_version == 3
+    assert tuple(plan.context) == OFFICIAL_CBRT_CONTEXT_PATHS
+    assert plan.expected_overlay_paths == OFFICIAL_CBRT_OVERLAY_PATHS
+    assert plan.manifest()["prompt_dependencies"] == {
+        "include/asnumpy/math/exponents_and_logarithms.hpp": [
+            {
+                "source": "reference",
+                "path": "include/asnumpy/utils/npu_array.hpp",
+            },
+        ],
+        "csrc/math/exponents_and_logarithms.cpp": [
+            {
+                "source": "generated_overlay",
+                "path": "include/asnumpy/math/exponents_and_logarithms.hpp",
+            },
+            {
+                "source": "reference",
+                "path": "include/asnumpy/utils/acl_executor.hpp",
+            },
+            {
+                "source": "reference",
+                "path": "include/asnumpy/utils/dtype_promotion.hpp",
+            },
+            {
+                "source": "signed_official_header",
+                "path": "SIGNED_OFFICIAL_HEADER/aclnn_pow.h",
+            },
+        ],
+        "bindings/python/bind_math.cpp": [
+            {
+                "source": "generated_overlay",
+                "path": "include/asnumpy/math/exponents_and_logarithms.hpp",
+            },
+            {
+                "source": "generated_overlay",
+                "path": "csrc/math/exponents_and_logarithms.cpp",
+            },
+        ],
+        "src/asnumpy/math.py": [
+            {
+                "source": "generated_overlay",
+                "path": "bindings/python/bind_math.cpp",
+            },
+        ],
+        "src/asnumpy/__init__.py": [
+            {
+                "source": "generated_overlay",
+                "path": "src/asnumpy/math.py",
+            },
+        ],
+        "tests/asnumpy_tests/math_tests/test_exponents_and_logarithms.py": [
+            {
+                "source": "generated_overlay",
+                "path": "src/asnumpy/math.py",
+            },
+        ],
+    }
+    assert plan.manifest()["official_library_binding"][
+        "selected_library_basename"
+    ] == "libopapi.so"
+    assert not any(
+        "custom_ops" in path for path in plan.expected_overlay_paths
+    )
+
 def test_reviewed_official_prompt_dependencies_fail_closed():
     from numpilot.asnumpy_adapter_context import (
         reviewed_official_adapter_prompt_dependencies,
@@ -336,7 +439,7 @@ def test_official_aclnn_planner_rejects_unreviewed_api_before_reading_tree(
     with pytest.raises(AsnumpyAdapterContextError, match="not reviewed"):
         plan_official_aclnn_adapter_context(
             root,
-            "cbrt",
+            "sin",
             selected_library_relative_path=OFFICIAL_MATMUL_LIBRARY,
             selected_library_sha256=OFFICIAL_MATMUL_LIBRARY_SHA256,
         )

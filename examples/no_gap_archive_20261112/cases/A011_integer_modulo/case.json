@@ -1,0 +1,24 @@
+{
+  "case": "A011_integer_modulo",
+  "elapsed_s": 2.17,
+  "engine": "llm",
+  "expected_rewrites": {
+    "remainder": 1
+  },
+  "group": "A_direct_simple",
+  "migrated": "cases/A011_integer_modulo/migrated.py",
+  "migrated_sha256": "d9c99686d4768d2a017ffb233907641645d9f015b8b0232b394337974135bf96",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 5,
+  "numerically_consistent": true,
+  "repair_attempts": 0,
+  "route": "direct_migration",
+  "source": "cases/A011_integer_modulo/program.py",
+  "source_sha256": "98220be9bf90e4396693b993ba354d401901fb3783ceafa6090f0f10022ff547",
+  "status": "pass",
+  "total_rewrites": 1
+}

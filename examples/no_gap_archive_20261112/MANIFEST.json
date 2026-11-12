@@ -1,0 +1,1946 @@
+{
+  "archive_date": "2026-11-12",
+  "backend": "shim for migration verification; timings are separate",
+  "cases": [
+    {
+      "case": "A001_add_sqrt",
+      "elapsed_s": 1.62,
+      "engine": "llm",
+      "expected_rewrites": {
+        "add": 1,
+        "sqrt": 1,
+        "square": 1
+      },
+      "group": "A_direct_simple",
+      "migrated": "cases/A001_add_sqrt/migrated.py",
+      "migrated_sha256": "7dd2d96d8d92b875d9004603e4555b3bbe3bb5356cf42a2b1c585134d40052da",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 128,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/A001_add_sqrt/program.py",
+      "source_sha256": "601073c168055abdeb9f17f3a692b8cf39e93103954993e2c84cc181380d85c9",
+      "status": "pass",
+      "total_rewrites": 3
+    },
+    {
+      "case": "A002_bounded_product",
+      "elapsed_s": 2.52,
+      "engine": "llm",
+      "expected_rewrites": {
+        "clip": 1,
+        "multiply": 1
+      },
+      "group": "A_direct_simple",
+      "migrated": "cases/A002_bounded_product/migrated.py",
+      "migrated_sha256": "9f7831036b9f29d174bd1ffcfd771c07bbfa525d9f0e99bad9465c00cb375eba",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 64,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/A002_bounded_product/program.py",
+      "source_sha256": "fdb97dbc69984765661e5862e0f838f0bdfeb598262ffd846db8e7ab19cf22f2",
+      "status": "pass",
+      "total_rewrites": 2
+    },
+    {
+      "case": "A003_trig_pair",
+      "elapsed_s": 1.52,
+      "engine": "llm",
+      "expected_rewrites": {
+        "cos": 1,
+        "sin": 1
+      },
+      "group": "A_direct_simple",
+      "migrated": "cases/A003_trig_pair/migrated.py",
+      "migrated_sha256": "ca0b81e46dda94461096b6890db10426ff60c4fd18335d3ac4acc6544a374f31",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 96,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/A003_trig_pair/program.py",
+      "source_sha256": "b96d059954fa336ab1e923fcdc5cefe053a3bfeae9c6652d94c6a006643beb47",
+      "status": "pass",
+      "total_rewrites": 2
+    },
+    {
+      "case": "A004_row_sum",
+      "elapsed_s": 1.82,
+      "engine": "llm",
+      "expected_rewrites": {
+        "sum": 1
+      },
+      "group": "A_direct_simple",
+      "migrated": "cases/A004_row_sum/migrated.py",
+      "migrated_sha256": "6698fa53b7a710b3d253d38150c9a0a4308319a235c79411b30d1f1882a50ada",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 8,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/A004_row_sum/program.py",
+      "source_sha256": "555823b198e25118f3c4cfcdb813cbc4d7095e79e1aa207aa0203a18c3c70228",
+      "status": "pass",
+      "total_rewrites": 1
+    },
+    {
+      "case": "A005_column_mean",
+      "elapsed_s": 1.82,
+      "engine": "llm",
+      "expected_rewrites": {
+        "mean": 1
+      },
+      "group": "A_direct_simple",
+      "migrated": "cases/A005_column_mean/migrated.py",
+      "migrated_sha256": "40da43310c721bb679a2577686b78af41c7e67d8e84624bdfd90a2a90640ca0a",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 6,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/A005_column_mean/program.py",
+      "source_sha256": "4cfe79ebc3c8275b0ce4e10eee36f6a925a05f118265bb2e687755d2e38112fd",
+      "status": "pass",
+      "total_rewrites": 1
+    },
+    {
+      "case": "A006_row_max",
+      "elapsed_s": 1.97,
+      "engine": "llm",
+      "expected_rewrites": {
+        "max": 1
+      },
+      "group": "A_direct_simple",
+      "migrated": "cases/A006_row_max/migrated.py",
+      "migrated_sha256": "1e7bffa6ae16ed51561808c363f9a51053793cf9647bcad1cfdad9d3e0befd67",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 7,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/A006_row_max/program.py",
+      "source_sha256": "c610b47df934176379daf8cceda2743f25159127dbfb0d4ec366846a068103d2",
+      "status": "pass",
+      "total_rewrites": 1
+    },
+    {
+      "case": "A007_matrix_product",
+      "elapsed_s": 1.69,
+      "engine": "llm",
+      "expected_rewrites": {
+        "matmul": 1
+      },
+      "group": "A_direct_simple",
+      "migrated": "cases/A007_matrix_product/migrated.py",
+      "migrated_sha256": "18fbc2ba1f5f44456161f0db1f25d1c14ab854e0f37f56d629ab3d0cf11d4c84",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 40,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/A007_matrix_product/program.py",
+      "source_sha256": "68601174efcf121859e041a6f4d16e0c7b5149a09992d3b28372fe08337a6687",
+      "status": "pass",
+      "total_rewrites": 1
+    },
+    {
+      "case": "A008_matrix_activation",
+      "elapsed_s": 2.5,
+      "engine": "llm",
+      "expected_rewrites": {
+        "matmul": 1,
+        "tanh": 1
+      },
+      "group": "A_direct_simple",
+      "migrated": "cases/A008_matrix_activation/migrated.py",
+      "migrated_sha256": "b86c3e19df19eac7129d30e77f8fbdf8ab6cbb45a5bf00d0fdf0fcac07ff3ede",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 24,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/A008_matrix_activation/program.py",
+      "source_sha256": "5ce1fdd429ef33236da84b1753894e207dc88ac077298e9fb17d523a84c5612f",
+      "status": "pass",
+      "total_rewrites": 2
+    },
+    {
+      "case": "A009_matrix_chain",
+      "elapsed_s": 2.07,
+      "engine": "llm",
+      "expected_rewrites": {
+        "matmul": 2
+      },
+      "group": "A_direct_simple",
+      "migrated": "cases/A009_matrix_chain/migrated.py",
+      "migrated_sha256": "2297244f4bf48fa503b44b9eb6d8ed9290c90af55a5601aeb784f0b90951de38",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 15,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/A009_matrix_chain/program.py",
+      "source_sha256": "2cf785dd5ed304955f461dc242286be42f1f5aaed8dce3d46341dc2e65dabd72",
+      "status": "pass",
+      "total_rewrites": 2
+    },
+    {
+      "case": "A010_boolean_logic",
+      "elapsed_s": 2.03,
+      "engine": "llm",
+      "expected_rewrites": {
+        "logical_and": 1,
+        "logical_or": 1
+      },
+      "group": "A_direct_simple",
+      "migrated": "cases/A010_boolean_logic/migrated.py",
+      "migrated_sha256": "eebfda3ef32b491e7b673ef0ab3ee9310b2bcd99837bb1fd5f39ced0cdd4284a",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 8,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/A010_boolean_logic/program.py",
+      "source_sha256": "3b1fb104da361ab99118a86a615d92bc4affe9c88acc4372449ca0f069f01c0f",
+      "status": "pass",
+      "total_rewrites": 2
+    },
+    {
+      "case": "A011_integer_modulo",
+      "elapsed_s": 2.17,
+      "engine": "llm",
+      "expected_rewrites": {
+        "remainder": 1
+      },
+      "group": "A_direct_simple",
+      "migrated": "cases/A011_integer_modulo/migrated.py",
+      "migrated_sha256": "d9c99686d4768d2a017ffb233907641645d9f015b8b0232b394337974135bf96",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 5,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/A011_integer_modulo/program.py",
+      "source_sha256": "98220be9bf90e4396693b993ba354d401901fb3783ceafa6090f0f10022ff547",
+      "status": "pass",
+      "total_rewrites": 1
+    },
+    {
+      "case": "A012_half_rounding",
+      "elapsed_s": 2.07,
+      "engine": "llm",
+      "expected_rewrites": {
+        "floor": 1,
+        "rint": 1
+      },
+      "group": "A_direct_simple",
+      "migrated": "cases/A012_half_rounding/migrated.py",
+      "migrated_sha256": "2caec2b861dbf8223c2d8b0eb2cb9eb4f462c49649cec48c110afc72cb158b78",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 10,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/A012_half_rounding/program.py",
+      "source_sha256": "ad490de17cb8d1c01cecfaf6226c0f8aa06d60be464390f0407250eb386a347a",
+      "status": "pass",
+      "total_rewrites": 2
+    },
+    {
+      "case": "A013_exponential_decay",
+      "elapsed_s": 2.02,
+      "engine": "llm",
+      "expected_rewrites": {
+        "exp": 1,
+        "negative": 1,
+        "square": 1
+      },
+      "group": "A_direct_simple",
+      "migrated": "cases/A013_exponential_decay/migrated.py",
+      "migrated_sha256": "a0aa2dcc6cb32464863a023f6ab0dc00b904e94c92c9b8b89625c61c429ba2f6",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 96,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/A013_exponential_decay/program.py",
+      "source_sha256": "3bfd4e5511ff8a797f2ddb69d18646f88a100219718a41666945e909a575e43f",
+      "status": "pass",
+      "total_rewrites": 3
+    },
+    {
+      "case": "A014_prefix_sum",
+      "elapsed_s": 1.82,
+      "engine": "llm",
+      "expected_rewrites": {
+        "cumsum": 1
+      },
+      "group": "A_direct_simple",
+      "migrated": "cases/A014_prefix_sum/migrated.py",
+      "migrated_sha256": "2afeeaede2052d92c30ca658da684211a3398d2fd8b1db0e360a97dd982664d0",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 40,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/A014_prefix_sum/program.py",
+      "source_sha256": "79bfe017a56b35fa3245997bdf5224db35abfe591e0e2253ced23d4408f016bc",
+      "status": "pass",
+      "total_rewrites": 1
+    },
+    {
+      "case": "A015_row_product",
+      "elapsed_s": 1.97,
+      "engine": "llm",
+      "expected_rewrites": {
+        "prod": 1
+      },
+      "group": "A_direct_simple",
+      "migrated": "cases/A015_row_product/migrated.py",
+      "migrated_sha256": "de817944bfc0be294f293be26e32210c61c64fc2d8a3b533e17493c865fb3636",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 6,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/A015_row_product/program.py",
+      "source_sha256": "48eaf7c270fb128ae9d50e948225207e3fc708cb464848b7948d0aa2c0c22fbb",
+      "status": "pass",
+      "total_rewrites": 1
+    },
+    {
+      "case": "B004_mixed_int_float",
+      "elapsed_s": 2.17,
+      "engine": "llm",
+      "expected_rewrites": {
+        "add": 1
+      },
+      "group": "B_direct_semantics",
+      "migrated": "cases/B004_mixed_int_float/migrated.py",
+      "migrated_sha256": "2575b0a1bcb92e6c84b8742e576a58e32ff5eaa455e5cc52348348ab12709f43",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 3,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/B004_mixed_int_float/program.py",
+      "source_sha256": "a419dc1770fe83e1f067e6059af087207d46a80249d4247f5ad94d65d43dffb1",
+      "status": "pass",
+      "total_rewrites": 1
+    },
+    {
+      "case": "B005_mixed_float_precision",
+      "elapsed_s": 2.97,
+      "engine": "llm",
+      "expected_rewrites": {
+        "add": 1,
+        "subtract": 1
+      },
+      "group": "B_direct_semantics",
+      "migrated": "cases/B005_mixed_float_precision/migrated.py",
+      "migrated_sha256": "4f281ae82caa87bfa8f325e4824762675f0e576244385b8a784bdb5878d208c1",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 3,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/B005_mixed_float_precision/program.py",
+      "source_sha256": "acca1b11ca680adea3390c2b3952982ec8ece6df5025ab49be3c58334a31b252",
+      "status": "pass",
+      "total_rewrites": 2
+    },
+    {
+      "case": "B006_transposed_input",
+      "elapsed_s": 2.07,
+      "engine": "llm",
+      "expected_rewrites": {
+        "multiply": 1
+      },
+      "group": "B_direct_semantics",
+      "migrated": "cases/B006_transposed_input/migrated.py",
+      "migrated_sha256": "65b98771aff401f0780b6d8791af38bc199c4e279379eb07d467c12e9d31f96b",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 24,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/B006_transposed_input/program.py",
+      "source_sha256": "58c85d3485ba02ffee9ded9ec6bcea3895dabcd8f8216830bc4482f9b507bf74",
+      "status": "pass",
+      "total_rewrites": 1
+    },
+    {
+      "case": "B007_strided_input",
+      "elapsed_s": 1.97,
+      "engine": "llm",
+      "expected_rewrites": {
+        "square": 1
+      },
+      "group": "B_direct_semantics",
+      "migrated": "cases/B007_strided_input/migrated.py",
+      "migrated_sha256": "477102cc72e9877469fc9ff0ec91ee3724175d2d6b4ba48be15367f54cbd4e09",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 21,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/B007_strided_input/program.py",
+      "source_sha256": "817ee07e56f4b747a66620f15535c0a9267f13ba3d223494c7ff4a49e5e6dbb2",
+      "status": "pass",
+      "total_rewrites": 1
+    },
+    {
+      "case": "B008_negative_axis",
+      "elapsed_s": 2.52,
+      "engine": "llm",
+      "expected_rewrites": {
+        "sum": 1
+      },
+      "group": "B_direct_semantics",
+      "migrated": "cases/B008_negative_axis/migrated.py",
+      "migrated_sha256": "f1f3e76da6053500bcc52f758696c0c252c630b7bdbb4acda3ab921f577f2e1c",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 12,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/B008_negative_axis/program.py",
+      "source_sha256": "b0c67c0e9ecffc06766996a6c89a9e5d5bccaef2bc7c4e4d53d52e7641fbc694",
+      "status": "pass",
+      "total_rewrites": 1
+    },
+    {
+      "case": "B009_keepdims",
+      "elapsed_s": 2.22,
+      "engine": "llm",
+      "expected_rewrites": {
+        "mean": 1,
+        "subtract": 1
+      },
+      "group": "B_direct_semantics",
+      "migrated": "cases/B009_keepdims/migrated.py",
+      "migrated_sha256": "1486d22a9b83c520cb7a86518e92ac08cf7ae6dbf8e7c5fcb3afe7ec0453ce0b",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 40,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/B009_keepdims/program.py",
+      "source_sha256": "a3bd071a8cae6bfe1fe26978ac42c0d9090525683db21311e706a74a9f3752c5",
+      "status": "pass",
+      "total_rewrites": 2
+    },
+    {
+      "case": "B010_empty_sum",
+      "elapsed_s": 2.72,
+      "engine": "llm",
+      "expected_rewrites": {
+        "prod": 1,
+        "sum": 1
+      },
+      "group": "B_direct_semantics",
+      "migrated": "cases/B010_empty_sum/migrated.py",
+      "migrated_sha256": "7f60138ac516eefad3c29801582515e22c3ecbcb984d261ca8fa002791e6560f",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 24,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/B010_empty_sum/program.py",
+      "source_sha256": "1fd51c55580388370e6d6e46721af808fbb0b503eb703cef16481a7ff8a418f5",
+      "status": "pass",
+      "total_rewrites": 2
+    },
+    {
+      "case": "B011_nan_inf_extrema",
+      "elapsed_s": 2.7,
+      "engine": "llm",
+      "expected_rewrites": {
+        "fmax": 1,
+        "maximum": 1
+      },
+      "group": "B_direct_semantics",
+      "migrated": "cases/B011_nan_inf_extrema/migrated.py",
+      "migrated_sha256": "fb7656f83ae8054c005268f5a55febe44de266c1fd94756a31526b03414d2410",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 8,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/B011_nan_inf_extrema/program.py",
+      "source_sha256": "3f5aedbbbcadd71e80980aaf09dc8ca4bad04bbcce9e7e2dba52212ea31256b4",
+      "status": "pass",
+      "total_rewrites": 2
+    },
+    {
+      "case": "B012_zero_dimensional",
+      "elapsed_s": 3.35,
+      "engine": "llm",
+      "expected_rewrites": {
+        "add": 1
+      },
+      "group": "B_direct_semantics",
+      "migrated": "cases/B012_zero_dimensional/migrated.py",
+      "migrated_sha256": "d1beefdf39ee61870f1e95418b10062d2dd6c0fbb983850f5edd91def28d5310",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 1,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/B012_zero_dimensional/program.py",
+      "source_sha256": "fceb9fdc9b7492daf632914f40aa2a0cf227ea406d972b09265af93f4f55c9ff",
+      "status": "pass",
+      "total_rewrites": 1
+    },
+    {
+      "case": "B013_three_axis_broadcast",
+      "elapsed_s": 2.17,
+      "engine": "llm",
+      "expected_rewrites": {
+        "subtract": 1
+      },
+      "group": "B_direct_semantics",
+      "migrated": "cases/B013_three_axis_broadcast/migrated.py",
+      "migrated_sha256": "d75e3dfa328788fad3c441f7793811ac272bc8a36a3356054e63cbf604bfe0a4",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 24,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/B013_three_axis_broadcast/program.py",
+      "source_sha256": "0a976266eacd147a8224af5c4b02e53d177d264b1d830f47d468cfd6a28d2e8d",
+      "status": "pass",
+      "total_rewrites": 1
+    },
+    {
+      "case": "B015_fortran_matmul",
+      "elapsed_s": 2.27,
+      "engine": "llm",
+      "expected_rewrites": {
+        "matmul": 1,
+        "square": 1,
+        "sum": 1
+      },
+      "group": "B_direct_semantics",
+      "migrated": "cases/B015_fortran_matmul/migrated.py",
+      "migrated_sha256": "f3dfd38465cfc5d4f2c70d50439187981f60f75b6b7fb84160a8ffdf9f98cbbe",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 24,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/B015_fortran_matmul/program.py",
+      "source_sha256": "a1c9c61b410cdd5cddab8492aa04f69be5750d7d4354e53bd98dfa3c36e923ad",
+      "status": "pass",
+      "total_rewrites": 3
+    },
+    {
+      "case": "B016_reverse_strides",
+      "elapsed_s": 1.85,
+      "engine": "llm",
+      "expected_rewrites": {
+        "signbit": 1,
+        "sin": 1
+      },
+      "group": "B_direct_semantics",
+      "migrated": "cases/B016_reverse_strides/migrated.py",
+      "migrated_sha256": "8df244ad9afa31dc8a93663554c70144249a9f4fd8210e97cd45f5dbce70b775",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 38,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/B016_reverse_strides/program.py",
+      "source_sha256": "c8ff985f3e01432dcf5e7924b5d47ea1b9bb55332597c73c0dd043e630b84089",
+      "status": "pass",
+      "total_rewrites": 2
+    },
+    {
+      "case": "B017_empty_product",
+      "elapsed_s": 1.77,
+      "engine": "llm",
+      "expected_rewrites": {
+        "prod": 1
+      },
+      "group": "B_direct_semantics",
+      "migrated": "cases/B017_empty_product/migrated.py",
+      "migrated_sha256": "5beb747b8248b6a4f01a4c60879526f2ccb98e64e65ec7fc288777198549504a",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 5,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/B017_empty_product/program.py",
+      "source_sha256": "655353bdfdbb4512de5b8fb5e41c77ed420222fdebceb9bcf0b56e137ff82f84",
+      "status": "pass",
+      "total_rewrites": 1
+    },
+    {
+      "case": "B018_signed_zero",
+      "elapsed_s": 2.98,
+      "engine": "llm",
+      "expected_rewrites": {
+        "copysign": 1,
+        "signbit": 1
+      },
+      "group": "B_direct_semantics",
+      "migrated": "cases/B018_signed_zero/migrated.py",
+      "migrated_sha256": "1a4727d19fdb47e2d4c11d60d8480aeb5ed7c6da0146d3a378020675627e01b9",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 8,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/B018_signed_zero/program.py",
+      "source_sha256": "3968ad9665a9cee0bd3ac145e07f56dd71d5f5c764d7208d3352188fb63e99ad",
+      "status": "pass",
+      "total_rewrites": 2
+    },
+    {
+      "case": "B019_boolean_keepdims",
+      "elapsed_s": 2.62,
+      "engine": "llm",
+      "expected_rewrites": {
+        "all": 1,
+        "any": 1
+      },
+      "group": "B_direct_semantics",
+      "migrated": "cases/B019_boolean_keepdims/migrated.py",
+      "migrated_sha256": "6083cfe288b049ac91812399c66487d84bfde310df13184abf9b68762d81480b",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 8,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/B019_boolean_keepdims/program.py",
+      "source_sha256": "d3d8ff86a25ea0fa5168c7cee510fd3fa823b2282c45b26816cb0e7f1d5ab9d5",
+      "status": "pass",
+      "total_rewrites": 2
+    },
+    {
+      "case": "B020_nan_reductions",
+      "elapsed_s": 1.62,
+      "engine": "llm",
+      "expected_rewrites": {
+        "nancumsum": 1,
+        "nansum": 1
+      },
+      "group": "B_direct_semantics",
+      "migrated": "cases/B020_nan_reductions/migrated.py",
+      "migrated_sha256": "22b20b23cbb924a1477d575682e6d567573633aa4d61d4d5bda5b29bfa76f57f",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 9,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/B020_nan_reductions/program.py",
+      "source_sha256": "1ecadf9775344d38bfea937a5a5628f19c29e2649448613e1ce63ea24c17ef77",
+      "status": "pass",
+      "total_rewrites": 2
+    },
+    {
+      "case": "C001_heat_diffusion",
+      "elapsed_s": 8.13,
+      "engine": "llm",
+      "expected_rewrites": {
+        "add": 7,
+        "full": 9,
+        "maximum": 4,
+        "multiply": 5,
+        "square": 2,
+        "subtract": 3,
+        "sum": 2
+      },
+      "group": "C_direct_structure",
+      "migrated": "cases/C001_heat_diffusion/migrated.py",
+      "migrated_sha256": "8c5177d953aef5d711ab1e402f6c43ac1e0d28d151130e99cd53e48ff9185653",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 528,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/C001_heat_diffusion/program.py",
+      "source_sha256": "7d6ef26d18fcf05917540bb1fceb38098c0136610305521c0d709d61f7dfcb61",
+      "status": "pass",
+      "total_rewrites": 32
+    },
+    {
+      "case": "C002_mlp_inference",
+      "elapsed_s": 5.87,
+      "engine": "llm",
+      "expected_rewrites": {
+        "add": 2,
+        "divide": 1,
+        "exp": 1,
+        "full": 2,
+        "matmul": 2,
+        "max": 2,
+        "maximum": 1,
+        "minimum": 1,
+        "subtract": 1,
+        "sum": 2
+      },
+      "group": "C_direct_structure",
+      "migrated": "cases/C002_mlp_inference/migrated.py",
+      "migrated_sha256": "841abd044792705c47f98f60462b80ffdc1961004984b843f553ae425f49b876",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 54,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/C002_mlp_inference/program.py",
+      "source_sha256": "bd7ccb68f50ef2218313ed28c909894a434a48f8d598fabd8543a998221ad9fa",
+      "status": "pass",
+      "total_rewrites": 15
+    },
+    {
+      "case": "C003_layer_normalization",
+      "elapsed_s": 7.82,
+      "engine": "llm",
+      "expected_rewrites": {
+        "add": 2,
+        "clip": 1,
+        "divide": 1,
+        "full": 1,
+        "mean": 4,
+        "multiply": 2,
+        "sqrt": 1,
+        "square": 1,
+        "subtract": 1,
+        "tanh": 1
+      },
+      "group": "C_direct_structure",
+      "migrated": "cases/C003_layer_normalization/migrated.py",
+      "migrated_sha256": "61944d6cefade064a20eb8074f3989d4e2700c8672f69b5073248ccfe728ca1e",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 150,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/C003_layer_normalization/program.py",
+      "source_sha256": "2b0d6c5a7f67828d93e37df6f534735bcdb13959ceb1113905a88a13658f8f64",
+      "status": "pass",
+      "total_rewrites": 15
+    },
+    {
+      "case": "C004_cosine_rows",
+      "elapsed_s": 7.27,
+      "engine": "llm",
+      "expected_rewrites": {
+        "clip": 1,
+        "divide": 1,
+        "full": 2,
+        "maximum": 1,
+        "multiply": 2,
+        "sqrt": 4,
+        "square": 2,
+        "subtract": 1,
+        "sum": 3
+      },
+      "group": "C_direct_structure",
+      "migrated": "cases/C004_cosine_rows/migrated.py",
+      "migrated_sha256": "c9b423fc7ac137267b7da6bdcfac54685720ffbe486bb9e19951be3d22f3550e",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 36,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/C004_cosine_rows/program.py",
+      "source_sha256": "b741ed2f3ee1d66bd7d3dbea3234c4398556ad4ba822aa89bd648d0277d1068b",
+      "status": "pass",
+      "total_rewrites": 17
+    },
+    {
+      "case": "C005_distance_refinement",
+      "elapsed_s": 13.04,
+      "engine": "llm",
+      "expected_rewrites": {
+        "full": 5,
+        "multiply": 7,
+        "sqrt": 2,
+        "square": 2,
+        "subtract": 13,
+        "sum": 2
+      },
+      "group": "C_direct_structure",
+      "migrated": "cases/C005_distance_refinement/migrated.py",
+      "migrated_sha256": "1bd297563dbbc496c2bbc2a09bd904c9026732caa15cca90b0f121ed73426854",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 210,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/C005_distance_refinement/program.py",
+      "source_sha256": "68e1718504b62ab145e83345341a7222c814f2542f0cf99df3954e1d1a24d1f4",
+      "status": "pass",
+      "total_rewrites": 31
+    },
+    {
+      "case": "C006_softplus_network",
+      "elapsed_s": 18.04,
+      "engine": "llm",
+      "expected_rewrites": {
+        "absolute": 3,
+        "add": 10,
+        "clip": 1,
+        "exp": 4,
+        "full": 4,
+        "log1p": 3,
+        "max": 1,
+        "maximum": 3,
+        "mean": 1,
+        "multiply": 1,
+        "negative": 4,
+        "reciprocal": 1,
+        "tanh": 1
+      },
+      "group": "C_direct_structure",
+      "migrated": "cases/C006_softplus_network/migrated.py",
+      "migrated_sha256": "1fbda82c79cc579fb5b504a99d4490ba8043d31b7ec80f578556a3587874dc19",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 393,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/C006_softplus_network/program.py",
+      "source_sha256": "9fdd4039acb9b7a30c94e8d6931e2a09182e500fc931cd6641b3a7ab9ac21d9f",
+      "status": "pass",
+      "total_rewrites": 37
+    },
+    {
+      "case": "C007_least_squares_steps",
+      "elapsed_s": 14.69,
+      "engine": "llm",
+      "expected_rewrites": {
+        "add": 6,
+        "clip": 6,
+        "full": 12,
+        "mean": 2,
+        "multiply": 20,
+        "subtract": 14
+      },
+      "group": "C_direct_structure",
+      "migrated": "cases/C007_least_squares_steps/migrated.py",
+      "migrated_sha256": "f112760e7bdf56fe4b797d4acb4611c3a0e2a02a2f4816d07d69b69d260ec5c0",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 104,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/C007_least_squares_steps/program.py",
+      "source_sha256": "b7d0e7914bfb00b1f376ca8005ce00f69dddf09a1a127de06c84b0e26ac38d55",
+      "status": "pass",
+      "total_rewrites": 60
+    },
+    {
+      "case": "C008_portfolio_repricing",
+      "elapsed_s": 21.55,
+      "engine": "llm",
+      "expected_rewrites": {
+        "add": 15,
+        "divide": 9,
+        "exp": 4,
+        "full": 36,
+        "log": 4,
+        "maximum": 4,
+        "multiply": 47,
+        "negative": 4,
+        "sqrt": 4,
+        "square": 4,
+        "subtract": 9,
+        "tanh": 8
+      },
+      "group": "C_direct_structure",
+      "migrated": "cases/C008_portfolio_repricing/migrated.py",
+      "migrated_sha256": "edb41be6e0200d23e5761024af882b90117752c0a81181805c038172a4108089",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 192,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/C008_portfolio_repricing/program.py",
+      "source_sha256": "4f04a8a171bfcee44c0b011bea7d5198e381b6abe1c232bde49e6a282179e2d7",
+      "status": "pass",
+      "total_rewrites": 148
+    },
+    {
+      "case": "C009_poisson_robust_map",
+      "elapsed_s": 9.47,
+      "engine": "llm",
+      "expected_rewrites": {
+        "absolute": 2,
+        "add": 2,
+        "clip": 2,
+        "full": 11,
+        "minimum": 2,
+        "multiply": 11,
+        "sin": 2,
+        "square": 2,
+        "subtract": 12,
+        "tanh": 2
+      },
+      "group": "C_direct_structure",
+      "migrated": "cases/C009_poisson_robust_map/migrated.py",
+      "migrated_sha256": "a8c01c74999910b474f316a5a08665477ad16577fc534b5a834f54912abcf0db",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 324,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/C009_poisson_robust_map/program.py",
+      "source_sha256": "9a4a3d00b3fae6a6d4cb9a8328b3ab9ce5712298993c01142805e243eb34a816",
+      "status": "pass",
+      "total_rewrites": 48
+    },
+    {
+      "case": "C010_energy_feedback",
+      "elapsed_s": 12.54,
+      "engine": "llm",
+      "expected_rewrites": {
+        "add": 10,
+        "full": 4,
+        "mean": 1,
+        "multiply": 8,
+        "sqrt": 6,
+        "square": 13,
+        "subtract": 1,
+        "tanh": 6
+      },
+      "group": "C_direct_structure",
+      "migrated": "cases/C010_energy_feedback/migrated.py",
+      "migrated_sha256": "7e95615eedf711e5a5762dba7d053e000ac6fb64f6dc5e5f163a32c422a8114e",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 444,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/C010_energy_feedback/program.py",
+      "source_sha256": "b94c0530ebd996226129634b5dacfa1def218c3951ada1372a7ae10cfeb46117",
+      "status": "pass",
+      "total_rewrites": 49
+    },
+    {
+      "case": "C011_residual_gemm",
+      "elapsed_s": 9.63,
+      "engine": "llm",
+      "expected_rewrites": {
+        "add": 3,
+        "full": 9,
+        "matmul": 5,
+        "maximum": 6,
+        "mean": 1,
+        "multiply": 3,
+        "sqrt": 1,
+        "square": 1,
+        "sum": 1,
+        "tanh": 1
+      },
+      "group": "C_direct_structure",
+      "migrated": "cases/C011_residual_gemm/migrated.py",
+      "migrated_sha256": "93c9c456668c8e2119d4bb8cb85a9015f2a7d3e11e17a1fca439570c5f270462",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 184,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/C011_residual_gemm/program.py",
+      "source_sha256": "64183baa59e65195760ff80f04e78974692c03fec544b7d24f58bdf93d4dbfd5",
+      "status": "pass",
+      "total_rewrites": 31
+    },
+    {
+      "case": "C012_calibrated_projection",
+      "elapsed_s": 7.17,
+      "engine": "llm",
+      "expected_rewrites": {
+        "clip": 5,
+        "divide": 5,
+        "exp": 5,
+        "full": 4,
+        "matmul": 1,
+        "max": 5,
+        "multiply": 4,
+        "subtract": 14,
+        "sum": 5
+      },
+      "group": "C_direct_structure",
+      "migrated": "cases/C012_calibrated_projection/migrated.py",
+      "migrated_sha256": "f720c06e988486b7160455d9a5d7e789a116a0f919cb5297f78f0176b2d5bf52",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 96,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/C012_calibrated_projection/program.py",
+      "source_sha256": "77acb535b01d33d592e0327f8096c961ffcbded7b03feb39b5211d6a6040ffe2",
+      "status": "pass",
+      "total_rewrites": 48
+    },
+    {
+      "case": "C013_markov_relaxation",
+      "elapsed_s": 13.29,
+      "engine": "llm",
+      "expected_rewrites": {
+        "absolute": 1,
+        "add": 8,
+        "divide": 8,
+        "full": 32,
+        "matmul": 8,
+        "maximum": 16,
+        "multiply": 16,
+        "subtract": 1,
+        "sum": 10
+      },
+      "group": "C_direct_structure",
+      "migrated": "cases/C013_markov_relaxation/migrated.py",
+      "migrated_sha256": "0a3f73c34db3868bb8ef2de791bdfb41edfa717d7f3ae23c1927b85ea1f9069f",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 9,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/C013_markov_relaxation/program.py",
+      "source_sha256": "31bee27a2a9447c9b007114d98b274955df68e1a4568952b5d9b8ed6ef70f83f",
+      "status": "pass",
+      "total_rewrites": 100
+    },
+    {
+      "case": "C014_logistic_training",
+      "elapsed_s": 23.55,
+      "engine": "llm",
+      "expected_rewrites": {
+        "add": 16,
+        "clip": 9,
+        "divide": 7,
+        "exp": 8,
+        "full": 30,
+        "log": 1,
+        "log1p": 1,
+        "matmul": 15,
+        "multiply": 16,
+        "negative": 10,
+        "reciprocal": 8,
+        "subtract": 15
+      },
+      "group": "C_direct_structure",
+      "migrated": "cases/C014_logistic_training/migrated.py",
+      "migrated_sha256": "a0dd4dce54491b5290c024cff051ac7f44f100b0e31e99eb5bdc4206bc818419",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 46,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/C014_logistic_training/program.py",
+      "source_sha256": "15d88a17c2848ebbc86c29d91af5f4021ad2f0c083696d14e1eedeebd04e2ea0",
+      "status": "pass",
+      "total_rewrites": 136
+    },
+    {
+      "case": "C015_tensor_moments",
+      "elapsed_s": 13.33,
+      "engine": "llm",
+      "expected_rewrites": {
+        "add": 8,
+        "clip": 3,
+        "divide": 5,
+        "full": 5,
+        "mean": 14,
+        "multiply": 3,
+        "sqrt": 5,
+        "square": 7,
+        "subtract": 14,
+        "tanh": 2
+      },
+      "group": "C_direct_structure",
+      "migrated": "cases/C015_tensor_moments/migrated.py",
+      "migrated_sha256": "00e18ad29199923a4635a44cedb4fe458274ae3ee517fc904c274aeb92ed7727",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 168,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/C015_tensor_moments/program.py",
+      "source_sha256": "2ebef98eba2f3e143449fbf0f5f4b5fbdc7615410216ce6b68bc684871916df8",
+      "status": "pass",
+      "total_rewrites": 66
+    },
+    {
+      "case": "D1001_signed_compression",
+      "elapsed_s": 4.9,
+      "engine": "llm",
+      "expected_rewrites": {
+        "absolute": 4,
+        "add": 1,
+        "copysign": 2,
+        "divide": 2,
+        "full": 2,
+        "full_like": 2,
+        "maximum": 2,
+        "mean": 3,
+        "power": 2,
+        "square": 1,
+        "subtract": 2,
+        "tanh": 1
+      },
+      "group": "D1_partial_low_kernel",
+      "migrated": "cases/D1001_signed_compression/migrated.py",
+      "migrated_sha256": "0a0dc3a0e3401fb0f701b8dc13e18871810a08c2ff3a7db55609159377a5bb8f",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 136,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/D1001_signed_compression/program.py",
+      "source_sha256": "95a5793af20ce232494f9b02f21fa59f9007b594ecc87f46e2171e21473ca46a",
+      "status": "pass",
+      "total_rewrites": 24
+    },
+    {
+      "case": "D2001_absolute_alias",
+      "elapsed_s": 3.72,
+      "engine": "llm",
+      "expected_rewrites": {
+        "absolute": 1,
+        "add": 1,
+        "clip": 1,
+        "full": 2,
+        "mean": 1,
+        "minimum": 1,
+        "multiply": 1,
+        "square": 1,
+        "subtract": 2
+      },
+      "group": "D2_partial_low_official",
+      "migrated": "cases/D2001_absolute_alias/migrated.py",
+      "migrated_sha256": "13551e3e92537b2ab2f97e363c64b9122c227e6ab19eafab7c26f12d5f7f10c3",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 216,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/D2001_absolute_alias/program.py",
+      "source_sha256": "f4b0a87fec60296af3d8bfd18088c22fbdabc5391598440000401d53b9f874ba",
+      "status": "pass",
+      "total_rewrites": 11
+    },
+    {
+      "case": "D2002_round_alias",
+      "elapsed_s": 6.07,
+      "engine": "llm",
+      "expected_rewrites": {
+        "add": 1,
+        "around": 1,
+        "divide": 1,
+        "full": 1,
+        "mean": 2,
+        "sqrt": 1,
+        "square": 1,
+        "subtract": 2
+      },
+      "group": "D2_partial_low_official",
+      "migrated": "cases/D2002_round_alias/migrated.py",
+      "migrated_sha256": "f49b5b736cf3766b7bcc3333eb4bfaebccb9068e5e4748d4af97b1328b190748",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 312,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/D2002_round_alias/program.py",
+      "source_sha256": "3fb3cfd9c9f68817e6ef12532d2d9233e21de2a3267732d080882fe901415d28",
+      "status": "pass",
+      "total_rewrites": 10
+    },
+    {
+      "case": "D2003_acos_alias",
+      "elapsed_s": 4.67,
+      "engine": "llm",
+      "expected_rewrites": {
+        "arccos": 1,
+        "clip": 1,
+        "divide": 1,
+        "full": 1,
+        "maximum": 1,
+        "multiply": 2,
+        "sqrt": 2,
+        "square": 2,
+        "sum": 3
+      },
+      "group": "D2_partial_low_official",
+      "migrated": "cases/D2003_acos_alias/migrated.py",
+      "migrated_sha256": "dff6f549690fbae4d697dde5c923b9b8b5501a4ca16e39325522e36d619122a7",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 16,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/D2003_acos_alias/program.py",
+      "source_sha256": "4228f62b87c45850065ceaacfba597f9a1306e4596028cf1b7351ee70c603dc4",
+      "status": "pass",
+      "total_rewrites": 14
+    },
+    {
+      "case": "D2004_variance_composition",
+      "elapsed_s": 7.93,
+      "engine": "llm",
+      "expected_rewrites": {
+        "add": 1,
+        "divide": 1,
+        "full": 1,
+        "mean": 3,
+        "sqrt": 1,
+        "square": 1,
+        "subtract": 3,
+        "tanh": 1
+      },
+      "group": "D2_partial_low_official",
+      "migrated": "cases/D2004_variance_composition/migrated.py",
+      "migrated_sha256": "2484eb34dae182f6b75cf2eaf8263c6e00c83b50a34fb2939b6145fe4bb74ab1",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 120,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/D2004_variance_composition/program.py",
+      "source_sha256": "8b12857e5e0c8a4b5e4f3c51023ebef5992bcff916e1ab4bd714471929c9a5be",
+      "status": "pass",
+      "total_rewrites": 12
+    },
+    {
+      "case": "D2005_range_composition",
+      "elapsed_s": 5.78,
+      "engine": "llm",
+      "expected_rewrites": {
+        "clip": 1,
+        "divide": 1,
+        "full": 1,
+        "max": 1,
+        "maximum": 1,
+        "min": 2,
+        "subtract": 3
+      },
+      "group": "D2_partial_low_official",
+      "migrated": "cases/D2005_range_composition/migrated.py",
+      "migrated_sha256": "91ca6a26c14fb02e68c9da329a108f580e688669cce13438327bdbc7c5e5cd45",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 120,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/D2005_range_composition/program.py",
+      "source_sha256": "0be8f67f23d0efa2aaabbfc4d3c37681723543bcd63ce1d36f1bbfa3241b4f6b",
+      "status": "pass",
+      "total_rewrites": 10
+    },
+    {
+      "case": "F007_sort_kind",
+      "elapsed_s": 2.57,
+      "engine": "llm",
+      "expected_rewrites": {
+        "cumsum": 1,
+        "sort": 1
+      },
+      "group": "F_partial_consent",
+      "migrated": "cases/F007_sort_kind/migrated.py",
+      "migrated_sha256": "b271ea6e3eaf63ec10acc4e009a2ea6a43b3816e34afa0b14c2f8acd3edad6ab",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 16,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/F007_sort_kind/program.py",
+      "source_sha256": "e3eef697aa31b37e3684c7214ced27c5310bb56e6ac1946b374cd2eab4179b07",
+      "status": "pass",
+      "total_rewrites": 2
+    },
+    {
+      "case": "G004_cbrt_three_channels",
+      "elapsed_s": 5.67,
+      "engine": "llm",
+      "expected_rewrites": {
+        "absolute": 3,
+        "add": 2,
+        "copysign": 3,
+        "full": 3,
+        "full_like": 3,
+        "multiply": 5,
+        "power": 3,
+        "tanh": 1
+      },
+      "group": "G_partial_dedup",
+      "migrated": "cases/G004_cbrt_three_channels/migrated.py",
+      "migrated_sha256": "df306af015fbc54b8089d0d015cf49b62945a12d293f97c84dcedde33068492a",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 96,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/G004_cbrt_three_channels/program.py",
+      "source_sha256": "7e35f07109bc1590b5652b6d24e90fb54bfe5fa68ef7c1be07d2e980ec940c95",
+      "status": "pass",
+      "total_rewrites": 23
+    },
+    {
+      "case": "H001_abs_alias",
+      "elapsed_s": 2.37,
+      "engine": "llm",
+      "expected_rewrites": {
+        "absolute": 2,
+        "subtract": 1
+      },
+      "group": "H_gap_official",
+      "migrated": "cases/H001_abs_alias/migrated.py",
+      "migrated_sha256": "886bae663fbbef526993aa1a58debcd13bb2fc73909847630ce6f2470d463746",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 90,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/H001_abs_alias/program.py",
+      "source_sha256": "8fa458c2400465ffdc1222b095f9a5c9cbf673f9cd35ee8f96f5e48f8be534ae",
+      "status": "pass",
+      "total_rewrites": 3
+    },
+    {
+      "case": "H002_round_alias",
+      "elapsed_s": 2.82,
+      "engine": "llm",
+      "expected_rewrites": {
+        "around": 2
+      },
+      "group": "H_gap_official",
+      "migrated": "cases/H002_round_alias/migrated.py",
+      "migrated_sha256": "8c1f45271f9d08bdf3ac3cb22c10634901af765871d872650d3cbb3bec2d8ea9",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 10,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/H002_round_alias/program.py",
+      "source_sha256": "7efd427aeed74a6dd2cf9248b9487c8c805b0ca649b7a1c735995b16e50fd01b",
+      "status": "pass",
+      "total_rewrites": 2
+    },
+    {
+      "case": "H003_acos_alias",
+      "elapsed_s": 2.47,
+      "engine": "llm",
+      "expected_rewrites": {
+        "arccos": 2
+      },
+      "group": "H_gap_official",
+      "migrated": "cases/H003_acos_alias/migrated.py",
+      "migrated_sha256": "594a6e644df55773572211645041b34066392fe5b84510948265635ff550865d",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 30,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/H003_acos_alias/program.py",
+      "source_sha256": "90912495fd6e0153bc13fb91a7b43f7da12a8cf66e5b7d7938250b78ae69f91a",
+      "status": "pass",
+      "total_rewrites": 2
+    },
+    {
+      "case": "H004_asin_alias",
+      "elapsed_s": 3.37,
+      "engine": "llm",
+      "expected_rewrites": {
+        "add": 1,
+        "arcsin": 2,
+        "divide": 1,
+        "subtract": 1
+      },
+      "group": "H_gap_official",
+      "migrated": "cases/H004_asin_alias/migrated.py",
+      "migrated_sha256": "befaf541b2106b988d21b76c61e1f4454038108126e64e8ea8fb799782eb1888",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 50,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/H004_asin_alias/program.py",
+      "source_sha256": "cf618abbf60a04b8863ebe6bb946db78cf379d1592520aa6c39da4a7da064fee",
+      "status": "pass",
+      "total_rewrites": 5
+    },
+    {
+      "case": "H005_atan_alias",
+      "elapsed_s": 2.47,
+      "engine": "llm",
+      "expected_rewrites": {
+        "arctan": 2,
+        "multiply": 1,
+        "subtract": 1
+      },
+      "group": "H_gap_official",
+      "migrated": "cases/H005_atan_alias/migrated.py",
+      "migrated_sha256": "13c4403a144ba672d5915a05cb547866ce89dc9ec436cc638fa4f9bcc4be49e3",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 21,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/H005_atan_alias/program.py",
+      "source_sha256": "0d6d0a2e9373f6bfb177439fb51a5b726e2c631ca9f4dcace07c7ec0c617d1f2",
+      "status": "pass",
+      "total_rewrites": 4
+    },
+    {
+      "case": "H006_acosh_alias",
+      "elapsed_s": 2.52,
+      "engine": "llm",
+      "expected_rewrites": {
+        "add": 1,
+        "arccosh": 2
+      },
+      "group": "H_gap_official",
+      "migrated": "cases/H006_acosh_alias/migrated.py",
+      "migrated_sha256": "57c5cf92bc97afa00864f0a01023468f235c397e44fe54fdfff386a5fdf3b076",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 48,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/H006_acosh_alias/program.py",
+      "source_sha256": "db4da33dcde8f03950d6eca0ba9d78e1f7ed2342e3418b585584a89b64d18907",
+      "status": "pass",
+      "total_rewrites": 3
+    },
+    {
+      "case": "H007_asinh_alias",
+      "elapsed_s": 3.27,
+      "engine": "llm",
+      "expected_rewrites": {
+        "add": 1,
+        "arcsinh": 2,
+        "multiply": 2,
+        "negative": 1
+      },
+      "group": "H_gap_official",
+      "migrated": "cases/H007_asinh_alias/migrated.py",
+      "migrated_sha256": "a2a77a63cf50a2a9f05a630dbc5d807dfe9af47ad88186dbbb87d910b9a9a688",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 90,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/H007_asinh_alias/program.py",
+      "source_sha256": "cdd95f98ec9705c64b29a22100c154c24c142f3eb390f5e747c2b291444cbcd3",
+      "status": "pass",
+      "total_rewrites": 6
+    },
+    {
+      "case": "H008_atanh_alias",
+      "elapsed_s": 2.92,
+      "engine": "llm",
+      "expected_rewrites": {
+        "arctanh": 2,
+        "multiply": 1,
+        "subtract": 1
+      },
+      "group": "H_gap_official",
+      "migrated": "cases/H008_atanh_alias/migrated.py",
+      "migrated_sha256": "c7c84b846dfbe094b6fb00c1534487f34547c410917bbc91a3d222157de69c26",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 93,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/H008_atanh_alias/program.py",
+      "source_sha256": "cfb008dd34ed502cd806e745fa93c6986bdd014f7aa923f87dd4b10a33b1e849",
+      "status": "pass",
+      "total_rewrites": 4
+    },
+    {
+      "case": "H009_variance",
+      "elapsed_s": 3.69,
+      "engine": "llm",
+      "expected_rewrites": {
+        "mean": 4,
+        "square": 2,
+        "subtract": 2
+      },
+      "group": "H_gap_official",
+      "migrated": "cases/H009_variance/migrated.py",
+      "migrated_sha256": "45cb2ec8149908de2b7540e097fbcec6f7b70d85307ba6d43b8c1e9d13c4dbeb",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 36,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/H009_variance/program.py",
+      "source_sha256": "f4f4d3ef9a68426e62d8ad30317d0365b9cc8e4b32b27651e5feaadf79a539b3",
+      "status": "pass",
+      "total_rewrites": 8
+    },
+    {
+      "case": "H010_standard_deviation",
+      "elapsed_s": 4.04,
+      "engine": "llm",
+      "expected_rewrites": {
+        "mean": 4,
+        "sqrt": 2,
+        "square": 2,
+        "subtract": 2
+      },
+      "group": "H_gap_official",
+      "migrated": "cases/H010_standard_deviation/migrated.py",
+      "migrated_sha256": "a2c758c78e6059c8d7b00f33992f32ee3bb0a391b665ea9d60ea3ada3de019b2",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 20,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/H010_standard_deviation/program.py",
+      "source_sha256": "b3b27e335ba00eff6eb07db64f0b4561c850c8ca6651afad762e264d39217fb3",
+      "status": "pass",
+      "total_rewrites": 10
+    },
+    {
+      "case": "H011_peak_to_peak",
+      "elapsed_s": 3.07,
+      "engine": "llm",
+      "expected_rewrites": {
+        "max": 2,
+        "min": 2,
+        "subtract": 2
+      },
+      "group": "H_gap_official",
+      "migrated": "cases/H011_peak_to_peak/migrated.py",
+      "migrated_sha256": "7e7bb54f49284780ec1ec546c7054f7f6e9f3b57d7992c449f2afbbb6d1fae5b",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 19,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/H011_peak_to_peak/program.py",
+      "source_sha256": "4b49e12a6a3ccbd936cd1fdf300d722062bfaccd436c700337dc78cf839e4183",
+      "status": "pass",
+      "total_rewrites": 6
+    },
+    {
+      "case": "H012_logarithmic_grid",
+      "elapsed_s": 16.79,
+      "engine": "llm",
+      "expected_rewrites": {
+        "add": 2,
+        "full_like": 2,
+        "linspace": 6,
+        "multiply": 2,
+        "power": 2,
+        "subtract": 2
+      },
+      "group": "H_gap_official",
+      "migrated": "cases/H012_logarithmic_grid/migrated.py",
+      "migrated_sha256": "eee78452b0d3a23f124d6dbb9c5b7034d947a3164107714780b08ae771ebbb79",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 34,
+      "numerically_consistent": true,
+      "repair_attempts": 1,
+      "route": "direct_migration",
+      "source": "cases/H012_logarithmic_grid/program.py",
+      "source_sha256": "fa2bfb21bc7100f140d1398d8da30823bae802d281049365a889a92c096ad658",
+      "status": "pass",
+      "total_rewrites": 16
+    },
+    {
+      "case": "H013_geometric_grid",
+      "elapsed_s": 6.27,
+      "engine": "llm",
+      "expected_rewrites": {
+        "divide": 2,
+        "linspace": 2,
+        "multiply": 2,
+        "power": 2
+      },
+      "group": "H_gap_official",
+      "migrated": "cases/H013_geometric_grid/migrated.py",
+      "migrated_sha256": "d0366637cd944138d3a6a9ccb63213fb1265ff6444af271aff93d1a1a5bd182f",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 42,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/H013_geometric_grid/program.py",
+      "source_sha256": "aa8b56ba12bc16f164bd1ce80a29e5c5739b5cb53c674183024feddc90252db0",
+      "status": "pass",
+      "total_rewrites": 8
+    },
+    {
+      "case": "H014_nan_minimum",
+      "elapsed_s": 2.17,
+      "engine": "llm",
+      "expected_rewrites": {
+        "nanmin": 2
+      },
+      "group": "H_gap_official",
+      "migrated": "cases/H014_nan_minimum/migrated.py",
+      "migrated_sha256": "e72b62054e9a98969025875529a692c2e4a4753edd8bb9f4bf50dab629b7ddb5",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 6,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/H014_nan_minimum/program.py",
+      "source_sha256": "1bf3c1b26a99dfd9f51d85d1b0c3665b2c632acfa48ec6c32d7b11fd757d6f87",
+      "status": "pass",
+      "total_rewrites": 2
+    },
+    {
+      "case": "H015_real_vecdot",
+      "elapsed_s": 2.51,
+      "engine": "llm",
+      "expected_rewrites": {
+        "multiply": 2,
+        "sum": 2
+      },
+      "group": "H_gap_official",
+      "migrated": "cases/H015_real_vecdot/migrated.py",
+      "migrated_sha256": "a1de69e89a771508a62d5df19febdd80b80845869db5c81c5c7894d214b6d078",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 10,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/H015_real_vecdot/program.py",
+      "source_sha256": "85f891a666d9da6a081225dab35f950b22258512d0e5aac19c0d7a5759d4e055",
+      "status": "pass",
+      "total_rewrites": 4
+    },
+    {
+      "case": "I001_cube_root",
+      "elapsed_s": 5.82,
+      "engine": "llm",
+      "expected_rewrites": {
+        "absolute": 1,
+        "copysign": 1,
+        "full_like": 1,
+        "power": 1
+      },
+      "group": "I_gap_model",
+      "migrated": "cases/I001_cube_root/migrated.py",
+      "migrated_sha256": "626a7489b7710f4ec5000fc09cc490ee9baee528460d6ce07f6e422162ad7e76",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 257,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/I001_cube_root/program.py",
+      "source_sha256": "c5f0b7809cc832059095067d3cbb024b72ea5014fa8c673bd983f8358f25738b",
+      "status": "pass",
+      "total_rewrites": 4
+    },
+    {
+      "case": "I003_nan_classification",
+      "elapsed_s": 2.37,
+      "engine": "llm",
+      "expected_rewrites": {
+        "not_equal": 1
+      },
+      "group": "I_gap_model",
+      "migrated": "cases/I003_nan_classification/migrated.py",
+      "migrated_sha256": "f730a9189aac251470616c0d62a6a817554651f00830e286e4645148bceea4ff",
+      "model": {
+        "configured_model": "deepseek-flash",
+        "response_model": "deepseek-flash",
+        "response_model_identity": "exact"
+      },
+      "n_elements": 7,
+      "numerically_consistent": true,
+      "repair_attempts": 0,
+      "route": "direct_migration",
+      "source": "cases/I003_nan_classification/program.py",
+      "source_sha256": "62f3f60159d847fe6348ac9d87ffc09e7992da07f3339627e0572a7dd2c5b866",
+      "status": "pass",
+      "total_rewrites": 1
+    }
+  ],
+  "model": "deepseek-flash",
+  "n_cases": 71,
+  "schema": "numpilot.no-gap-archive",
+  "schema_version": 1,
+  "scope": "71 benchmark cases with full AsNumpy interface coverage; J_out_of_subset excluded"
+}

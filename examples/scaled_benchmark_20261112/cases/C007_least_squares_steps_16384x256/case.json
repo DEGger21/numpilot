@@ -1,0 +1,8 @@
+{
+  "case": "C007_least_squares_steps_16384x256",
+  "base_case": "C007_least_squares_steps",
+  "kind": "scaled_performance_variant",
+  "note": "C007_least_squares_steps: 16,384 x 256 float32; six gradient steps.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+  "scalable": true
+}

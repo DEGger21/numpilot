@@ -1,0 +1,8 @@
+{
+  "case": "H011_peak_to_peak_4096x1024",
+  "base_case": "H011_peak_to_peak",
+  "kind": "scaled_performance_variant",
+  "note": "H011_peak_to_peak: 4,096 x 1,024 float32; row and column ptp.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+  "scalable": true
+}

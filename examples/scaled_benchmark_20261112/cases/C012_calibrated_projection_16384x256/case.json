@@ -1,0 +1,8 @@
+{
+  "case": "C012_calibrated_projection_16384x256",
+  "base_case": "C012_calibrated_projection",
+  "kind": "scaled_performance_variant",
+  "note": "C012_calibrated_projection: 16,384 x 256 features; 256-64 projection.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+  "scalable": true
+}

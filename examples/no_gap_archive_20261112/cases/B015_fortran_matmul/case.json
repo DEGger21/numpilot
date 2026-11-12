@@ -1,0 +1,26 @@
+{
+  "case": "B015_fortran_matmul",
+  "elapsed_s": 2.27,
+  "engine": "llm",
+  "expected_rewrites": {
+    "matmul": 1,
+    "square": 1,
+    "sum": 1
+  },
+  "group": "B_direct_semantics",
+  "migrated": "cases/B015_fortran_matmul/migrated.py",
+  "migrated_sha256": "f3dfd38465cfc5d4f2c70d50439187981f60f75b6b7fb84160a8ffdf9f98cbbe",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 24,
+  "numerically_consistent": true,
+  "repair_attempts": 0,
+  "route": "direct_migration",
+  "source": "cases/B015_fortran_matmul/program.py",
+  "source_sha256": "a1c9c61b410cdd5cddab8492aa04f69be5750d7d4354e53bd98dfa3c36e923ad",
+  "status": "pass",
+  "total_rewrites": 3
+}

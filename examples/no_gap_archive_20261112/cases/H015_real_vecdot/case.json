@@ -1,0 +1,25 @@
+{
+  "case": "H015_real_vecdot",
+  "elapsed_s": 2.51,
+  "engine": "llm",
+  "expected_rewrites": {
+    "multiply": 2,
+    "sum": 2
+  },
+  "group": "H_gap_official",
+  "migrated": "cases/H015_real_vecdot/migrated.py",
+  "migrated_sha256": "a1de69e89a771508a62d5df19febdd80b80845869db5c81c5c7894d214b6d078",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 10,
+  "numerically_consistent": true,
+  "repair_attempts": 0,
+  "route": "direct_migration",
+  "source": "cases/H015_real_vecdot/program.py",
+  "source_sha256": "85f891a666d9da6a081225dab35f950b22258512d0e5aac19c0d7a5759d4e055",
+  "status": "pass",
+  "total_rewrites": 4
+}

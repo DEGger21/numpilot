@@ -1,0 +1,7 @@
+{
+  "case": "S10_boolean_logic_4m",
+  "base_case": "A010_boolean_logic",
+  "kind": "scaled_performance_variant",
+  "note": "A010 boolean mask graph on 4,000,000 bool elements.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes/constants changed."
+}

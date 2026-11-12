@@ -34,6 +34,8 @@ def test_python_operators_are_deduplicated_into_one_lowering_task():
     assert lt.category == "dialect_operator"
     assert lt.route == "code_migrator"
     assert lt.call_sites == (7, 9)
+    assert lt.target == "less"
+    assert plan.tasks[0].target == "equal"
     assert plan.ready is False
 
 

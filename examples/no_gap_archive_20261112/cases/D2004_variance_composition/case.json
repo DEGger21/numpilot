@@ -1,0 +1,31 @@
+{
+  "case": "D2004_variance_composition",
+  "elapsed_s": 7.93,
+  "engine": "llm",
+  "expected_rewrites": {
+    "add": 1,
+    "divide": 1,
+    "full": 1,
+    "mean": 3,
+    "sqrt": 1,
+    "square": 1,
+    "subtract": 3,
+    "tanh": 1
+  },
+  "group": "D2_partial_low_official",
+  "migrated": "cases/D2004_variance_composition/migrated.py",
+  "migrated_sha256": "2484eb34dae182f6b75cf2eaf8263c6e00c83b50a34fb2939b6145fe4bb74ab1",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 120,
+  "numerically_consistent": true,
+  "repair_attempts": 0,
+  "route": "direct_migration",
+  "source": "cases/D2004_variance_composition/program.py",
+  "source_sha256": "8b12857e5e0c8a4b5e4f3c51023ebef5992bcff916e1ab4bd714471929c9a5be",
+  "status": "pass",
+  "total_rewrites": 12
+}

@@ -1,0 +1,8 @@
+{
+  "case": "H010_standard_deviation_4096x1024",
+  "base_case": "H010_standard_deviation",
+  "kind": "scaled_performance_variant",
+  "note": "H010_standard_deviation: 4,096 x 1,024 float32; row and column std.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+  "scalable": true
+}

@@ -1,0 +1,25 @@
+{
+  "case": "A012_half_rounding",
+  "elapsed_s": 2.07,
+  "engine": "llm",
+  "expected_rewrites": {
+    "floor": 1,
+    "rint": 1
+  },
+  "group": "A_direct_simple",
+  "migrated": "cases/A012_half_rounding/migrated.py",
+  "migrated_sha256": "2caec2b861dbf8223c2d8b0eb2cb9eb4f462c49649cec48c110afc72cb158b78",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 10,
+  "numerically_consistent": true,
+  "repair_attempts": 0,
+  "route": "direct_migration",
+  "source": "cases/A012_half_rounding/program.py",
+  "source_sha256": "ad490de17cb8d1c01cecfaf6226c0f8aa06d60be464390f0407250eb386a347a",
+  "status": "pass",
+  "total_rewrites": 2
+}

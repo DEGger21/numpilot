@@ -1,0 +1,33 @@
+{
+  "case": "C011_residual_gemm",
+  "elapsed_s": 9.63,
+  "engine": "llm",
+  "expected_rewrites": {
+    "add": 3,
+    "full": 9,
+    "matmul": 5,
+    "maximum": 6,
+    "mean": 1,
+    "multiply": 3,
+    "sqrt": 1,
+    "square": 1,
+    "sum": 1,
+    "tanh": 1
+  },
+  "group": "C_direct_structure",
+  "migrated": "cases/C011_residual_gemm/migrated.py",
+  "migrated_sha256": "93c9c456668c8e2119d4bb8cb85a9015f2a7d3e11e17a1fca439570c5f270462",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 184,
+  "numerically_consistent": true,
+  "repair_attempts": 0,
+  "route": "direct_migration",
+  "source": "cases/C011_residual_gemm/program.py",
+  "source_sha256": "64183baa59e65195760ff80f04e78974692c03fec544b7d24f58bdf93d4dbfd5",
+  "status": "pass",
+  "total_rewrites": 31
+}

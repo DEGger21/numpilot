@@ -1,0 +1,8 @@
+{
+  "case": "C013_markov_relaxation_4096x1024",
+  "base_case": "C013_markov_relaxation",
+  "kind": "scaled_performance_variant",
+  "note": "C013_markov_relaxation: 4,096 states x 1,024 classes; eight relaxation steps.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+  "scalable": true
+}

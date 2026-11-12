@@ -6810,7 +6810,12 @@ def _cmd_migrate_with_progress(args, progress):
         threshold=args.threshold,
         analysis_profiles=analysis_profiles,
     )
-    res = orch.run(args.file, out_dir=args.out, on_event=progress.on_event)
+    res = orch.run(
+        args.file,
+        out_dir=args.out,
+        on_event=progress.on_event,
+        strict_input_types=True,
+    )
 
     print(_render_terminal(res))
     try:

@@ -1,0 +1,8 @@
+{
+  "case": "B011_nan_inf_extrema_4m",
+  "base_case": "B011_nan_inf_extrema",
+  "kind": "scaled_performance_variant",
+  "note": "B011_nan_inf_extrema: 4,000,000 float32 elements with tiled NaN/Inf pattern.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+  "scalable": true
+}

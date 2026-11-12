@@ -219,6 +219,7 @@ def run(args) -> dict:
         ).run_source(
             lowered.source, 'program.py', out_dir=str(out / 'mainline'),
             verification_source=source, strict_input_types=True,
+            prepare_source=False,
         )
         runtime_after = overlay.resolver.runtime_identity().to_dict()
         _write_json(out / 'runtime-after.json', runtime_after)

@@ -642,7 +642,9 @@ class _Rewriter(ast.NodeTransformer):
 class AstRewriteEngine(MigrationEngine):
     name = "ast"
 
-    def rewrite(self, source: str, plan: OffloadPlan) -> str:
+    def rewrite(self, source: str, plan: OffloadPlan, taskbook=None) -> str:
+        # The deterministic rewriter is driven by the plan; the taskbook is
+        # accepted for engine-interface parity with the model-backed engine.
         tree = ast.parse(source)
         forwards = [
             node for node in tree.body

@@ -1,0 +1,7 @@
+{
+  "case": "S7_row_max_4096",
+  "base_case": "A006_row_max",
+  "kind": "scaled_performance_variant",
+  "note": "A006 row-max graph on a 4096x4096 float32 matrix.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes/constants changed."
+}

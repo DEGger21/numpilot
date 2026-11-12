@@ -31,6 +31,7 @@ from numpilot.engines.ast_rewrite import AstRewriteEngine
 from numpilot.engines.llm import LlmEngine
 from numpilot.paths import default_benchmark_dir
 from numpilot.program_ir import build_program_ir
+from numpilot.program_preparation import prepare_program
 from numpilot.progress import ProgressEmitter, notify_observer
 from numpilot.roles import Role, RoleRecord, RoleStage, records_to_dicts
 
@@ -151,10 +152,25 @@ class Orchestrator:
         self.threshold = threshold
         self.analysis_profiles = analysis_profiles
 
-    def run(self, source_path: str, out_dir=None, *, on_record=None, on_event=None) -> dict:
+    def run(
+        self,
+        source_path: str,
+        out_dir=None,
+        *,
+        on_record=None,
+        on_event=None,
+        strict_input_types=False,
+    ) -> dict:
         with open(source_path, encoding="utf-8") as f:
             source = f.read()
-        return self.run_source(source, source_path, out_dir, on_record=on_record, on_event=on_event)
+        return self.run_source(
+            source,
+            source_path,
+            out_dir,
+            on_record=on_record,
+            on_event=on_event,
+            strict_input_types=strict_input_types,
+        )
 
     def run_source(
         self,
@@ -165,6 +181,7 @@ class Orchestrator:
         verification_source=None,
         strict_input_types=False,
         on_event=None,
+        prepare_source=None,
     ) -> dict:
         """Run the six-role mainline on in-memory source.
 
@@ -180,9 +197,23 @@ class Orchestrator:
         benchmark adapter lowers documented equivalent spellings for analysis
         while keeping the original program as the oracle.  ``source`` remains
         the analysis source; ``verification_source`` defaults to it.
+
+        ``prepare_source`` runs deterministic whole-program preparation
+        (helper inlining, static control-flow unrolling, destructuring and
+        documented equivalent spellings) before analysis.  The original
+        ``source`` stays the oracle.  ``None`` means "prepare unless the caller
+        already supplied analysis profiles", because profiles are bound to the
+        exact analyzed source positions.  Callers that already prepared a
+        source pass ``False`` so the same transformation is not applied twice.
         """
+        if prepare_source is None:
+            prepare_source = self.analysis_profiles is None
         oracle_source = (
             source if verification_source is None else verification_source
+        )
+        preparation = prepare_program(source) if prepare_source else None
+        analysis_source = (
+            preparation.analysis_source if preparation is not None else source
         )
         records = []
         progress = ProgressEmitter(on_event)
@@ -200,17 +231,24 @@ class Orchestrator:
         )
         with progress.operation(Role.ANALYZER, "分析源码与 API 调用契约") as activity:
             analysis = AnalysisAgent(profile_resolver).analyze(
-                source, source_path, profiles=self.analysis_profiles,
+                analysis_source, source_path, profiles=self.analysis_profiles,
                 strict_input_types=strict_input_types,
             )
-            program_ir = build_program_ir(source, source_path)
+            program_ir = build_program_ir(analysis_source, source_path)
             gap_inventory = collect_gap_inventory(analysis)
             activity.finish("completed" if analysis.migratable else "blocked",
                             "分析完成" if analysis.migratable else "分析完成，存在待处理的 API 缺口")
-        with progress.operation(Role.PLANNER, "制定迁移路线与主机设备边界") as activity:
-            plan = PlannerAgent(self.threshold).plan(analysis, gap_inventory)
+        with progress.operation(Role.PLANNER, "制定迁移路线与逐调用点任务书") as activity:
+            plan = PlannerAgent(self.threshold).plan(
+                analysis,
+                gap_inventory,
+                source=source,
+                prepared_source=analysis_source,
+                preparation=preparation,
+                source_path=source_path,
+            )
             activity.finish("completed" if plan.direct else "blocked",
-                            "迁移计划已生成" if plan.direct else "计划要求先补全 API 缺口")
+                            "迁移计划与任务书已生成" if plan.direct else "计划要求先补全 API 缺口")
         # Recheck the analysis inventory after planning. This small deterministic
         # pass is actual Gap Filler work, not a reordered progress notification.
         with progress.operation(Role.GAP_FILLER, "核对规划任务、缺口清单与可用接入路径") as activity:
@@ -247,15 +285,23 @@ class Orchestrator:
                 "program_ir": program_ir.to_dict(),
                 "gap_plan": gap_plan.to_dict(),
                 "source_path": source_path,
+                "source_sha256": _sha256(oracle_source),
+                "analysis_source_sha256": _sha256(analysis_source),
+                "preparation": preparation.to_dict() if preparation is not None else None,
                 "roles": records_to_dicts(records + [reporter]),
                 "diagnosis": None,
             }
             with progress.operation(Role.REPORTER, "汇总缺口报告与执行记录") as activity:
                 if out_dir:
                     from numpilot.gap_requirements import build_planning_taskbook, persist_gap_taskbook
+                    from numpilot.translation_taskbook import persist_translation_taskbook
 
-                    taskbook = build_planning_taskbook(analysis, gap_plan, source=source)
+                    taskbook = build_planning_taskbook(analysis, gap_plan, source=analysis_source)
                     result["gap_taskbook"] = persist_gap_taskbook(out_dir, taskbook)
+                    if plan.translation_taskbook:
+                        result["translation_taskbook"] = persist_translation_taskbook(
+                            out_dir, plan.translation_taskbook
+                        )
                 self._maybe_write(out_dir, result)
                 emit(reporter)
                 activity.finish(message="缺口报告已写入文件" if out_dir else "缺口报告已汇总，未指定输出目录")
@@ -264,7 +310,7 @@ class Orchestrator:
         emit(_gap_record(gap_plan))
         with progress.operation(Role.CODE_MIGRATOR, "生成迁移代码并核对改写完整性", execution_mode=engine_mode) as activity:
             migrator = MigrationAgent(self.engine)
-            migration = migrator.migrate(source, plan)
+            migration = migrator.migrate(analysis_source, plan)
             activity.finish("completed" if migration.rewrite_integrity else "failed",
                             "迁移代码已生成" if migration.rewrite_integrity else "迁移改写完整性未通过")
 
@@ -310,7 +356,9 @@ class Orchestrator:
             repair_attempts += 1
             with progress.operation(Role.CODE_MIGRATOR, "根据诊断执行有界代码修复",
                                     execution_mode=engine_mode, attempt=repair_attempts + 1) as activity:
-                migration = migrator.repair(source, plan, migration.migrated_source, diagnosis)
+                migration = migrator.repair(
+                    analysis_source, plan, migration.migrated_source, diagnosis
+                )
                 activity.finish("completed" if migration.rewrite_integrity else "failed",
                                 "修复代码已生成，等待重新验证" if migration.rewrite_integrity else "修复改写完整性未通过")
             report = verify_candidate(migration, repair_attempts + 1)
@@ -347,10 +395,20 @@ class Orchestrator:
         with progress.operation(Role.REPORTER, "写入迁移代码、验证证据与报告") as activity:
             migrated_path = None
             if out_dir:
+                from numpilot.translation_taskbook import persist_translation_taskbook
+
                 os.makedirs(out_dir, exist_ok=True)
                 migrated_path = os.path.join(out_dir, "migrated.py")
                 with open(migrated_path, "w", encoding="utf-8") as f:
                     f.write(migration.migrated_source)
+                if plan.translation_taskbook:
+                    result_taskbook = persist_translation_taskbook(
+                        out_dir, plan.translation_taskbook
+                    )
+                else:
+                    result_taskbook = None
+            else:
+                result_taskbook = None
             evidence = _validation_evidence(report, oracle_source, migration)
             result = {
                 "status": report.status,
@@ -370,7 +428,9 @@ class Orchestrator:
                 "migrated_path": migrated_path,
                 "source_path": source_path,
                 "source_sha256": _sha256(oracle_source),
-                "analysis_source_sha256": _sha256(source),
+                "analysis_source_sha256": _sha256(analysis_source),
+                "preparation": preparation.to_dict() if preparation is not None else None,
+                "translation_taskbook": result_taskbook,
                 "repair_attempts": repair_attempts,
                 "validation_evidence": evidence,
                 "roles": records_to_dicts(records + [reporter], migration.engine),
@@ -393,6 +453,10 @@ class Orchestrator:
             "status": result["status"],
             "route": result.get("route"),
             "source_path": result["source_path"],
+            "source_sha256": result.get("source_sha256"),
+            "analysis_source_sha256": result.get("analysis_source_sha256"),
+            "preparation": result.get("preparation"),
+            "translation_taskbook": result.get("translation_taskbook"),
             "unsupported": result.get("unsupported", []),
             "engine": result.get("engine"),
             "rewrites": rewrites,
@@ -460,6 +524,12 @@ def _render_md(summary, result) -> str:
     lines.append(f"- 源文件:`{summary['source_path']}`")
     lines.append(f"- 状态:**{summary['status']}**")
     lines.append(f"- 路线:`{summary.get('route') or '?'}`")
+    translation = summary.get("translation_taskbook") or {}
+    if translation:
+        lines.append(
+            f"- 迁移任务书:`{translation['taskbook_id']}` "
+            f"(`{translation['json']['path']}`)"
+        )
     roles = summary.get("roles") or []
     if summary["status"] == "unsupported":
         lines.append(f"- 缺口算子(未迁移):{', '.join(summary['unsupported'])}")

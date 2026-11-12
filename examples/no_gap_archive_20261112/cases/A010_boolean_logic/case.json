@@ -1,0 +1,25 @@
+{
+  "case": "A010_boolean_logic",
+  "elapsed_s": 2.03,
+  "engine": "llm",
+  "expected_rewrites": {
+    "logical_and": 1,
+    "logical_or": 1
+  },
+  "group": "A_direct_simple",
+  "migrated": "cases/A010_boolean_logic/migrated.py",
+  "migrated_sha256": "eebfda3ef32b491e7b673ef0ab3ee9310b2bcd99837bb1fd5f39ced0cdd4284a",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 8,
+  "numerically_consistent": true,
+  "repair_attempts": 0,
+  "route": "direct_migration",
+  "source": "cases/A010_boolean_logic/program.py",
+  "source_sha256": "3b1fb104da361ab99118a86a615d92bc4affe9c88acc4372449ca0f069f01c0f",
+  "status": "pass",
+  "total_rewrites": 2
+}

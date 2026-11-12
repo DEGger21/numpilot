@@ -1,0 +1,8 @@
+{
+  "case": "H003_acos_alias_4m",
+  "base_case": "H003_acos_alias",
+  "kind": "scaled_performance_variant",
+  "note": "H003_acos_alias: 4,000,000 float32 elements; endpoint witness retained.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+  "scalable": true
+}

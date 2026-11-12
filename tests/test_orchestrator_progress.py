@@ -17,7 +17,7 @@ SOURCE = (
     "def build_inputs(): return (np.array([1, 2, 3, 4], dtype=np.float32),)\n"
     "def forward(x): return np.sqrt(x)\n"
 )
-GAP_SOURCE = SOURCE.replace("np.sqrt(x)", "np.cbrt(x)")
+GAP_SOURCE = SOURCE.replace("np.sqrt(x)", "np.nextafter(x, x)")
 
 
 def assert_closed(events):
@@ -255,3 +255,23 @@ def test_reporter_completion_callback_sees_taskbook_and_report_on_gap_route(tmp_
     assert report["gap_taskbook"]["schema"] == "numpilot.gap-taskbook-ref"
     assert events[-1].role is Role.REPORTER and events[-1].state == "completed"
     assert_closed(events)
+
+
+OBJECT_DTYPE_SOURCE = (
+    "import numpy as np\n"
+    "def build_inputs():\n"
+    "    return {'x': np.array([1, 2], dtype=object)}\n"
+    "def forward(x):\n"
+    "    return {'out': np.multiply(x, x)}\n"
+)
+
+
+def test_contract_run_forwards_strict_input_types(tmp_path):
+    path = tmp_path / "object_dtype.py"
+    path.write_text(OBJECT_DTYPE_SOURCE, encoding="utf-8")
+    result = Orchestrator(
+        backend=ShimBackend(), engine=AstRewriteEngine()
+    ).run(str(path), strict_input_types=True)
+
+    assert result["status"] == "unsupported"
+    assert "multiply" in result["unsupported"]

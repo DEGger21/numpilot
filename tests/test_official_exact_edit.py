@@ -1,3 +1,4 @@
+import ast
 import hashlib
 import json
 from pathlib import Path
@@ -173,6 +174,15 @@ def test_official_exact_edit_repair_prompt_documents_python_validation():
     assert "`_concatenate`" in prompt
     assert "C-contiguous" in prompt
     assert "operator.index" in prompt
+
+
+def test_official_exact_edit_repair_prompt_preserves_reviewed_binding_route():
+    prompt = provider_module._ASNUMPY_OFFICIAL_EXACT_EDIT_REPAIR_SYSTEM_PROMPT
+    assert "ROUTE PRESERVATION INVARIANT" in prompt
+    assert "keep that binding call in the repaired wrapper" in prompt
+    assert "Do not\nreplace `_<op>(...)`" in prompt
+    assert "`Copysign` implementation `Absolute(x1) * Sign(x2)`" in prompt
+    assert "negative zero" in prompt
 
 
 def test_official_exact_edit_repair_prompt_documents_pinned_test_api():
@@ -373,12 +383,20 @@ def test_concatenate_exact_edit_windows_cover_reviewed_targets():
             "    from .array import (\n"
             "        zeros,\n"
             "    )\n"
-            "    from .io import load, save, savez, savez_compressed\n\n"
+            "    from .io import load, save, savez, savez_compressed\n"
+            "    from .math import (\n"
+            "        absolute,\n"
+            "    )\n"
+            "    from .nn import softmax\n\n"
             "_LAZY_MAPPING = {\n"
             "    # .array\n"
             '    "zeros": ".array",\n'
             "    # .linalg\n"
             '    "linalg": ".linalg",\n'
+            "    # .math\n"
+            '    "absolute": ".math",\n'
+            "    # .random\n"
+            '    "random": ".random",\n'
             "}\n"
         ),
         "tests/asnumpy_tests/creation_tests/test_basic.py": (
@@ -444,6 +462,391 @@ def test_concatenate_exact_edit_windows_cover_reviewed_targets():
         allowed_intervals=export_intervals,
     )
     assert '"concatenate": ".array"' in rebuilt
+
+
+def test_rebuilt_python_syntax_gate_rejects_unparseable_overlay():
+    from numpilot.gaps.provider import _validate_rebuilt_python_syntax
+
+    broken = (
+        "if TYPE_CHECKING:\n"
+        "    from .array import (\n"
+        "        zeros,\n"
+        "    )    from .io import load\n"
+    )
+    with pytest.raises(DraftGenerationError) as excinfo:
+        _validate_rebuilt_python_syntax("src/asnumpy/__init__.py", broken)
+    message = str(excinfo.value)
+    assert "src/asnumpy/__init__.py" in message
+    assert "line 4" in message
+    assert "glued" in message
+    assert "newline" in message
+
+    valid = (
+        "if TYPE_CHECKING:\n"
+        "    from .array import (\n"
+        "        zeros,\n"
+        "    )\n"
+        "    from .io import load\n"
+    )
+    _validate_rebuilt_python_syntax("src/asnumpy/__init__.py", valid)
+
+    # The deterministic syntax gate only governs Python overlays; C++ files
+    # are qualified by the build gate, not by a Python parser.
+    _validate_rebuilt_python_syntax("csrc/math/exponents_and_logarithms.cpp", "not python {")
+
+
+def _malformed_cbrt_init_base():
+    return (
+        "if TYPE_CHECKING:\n"
+        "    from .array import (\n"
+        "        zeros,\n"
+        "    )    from .io import load, save, savez, savez_compressed\n"
+        "    from .math import (\n"
+        "        exp,\n"
+        "    )\n"
+        "    from .nn import softmax\n\n"
+        "_LAZY_MAPPING = {\n"
+        "    # .array\n"
+        '    "zeros": ".array",\n'
+        "    # .linalg\n"
+        '    "linalg": ".linalg",\n'
+        "    # .math\n"
+        '    "exp": ".math",\n'
+        "    # .random\n"
+        '    "random": ".random",\n'
+        "}\n"
+    )
+
+
+def test_target_windows_expose_read_only_suffix_for_mid_line_window():
+    path = "src/asnumpy/__init__.py"
+    base = _malformed_cbrt_init_base()
+    rendered, intervals = (
+        provider_module._render_official_exact_edit_target_windows(
+            target_path=path,
+            base_content=base,
+        )
+    )
+    array_start = base.find("    from .array import (")
+    io_start = base.find("    from .io import")
+    assert intervals[0] == (array_start, io_start)
+    assert base[intervals[0][0]:intervals[0][1]].endswith("    )")
+    assert "WINDOW_SUFFIX (read-only context, not editable" in rendered
+    assert (
+        "    from .io import load, save, savez, savez_compressed" in rendered
+    )
+    assert "WINDOW_BOUNDARY" in rendered
+    assert "DETERMINISTIC MID-LINE IMPORT BOUNDARY AUDIT" in rendered
+    assert "`type_checking_array_imports` at line 4" in rendered
+    math_start = rendered.find(
+        "TARGET EDIT WINDOW `type_checking_math_imports`"
+    )
+    assert math_start >= 0
+    assert "WINDOW_SUFFIX" not in rendered[math_start:]
+
+
+def test_window_replace_accepts_newline_fix_for_mid_line_window():
+    path = "src/asnumpy/__init__.py"
+    base = _malformed_cbrt_init_base()
+    _rendered, intervals = (
+        provider_module._render_official_exact_edit_target_windows(
+            target_path=path,
+            base_content=base,
+        )
+    )
+    response = _window_response(
+        path,
+        base,
+        (("        zeros,\n    )", "        zeros,\n    )\n"),),
+    )
+    rebuilt = provider_module._apply_official_window_replace_response(
+        response,
+        expected_path=path,
+        base_content=base,
+        allowed_intervals=intervals,
+    )
+    assert "    )\n    from .io import load" in rebuilt
+    ast.parse(rebuilt)
+
+
+def test_window_replace_rejects_mid_line_replacement_without_newline():
+    path = "src/asnumpy/__init__.py"
+    base = _malformed_cbrt_init_base()
+    _rendered, intervals = (
+        provider_module._render_official_exact_edit_target_windows(
+            target_path=path,
+            base_content=base,
+        )
+    )
+    response = _window_response(
+        path,
+        base,
+        (("        zeros,\n    )", "        zeros,\n    ) "),),
+    )
+    with pytest.raises(
+        DraftGenerationError, match="before an import statement"
+    ):
+        provider_module._apply_official_window_replace_response(
+            response,
+            expected_path=path,
+            base_content=base,
+            allowed_intervals=intervals,
+        )
+
+
+def test_window_replace_allows_mid_line_comment_suffix_without_newline():
+    path = "src/asnumpy/__init__.py"
+    base = (
+        "if TYPE_CHECKING:\n"
+        "    from .array import (\n"
+        "        zeros,\n"
+        "    )\n"
+        "    from .io import load, save, savez, savez_compressed\n"
+        "    from .math import (\n"
+        "        exp,\n"
+        "    )\n"
+        "    from .nn import softmax\n\n"
+        "_LAZY_MAPPING = {\n"
+        "    # .array\n"
+        '    "zeros": ".array",    # .linalg\n'
+        '    "linalg": ".linalg",\n'
+        "    # .math\n"
+        '    "exp": ".math",\n'
+        "    # .random\n"
+        '    "random": ".random",\n'
+        "}\n"
+    )
+    _rendered, intervals = (
+        provider_module._render_official_exact_edit_target_windows(
+            target_path=path,
+            base_content=base,
+        )
+    )
+    response = _window_response(
+        path,
+        base,
+        (('    "zeros": ".array",', '    "zeros": ".arrayX",'),),
+    )
+    rebuilt = provider_module._apply_official_window_replace_response(
+        response,
+        expected_path=path,
+        base_content=base,
+        allowed_intervals=intervals,
+    )
+    ast.parse(rebuilt)
+
+
+
+def test_window_replace_requires_trailing_newline_at_line_boundary():
+    path = "src/asnumpy/__init__.py"
+    base = (
+        "if TYPE_CHECKING:\n"
+        "    from .array import (\n"
+        "        zeros,\n"
+        "    )\n"
+        "    from .io import load, save, savez, savez_compressed\n"
+        "    from .math import (\n"
+        "        exp,\n"
+        "    )\n"
+        "    from .nn import softmax\n\n"
+        "_LAZY_MAPPING = {\n"
+        "    # .array\n"
+        '    "zeros": ".array",\n'
+        "    # .linalg\n"
+        '    "linalg": ".linalg",\n'
+        "    # .math\n"
+        '    "exp": ".math",\n'
+        "    # .random\n"
+        '    "random": ".random",\n'
+        "}\n"
+    )
+    _rendered, intervals = (
+        provider_module._render_official_exact_edit_target_windows(
+            target_path=path,
+            base_content=base,
+        )
+    )
+    response = _window_response(
+        path,
+        base,
+        (("        zeros,\n    )\n", "        zeros,\n    )"),),
+    )
+    with pytest.raises(DraftGenerationError, match="line boundary"):
+        provider_module._apply_official_window_replace_response(
+            response,
+            expected_path=path,
+            base_content=base,
+            allowed_intervals=intervals,
+        )
+
+
+def test_exact_edit_can_insert_missing_newline_inside_array_window():
+    path = "src/asnumpy/__init__.py"
+    base = _malformed_cbrt_init_base()
+    _rendered, intervals = (
+        provider_module._render_official_exact_edit_target_windows(
+            target_path=path,
+            base_content=base,
+        )
+    )
+    response = _exact_response(
+        path,
+        base,
+        (("        zeros,\n    )", "        zeros,\n    )\n"),),
+    )
+    rebuilt = _apply_official_exact_edit_response(
+        response,
+        expected_path=path,
+        base_content=base,
+        allowed_intervals=intervals,
+    )
+    assert "    )\n    from .io import load" in rebuilt
+    ast.parse(rebuilt)
+
+
+
+def test_cbrt_exact_edit_windows_cover_reviewed_math_targets():
+    bases = {
+        "include/asnumpy/math/exponents_and_logarithms.hpp": (
+            "#pragma once\n"
+            "namespace asnumpy {\n"
+            "}\n"
+        ),
+        "csrc/math/exponents_and_logarithms.cpp": (
+            "#include <asnumpy/math/exponents_and_logarithms.hpp>\n"
+            "\n"
+            "namespace asnumpy {\n"
+            "\n"
+            "NPUArray Exp(const NPUArray& x) {\n"
+            "    return {};\n"
+            "}\n"
+            "\n"
+            "} // namespace asnumpy\n"
+        ),
+        "bindings/python/bind_math.cpp": "void bind_math() {}\n",
+        "src/asnumpy/math.py": "def exp(): pass\n",
+        "src/asnumpy/__init__.py": (
+            "if TYPE_CHECKING:\n"
+            "    from .array import (\n"
+            "        zeros,\n"
+            "    )\n"
+            "    from .io import load, save, savez, savez_compressed\n"
+            "    from .math import (\n"
+            "        exp,\n"
+            "    )\n"
+            "    from .nn import softmax\n\n"
+            "_LAZY_MAPPING = {\n"
+            "    # .array\n"
+            '    "zeros": ".array",\n'
+            "    # .linalg\n"
+            '    "linalg": ".linalg",\n'
+            "    # .math\n"
+            '    "exp": ".math",\n'
+            "    # .random\n"
+            '    "random": ".random",\n'
+            "}\n"
+        ),
+        "tests/asnumpy_tests/math_tests/test_exponents_and_logarithms.py": (
+            "def test_exp(): pass\n"
+        ),
+    }
+    expected_labels = {
+        "include/asnumpy/math/exponents_and_logarithms.hpp": (
+            "complete_math_exponents_header",
+        ),
+        "csrc/math/exponents_and_logarithms.cpp": (
+            "includes",
+            "cbrt_implementation",
+        ),
+        "bindings/python/bind_math.cpp": ("complete_math_binding_module",),
+        "src/asnumpy/math.py": ("complete_math_dispatch_module",),
+        "src/asnumpy/__init__.py": (
+            "type_checking_array_imports",
+            "type_checking_math_imports",
+            "lazy_array_exports",
+            "lazy_math_exports",
+        ),
+        "tests/asnumpy_tests/math_tests/test_exponents_and_logarithms.py": (
+            "complete_math_exponents_test_module",
+        ),
+    }
+    for path, base in bases.items():
+        rendered, intervals = (
+            provider_module._render_official_exact_edit_target_windows(
+                target_path=path,
+                base_content=base,
+            )
+        )
+        assert rendered
+        assert (
+            "DETERMINISTIC MID-LINE IMPORT BOUNDARY AUDIT" not in rendered
+        )
+        assert len(intervals) == len(expected_labels[path])
+        planned = tuple(
+            spec[0]
+            for spec in provider_module._OFFICIAL_EXACT_EDIT_TARGET_WINDOWS[path]
+        )
+        assert planned == expected_labels[path]
+
+    init_path = "src/asnumpy/__init__.py"
+    init_base = bases[init_path]
+    init_response = _window_response(
+        init_path,
+        init_base,
+        ((
+            '    # .math\n    "exp": ".math",\n',
+            '    # .math\n    "cbrt": ".math",\n    "exp": ".math",\n',
+        ),),
+    )
+    _rendered, init_intervals = (
+        provider_module._render_official_exact_edit_target_windows(
+            target_path=init_path,
+            base_content=init_base,
+        )
+    )
+    rebuilt = provider_module._apply_official_window_replace_response(
+        init_response,
+        expected_path=init_path,
+        base_content=init_base,
+        allowed_intervals=init_intervals,
+    )
+    assert '"cbrt": ".math"' in rebuilt
+    assert "    from .math import (\n        exp,\n    )" in rebuilt
+
+    cpp_path = "csrc/math/exponents_and_logarithms.cpp"
+    cpp_base = bases[cpp_path]
+    cpp_response = _window_response(
+        cpp_path,
+        cpp_base,
+        (
+            (
+                "#include <asnumpy/math/exponents_and_logarithms.hpp>\n",
+                "#include <asnumpy/math/exponents_and_logarithms.hpp>\n"
+                "#include <aclnnop/aclnn_pow.h>\n",
+            ),
+            (
+                "} // namespace asnumpy",
+                "NPUArray Cbrt(const NPUArray& x) {\n"
+                "    return {};\n"
+                "}\n\n"
+                "} // namespace asnumpy",
+            ),
+        ),
+    )
+    _rendered, cpp_intervals = (
+        provider_module._render_official_exact_edit_target_windows(
+            target_path=cpp_path,
+            base_content=cpp_base,
+        )
+    )
+    rebuilt = provider_module._apply_official_window_replace_response(
+        cpp_response,
+        expected_path=cpp_path,
+        base_content=cpp_base,
+        allowed_intervals=cpp_intervals,
+    )
+    assert "#include <aclnnop/aclnn_pow.h>" in rebuilt
+    assert "NPUArray Cbrt(const NPUArray& x)" in rebuilt
 
 
 def test_official_exact_edit_generation_binds_full_rebuilt_files_and_receipts(

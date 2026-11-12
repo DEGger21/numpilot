@@ -32,7 +32,7 @@ AMBIGUOUS = "ambiguous"
 ERROR = "error"
 
 RESOLUTION_SCHEMA_VERSION = 1
-CATALOG_REVISION = "installed-cann-aclnn-adapter-candidates-v3"
+CATALOG_REVISION = "installed-cann-aclnn-adapter-candidates-v5"
 
 _RESOLUTION_STATUSES = frozenset({
     EXACT_CANDIDATE,
@@ -183,6 +183,11 @@ _ASNUMPY_MATMUL_LIBRARIES = ("libopapi.so", "libopapi_nn.so")
 # ``libopapi_math.so`` is retained as a second audited provider because this
 # toolkit exports the same two-stage Cat symbols from both libraries.
 _ASNUMPY_ARRAY_LIBRARIES = ("libopapi.so", "libopapi_math.so")
+# ``cbrt`` is dispatched from the existing AsNumPy ``math`` module.  Its
+# reviewed target link graph names the monolithic ``opapi`` DSO, so prefer
+# that exact library; the math DSO remains a second audited provider for
+# the same two-stage ``aclnnPowTensorScalar`` symbols.
+_ASNUMPY_MATH_LIBRARIES = ("libopapi.so", "libopapi_math.so")
 _AUDITED_9_0 = ("9.0.0",)
 # Concatenate was audited only against the exact toolkit and device profile
 # recorded in docs/concatenate-official-audit.zh-CN.md.  Neither the broader
@@ -195,6 +200,10 @@ _AUDITED_910B3 = ("ascend910b3",)
 
 
 ACLNN_ADAPTER_CANDIDATES: Tuple[AclnnAdapterCandidate, ...] = (
+    # Two exact audit profiles for the same ACLNN mapping.  They are kept as
+    # separate catalog entries because the profile fields are independent
+    # membership sets; merging them would silently admit the unaudited
+    # 9.0.0/910B3 and 9.2.0-beta.2/910B4 cross combinations.
     AclnnAdapterCandidate(
         candidate_id="numpy.cbrt-aclnn-pow-tensor-scalar",
         qualified_api="numpy.cbrt",
@@ -206,6 +215,24 @@ ACLNN_ADAPTER_CANDIDATES: Tuple[AclnnAdapterCandidate, ...] = (
         ),
         audited_cann_versions=_AUDITED_9_0,
         audited_target_socs=_AUDITED_910B4,
+        semantic_review=(
+            "adapt cbrt as sign(x) * pow(abs(x), 1/3); plain fractional "
+            "pow is not equivalent for negative inputs",
+            "validate signed zero, NaN, infinities, integer conversion, "
+            "dtype promotion, and exponent precision",
+        ),
+    ),
+    AclnnAdapterCandidate(
+        candidate_id="numpy.cbrt-aclnn-pow-tensor-scalar-910b3",
+        qualified_api="numpy.cbrt",
+        header_name="aclnn_pow.h",
+        library_priority=_ASNUMPY_MATH_LIBRARIES,
+        required_symbols=(
+            "aclnnPowTensorScalarGetWorkspaceSize",
+            "aclnnPowTensorScalar",
+        ),
+        audited_cann_versions=_AUDITED_9_2_BETA2,
+        audited_target_socs=_AUDITED_910B3,
         semantic_review=(
             "adapt cbrt as sign(x) * pow(abs(x), 1/3); plain fractional "
             "pow is not equivalent for negative inputs",
@@ -1606,6 +1633,51 @@ def _resolution(
     )
 
 
+def _candidates_for_exact_profile(
+    matches: Sequence[AclnnAdapterCandidate],
+    version: str,
+    target_soc: str,
+) -> Tuple[AclnnAdapterCandidate, ...]:
+    """Select catalog entries audited for this exact version/SoC pair.
+
+    The two audit fields are independent membership sets.  A catalog can hold
+    one entry per exact audited profile for the same API without implying the
+    cross product of those claims.
+    """
+
+    return tuple(
+        item for item in matches
+        if version in item.audited_cann_versions
+        and target_soc in item.audited_target_socs
+    )
+
+
+def _unique_partial_profile_match(
+    matches: Sequence[AclnnAdapterCandidate],
+    version: str,
+    target_soc: str,
+) -> Optional[AclnnAdapterCandidate]:
+    """Pick the only entry that can explain a non-matching exact profile.
+
+    This preserves the specific ``candidate_target_soc_not_audited`` and
+    ``candidate_version_not_audited`` diagnostics when the catalog contains
+    several entries for one API.  If neither side is unique, the caller must
+    report ``catalog_multiple_candidates`` instead of guessing.
+    """
+
+    version_matches = tuple(
+        item for item in matches if version in item.audited_cann_versions
+    )
+    soc_matches = tuple(
+        item for item in matches if target_soc in item.audited_target_socs
+    )
+    if len(version_matches) == 1 and not soc_matches:
+        return version_matches[0]
+    if len(soc_matches) == 1 and not version_matches:
+        return soc_matches[0]
+    return None
+
+
 def resolve_installed_aclnn_from_inventory(
     qualified_api: str,
     *,
@@ -1694,7 +1766,10 @@ def resolve_installed_aclnn_from_inventory(
             expected_target_soc=target_soc,
             inventory=inventory,
         )
-    if len(matches) != 1:
+    profile_matches = _candidates_for_exact_profile(
+        matches, version, canonical_target_soc
+    )
+    if len(profile_matches) > 1:
         return _resolution(
             AMBIGUOUS,
             api,
@@ -1703,9 +1778,27 @@ def resolve_installed_aclnn_from_inventory(
             "multiple audited ACLNN mappings require an explicit selection",
             expected_target_soc=target_soc,
             inventory=inventory,
-            alternatives=tuple(item.candidate_id for item in matches),
+            alternatives=tuple(item.candidate_id for item in profile_matches),
         )
-    candidate = matches[0]
+    if profile_matches:
+        candidate = profile_matches[0]
+    elif len(matches) == 1:
+        candidate = matches[0]
+    else:
+        candidate = _unique_partial_profile_match(
+            matches, version, canonical_target_soc
+        )
+        if candidate is None:
+            return _resolution(
+                AMBIGUOUS,
+                api,
+                version,
+                "catalog_multiple_candidates",
+                "multiple audited ACLNN mappings require an explicit selection",
+                expected_target_soc=target_soc,
+                inventory=inventory,
+                alternatives=tuple(item.candidate_id for item in matches),
+            )
     if canonical_target_soc not in candidate.audited_target_socs:
         return _resolution(
             INCOMPATIBLE,
@@ -1877,7 +1970,10 @@ def resolve_installed_aclnn(
             "the bounded ACLNN catalog has not reviewed this API",
             expected_target_soc=target_soc,
         )
-    if len(matches) != 1:
+    profile_matches = _candidates_for_exact_profile(
+        matches, version, canonical_target_soc
+    )
+    if len(profile_matches) > 1:
         return _resolution(
             AMBIGUOUS,
             api,
@@ -1885,9 +1981,26 @@ def resolve_installed_aclnn(
             "catalog_multiple_candidates",
             "multiple audited ACLNN mappings require an explicit selection",
             expected_target_soc=target_soc,
-            alternatives=tuple(item.candidate_id for item in matches),
+            alternatives=tuple(item.candidate_id for item in profile_matches),
         )
-    candidate = matches[0]
+    if profile_matches:
+        candidate = profile_matches[0]
+    elif len(matches) == 1:
+        candidate = matches[0]
+    else:
+        candidate = _unique_partial_profile_match(
+            matches, version, canonical_target_soc
+        )
+        if candidate is None:
+            return _resolution(
+                AMBIGUOUS,
+                api,
+                version,
+                "catalog_multiple_candidates",
+                "multiple audited ACLNN mappings require an explicit selection",
+                expected_target_soc=target_soc,
+                alternatives=tuple(item.candidate_id for item in matches),
+            )
     if canonical_target_soc not in candidate.audited_target_socs:
         return _resolution(
             INCOMPATIBLE,

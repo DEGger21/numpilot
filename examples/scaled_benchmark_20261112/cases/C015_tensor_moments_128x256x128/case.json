@@ -1,0 +1,8 @@
+{
+  "case": "C015_tensor_moments_128x256x128",
+  "base_case": "C015_tensor_moments",
+  "kind": "scaled_performance_variant",
+  "note": "C015_tensor_moments: 128 x 256 x 128 float32; five moment steps.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+  "scalable": true
+}

@@ -1,0 +1,79 @@
+{
+  "schema": "numpilot.scaled-benchmark-summary",
+  "schema_version": 1,
+  "n_base_cases": 71,
+  "n_timed_variants": 72,
+  "n_measured_speedups": 66,
+  "n_contract_rows": 5,
+  "n_numeric_ok": 60,
+  "n_numeric_fail": 11,
+  "speedup_min": 1.3422025878484078,
+  "speedup_median": 11.060966115721623,
+  "speedup_max": 612.4101167927456,
+  "numeric_fail_cases": [
+    "A009_matrix_chain_2048",
+    "A007_matrix_product_2048",
+    "B015_fortran_matmul_2048",
+    "H015_real_vecdot_16384x256",
+    "A008_matrix_activation_2048",
+    "S4_residual_gemm_1024",
+    "S2_heat_diffusion_1024",
+    "A014_prefix_sum_4096x1024",
+    "D2002_round_alias_16384x256",
+    "B011_nan_inf_extrema_4m",
+    "B018_signed_zero_4m"
+  ],
+  "numeric_fail_detail": [
+    {
+      "case": "A009_matrix_chain_2048",
+      "max_abs_diff": 0.01611328125
+    },
+    {
+      "case": "A007_matrix_product_2048",
+      "max_abs_diff": 0.000396728515625
+    },
+    {
+      "case": "B015_fortran_matmul_2048",
+      "max_abs_diff": 1.0
+    },
+    {
+      "case": "H015_real_vecdot_16384x256",
+      "max_abs_diff": 0.001708984375
+    },
+    {
+      "case": "A008_matrix_activation_2048",
+      "max_abs_diff": 0.00016833841800689697
+    },
+    {
+      "case": "S4_residual_gemm_1024",
+      "max_abs_diff": 9.918212890625e-05
+    },
+    {
+      "case": "S2_heat_diffusion_1024",
+      "max_abs_diff": 4.57763671875e-05
+    },
+    {
+      "case": "A014_prefix_sum_4096x1024",
+      "max_abs_diff": 0.0001373291015625
+    },
+    {
+      "case": "D2002_round_alias_16384x256",
+      "max_abs_diff": 0.010000109672546387
+    },
+    {
+      "case": "B011_nan_inf_extrema_4m",
+      "max_abs_diff": 0.0
+    },
+    {
+      "case": "B018_signed_zero_4m",
+      "max_abs_diff": 1.0
+    }
+  ],
+  "contract_cases": [
+    "B004_mixed_int_float_4m",
+    "B010_empty_sum_16384x0x256",
+    "B012_zero_dimensional_1elem",
+    "B013_three_axis_broadcast_64x64x1024",
+    "B017_empty_product_0x1048576"
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "case": "C008_portfolio_repricing",
+  "elapsed_s": 21.55,
+  "engine": "llm",
+  "expected_rewrites": {
+    "add": 15,
+    "divide": 9,
+    "exp": 4,
+    "full": 36,
+    "log": 4,
+    "maximum": 4,
+    "multiply": 47,
+    "negative": 4,
+    "sqrt": 4,
+    "square": 4,
+    "subtract": 9,
+    "tanh": 8
+  },
+  "group": "C_direct_structure",
+  "migrated": "cases/C008_portfolio_repricing/migrated.py",
+  "migrated_sha256": "edb41be6e0200d23e5761024af882b90117752c0a81181805c038172a4108089",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 192,
+  "numerically_consistent": true,
+  "repair_attempts": 0,
+  "route": "direct_migration",
+  "source": "cases/C008_portfolio_repricing/program.py",
+  "source_sha256": "4f04a8a171bfcee44c0b011bea7d5198e381b6abe1c232bde49e6a282179e2d7",
+  "status": "pass",
+  "total_rewrites": 148
+}

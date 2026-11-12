@@ -1,0 +1,7 @@
+{
+  "case": "S1_add_sqrt_4m",
+  "base_case": "A001_add_sqrt",
+  "kind": "scaled_performance_variant",
+  "note": "A001 operator graph on 4,000,000 float32 elements.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed."
+}

@@ -1,0 +1,4243 @@
+{
+  "schema": "numpilot.scaled-performance-benchmark",
+  "schema_version": 3,
+  "date": "2026-11-12",
+  "kind": "performance_demonstration_variants",
+  "note": "Derived from all 71 archived no-gap cases; only input sizes/constants changed. Promo table: BENCHMARK_TABLE.md; full timing evidence: timings/.",
+  "n_base_cases": 71,
+  "n_cases": 72,
+  "selected_case_per_base": {
+    "A001_add_sqrt": "S1_add_sqrt_4m",
+    "A002_bounded_product": "A002_bounded_product_4m",
+    "A003_trig_pair": "S5_trig_pair_4m",
+    "A004_row_sum": "S6_row_sum_4096",
+    "A005_column_mean": "A005_column_mean_8192x512",
+    "A006_row_max": "S7_row_max_4096",
+    "A007_matrix_product": "A007_matrix_product_2048",
+    "A008_matrix_activation": "A008_matrix_activation_2048",
+    "A009_matrix_chain": "A009_matrix_chain_2048",
+    "A010_boolean_logic": "S10_boolean_logic_4m",
+    "A011_integer_modulo": "S8_integer_modulo_4m",
+    "A012_half_rounding": "A012_half_rounding_4m",
+    "A013_exponential_decay": "A013_exponential_decay_4m",
+    "A014_prefix_sum": "A014_prefix_sum_4096x1024",
+    "A015_row_product": "A015_row_product_65536x64",
+    "B004_mixed_int_float": "B004_mixed_int_float_4m",
+    "B005_mixed_float_precision": "B005_mixed_float_precision_4m",
+    "B006_transposed_input": "B006_transposed_input_4096x2048",
+    "B007_strided_input": "B007_strided_input_4m",
+    "B008_negative_axis": "B008_negative_axis_64x256x256",
+    "B009_keepdims": "B009_keepdims_4096x1024",
+    "B010_empty_sum": "B010_empty_sum_16384x0x256",
+    "B011_nan_inf_extrema": "B011_nan_inf_extrema_4m",
+    "B012_zero_dimensional": "B012_zero_dimensional_1elem",
+    "B013_three_axis_broadcast": "B013_three_axis_broadcast_64x64x1024",
+    "B015_fortran_matmul": "B015_fortran_matmul_2048",
+    "B016_reverse_strides": "B016_reverse_strides_4m",
+    "B017_empty_product": "B017_empty_product_0x1048576",
+    "B018_signed_zero": "B018_signed_zero_4m",
+    "B019_boolean_keepdims": "B019_boolean_keepdims_512x256x64",
+    "B020_nan_reductions": "B020_nan_reductions_65536x64",
+    "C001_heat_diffusion": "S2_heat_diffusion_1024",
+    "C002_mlp_inference": "C002_mlp_inference_65536x128",
+    "C003_layer_normalization": "C003_layer_normalization_16384x256",
+    "C004_cosine_rows": "C004_cosine_rows_16384x256",
+    "C005_distance_refinement": "C005_distance_refinement_16384x256",
+    "C006_softplus_network": "C006_softplus_network_4096x1024",
+    "C007_least_squares_steps": "C007_least_squares_steps_16384x256",
+    "C008_portfolio_repricing": "C008_portfolio_repricing_4m",
+    "C009_poisson_robust_map": "C009_poisson_robust_map_2048",
+    "C010_energy_feedback": "C010_energy_feedback_2048",
+    "C011_residual_gemm": "S4_residual_gemm_1024",
+    "C012_calibrated_projection": "C012_calibrated_projection_16384x256",
+    "C013_markov_relaxation": "C013_markov_relaxation_4096x1024",
+    "C014_logistic_training": "S9_logistic_training_65536x128",
+    "C015_tensor_moments": "C015_tensor_moments_128x256x128",
+    "D1001_signed_compression": "D1001_signed_compression_16384x256",
+    "D2001_absolute_alias": "D2001_absolute_alias_16384x256",
+    "D2002_round_alias": "D2002_round_alias_16384x256",
+    "D2003_acos_alias": "D2003_acos_alias_16384x256",
+    "D2004_variance_composition": "D2004_variance_composition_16384x256",
+    "D2005_range_composition": "D2005_range_composition_16384x256",
+    "F007_sort_kind": "F007_sort_kind_2048x2048",
+    "G004_cbrt_three_channels": "G004_cbrt_three_channels_16384x256",
+    "H001_abs_alias": "H001_abs_alias_16384x256",
+    "H002_round_alias": "H002_round_alias_4m",
+    "H003_acos_alias": "H003_acos_alias_4m",
+    "H004_asin_alias": "H004_asin_alias_4m",
+    "H005_atan_alias": "H005_atan_alias_4m",
+    "H006_acosh_alias": "H006_acosh_alias_2048",
+    "H007_asinh_alias": "H007_asinh_alias_2048",
+    "H008_atanh_alias": "H008_atanh_alias_4m",
+    "H009_variance": "H009_variance_64x256x256",
+    "H010_standard_deviation": "H010_standard_deviation_4096x1024",
+    "H011_peak_to_peak": "H011_peak_to_peak_4096x1024",
+    "H012_logarithmic_grid": "H012_logarithmic_grid_4m",
+    "H013_geometric_grid": "H013_geometric_grid_4m",
+    "H014_nan_minimum": "H014_nan_minimum_4096x1024",
+    "H015_real_vecdot": "H015_real_vecdot_16384x256",
+    "I001_cube_root": "I001_cube_root_4m",
+    "I003_nan_classification": "I003_nan_classification_4m"
+  },
+  "summary": {
+    "schema": "numpilot.scaled-benchmark-summary",
+    "schema_version": 1,
+    "n_base_cases": 71,
+    "n_timed_variants": 72,
+    "n_measured_speedups": 66,
+    "n_contract_rows": 5,
+    "n_numeric_ok": 60,
+    "n_numeric_fail": 11,
+    "speedup_min": 1.3422025878484078,
+    "speedup_median": 11.060966115721623,
+    "speedup_max": 612.4101167927456,
+    "numeric_fail_cases": [
+      "A009_matrix_chain_2048",
+      "A007_matrix_product_2048",
+      "B015_fortran_matmul_2048",
+      "H015_real_vecdot_16384x256",
+      "A008_matrix_activation_2048",
+      "S4_residual_gemm_1024",
+      "S2_heat_diffusion_1024",
+      "A014_prefix_sum_4096x1024",
+      "D2002_round_alias_16384x256",
+      "B011_nan_inf_extrema_4m",
+      "B018_signed_zero_4m"
+    ],
+    "numeric_fail_detail": [
+      {
+        "case": "A009_matrix_chain_2048",
+        "max_abs_diff": 0.01611328125
+      },
+      {
+        "case": "A007_matrix_product_2048",
+        "max_abs_diff": 0.000396728515625
+      },
+      {
+        "case": "B015_fortran_matmul_2048",
+        "max_abs_diff": 1.0
+      },
+      {
+        "case": "H015_real_vecdot_16384x256",
+        "max_abs_diff": 0.001708984375
+      },
+      {
+        "case": "A008_matrix_activation_2048",
+        "max_abs_diff": 0.00016833841800689697
+      },
+      {
+        "case": "S4_residual_gemm_1024",
+        "max_abs_diff": 9.918212890625e-05
+      },
+      {
+        "case": "S2_heat_diffusion_1024",
+        "max_abs_diff": 4.57763671875e-05
+      },
+      {
+        "case": "A014_prefix_sum_4096x1024",
+        "max_abs_diff": 0.0001373291015625
+      },
+      {
+        "case": "D2002_round_alias_16384x256",
+        "max_abs_diff": 0.010000109672546387
+      },
+      {
+        "case": "B011_nan_inf_extrema_4m",
+        "max_abs_diff": 0.0
+      },
+      {
+        "case": "B018_signed_zero_4m",
+        "max_abs_diff": 1.0
+      }
+    ],
+    "contract_cases": [
+      "B004_mixed_int_float_4m",
+      "B010_empty_sum_16384x0x256",
+      "B012_zero_dimensional_1elem",
+      "B013_three_axis_broadcast_64x64x1024",
+      "B017_empty_product_0x1048576"
+    ]
+  },
+  "cases": [
+    {
+      "case": "A002_bounded_product_4m",
+      "base_case": "A002_bounded_product",
+      "group": "A_direct_simple",
+      "kind": "scaled_performance_variant",
+      "note": "A002_bounded_product: 4,000,000 float32 elements.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.clip",
+        "np.multiply"
+      ],
+      "migration_time_s": 2.52,
+      "total_rewrites": 2,
+      "program.py": {
+        "path": "cases/A002_bounded_product_4m/program.py",
+        "sha256": "d26669fb1e496c4193c27736322a3f0000b908ecb9a9343a21747821ccb58988"
+      },
+      "migrated.py": {
+        "path": "cases/A002_bounded_product_4m/migrated.py",
+        "sha256": "569c061c01f43292bb0891e0d2581dc5d13cf32ddef81822dbb49b44b32c8326"
+      },
+      "case.json": {
+        "path": "cases/A002_bounded_product_4m/case.json",
+        "sha256": "4a0cbaac2d0580e42f1552fd9eadf9e85c26cc7338f41e9da617b776167fc3b9"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 109.29707018658519,
+        "npu_end_to_end_ms": 86.7449645884335,
+        "speedup_end_to_end": 1.2599817257998946,
+        "cpu_compute_only_ms": 18.02279334515333,
+        "npu_device_resident_ms": 1.602065283805132,
+        "speedup_device_resident": 11.24972466936344,
+        "npu_cold_ms": 89.76523205637932,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "name": "out"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "A005_column_mean_8192x512",
+      "base_case": "A005_column_mean",
+      "group": "A_direct_simple",
+      "kind": "scaled_performance_variant",
+      "note": "A005_column_mean: 8,192 x 512 float32; 4,194,304 elements.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.mean"
+      ],
+      "migration_time_s": 1.82,
+      "total_rewrites": 1,
+      "program.py": {
+        "path": "cases/A005_column_mean_8192x512/program.py",
+        "sha256": "14c9d19cc5c9133323c330b07469de68a14afe76514ef2626008d2fd57a18d8e"
+      },
+      "migrated.py": {
+        "path": "cases/A005_column_mean_8192x512/migrated.py",
+        "sha256": "c8ad8aa3157e2c79ae01e40403eec7fc74064df77202f5dde8bc8a3ee455fef3"
+      },
+      "case.json": {
+        "path": "cases/A005_column_mean_8192x512/case.json",
+        "sha256": "d222dafbad7187f762c641b5d200674450ef709855d68b897f320965ee682c59"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 47.13604925200343,
+        "npu_end_to_end_ms": 44.55163097009063,
+        "speedup_end_to_end": 1.0580095099918527,
+        "cpu_compute_only_ms": 3.638169262558222,
+        "npu_device_resident_ms": 0.18134480342268944,
+        "speedup_device_resident": 20.062164417682027,
+        "npu_cold_ms": 47.065104357898235,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 9.220093488693237e-08,
+              "max_rel_diff": 0.00016664753950483931,
+              "name": "out"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "A007_matrix_product_2048",
+      "base_case": "A007_matrix_product",
+      "group": "A_direct_simple",
+      "kind": "scaled_performance_variant",
+      "note": "A007_matrix_product: 2048 x 2048 float32 matmul; 17.2 GFLOP.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.matmul"
+      ],
+      "migration_time_s": 1.69,
+      "total_rewrites": 1,
+      "program.py": {
+        "path": "cases/A007_matrix_product_2048/program.py",
+        "sha256": "7cf31b80de15c2ccd86a90790d49649d3c8e87727ed7091e7305ba9a619076e9"
+      },
+      "migrated.py": {
+        "path": "cases/A007_matrix_product_2048/migrated.py",
+        "sha256": "de480d009e6e0666ffc1237018ebd77f95ff6e76dd8083b4f452ba2dfdf1aa72"
+      },
+      "case.json": {
+        "path": "cases/A007_matrix_product_2048/case.json",
+        "sha256": "0345e595eedcb653c5e04a4369f5116401567a796f4165abd09a35babfe1911d"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 701.7011418938637,
+        "npu_end_to_end_ms": 90.47951409593225,
+        "speedup_end_to_end": 7.755359308736723,
+        "cpu_compute_only_ms": 608.8758241385221,
+        "npu_device_resident_ms": 1.6839350573718548,
+        "speedup_device_resident": 361.5791603559847,
+        "npu_cold_ms": 91.62034559994936,
+        "numeric_ok": false,
+        "comparison": {
+          "consistent": false,
+          "items": [
+            {
+              "consistent": false,
+              "max_abs_diff": 0.000396728515625,
+              "max_rel_diff": 5.998287200927734,
+              "name": "out"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "A008_matrix_activation_2048",
+      "base_case": "A008_matrix_activation",
+      "group": "A_direct_simple",
+      "kind": "scaled_performance_variant",
+      "note": "A008_matrix_activation: 2048 x 2048 float32 matmul plus tanh.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.matmul",
+        "np.tanh"
+      ],
+      "migration_time_s": 2.5,
+      "total_rewrites": 2,
+      "program.py": {
+        "path": "cases/A008_matrix_activation_2048/program.py",
+        "sha256": "624c48777143d694619b0199886b6f755b0de9a68c575e3c9a607a989762bc7b"
+      },
+      "migrated.py": {
+        "path": "cases/A008_matrix_activation_2048/migrated.py",
+        "sha256": "ce1fd3119fbc42d7a43a6a64d9cb847e0c4069b7151fe7fdd086483529da4113"
+      },
+      "case.json": {
+        "path": "cases/A008_matrix_activation_2048/case.json",
+        "sha256": "5773e3d543a7daabd89826f84e04ee42120113521f13996509fd8d0023b1d366"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 737.3957992531359,
+        "npu_end_to_end_ms": 98.2567467726767,
+        "speedup_end_to_end": 7.50478540633091,
+        "cpu_compute_only_ms": 647.5159279070795,
+        "npu_device_resident_ms": 7.703062612563372,
+        "speedup_device_resident": 84.05954364839359,
+        "npu_cold_ms": 99.19064398854971,
+        "numeric_ok": false,
+        "comparison": {
+          "consistent": false,
+          "items": [
+            {
+              "consistent": false,
+              "max_abs_diff": 0.00016833841800689697,
+              "max_rel_diff": 7.221192677815755,
+              "name": "out"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "A009_matrix_chain_2048",
+      "base_case": "A009_matrix_chain",
+      "group": "A_direct_simple",
+      "kind": "scaled_performance_variant",
+      "note": "A009_matrix_chain: two 2048 x 2048 float32 matmuls; 34.4 GFLOP.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.matmul"
+      ],
+      "migration_time_s": 2.07,
+      "total_rewrites": 2,
+      "program.py": {
+        "path": "cases/A009_matrix_chain_2048/program.py",
+        "sha256": "2d1d3b87c65b969abd1793b6f281e63efd4f40fe91cb14a7e5366b75af249006"
+      },
+      "migrated.py": {
+        "path": "cases/A009_matrix_chain_2048/migrated.py",
+        "sha256": "e0adaa6b5f7d145647b17e9271dcbd02d6f270d16f04dee2a871b21e846eca0f"
+      },
+      "case.json": {
+        "path": "cases/A009_matrix_chain_2048/case.json",
+        "sha256": "f8ecec5e0049f061dcd590daa4c0685e0eaa0150e23e77c56be37541461f4b40"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 1360.473577864468,
+        "npu_end_to_end_ms": 135.215119458735,
+        "speedup_end_to_end": 10.061549206260606,
+        "cpu_compute_only_ms": 1225.1107431948185,
+        "npu_device_resident_ms": 2.0004743710160255,
+        "speedup_device_resident": 612.4101167927456,
+        "npu_cold_ms": 136.05612702667713,
+        "numeric_ok": false,
+        "comparison": {
+          "consistent": false,
+          "items": [
+            {
+              "consistent": false,
+              "max_abs_diff": 0.01611328125,
+              "max_rel_diff": 24.05358123779297,
+              "name": "out"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "A012_half_rounding_4m",
+      "base_case": "A012_half_rounding",
+      "group": "A_direct_simple",
+      "kind": "scaled_performance_variant",
+      "note": "A012_half_rounding: 4,000,000 float16 elements.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.floor",
+        "np.rint"
+      ],
+      "migration_time_s": 2.07,
+      "total_rewrites": 2,
+      "program.py": {
+        "path": "cases/A012_half_rounding_4m/program.py",
+        "sha256": "9bad83fffcc8a9b7d43e689c6fdf712ec107f468c19f3fc880bfcac20599758b"
+      },
+      "migrated.py": {
+        "path": "cases/A012_half_rounding_4m/migrated.py",
+        "sha256": "9a7822ba5369510588d9f7c0a88dd757b8695c50da1512105ab0edda67201001"
+      },
+      "case.json": {
+        "path": "cases/A012_half_rounding_4m/case.json",
+        "sha256": "51ca4cfc70597d6b0031f2dc53b678fe684197f34f96dadfefdb8c519b1d4d82"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 44.98190525919199,
+        "npu_end_to_end_ms": 12.312994338572025,
+        "speedup_end_to_end": 3.653206037647596,
+        "cpu_compute_only_ms": 41.439990978688,
+        "npu_device_resident_ms": 8.314790669828653,
+        "speedup_device_resident": 4.983888665899748,
+        "npu_cold_ms": 15.45440498739481,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "name": "floor"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "name": "nearest"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "A013_exponential_decay_4m",
+      "base_case": "A013_exponential_decay",
+      "group": "A_direct_simple",
+      "kind": "scaled_performance_variant",
+      "note": "A013_exponential_decay: 4,000,000 float32 elements.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.exp",
+        "np.negative",
+        "np.square"
+      ],
+      "migration_time_s": 2.02,
+      "total_rewrites": 3,
+      "program.py": {
+        "path": "cases/A013_exponential_decay_4m/program.py",
+        "sha256": "6640ab75b65d33f7d0fe51f271d97ac70092e8a3c39af70d9f71f85b65813b4e"
+      },
+      "migrated.py": {
+        "path": "cases/A013_exponential_decay_4m/migrated.py",
+        "sha256": "65804dfb4741d95c56b074c6a6dab0c8fcf74f807a40ff59791ceb696fd2bd68"
+      },
+      "case.json": {
+        "path": "cases/A013_exponential_decay_4m/case.json",
+        "sha256": "304400a1debcbf40acbd0b6fc6bd7090f98f957a3bfa91d53fa92aa70829c664"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 89.61121179163456,
+        "npu_end_to_end_ms": 51.42108164727688,
+        "speedup_end_to_end": 1.7426940258923964,
+        "cpu_compute_only_ms": 50.89368810877204,
+        "npu_device_resident_ms": 8.733914699405432,
+        "speedup_device_resident": 5.827133634844942,
+        "npu_cold_ms": 53.221835754811764,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 5.960464477539063e-08,
+              "max_rel_diff": 1.1920927533992823e-07,
+              "name": "out"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "A014_prefix_sum_4096x1024",
+      "base_case": "A014_prefix_sum",
+      "group": "A_direct_simple",
+      "kind": "scaled_performance_variant",
+      "note": "A014_prefix_sum: 4,096 x 1,024 float32; cumsum over 1,024-wide rows.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.cumsum"
+      ],
+      "migration_time_s": 1.82,
+      "total_rewrites": 1,
+      "program.py": {
+        "path": "cases/A014_prefix_sum_4096x1024/program.py",
+        "sha256": "e4734e684b55d03ec30ead632f87e7f13abe67c5e1d5ae48e72eb389736632db"
+      },
+      "migrated.py": {
+        "path": "cases/A014_prefix_sum_4096x1024/migrated.py",
+        "sha256": "ce1f8bae961e6c1ba35802a37022aa3689828fba5aedb885876d08ea963b5b86"
+      },
+      "case.json": {
+        "path": "cases/A014_prefix_sum_4096x1024/case.json",
+        "sha256": "afe15fb3da479a517a2a885dbec4f8dd81b4522c0e02935a63e596c89de9aa5d"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 74.37552511692047,
+        "npu_end_to_end_ms": 51.274499855935574,
+        "speedup_end_to_end": 1.450536335330255,
+        "cpu_compute_only_ms": 26.391510386019945,
+        "npu_device_resident_ms": 4.357427824288607,
+        "speedup_device_resident": 6.056671837204468,
+        "npu_cold_ms": 50.24695862084627,
+        "numeric_ok": false,
+        "comparison": {
+          "consistent": false,
+          "items": [
+            {
+              "consistent": false,
+              "max_abs_diff": 0.0001373291015625,
+              "max_rel_diff": 1.0,
+              "name": "out"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "A015_row_product_65536x64",
+      "base_case": "A015_row_product",
+      "group": "A_direct_simple",
+      "kind": "scaled_performance_variant",
+      "note": "A015_row_product: 65,536 x 64 float32; 4,194,304 elements.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.prod"
+      ],
+      "migration_time_s": 1.97,
+      "total_rewrites": 1,
+      "program.py": {
+        "path": "cases/A015_row_product_65536x64/program.py",
+        "sha256": "96ee776c9dabe8972281826040bd85f6c25aa58acc102c99cf67e6a39f6c9845"
+      },
+      "migrated.py": {
+        "path": "cases/A015_row_product_65536x64/migrated.py",
+        "sha256": "b69b08178867b6a9b32f571cff597fe4f5116f3cf681be97a918bffc856b3af2"
+      },
+      "case.json": {
+        "path": "cases/A015_row_product_65536x64/case.json",
+        "sha256": "e22c86fb9dbe014229719e79f5900cc905734f11cb46fde74dd800c485c70133"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 59.49214147403836,
+        "npu_end_to_end_ms": 45.88027950376272,
+        "speedup_end_to_end": 1.2966821936897597,
+        "cpu_compute_only_ms": 10.879929177463055,
+        "npu_device_resident_ms": 0.39064371958374977,
+        "speedup_device_resident": 27.851284001330313,
+        "npu_cold_ms": 50.576177425682545,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 0.1015625,
+              "max_rel_diff": 2.707227367196667e-06,
+              "name": "out"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "B004_mixed_int_float_4m",
+      "base_case": "B004_mixed_int_float",
+      "group": "B_direct_semantics",
+      "kind": "scaled_performance_variant",
+      "note": "B004_mixed_int_float: 4,000,000 int32/float32 elements; 16777217 trap retained.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.add"
+      ],
+      "migration_time_s": 2.17,
+      "total_rewrites": 1,
+      "program.py": {
+        "path": "cases/B004_mixed_int_float_4m/program.py",
+        "sha256": "4bfae2327453a304df32007c4617c15e8d9c47e509a6315894e51faba0edd95e"
+      },
+      "migrated.py": {
+        "path": "cases/B004_mixed_int_float_4m/migrated.py",
+        "sha256": "f2870598ff98ed3ff27d9030418632a267e5f5e62cedc9a1cea161b50c9ab08c"
+      },
+      "case.json": {
+        "path": "cases/B004_mixed_int_float_4m/case.json",
+        "sha256": "377ea18deb51a57b4c7946106214bc5c7e494b678873bb00d5db9ccea4efd992"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 91.22623689472675,
+        "npu_end_to_end_ms": 91.85043536126614,
+        "speedup_end_to_end": 0.9932041860870415,
+        "cpu_compute_only_ms": 20.991895347833633,
+        "npu_device_resident_ms": 21.24145021662116,
+        "speedup_device_resident": 0.9882515145509108,
+        "npu_cold_ms": 96.88185714185238,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "name": "out"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "B005_mixed_float_precision_4m",
+      "base_case": "B005_mixed_float_precision",
+      "group": "B_direct_semantics",
+      "kind": "scaled_performance_variant",
+      "note": "B005_mixed_float_precision: 4,000,000 float32 + float64 elements; 1e-10 increments retained.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.add",
+        "np.subtract"
+      ],
+      "migration_time_s": 2.97,
+      "total_rewrites": 2,
+      "program.py": {
+        "path": "cases/B005_mixed_float_precision_4m/program.py",
+        "sha256": "d99f2650d88bcdd269dacd1a31a6fde0e5688b36346d6c5e944355c303d6716e"
+      },
+      "migrated.py": {
+        "path": "cases/B005_mixed_float_precision_4m/migrated.py",
+        "sha256": "2fb034c28e35aa230215295e6c65d13f0235612348482bc103e1d46f026dced3"
+      },
+      "case.json": {
+        "path": "cases/B005_mixed_float_precision_4m/case.json",
+        "sha256": "c70a3a37a0e14d0065d7c3ca262e19ba0c4a21ac083fbe6316d7e2fbe44a0d35"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 158.21916284039617,
+        "npu_end_to_end_ms": 142.4708920530975,
+        "speedup_end_to_end": 1.1105367598978004,
+        "cpu_compute_only_ms": 54.93152467533946,
+        "npu_device_resident_ms": 36.38803260400891,
+        "speedup_device_resident": 1.5096041402713152,
+        "npu_cold_ms": 145.7918081432581,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "name": "out"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "B006_transposed_input_4096x2048",
+      "base_case": "B006_transposed_input",
+      "group": "B_direct_semantics",
+      "kind": "scaled_performance_variant",
+      "note": "B006_transposed_input: 4,096 x 2,048 base matrix; transposed view.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.multiply"
+      ],
+      "migration_time_s": 2.07,
+      "total_rewrites": 1,
+      "program.py": {
+        "path": "cases/B006_transposed_input_4096x2048/program.py",
+        "sha256": "d7f1e5c5fcb644bb4bf4e7b7d479db85987e5d4c8c11db982b3137569878ccef"
+      },
+      "migrated.py": {
+        "path": "cases/B006_transposed_input_4096x2048/migrated.py",
+        "sha256": "55315849d9af826d5b68b244fbd79a668b5356bee1331528d2b6db212f76de7f"
+      },
+      "case.json": {
+        "path": "cases/B006_transposed_input_4096x2048/case.json",
+        "sha256": "94a9e83e082aa275b6d276caf5181be88047e0c27b0287f9016e9c3988c9d1ab"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 95.65555909648538,
+        "npu_end_to_end_ms": 119.76974597200751,
+        "speedup_end_to_end": 0.7986621188863665,
+        "cpu_compute_only_ms": 75.15446748584509,
+        "npu_device_resident_ms": 3.764113876968622,
+        "speedup_device_resident": 19.96604511507758,
+        "npu_cold_ms": 93.9097935333848,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "name": "out"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "B007_strided_input_4m",
+      "base_case": "B007_strided_input",
+      "group": "B_direct_semantics",
+      "kind": "scaled_performance_variant",
+      "note": "B007_strided_input: 4,000,000-element base; 1-in-3 strided view.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.square"
+      ],
+      "migration_time_s": 1.97,
+      "total_rewrites": 1,
+      "program.py": {
+        "path": "cases/B007_strided_input_4m/program.py",
+        "sha256": "925b7bc88dc7d9e19d0d6fb645c820e5731b1b99158db948028fbf83eb4464f1"
+      },
+      "migrated.py": {
+        "path": "cases/B007_strided_input_4m/migrated.py",
+        "sha256": "801c641f78bb565bca608343a5d80ca9aae3287d717447169f2aa09f9c3375ba"
+      },
+      "case.json": {
+        "path": "cases/B007_strided_input_4m/case.json",
+        "sha256": "130371e5015dc7bec2dbfcf76d4c841852de4886cc068417011ce324167c3ff1"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 44.03857560828328,
+        "npu_end_to_end_ms": 43.76942664384842,
+        "speedup_end_to_end": 1.0061492458337398,
+        "cpu_compute_only_ms": 3.4626349806785583,
+        "npu_device_resident_ms": 1.1452063918113708,
+        "speedup_device_resident": 3.0235903374602326,
+        "npu_cold_ms": 44.485874474048615,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "name": "out"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "B008_negative_axis_64x256x256",
+      "base_case": "B008_negative_axis",
+      "group": "B_direct_semantics",
+      "kind": "scaled_performance_variant",
+      "note": "B008_negative_axis: 64 x 256 x 256 float32; reduction over axis -1.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.sum"
+      ],
+      "migration_time_s": 2.52,
+      "total_rewrites": 1,
+      "program.py": {
+        "path": "cases/B008_negative_axis_64x256x256/program.py",
+        "sha256": "67470dff34a819239bcffb39f7208d8a2d9c79fdad1e3ced547eaff4188aea9d"
+      },
+      "migrated.py": {
+        "path": "cases/B008_negative_axis_64x256x256/migrated.py",
+        "sha256": "dffacbbdf03373208060b7521a5f7395b6291581e15c9821f2f5a0bb8abf7ca7"
+      },
+      "case.json": {
+        "path": "cases/B008_negative_axis_64x256x256/case.json",
+        "sha256": "171f28d16427a386860008a690a9d67b6a80cb784d1a7b207db99dc0ccbbf0ec"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 45.82791030406952,
+        "npu_end_to_end_ms": 44.589468743652105,
+        "speedup_end_to_end": 1.0277743062501439,
+        "cpu_compute_only_ms": 2.3095030337572098,
+        "npu_device_resident_ms": 0.19173463806509972,
+        "speedup_device_resident": 12.045309376874634,
+        "npu_cold_ms": 46.696766279637814,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 7.62939453125e-06,
+              "max_rel_diff": 0.00030129557095510696,
+              "name": "out"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "B009_keepdims_4096x1024",
+      "base_case": "B009_keepdims",
+      "group": "B_direct_semantics",
+      "kind": "scaled_performance_variant",
+      "note": "B009_keepdims: 4,096 x 1,024 float32; keepdims plus broadcast.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.mean",
+        "np.subtract"
+      ],
+      "migration_time_s": 2.22,
+      "total_rewrites": 2,
+      "program.py": {
+        "path": "cases/B009_keepdims_4096x1024/program.py",
+        "sha256": "5a0d482685dab7d1e8b4e285d98b7026fa4115a8947797a6d1756cbcc7424607"
+      },
+      "migrated.py": {
+        "path": "cases/B009_keepdims_4096x1024/migrated.py",
+        "sha256": "5b7578c7e8ca4faede71f15a6eb4a22c8d2bd48cd4e4a666baacf039796ad511"
+      },
+      "case.json": {
+        "path": "cases/B009_keepdims_4096x1024/case.json",
+        "sha256": "b75eaf8449fdd4e49e55c23f104060a8f3b4c353993f35dcacc3a4f654a3cf57"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 56.83887004852295,
+        "npu_end_to_end_ms": 51.19052063673735,
+        "speedup_end_to_end": 1.110339753171645,
+        "cpu_compute_only_ms": 6.6765607334673405,
+        "npu_device_resident_ms": 4.043453838676214,
+        "speedup_device_resident": 1.6512024125526257,
+        "npu_cold_ms": 50.19290838390589,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 4.76837158203125e-07,
+              "max_rel_diff": 0.007772020725388601,
+              "name": "centered"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 1.4901161193847656e-08,
+              "max_rel_diff": 0.00015362162992549352,
+              "name": "mean"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "B010_empty_sum_16384x0x256",
+      "base_case": "B010_empty_sum",
+      "group": "B_direct_semantics",
+      "kind": "scaled_performance_variant",
+      "note": "B010_empty_sum: 16,384 x 0 x 256 float32; empty axis retained.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.prod",
+        "np.sum"
+      ],
+      "migration_time_s": 2.72,
+      "total_rewrites": 2,
+      "program.py": {
+        "path": "cases/B010_empty_sum_16384x0x256/program.py",
+        "sha256": "bd7a7dff43b232034a359a17371d7b2e14d88c280bd750d58f5af22c9839456b"
+      },
+      "migrated.py": {
+        "path": "cases/B010_empty_sum_16384x0x256/migrated.py",
+        "sha256": "664fc901db6fead0cc45af9ed6a975434fa2f8d4ee7aad1ca63377d8f3e47379"
+      },
+      "case.json": {
+        "path": "cases/B010_empty_sum_16384x0x256/case.json",
+        "sha256": "574a0b58f5e2b2899450523f90a4975617538453c36908f3eac07b03b4f2ea85"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 6.087242159992456,
+        "npu_end_to_end_ms": 7.703018374741077,
+        "speedup_end_to_end": 0.7902411579275336,
+        "cpu_compute_only_ms": 6.081192754209042,
+        "npu_device_resident_ms": 7.640098221600056,
+        "speedup_device_resident": 0.7959574049737106,
+        "npu_cold_ms": 8.004307746887207,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "name": "out"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "name": "product"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "B011_nan_inf_extrema_4m",
+      "base_case": "B011_nan_inf_extrema",
+      "group": "B_direct_semantics",
+      "kind": "scaled_performance_variant",
+      "note": "B011_nan_inf_extrema: 4,000,000 float32 elements with tiled NaN/Inf pattern.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.fmax",
+        "np.maximum"
+      ],
+      "migration_time_s": 2.7,
+      "total_rewrites": 2,
+      "program.py": {
+        "path": "cases/B011_nan_inf_extrema_4m/program.py",
+        "sha256": "0b7343847df3d1c343237dd8abc9707a395ad608d4ba35ec31ec36514d381a9c"
+      },
+      "migrated.py": {
+        "path": "cases/B011_nan_inf_extrema_4m/migrated.py",
+        "sha256": "0c84238dfe6b5b6d5b63731f7f6ee4c3e09b85623f908d7898ace32998848378"
+      },
+      "case.json": {
+        "path": "cases/B011_nan_inf_extrema_4m/case.json",
+        "sha256": "5d02e453a3057901de8209a347fc6136b5006bffae5ff7027e15f00711952fec"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 384.74143762141466,
+        "npu_end_to_end_ms": 378.0313958413899,
+        "speedup_end_to_end": 1.0177499590082726,
+        "cpu_compute_only_ms": 13.37383221834898,
+        "npu_device_resident_ms": 2.886716276407242,
+        "speedup_device_resident": 4.632887661198843,
+        "npu_cold_ms": 380.15354610979557,
+        "numeric_ok": false,
+        "comparison": {
+          "consistent": false,
+          "items": [
+            {
+              "consistent": false,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "name": "fmax"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "name": "maximum"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "B012_zero_dimensional_1elem",
+      "base_case": "B012_zero_dimensional",
+      "group": "B_direct_semantics",
+      "kind": "scaled_performance_variant",
+      "note": "B012_zero_dimensional: zero-dimensional contract witness; not scalable.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": false,
+      "replaced_apis": [
+        "np.add"
+      ],
+      "migration_time_s": 3.35,
+      "total_rewrites": 1,
+      "program.py": {
+        "path": "cases/B012_zero_dimensional_1elem/program.py",
+        "sha256": "173804a08435bcb1edde5b5aea7b914970213f011ddb324e4d47937639c617d1"
+      },
+      "migrated.py": {
+        "path": "cases/B012_zero_dimensional_1elem/migrated.py",
+        "sha256": "14e493fac645fb6e9e5b2c7e4ea22968707af7565143ddf78af4038b7b7248db"
+      },
+      "case.json": {
+        "path": "cases/B012_zero_dimensional_1elem/case.json",
+        "sha256": "4a673a5558fe7e505e77aee91be49b6009e27cd694900519129bbdce0a24184b"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 0.005039852112531662,
+        "npu_end_to_end_ms": 0.3212639130651951,
+        "speedup_end_to_end": 0.015687576187584158,
+        "cpu_compute_only_ms": 0.0029550865292549133,
+        "npu_device_resident_ms": 0.18766988068819046,
+        "speedup_device_resident": 0.015746194959034086,
+        "npu_cold_ms": 0.5367379635572433,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "name": "out"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "B013_three_axis_broadcast_64x64x1024",
+      "base_case": "B013_three_axis_broadcast",
+      "group": "B_direct_semantics",
+      "kind": "scaled_performance_variant",
+      "note": "B013_three_axis_broadcast: 64 x 1 x 1,024 broadcast with 1 x 64 x 1.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.subtract"
+      ],
+      "migration_time_s": 2.17,
+      "total_rewrites": 1,
+      "program.py": {
+        "path": "cases/B013_three_axis_broadcast_64x64x1024/program.py",
+        "sha256": "b1f96301c373ea99e1d56f8511f257ef94fbe1e837ac976f0f3954dd684aecd7"
+      },
+      "migrated.py": {
+        "path": "cases/B013_three_axis_broadcast_64x64x1024/migrated.py",
+        "sha256": "099add2ea533960db51e112d3634e10c3490a90bd8a7c351e2f121d9063abb3d"
+      },
+      "case.json": {
+        "path": "cases/B013_three_axis_broadcast_64x64x1024/case.json",
+        "sha256": "758713275a5864ac1606d8e97fc590a2a2d95fde39dc3172e9e803691576dc6b"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 2.4234233424067497,
+        "npu_end_to_end_ms": 4.16276790201664,
+        "speedup_end_to_end": 0.5821663372663006,
+        "cpu_compute_only_ms": 2.3240381851792336,
+        "npu_device_resident_ms": 3.826834261417389,
+        "speedup_device_resident": 0.6073004542189012,
+        "npu_cold_ms": 5.088415928184986,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "name": "out"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "B015_fortran_matmul_2048",
+      "base_case": "B015_fortran_matmul",
+      "group": "B_direct_semantics",
+      "kind": "scaled_performance_variant",
+      "note": "B015_fortran_matmul: 2048 x 2048 Fortran-ordered float32 matmul.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.matmul",
+        "np.square",
+        "np.sum"
+      ],
+      "migration_time_s": 2.27,
+      "total_rewrites": 3,
+      "program.py": {
+        "path": "cases/B015_fortran_matmul_2048/program.py",
+        "sha256": "bda7c13df8400abfc3789edba4d649274ff2c8718d380661b1a1e3cbe7864765"
+      },
+      "migrated.py": {
+        "path": "cases/B015_fortran_matmul_2048/migrated.py",
+        "sha256": "f632b6ec602e57fd19365df87e6a94777b99c5a60b5d7491a9507eb1c45ec748"
+      },
+      "case.json": {
+        "path": "cases/B015_fortran_matmul_2048/case.json",
+        "sha256": "be741074c70cb67d3d713b5ff467e7dbe685ec9053f26dc507f635af53cd9dcf"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 813.3730576373637,
+        "npu_end_to_end_ms": 242.399456910789,
+        "speedup_end_to_end": 3.355506930598082,
+        "cpu_compute_only_ms": 634.3034165911376,
+        "npu_device_resident_ms": 1.7867092974483967,
+        "speedup_device_resident": 355.0120982170898,
+        "npu_cold_ms": 242.5887668505311,
+        "numeric_ok": false,
+        "comparison": {
+          "consistent": false,
+          "items": [
+            {
+              "consistent": false,
+              "max_abs_diff": 0.000335693359375,
+              "max_rel_diff": 1.683829002773639,
+              "name": "out"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 1.0,
+              "max_rel_diff": 2.415873545447836e-07,
+              "name": "row_power"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "B016_reverse_strides_4m",
+      "base_case": "B016_reverse_strides",
+      "group": "B_direct_semantics",
+      "kind": "scaled_performance_variant",
+      "note": "B016_reverse_strides: 4,000,000 float32 elements with negative stride.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.signbit",
+        "np.sin"
+      ],
+      "migration_time_s": 1.85,
+      "total_rewrites": 2,
+      "program.py": {
+        "path": "cases/B016_reverse_strides_4m/program.py",
+        "sha256": "3edf48b6eca538dd75f20ca6ccb1d7df4efc16f15c584b8c61318fc14cb815ab"
+      },
+      "migrated.py": {
+        "path": "cases/B016_reverse_strides_4m/migrated.py",
+        "sha256": "0134905f8ea7e1f0e1a1a3fe598421d4ffbe508b74f31b7222e1464597798f22"
+      },
+      "case.json": {
+        "path": "cases/B016_reverse_strides_4m/case.json",
+        "sha256": "6a583819a57f42f2187a094c0c145954720b93485ff621a51976ce806f5ffd62"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 94.20118713751435,
+        "npu_end_to_end_ms": 68.9310859888792,
+        "speedup_end_to_end": 1.366599492610809,
+        "cpu_compute_only_ms": 45.65231781452894,
+        "npu_device_resident_ms": 20.019111689180136,
+        "speedup_device_resident": 2.280436740817174,
+        "npu_cold_ms": 75.64162090420723,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 1.1920928955078125e-07,
+              "max_rel_diff": 1.5692588468929068e-07,
+              "name": "out"
+            },
+            {
+              "consistent": true,
+              "name": "sign"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "B017_empty_product_0x1048576",
+      "base_case": "B017_empty_product",
+      "group": "B_direct_semantics",
+      "kind": "scaled_performance_variant",
+      "note": "B017_empty_product: 0 x 1,048,576 int32; empty axis retained.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.prod"
+      ],
+      "migration_time_s": 1.77,
+      "total_rewrites": 1,
+      "program.py": {
+        "path": "cases/B017_empty_product_0x1048576/program.py",
+        "sha256": "d909b9e33c0e86a97006f9efc4d195dab09a00af2b56976447f75d64829889c6"
+      },
+      "migrated.py": {
+        "path": "cases/B017_empty_product_0x1048576/migrated.py",
+        "sha256": "f048e0c4242a01d110c137007171e74b508be3812b2726f5d2531d1e845a7825"
+      },
+      "case.json": {
+        "path": "cases/B017_empty_product_0x1048576/case.json",
+        "sha256": "e64cb4044e1d9fc8ea80038682c0a5428a497605e9f86f6dcf9b1d87e4c6d78c"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 0.4452290013432503,
+        "npu_end_to_end_ms": 0.8341129869222641,
+        "speedup_end_to_end": 0.5337754097152594,
+        "cpu_compute_only_ms": 0.44192373752593994,
+        "npu_device_resident_ms": 0.8001322858035564,
+        "speedup_device_resident": 0.5523133428894511,
+        "npu_cold_ms": 1.2309569865465164,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "name": "out"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "B018_signed_zero_4m",
+      "base_case": "B018_signed_zero",
+      "group": "B_direct_semantics",
+      "kind": "scaled_performance_variant",
+      "note": "B018_signed_zero: 4,000,000 float32 elements with tiled signed zeros.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.copysign",
+        "np.signbit"
+      ],
+      "migration_time_s": 2.98,
+      "total_rewrites": 2,
+      "program.py": {
+        "path": "cases/B018_signed_zero_4m/program.py",
+        "sha256": "ceec327f68ece114c02a38cac5bbe6038b6aad46a76faa6527e35e2921a9fb9e"
+      },
+      "migrated.py": {
+        "path": "cases/B018_signed_zero_4m/migrated.py",
+        "sha256": "96b34601b7c92dbf6db1cca63b82b875afd86ededcbf3b3424586a769d96c2a7"
+      },
+      "case.json": {
+        "path": "cases/B018_signed_zero_4m/case.json",
+        "sha256": "8d86a97cc8b721150d0ff53024b0078731052f60fa13639b8f090ce6397c19c5"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 210.6062532402575,
+        "npu_end_to_end_ms": 207.59587595239282,
+        "speedup_end_to_end": 1.014501142058116,
+        "cpu_compute_only_ms": 24.03016434982419,
+        "npu_device_resident_ms": 17.903530038893223,
+        "speedup_device_resident": 1.3422025878484078,
+        "npu_cold_ms": 212.1249996125698,
+        "numeric_ok": false,
+        "comparison": {
+          "consistent": false,
+          "items": [
+            {
+              "consistent": false,
+              "max_abs_diff": 1.0,
+              "max_rel_diff": 1.0,
+              "name": "out"
+            },
+            {
+              "consistent": true,
+              "name": "sign"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "B019_boolean_keepdims_512x256x64",
+      "base_case": "B019_boolean_keepdims",
+      "group": "B_direct_semantics",
+      "kind": "scaled_performance_variant",
+      "note": "B019_boolean_keepdims: 512 x 256 x 64 boolean tensor.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.all",
+        "np.any"
+      ],
+      "migration_time_s": 2.62,
+      "total_rewrites": 2,
+      "program.py": {
+        "path": "cases/B019_boolean_keepdims_512x256x64/program.py",
+        "sha256": "024e4c89904145ce1614d30e7a8bd14c55ec493a90527a9a275cc5100fd0e282"
+      },
+      "migrated.py": {
+        "path": "cases/B019_boolean_keepdims_512x256x64/migrated.py",
+        "sha256": "63cfe0e40ec03b1094040be1b196e041dd885777a305621a4c00c64c6a6f2a4b"
+      },
+      "case.json": {
+        "path": "cases/B019_boolean_keepdims_512x256x64/case.json",
+        "sha256": "fd5fa997e5e229eb4c42515f4f6af3aae0d41ce630148850508f30289a954214"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 90.79635236412287,
+        "npu_end_to_end_ms": 75.45388117432594,
+        "speedup_end_to_end": 1.2033357456371294,
+        "cpu_compute_only_ms": 12.877708300948143,
+        "npu_device_resident_ms": 0.36050332710146904,
+        "speedup_device_resident": 35.72146866018665,
+        "npu_cold_ms": 87.03279215842485,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "name": "all"
+            },
+            {
+              "consistent": true,
+              "name": "any"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "B020_nan_reductions_65536x64",
+      "base_case": "B020_nan_reductions",
+      "group": "B_direct_semantics",
+      "kind": "scaled_performance_variant",
+      "note": "B020_nan_reductions: 65,536 x 64 float32 with NaN/Inf rows.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.nancumsum",
+        "np.nansum"
+      ],
+      "migration_time_s": 1.62,
+      "total_rewrites": 2,
+      "program.py": {
+        "path": "cases/B020_nan_reductions_65536x64/program.py",
+        "sha256": "0a3b540a703cb4f86558a9fb5396bf25b1d4f79d80cecb1828030965483ae2b1"
+      },
+      "migrated.py": {
+        "path": "cases/B020_nan_reductions_65536x64/migrated.py",
+        "sha256": "fd14dd5772254ca8cf88e78c42a0b8be16eff12d58885b284920fe75998794b7"
+      },
+      "case.json": {
+        "path": "cases/B020_nan_reductions_65536x64/case.json",
+        "sha256": "20195a90c2b12b6cbe6f486a1a7b39d167d4152e7d2e939f0aae9e4322116363"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 104.78564817458391,
+        "npu_end_to_end_ms": 47.236441634595394,
+        "speedup_end_to_end": 2.218322222176875,
+        "cpu_compute_only_ms": 64.05525980517268,
+        "npu_device_resident_ms": 2.1368246525526047,
+        "speedup_device_resident": 29.976844252827973,
+        "npu_cold_ms": 49.23617746680975,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "name": "prefix"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 3.814697265625e-06,
+              "max_rel_diff": 0.0024875621890547263,
+              "name": "total"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "C002_mlp_inference_65536x128",
+      "base_case": "C002_mlp_inference",
+      "group": "C_direct_structure",
+      "kind": "scaled_performance_variant",
+      "note": "C002_mlp_inference: 65,536 x 128 input; 128-256-64 MLP.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.add",
+        "np.divide",
+        "np.exp",
+        "np.full",
+        "np.matmul",
+        "np.max",
+        "np.maximum",
+        "np.minimum",
+        "np.subtract",
+        "np.sum"
+      ],
+      "migration_time_s": 5.87,
+      "total_rewrites": 15,
+      "program.py": {
+        "path": "cases/C002_mlp_inference_65536x128/program.py",
+        "sha256": "059c126c1b06a271c3ea4c6c3d89c80cf89bf1eb507b3e5c077570150c1c4b0b"
+      },
+      "migrated.py": {
+        "path": "cases/C002_mlp_inference_65536x128/migrated.py",
+        "sha256": "005587c5d8aa9b259eb9de81b6a210cd7b4d23d2ef31ab4febbcd485b31d12f8"
+      },
+      "case.json": {
+        "path": "cases/C002_mlp_inference_65536x128/case.json",
+        "sha256": "4572c313270d11119287601c1b50c08e72d36db5affa57b04f19d88cf5ec7eb6"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 660.5372573249042,
+        "npu_end_to_end_ms": 104.61191181093454,
+        "speedup_end_to_end": 6.314168682039722,
+        "cpu_compute_only_ms": 565.8513144589961,
+        "npu_device_resident_ms": 13.262491207569838,
+        "speedup_device_resident": 42.66553738682404,
+        "npu_cold_ms": 109.19096507132053,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 1.9073486328125e-06,
+              "max_rel_diff": 5.000822791624935e-06,
+              "name": "confidence"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 5.364418029785156e-07,
+              "max_rel_diff": 5.364419628506788e-07,
+              "name": "mass"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 1.9073486328125e-06,
+              "max_rel_diff": 9.52170228041199e-06,
+              "name": "probabilities"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "C003_layer_normalization_16384x256",
+      "base_case": "C003_layer_normalization",
+      "group": "C_direct_structure",
+      "kind": "scaled_performance_variant",
+      "note": "C003_layer_normalization: 16,384 x 256 float32; two normalization passes.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.add",
+        "np.clip",
+        "np.divide",
+        "np.full",
+        "np.mean",
+        "np.multiply",
+        "np.sqrt",
+        "np.square",
+        "np.subtract",
+        "np.tanh"
+      ],
+      "migration_time_s": 7.82,
+      "total_rewrites": 15,
+      "program.py": {
+        "path": "cases/C003_layer_normalization_16384x256/program.py",
+        "sha256": "3aaf0a3021a51ddf0813f099c999fd04ac90fca46430c9f7bf5ab4f8549e2531"
+      },
+      "migrated.py": {
+        "path": "cases/C003_layer_normalization_16384x256/migrated.py",
+        "sha256": "83d7a2f717e9ab3e2f11d330e6cb23d33cd453047673263ca257607b3b1f6efd"
+      },
+      "case.json": {
+        "path": "cases/C003_layer_normalization_16384x256/case.json",
+        "sha256": "1a05594c3498599e811378afdd0cb90bfa9ae251958c4cef64a2620798a2ae33"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 156.0505391098559,
+        "npu_end_to_end_ms": 55.21101038902998,
+        "speedup_end_to_end": 2.826438748544656,
+        "cpu_compute_only_ms": 112.03132104128599,
+        "npu_device_resident_ms": 11.31448708474636,
+        "speedup_device_resident": 9.901581945532568,
+        "npu_cold_ms": 57.97971226274967,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 5.4016709327697754e-08,
+              "max_rel_diff": 2.980232238769531e+292,
+              "name": "mean"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 2.980232238769531e-07,
+              "max_rel_diff": 0.09523809523809523,
+              "name": "out"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 4.172325134277344e-07,
+              "max_rel_diff": 4.172368904169031e-07,
+              "name": "power"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "C004_cosine_rows_16384x256",
+      "base_case": "C004_cosine_rows",
+      "group": "C_direct_structure",
+      "kind": "scaled_performance_variant",
+      "note": "C004_cosine_rows: 16,384 x 256 float32 row cosine.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.clip",
+        "np.divide",
+        "np.full",
+        "np.maximum",
+        "np.multiply",
+        "np.sqrt",
+        "np.square",
+        "np.subtract",
+        "np.sum"
+      ],
+      "migration_time_s": 7.27,
+      "total_rewrites": 17,
+      "program.py": {
+        "path": "cases/C004_cosine_rows_16384x256/program.py",
+        "sha256": "b985f92c016ea4753494be13ced8157426183b9e97645fd8d382ce33a964e127"
+      },
+      "migrated.py": {
+        "path": "cases/C004_cosine_rows_16384x256/migrated.py",
+        "sha256": "e8828b165aca075b823d39473cb2a8405ad731cf7800aa64d9310d891d7845c8"
+      },
+      "case.json": {
+        "path": "cases/C004_cosine_rows_16384x256/case.json",
+        "sha256": "0375583b70567d7ee58701f05e5ebd07dec8b92d0cc6521a2533b352aab3a8d7"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 122.75726161897182,
+        "npu_end_to_end_ms": 91.44601505249739,
+        "speedup_end_to_end": 1.3424014326758718,
+        "cpu_compute_only_ms": 31.371189281344414,
+        "npu_device_resident_ms": 1.8470506183803082,
+        "speedup_device_resident": 16.98447728999113,
+        "npu_cold_ms": 95.03457602113485,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 5.960464477539063e-08,
+              "max_rel_diff": 0.00242719423297187,
+              "name": "cosine"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 1.1920928955078125e-07,
+              "max_rel_diff": 1.1919066203142129e-07,
+              "name": "distance"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 1.1920928955078125e-07,
+              "max_rel_diff": 1.1919930015706892e-07,
+              "name": "score"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "C005_distance_refinement_16384x256",
+      "base_case": "C005_distance_refinement",
+      "group": "C_direct_structure",
+      "kind": "scaled_performance_variant",
+      "note": "C005_distance_refinement: 16,384 x 256 float32; five contraction steps.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.full",
+        "np.multiply",
+        "np.sqrt",
+        "np.square",
+        "np.subtract",
+        "np.sum"
+      ],
+      "migration_time_s": 13.04,
+      "total_rewrites": 31,
+      "program.py": {
+        "path": "cases/C005_distance_refinement_16384x256/program.py",
+        "sha256": "7ac40f2814021b14140558e02e2cb348ebff025fe4b41d32bd3a79d7e4ddeadf"
+      },
+      "migrated.py": {
+        "path": "cases/C005_distance_refinement_16384x256/migrated.py",
+        "sha256": "0aec2fdd9c2b9bf518bd38b6de30d9ae56d30a2b4a0e1d8b4877a84390aa94ce"
+      },
+      "case.json": {
+        "path": "cases/C005_distance_refinement_16384x256/case.json",
+        "sha256": "cc2ba798aa019870fc840950fc5f31ae1c1152aebcbca2756398221079b921de"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 303.9544918574393,
+        "npu_end_to_end_ms": 109.60829304531217,
+        "speedup_end_to_end": 2.7730975769487096,
+        "cpu_compute_only_ms": 198.02230270579457,
+        "npu_device_resident_ms": 13.304612133651972,
+        "speedup_device_resident": 14.883733604298587,
+        "npu_cold_ms": 104.88311760127544,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 1.1920928955078125e-07,
+              "max_rel_diff": 8.41701529944037e-08,
+              "name": "distance"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 4.57763671875e-05,
+              "max_rel_diff": 3.7429408136255025e-07,
+              "name": "improvement"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "name": "out"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "C006_softplus_network_4096x1024",
+      "base_case": "C006_softplus_network",
+      "group": "C_direct_structure",
+      "kind": "scaled_performance_variant",
+      "note": "C006_softplus_network: 4,096 x 1,024 float32; stable softplus network.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.absolute",
+        "np.add",
+        "np.clip",
+        "np.exp",
+        "np.full",
+        "np.log1p",
+        "np.max",
+        "np.maximum",
+        "np.mean",
+        "np.multiply",
+        "np.negative",
+        "np.reciprocal",
+        "np.tanh"
+      ],
+      "migration_time_s": 18.04,
+      "total_rewrites": 37,
+      "program.py": {
+        "path": "cases/C006_softplus_network_4096x1024/program.py",
+        "sha256": "cbfaefa73b5f3b2ee4808eeac0d69c846ad7b0a21083472143067c8a26b5aad4"
+      },
+      "migrated.py": {
+        "path": "cases/C006_softplus_network_4096x1024/migrated.py",
+        "sha256": "e4cc7367517e88b4ac96e200a7f20f6ffa687db31a7b4ff670c135cfced9125c"
+      },
+      "case.json": {
+        "path": "cases/C006_softplus_network_4096x1024/case.json",
+        "sha256": "603217817c66f92b4e86173b5d94e30d47aa10ee9112a892801b1dd7d4864b16"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 672.5021563470364,
+        "npu_end_to_end_ms": 128.058644477278,
+        "speedup_end_to_end": 5.251517061515995,
+        "cpu_compute_only_ms": 617.1184913255274,
+        "npu_device_resident_ms": 74.7038391418755,
+        "speedup_device_resident": 8.260867157757618,
+        "npu_cold_ms": 128.6943182349205,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 2.384185791015625e-07,
+              "max_rel_diff": 2.1700635394604354e-07,
+              "name": "activity"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 1.7881393432617188e-07,
+              "max_rel_diff": 3.0335805843076637e-07,
+              "name": "gate"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 2.384185791015625e-07,
+              "max_rel_diff": 0.002471169686985173,
+              "name": "out"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 1.1920928955078125e-07,
+              "max_rel_diff": 1.0851955560373824e-07,
+              "name": "peak"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 4.76837158203125e-07,
+              "max_rel_diff": 3.376808998790765e-07,
+              "name": "softplus"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "C007_least_squares_steps_16384x256",
+      "base_case": "C007_least_squares_steps",
+      "group": "C_direct_structure",
+      "kind": "scaled_performance_variant",
+      "note": "C007_least_squares_steps: 16,384 x 256 float32; six gradient steps.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.add",
+        "np.clip",
+        "np.full",
+        "np.mean",
+        "np.multiply",
+        "np.subtract"
+      ],
+      "migration_time_s": 14.69,
+      "total_rewrites": 60,
+      "program.py": {
+        "path": "cases/C007_least_squares_steps_16384x256/program.py",
+        "sha256": "c345c2f5c3a9e0867122ec42c14570ce48b73abc39d8d45007ecd9c6ab2e0f99"
+      },
+      "migrated.py": {
+        "path": "cases/C007_least_squares_steps_16384x256/migrated.py",
+        "sha256": "7d4cb50c2044c1eebbbc331395bd92f90e071d7c3f89380eae1679d3dca087a2"
+      },
+      "case.json": {
+        "path": "cases/C007_least_squares_steps_16384x256/case.json",
+        "sha256": "74a52e39cf911be55b8b91e3817cc7ea18b7a515b52c6bfbb82c0a9fae40ef18"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 476.5668185427785,
+        "npu_end_to_end_ms": 113.7616871856153,
+        "speedup_end_to_end": 4.1891679908474355,
+        "cpu_compute_only_ms": 370.73983950540423,
+        "npu_device_resident_ms": 19.32134199887514,
+        "speedup_device_resident": 19.188099849740674,
+        "npu_cold_ms": 119.95048262178898,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 5.960464477539063e-08,
+              "max_rel_diff": 2.3731447347749714e-07,
+              "name": "final_loss"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 4.76837158203125e-07,
+              "max_rel_diff": 2.3709840864290086e-07,
+              "name": "initial_loss"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "name": "out"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "C008_portfolio_repricing_4m",
+      "base_case": "C008_portfolio_repricing",
+      "group": "C_direct_structure",
+      "kind": "scaled_performance_variant",
+      "note": "C008_portfolio_repricing: 4,000,000 float32 scenarios; four price evaluations.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.add",
+        "np.divide",
+        "np.exp",
+        "np.full",
+        "np.log",
+        "np.maximum",
+        "np.multiply",
+        "np.negative",
+        "np.sqrt",
+        "np.square",
+        "np.subtract",
+        "np.tanh"
+      ],
+      "migration_time_s": 21.55,
+      "total_rewrites": 148,
+      "program.py": {
+        "path": "cases/C008_portfolio_repricing_4m/program.py",
+        "sha256": "f570d83a68939da5d767f070fccc7d4e72e484c9191a48f99057a3ac9ddf59e9"
+      },
+      "migrated.py": {
+        "path": "cases/C008_portfolio_repricing_4m/migrated.py",
+        "sha256": "5bc1a5cff914629bdf582ea929f511256ef5dfa50d27b1fbcea142ca5fd16e49"
+      },
+      "case.json": {
+        "path": "cases/C008_portfolio_repricing_4m/case.json",
+        "sha256": "ff2b750d7d910b70ca0d4257a04e2c38c019cafd19e78d321c47036b10b72166"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 1543.8578352332115,
+        "npu_end_to_end_ms": 332.89799839258194,
+        "speedup_end_to_end": 4.637630273200266,
+        "cpu_compute_only_ms": 1368.3740738779306,
+        "npu_device_resident_ms": 148.80282199010253,
+        "speedup_device_resident": 9.195887924551235,
+        "npu_cold_ms": 316.50285981595516,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 4.57763671875e-05,
+              "max_rel_diff": 5.109286618921405e-07,
+              "name": "base"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 4.57763671875e-05,
+              "max_rel_diff": 1.1901550375295555e-05,
+              "name": "difference"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 3.0517578125e-05,
+              "max_rel_diff": 3.732694992720312e-07,
+              "name": "scenario_mean"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "C009_poisson_robust_map_2048",
+      "base_case": "C009_poisson_robust_map",
+      "group": "C_direct_structure",
+      "kind": "scaled_performance_variant",
+      "note": "C009_poisson_robust_map: 2,048 x 2,048 float32; four robust-map steps.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.absolute",
+        "np.add",
+        "np.clip",
+        "np.full",
+        "np.minimum",
+        "np.multiply",
+        "np.sin",
+        "np.square",
+        "np.subtract",
+        "np.tanh"
+      ],
+      "migration_time_s": 9.47,
+      "total_rewrites": 48,
+      "program.py": {
+        "path": "cases/C009_poisson_robust_map_2048/program.py",
+        "sha256": "a729234dc17ba686420d32a2ce911c959b032a465d8ef5f6e092a7c6d43fcaa1"
+      },
+      "migrated.py": {
+        "path": "cases/C009_poisson_robust_map_2048/migrated.py",
+        "sha256": "07f76f79c522ed3e59b0e63bd9e2590a5fb4c2c88ba40d405a1d1087f4909c98"
+      },
+      "case.json": {
+        "path": "cases/C009_poisson_robust_map_2048/case.json",
+        "sha256": "ec8438a782fa6357d72afeedfca970cc7d555153ac9404b89defaf805729bfda"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 506.62526953965425,
+        "npu_end_to_end_ms": 152.96832052990794,
+        "speedup_end_to_end": 3.3119620309919027,
+        "cpu_compute_only_ms": 414.5994517020881,
+        "npu_device_resident_ms": 52.41313064470887,
+        "speedup_device_resident": 7.910221095406788,
+        "npu_cold_ms": 148.58922734856606,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 1.9073486328125e-06,
+              "max_rel_diff": 4.348063372573856e-06,
+              "name": "loss_after"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 1.9073486328125e-06,
+              "max_rel_diff": 2.7712605257093536e-06,
+              "name": "loss_before"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 7.62939453125e-06,
+              "max_rel_diff": 4.3045292601237364e-07,
+              "name": "out"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 5.7220458984375e-06,
+              "max_rel_diff": 3.8514937199950584e-07,
+              "name": "source"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "C010_energy_feedback_2048",
+      "base_case": "C010_energy_feedback",
+      "group": "C_direct_structure",
+      "kind": "scaled_performance_variant",
+      "note": "C010_energy_feedback: 2,048 x 2,048 float32; four damped feedback steps.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.add",
+        "np.full",
+        "np.mean",
+        "np.multiply",
+        "np.sqrt",
+        "np.square",
+        "np.subtract",
+        "np.tanh"
+      ],
+      "migration_time_s": 12.54,
+      "total_rewrites": 49,
+      "program.py": {
+        "path": "cases/C010_energy_feedback_2048/program.py",
+        "sha256": "c6017e1c3568e989560e4f27a12d728df83f5533622bdfc8a75e036b22400d26"
+      },
+      "migrated.py": {
+        "path": "cases/C010_energy_feedback_2048/migrated.py",
+        "sha256": "1466fc58642c13d759420c77f923a74bd2415e8ac1a526dcfc9e438324559e7b"
+      },
+      "case.json": {
+        "path": "cases/C010_energy_feedback_2048/case.json",
+        "sha256": "b1efec26afbebbfacc61f33681365a5695c7fabd1efda46d13855b78d9c61814"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 636.3236960023642,
+        "npu_end_to_end_ms": 152.86897495388985,
+        "speedup_end_to_end": 4.162543094138622,
+        "cpu_compute_only_ms": 536.5541940554976,
+        "npu_device_resident_ms": 62.46125744655728,
+        "speedup_device_resident": 8.590192000450532,
+        "npu_cold_ms": 164.16918393224478,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 2.9802322387695312e-08,
+              "max_rel_diff": 2.0743111601570463e-06,
+              "name": "change"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 2.384185791015625e-07,
+              "max_rel_diff": 2.465405430992316e-07,
+              "name": "left"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 1.7881393432617188e-07,
+              "max_rel_diff": 3.93088057522934e-07,
+              "name": "out"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 2.384185791015625e-07,
+              "max_rel_diff": 2.4436510362057856e-07,
+              "name": "right"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "C012_calibrated_projection_16384x256",
+      "base_case": "C012_calibrated_projection",
+      "group": "C_direct_structure",
+      "kind": "scaled_performance_variant",
+      "note": "C012_calibrated_projection: 16,384 x 256 features; 256-64 projection.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.clip",
+        "np.divide",
+        "np.exp",
+        "np.full",
+        "np.matmul",
+        "np.max",
+        "np.multiply",
+        "np.subtract",
+        "np.sum"
+      ],
+      "migration_time_s": 7.17,
+      "total_rewrites": 48,
+      "program.py": {
+        "path": "cases/C012_calibrated_projection_16384x256/program.py",
+        "sha256": "979991701583bfbd07c2c4d04999857ea754dfcc51deeddffbd4aae3c27d1600"
+      },
+      "migrated.py": {
+        "path": "cases/C012_calibrated_projection_16384x256/migrated.py",
+        "sha256": "df748055deba357d159cbb09222a0a51a4e5267efb7562396a500ebd4ce3734f"
+      },
+      "case.json": {
+        "path": "cases/C012_calibrated_projection_16384x256/case.json",
+        "sha256": "c55a23ba9339488c9801123b93d94210efa62170d28a674f96897053c19f1fe3"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 189.1054231673479,
+        "npu_end_to_end_ms": 69.80287097394466,
+        "speedup_end_to_end": 2.709135319633706,
+        "cpu_compute_only_ms": 129.619256593287,
+        "npu_device_resident_ms": 17.206115648150444,
+        "speedup_device_resident": 7.533324734291223,
+        "npu_cold_ms": 72.91134260594845,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 1.210719347000122e-08,
+              "max_rel_diff": 0.211119641394896,
+              "name": "logits"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 3.725290298461914e-09,
+              "max_rel_diff": 2.400957357736824e-07,
+              "name": "out"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 1.4901161193847656e-08,
+              "max_rel_diff": 6.362972994779054e-08,
+              "name": "residual"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "C013_markov_relaxation_4096x1024",
+      "base_case": "C013_markov_relaxation",
+      "group": "C_direct_structure",
+      "kind": "scaled_performance_variant",
+      "note": "C013_markov_relaxation: 4,096 states x 1,024 classes; eight relaxation steps.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.absolute",
+        "np.add",
+        "np.divide",
+        "np.full",
+        "np.matmul",
+        "np.maximum",
+        "np.multiply",
+        "np.subtract",
+        "np.sum"
+      ],
+      "migration_time_s": 13.29,
+      "total_rewrites": 100,
+      "program.py": {
+        "path": "cases/C013_markov_relaxation_4096x1024/program.py",
+        "sha256": "f644f613e5e63383997f7e33f176c85309a4473f7e8267058ea0e81d8f79163c"
+      },
+      "migrated.py": {
+        "path": "cases/C013_markov_relaxation_4096x1024/migrated.py",
+        "sha256": "b57d44cc23eb08d2e62dcb5c69fd084b94bab114730def8067f1662c4eece766"
+      },
+      "case.json": {
+        "path": "cases/C013_markov_relaxation_4096x1024/case.json",
+        "sha256": "7e16fe95b6db31627456085d2d2d7c85950f4cd113d7a2dfe2cf9a6813f35b2c"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 2868.113819975406,
+        "npu_end_to_end_ms": 43.53772662580013,
+        "speedup_end_to_end": 65.87651772970119,
+        "cpu_compute_only_ms": 2846.398680936545,
+        "npu_device_resident_ms": 22.551485802978277,
+        "speedup_device_resident": 126.21778918711571,
+        "npu_cold_ms": 44.201234355568886,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 1.4901161193847656e-08,
+              "max_rel_diff": 1.588086808001099e-06,
+              "name": "distance"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "name": "mass"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 1.7462298274040222e-09,
+              "max_rel_diff": 1.753477028048151e-06,
+              "name": "out"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "C015_tensor_moments_128x256x128",
+      "base_case": "C015_tensor_moments",
+      "group": "C_direct_structure",
+      "kind": "scaled_performance_variant",
+      "note": "C015_tensor_moments: 128 x 256 x 128 float32; five moment steps.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.add",
+        "np.clip",
+        "np.divide",
+        "np.full",
+        "np.mean",
+        "np.multiply",
+        "np.sqrt",
+        "np.square",
+        "np.subtract",
+        "np.tanh"
+      ],
+      "migration_time_s": 13.33,
+      "total_rewrites": 66,
+      "program.py": {
+        "path": "cases/C015_tensor_moments_128x256x128/program.py",
+        "sha256": "dc4acb7d7bccfb2d195651c36f82d86dd3dc1a3490f2da65d671dff79f08ba3f"
+      },
+      "migrated.py": {
+        "path": "cases/C015_tensor_moments_128x256x128/migrated.py",
+        "sha256": "99cd8221db8773e0a415e50501ed5af9ea9ca1fdd869b27016d74bd59d71318a"
+      },
+      "case.json": {
+        "path": "cases/C015_tensor_moments_128x256x128/case.json",
+        "sha256": "466ed43ef4d8a89f9c182d77b4b670aa31decd13b1eb8a41bfb6976075cdef9d"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 488.74498065561056,
+        "npu_end_to_end_ms": 74.18855372816324,
+        "speedup_end_to_end": 6.587875839262717,
+        "cpu_compute_only_ms": 436.835213098675,
+        "npu_device_resident_ms": 27.372426819056273,
+        "speedup_device_resident": 15.958950807918752,
+        "npu_cold_ms": 75.55297575891018,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 1.7881393432617188e-07,
+              "max_rel_diff": 0.01694915254237288,
+              "name": "mean_change"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 8.344650268554688e-07,
+              "max_rel_diff": 0.015061434799841459,
+              "name": "out"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 1.1920928955078125e-06,
+              "max_rel_diff": 0.0136986301369863,
+              "name": "variance_change"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "D1001_signed_compression_16384x256",
+      "base_case": "D1001_signed_compression",
+      "group": "D1_partial_low_kernel",
+      "kind": "scaled_performance_variant",
+      "note": "D1001_signed_compression: 16,384 x 256 float32; two cube-root branches.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.absolute",
+        "np.add",
+        "np.copysign",
+        "np.divide",
+        "np.full",
+        "np.full_like",
+        "np.maximum",
+        "np.mean",
+        "np.power",
+        "np.square",
+        "np.subtract",
+        "np.tanh"
+      ],
+      "migration_time_s": 4.9,
+      "total_rewrites": 24,
+      "program.py": {
+        "path": "cases/D1001_signed_compression_16384x256/program.py",
+        "sha256": "ec5fa38ad0be38ef9934f3acf1fd0824f1e4f6bc77c5d508e18b9f4952da0a73"
+      },
+      "migrated.py": {
+        "path": "cases/D1001_signed_compression_16384x256/migrated.py",
+        "sha256": "5bc05297da6320ba06693edf09bafa00984520f75f38b611dd7a1a68f8850311"
+      },
+      "case.json": {
+        "path": "cases/D1001_signed_compression_16384x256/case.json",
+        "sha256": "b188c77d0204593b6cc50e2f89a7a546a4f20619a518facd36229805582eed1e"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 528.0553284101188,
+        "npu_end_to_end_ms": 103.43934642150998,
+        "speedup_end_to_end": 5.104975492191537,
+        "cpu_compute_only_ms": 436.5660375915468,
+        "npu_device_resident_ms": 12.379524763673544,
+        "speedup_device_resident": 35.265169376501866,
+        "npu_cold_ms": 103.96053548902273,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 2.682209014892578e-07,
+              "max_rel_diff": 6.134091652462269e-07,
+              "name": "energy"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 5.221366882324219e-05,
+              "max_rel_diff": 0.03125,
+              "name": "out"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "D2001_absolute_alias_16384x256",
+      "base_case": "D2001_absolute_alias",
+      "group": "D2_partial_low_official",
+      "kind": "scaled_performance_variant",
+      "note": "D2001_absolute_alias: 16,384 x 256 float32.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.absolute",
+        "np.add",
+        "np.clip",
+        "np.full",
+        "np.mean",
+        "np.minimum",
+        "np.multiply",
+        "np.square",
+        "np.subtract"
+      ],
+      "migration_time_s": 3.72,
+      "total_rewrites": 11,
+      "program.py": {
+        "path": "cases/D2001_absolute_alias_16384x256/program.py",
+        "sha256": "69840990c3f964108e169780ba65a62f91590a6cfdcd8d0ab451d571873af5c6"
+      },
+      "migrated.py": {
+        "path": "cases/D2001_absolute_alias_16384x256/migrated.py",
+        "sha256": "613bc3f2d43d52cbe26a8c483165a63e1f643ce0e904a2590f2327672274b55d"
+      },
+      "case.json": {
+        "path": "cases/D2001_absolute_alias_16384x256/case.json",
+        "sha256": "985aeb4501584f895a715d6ca6993f0dd5db6c3f69a71bbaf60caa3e0bb237ce"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 187.5783335417509,
+        "npu_end_to_end_ms": 103.12027763575315,
+        "speedup_end_to_end": 1.819024714075392,
+        "cpu_compute_only_ms": 95.90821340680122,
+        "npu_device_resident_ms": 8.861994370818138,
+        "speedup_device_resident": 10.82241867842069,
+        "npu_cold_ms": 97.94675186276436,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "name": "bounded_residual"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "name": "loss"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 1.1920928955078125e-07,
+              "max_rel_diff": 1.9142954607843174e-07,
+              "name": "row_loss"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "D2002_round_alias_16384x256",
+      "base_case": "D2002_round_alias",
+      "group": "D2_partial_low_official",
+      "kind": "scaled_performance_variant",
+      "note": "D2002_round_alias: 16,384 x 256 float32.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.add",
+        "np.around",
+        "np.divide",
+        "np.full",
+        "np.mean",
+        "np.sqrt",
+        "np.square",
+        "np.subtract"
+      ],
+      "migration_time_s": 6.07,
+      "total_rewrites": 10,
+      "program.py": {
+        "path": "cases/D2002_round_alias_16384x256/program.py",
+        "sha256": "275da3f1060f5bb18167ef57a4550a4cb859e95f63c40ab643eacd3ab06ff09a"
+      },
+      "migrated.py": {
+        "path": "cases/D2002_round_alias_16384x256/migrated.py",
+        "sha256": "477d3f5046e0569458f8a3152fd1e7103025223ee50c6f8d292bcebb286c9619"
+      },
+      "case.json": {
+        "path": "cases/D2002_round_alias_16384x256/case.json",
+        "sha256": "6e980a6a91278fa3c81f009854d27dfe1e486c2ae3be798dfc70a51bced0a487"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 164.52789772301912,
+        "npu_end_to_end_ms": 106.3695433549583,
+        "speedup_end_to_end": 1.5467575824217341,
+        "cpu_compute_only_ms": 73.55502201244235,
+        "npu_device_resident_ms": 12.346709612756968,
+        "speedup_device_resident": 5.957459462433881,
+        "npu_cold_ms": 101.16401314735413,
+        "numeric_ok": false,
+        "comparison": {
+          "consistent": false,
+          "items": [
+            {
+              "consistent": false,
+              "max_abs_diff": 0.009999996051192284,
+              "max_rel_diff": 2.3841857910156248e+293,
+              "name": "error"
+            },
+            {
+              "consistent": false,
+              "max_abs_diff": 0.010000109672546387,
+              "max_rel_diff": 1.0,
+              "name": "out"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "name": "reference"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "D2003_acos_alias_16384x256",
+      "base_case": "D2003_acos_alias",
+      "group": "D2_partial_low_official",
+      "kind": "scaled_performance_variant",
+      "note": "D2003_acos_alias: 16,384 x 256 float32.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.arccos",
+        "np.clip",
+        "np.divide",
+        "np.full",
+        "np.maximum",
+        "np.multiply",
+        "np.sqrt",
+        "np.square",
+        "np.sum"
+      ],
+      "migration_time_s": 4.67,
+      "total_rewrites": 14,
+      "program.py": {
+        "path": "cases/D2003_acos_alias_16384x256/program.py",
+        "sha256": "96c69de7b9b1332398e0d29ffa7ab86ee0ea42a88e8608614b8bbca09e72a71e"
+      },
+      "migrated.py": {
+        "path": "cases/D2003_acos_alias_16384x256/migrated.py",
+        "sha256": "00dce2615e9afba23c0c4d71afd6411e1815268f6fbfc0ddc7f68b6ba48759f2"
+      },
+      "case.json": {
+        "path": "cases/D2003_acos_alias_16384x256/case.json",
+        "sha256": "6cdffc87b1653022e623e0cbca0ab809a46a869f7a002f7c895bb8bb732c81c2"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 131.3538821414113,
+        "npu_end_to_end_ms": 91.59694518893957,
+        "speedup_end_to_end": 1.4340421710621898,
+        "cpu_compute_only_ms": 38.457775954157114,
+        "npu_device_resident_ms": 1.6559106297791004,
+        "speedup_device_resident": 23.22454802967682,
+        "npu_cold_ms": 96.87026496976614,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 1.1920928955078125e-07,
+              "max_rel_diff": 8.957097384518607e-08,
+              "name": "angle"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 5.960464477539063e-08,
+              "max_rel_diff": 0.002483105506885841,
+              "name": "cosine"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "D2004_variance_composition_16384x256",
+      "base_case": "D2004_variance_composition",
+      "group": "D2_partial_low_official",
+      "kind": "scaled_performance_variant",
+      "note": "D2004_variance_composition: 16,384 x 256 float32.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.add",
+        "np.divide",
+        "np.full",
+        "np.mean",
+        "np.sqrt",
+        "np.square",
+        "np.subtract",
+        "np.tanh"
+      ],
+      "migration_time_s": 7.93,
+      "total_rewrites": 12,
+      "program.py": {
+        "path": "cases/D2004_variance_composition_16384x256/program.py",
+        "sha256": "f4ac8bb16f07507e1bf6c877f84d2603c2a36c010edbdaf660c68f0e78238230"
+      },
+      "migrated.py": {
+        "path": "cases/D2004_variance_composition_16384x256/migrated.py",
+        "sha256": "6befe680f00bbd4c52ba9317b11f85560bdd5cc8423e4ef8b01602155a461e7d"
+      },
+      "case.json": {
+        "path": "cases/D2004_variance_composition_16384x256/case.json",
+        "sha256": "4caf82ba30eabaf0cd4739bd6cb33e2716eb6649f978984ec4a4fc644f1eec38"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 178.63977421075106,
+        "npu_end_to_end_ms": 98.87476963922381,
+        "speedup_end_to_end": 1.806727589480869,
+        "cpu_compute_only_ms": 87.30183681473136,
+        "npu_device_resident_ms": 10.587585624307394,
+        "speedup_device_resident": 8.245679412906034,
+        "npu_cold_ms": 100.07517598569393,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 1.7881393432617188e-07,
+              "max_rel_diff": 0.016304331483128893,
+              "name": "out"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 2.384185791015625e-07,
+              "max_rel_diff": 1.684549422195337e-07,
+              "name": "scale"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 4.76837158203125e-07,
+              "max_rel_diff": 2.3805595886202586e-07,
+              "name": "variance"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "D2005_range_composition_16384x256",
+      "base_case": "D2005_range_composition",
+      "group": "D2_partial_low_official",
+      "kind": "scaled_performance_variant",
+      "note": "D2005_range_composition: 16,384 x 256 float32.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.clip",
+        "np.divide",
+        "np.full",
+        "np.max",
+        "np.maximum",
+        "np.min",
+        "np.subtract"
+      ],
+      "migration_time_s": 5.78,
+      "total_rewrites": 10,
+      "program.py": {
+        "path": "cases/D2005_range_composition_16384x256/program.py",
+        "sha256": "9569b61bf55b5d88c15cc9a2db2d80363bdfee4477eb617a0b2d4830f59e519b"
+      },
+      "migrated.py": {
+        "path": "cases/D2005_range_composition_16384x256/migrated.py",
+        "sha256": "c5c887f1c55d3438f7cdeb2d17f91473674a39b06c6070b2aa0ad17606489845"
+      },
+      "case.json": {
+        "path": "cases/D2005_range_composition_16384x256/case.json",
+        "sha256": "be8a32ae20b71171af9d7d5a005ad1033975325d3bbb620814a2bcb302f46632"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 154.91092577576637,
+        "npu_end_to_end_ms": 91.43250621855259,
+        "speedup_end_to_end": 1.694265334972666,
+        "cpu_compute_only_ms": 60.15497026965022,
+        "npu_device_resident_ms": 2.7120267041027546,
+        "speedup_device_resident": 22.18081782847041,
+        "npu_cold_ms": 92.46649779379368,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "name": "minimum"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 5.960464477539063e-08,
+              "max_rel_diff": 1.1920900533436457e-07,
+              "name": "out"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "name": "span"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "F007_sort_kind_2048x2048",
+      "base_case": "F007_sort_kind",
+      "group": "F_partial_consent",
+      "kind": "scaled_performance_variant",
+      "note": "F007_sort_kind: 2,048 x 2,048 float32 stable row sort.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.cumsum",
+        "np.sort"
+      ],
+      "migration_time_s": 2.57,
+      "total_rewrites": 2,
+      "program.py": {
+        "path": "cases/F007_sort_kind_2048x2048/program.py",
+        "sha256": "185bad852a9cc7bcaa1eaa14e78e61f48b9afb65eb713e930678a9cae32523a4"
+      },
+      "migrated.py": {
+        "path": "cases/F007_sort_kind_2048x2048/migrated.py",
+        "sha256": "bbc8fa58a922839ec43a0181850f8505547a1bd35bae9cbd4382d3681b4bf481"
+      },
+      "case.json": {
+        "path": "cases/F007_sort_kind_2048x2048/case.json",
+        "sha256": "f80b418c49712af804891e4bee83ad0d50bda7fe8246570a289d16ab86b47045"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 314.74107317626476,
+        "npu_end_to_end_ms": 60.35933876410127,
+        "speedup_end_to_end": 5.2144552876291135,
+        "cpu_compute_only_ms": 270.05965495482087,
+        "npu_device_resident_ms": 8.189201354980469,
+        "speedup_device_resident": 32.97753263699852,
+        "npu_cold_ms": 54.113796912133694,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "name": "out"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "name": "prefix"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "G004_cbrt_three_channels_16384x256",
+      "base_case": "G004_cbrt_three_channels",
+      "group": "G_partial_dedup",
+      "kind": "scaled_performance_variant",
+      "note": "G004_cbrt_three_channels: 16,384 x 256 float32; three cube-root channels.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.absolute",
+        "np.add",
+        "np.copysign",
+        "np.full",
+        "np.full_like",
+        "np.multiply",
+        "np.power",
+        "np.tanh"
+      ],
+      "migration_time_s": 5.67,
+      "total_rewrites": 23,
+      "program.py": {
+        "path": "cases/G004_cbrt_three_channels_16384x256/program.py",
+        "sha256": "77b2a19860ba85063b54e1973898dd08b5f1b07507b8a77ef69725b1f0922915"
+      },
+      "migrated.py": {
+        "path": "cases/G004_cbrt_three_channels_16384x256/migrated.py",
+        "sha256": "11bdfd6f97c3709abd0db49efeacaba7261dfbc03a22eef38c61d5c5cf71af67"
+      },
+      "case.json": {
+        "path": "cases/G004_cbrt_three_channels_16384x256/case.json",
+        "sha256": "fbd56d55c031512288cc031686800d6f9c47312c6e559a638e1b90f07ed32625"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 644.1512447781861,
+        "npu_end_to_end_ms": 162.4079649336636,
+        "speedup_end_to_end": 3.966254026034333,
+        "cpu_compute_only_ms": 506.3928244635463,
+        "npu_device_resident_ms": 21.373418625444174,
+        "speedup_device_resident": 23.692645212156492,
+        "npu_cold_ms": 153.87024357914925,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 7.152557373046875e-07,
+              "max_rel_diff": 6.010541631372623e-07,
+              "name": "agreement"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 1.1920928955078125e-07,
+              "max_rel_diff": 4.2106969598241613e-07,
+              "name": "compressed_a"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 2.384185791015625e-07,
+              "max_rel_diff": 0.044444444444444446,
+              "name": "out"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "H001_abs_alias_16384x256",
+      "base_case": "H001_abs_alias",
+      "group": "H_gap_official",
+      "kind": "scaled_performance_variant",
+      "note": "H001_abs_alias: 16,384 x 256 float32; signed-zero witness retained.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.absolute",
+        "np.subtract"
+      ],
+      "migration_time_s": 2.37,
+      "total_rewrites": 3,
+      "program.py": {
+        "path": "cases/H001_abs_alias_16384x256/program.py",
+        "sha256": "4e031ca2e930477e3c4d2f5757433d2c08ef24c044ef968b3cffc0a1037f46c8"
+      },
+      "migrated.py": {
+        "path": "cases/H001_abs_alias_16384x256/migrated.py",
+        "sha256": "a6cd1674a271691d236bc6d5658528bbec6f2a4d73cb3cf299c71d949579e5f4"
+      },
+      "case.json": {
+        "path": "cases/H001_abs_alias_16384x256/case.json",
+        "sha256": "e2a1c4ad57447258d4fdd30e2ee97e0987627f499439c9cd90870a491037de8e"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 86.7499546147883,
+        "npu_end_to_end_ms": 68.71645525097847,
+        "speedup_end_to_end": 1.262433492792151,
+        "cpu_compute_only_ms": 29.40939227119088,
+        "npu_device_resident_ms": 7.748212665319443,
+        "speedup_device_resident": 3.7956356570884586,
+        "npu_cold_ms": 67.86071788519621,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "name": "difference"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "name": "left"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "H002_round_alias_4m",
+      "base_case": "H002_round_alias",
+      "group": "H_gap_official",
+      "kind": "scaled_performance_variant",
+      "note": "H002_round_alias: 4,000,000 float32 and float64 elements; half-way pattern.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.around"
+      ],
+      "migration_time_s": 2.82,
+      "total_rewrites": 2,
+      "program.py": {
+        "path": "cases/H002_round_alias_4m/program.py",
+        "sha256": "9ed3ae079f8a6586484981e572b0a18b841c6f2730a72f4c42e0481ddb4bfe5f"
+      },
+      "migrated.py": {
+        "path": "cases/H002_round_alias_4m/migrated.py",
+        "sha256": "520c9a7de5bcf87764eb273252b9f533de7786399a73eea31cdd73e81df70f55"
+      },
+      "case.json": {
+        "path": "cases/H002_round_alias_4m/case.json",
+        "sha256": "23b7227daae819d11098a38cd1c037664f7bd88254ee07121f8dc57af0be41ad"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 379.21515107154846,
+        "npu_end_to_end_ms": 330.79662872478366,
+        "speedup_end_to_end": 1.1463694552553862,
+        "cpu_compute_only_ms": 61.65730534121394,
+        "npu_device_resident_ms": 9.487693663686514,
+        "speedup_device_resident": 6.498661057871523,
+        "npu_cold_ms": 332.6423689723015,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "name": "hundredths"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "name": "integer"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "H003_acos_alias_4m",
+      "base_case": "H003_acos_alias",
+      "group": "H_gap_official",
+      "kind": "scaled_performance_variant",
+      "note": "H003_acos_alias: 4,000,000 float32 elements; endpoint witness retained.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.arccos"
+      ],
+      "migration_time_s": 2.47,
+      "total_rewrites": 2,
+      "program.py": {
+        "path": "cases/H003_acos_alias_4m/program.py",
+        "sha256": "549509e046d5b1b7cc44de597944b5d6d8ccd51fdd7f5af96d45138c8aeb2fc9"
+      },
+      "migrated.py": {
+        "path": "cases/H003_acos_alias_4m/migrated.py",
+        "sha256": "bfbfb1421e1cb45ebbaa10c88c6bc31d4740e2e1da9c9541b7de0d10795db5ae"
+      },
+      "case.json": {
+        "path": "cases/H003_acos_alias_4m/case.json",
+        "sha256": "c97da133dc5a7286f103e2ceed6483f5bdae46c7989ab4a96fb183ef255a3c9c"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 104.03503524139524,
+        "npu_end_to_end_ms": 45.407251454889774,
+        "speedup_end_to_end": 2.2911546483880385,
+        "cpu_compute_only_ms": 65.60560362413526,
+        "npu_device_resident_ms": 7.813717238605022,
+        "speedup_device_resident": 8.39620907959139,
+        "npu_cold_ms": 51.5834940597415,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 5.602836608886719e-05,
+              "max_rel_diff": 7.110981320734627e-05,
+              "name": "angles"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "name": "endpoints"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "H004_asin_alias_4m",
+      "base_case": "H004_asin_alias",
+      "group": "H_gap_official",
+      "kind": "scaled_performance_variant",
+      "note": "H004_asin_alias: 4,000,000 float64 elements; finite difference retained.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.add",
+        "np.arcsin",
+        "np.divide",
+        "np.subtract"
+      ],
+      "migration_time_s": 3.37,
+      "total_rewrites": 5,
+      "program.py": {
+        "path": "cases/H004_asin_alias_4m/program.py",
+        "sha256": "bcaf381154e0352d1e0368ca8d2652c6787be1047d465ea2f93464124801e292"
+      },
+      "migrated.py": {
+        "path": "cases/H004_asin_alias_4m/migrated.py",
+        "sha256": "d27a890993c5a0f691763e5b683ba7c0460fb8984d2810f7bad9075177a2e9de"
+      },
+      "case.json": {
+        "path": "cases/H004_asin_alias_4m/case.json",
+        "sha256": "1c42b937338e517b469da169dfc455ec470eca26a7187b78bd4cc6c8734128fe"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 253.57859209179878,
+        "npu_end_to_end_ms": 124.8341565951705,
+        "speedup_end_to_end": 2.0313237899635,
+        "cpu_compute_only_ms": 213.54894014075398,
+        "npu_device_resident_ms": 86.55951963737607,
+        "speedup_device_resident": 2.467076308133119,
+        "npu_cold_ms": 110.11085752397776,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "name": "base"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "name": "sensitivity"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "H005_atan_alias_4m",
+      "base_case": "H005_atan_alias",
+      "group": "H_gap_official",
+      "kind": "scaled_performance_variant",
+      "note": "H005_atan_alias: 4,000,000 float32 elements; two scales.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.arctan",
+        "np.multiply",
+        "np.subtract"
+      ],
+      "migration_time_s": 2.47,
+      "total_rewrites": 4,
+      "program.py": {
+        "path": "cases/H005_atan_alias_4m/program.py",
+        "sha256": "19389bf2c2444353e2b32ecb4c026ac95ffb3ec54d44c784d6ac1fbfff3af7eb"
+      },
+      "migrated.py": {
+        "path": "cases/H005_atan_alias_4m/migrated.py",
+        "sha256": "5c732c15c42de8a6433ef26b7bed8f0b0c47cadfd8e67e3351b958670f188098"
+      },
+      "case.json": {
+        "path": "cases/H005_atan_alias_4m/case.json",
+        "sha256": "ffda4ab412b7ef25b20ac7a953b67d710493982c39fbd644d483f23a2178d0ce"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 225.86308093741536,
+        "npu_end_to_end_ms": 56.3026606105268,
+        "speedup_end_to_end": 4.011588057975118,
+        "cpu_compute_only_ms": 175.6871622055769,
+        "npu_device_resident_ms": 18.892356660217047,
+        "speedup_device_resident": 9.299377804757075,
+        "npu_cold_ms": 60.923878103494644,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 5.0067901611328125e-06,
+              "max_rel_diff": 1.2448516087543733e-05,
+              "name": "coarse"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 5.0067901611328125e-06,
+              "max_rel_diff": 1.7293686322176434e-05,
+              "name": "delta"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 5.0067901611328125e-06,
+              "max_rel_diff": 1.2453085468335106e-05,
+              "name": "fine"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "H006_acosh_alias_2048",
+      "base_case": "H006_acosh_alias",
+      "group": "H_gap_official",
+      "kind": "scaled_performance_variant",
+      "note": "H006_acosh_alias: 2,048 x 2,048 float32.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.add",
+        "np.arccosh"
+      ],
+      "migration_time_s": 2.52,
+      "total_rewrites": 3,
+      "program.py": {
+        "path": "cases/H006_acosh_alias_2048/program.py",
+        "sha256": "fbcb85bec12166a3449a23dd84eb59137568bd2c2f63b98b0bab8f63daec9d05"
+      },
+      "migrated.py": {
+        "path": "cases/H006_acosh_alias_2048/migrated.py",
+        "sha256": "1cded996ccf89225bc8173e50ff27922842632b98524958952e9573402d9b655"
+      },
+      "case.json": {
+        "path": "cases/H006_acosh_alias_2048/case.json",
+        "sha256": "896a7cbd7aca1186d2bccb16e88dd96cda9eba2a969ccd387780bdb22ba29375"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 285.831606015563,
+        "npu_end_to_end_ms": 86.94803854450583,
+        "speedup_end_to_end": 3.287384175656306,
+        "cpu_compute_only_ms": 215.41819535195827,
+        "npu_device_resident_ms": 20.11324791237712,
+        "speedup_device_resident": 10.710264015559419,
+        "npu_cold_ms": 92.40498766303062,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 4.76837158203125e-07,
+              "max_rel_diff": 2.5780456042517816e-07,
+              "name": "first"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 1.430511474609375e-06,
+              "max_rel_diff": 2.4428779806063176e-07,
+              "name": "out"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "H007_asinh_alias_2048",
+      "base_case": "H007_asinh_alias",
+      "group": "H_gap_official",
+      "kind": "scaled_performance_variant",
+      "note": "H007_asinh_alias: 2,048 x 2,048 float32; broadcast gain.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.add",
+        "np.arcsinh",
+        "np.multiply",
+        "np.negative"
+      ],
+      "migration_time_s": 3.27,
+      "total_rewrites": 6,
+      "program.py": {
+        "path": "cases/H007_asinh_alias_2048/program.py",
+        "sha256": "85385062aedaca6e43d67e6cf4728205e90059612cb0617377b4f265fa815c7b"
+      },
+      "migrated.py": {
+        "path": "cases/H007_asinh_alias_2048/migrated.py",
+        "sha256": "3f99b7730af0f67a3c29b1c33ef6864f05cbf8e04925782c20d3e6446f729e14"
+      },
+      "case.json": {
+        "path": "cases/H007_asinh_alias_2048/case.json",
+        "sha256": "6183c84e1bcf90e9ea3760cb8f8e140be23c33c283278e27edcfa790b51e4216"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 306.70116096735,
+        "npu_end_to_end_ms": 65.47868950292468,
+        "speedup_end_to_end": 4.683984412266694,
+        "cpu_compute_only_ms": 258.5231880657375,
+        "npu_device_resident_ms": 23.77835288643837,
+        "speedup_device_resident": 10.872207562079808,
+        "npu_cold_ms": 68.6269560828805,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "name": "odd_check"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 4.76837158203125e-07,
+              "max_rel_diff": 2.566006233684477e-07,
+              "name": "out"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "H008_atanh_alias_4m",
+      "base_case": "H008_atanh_alias",
+      "group": "H_gap_official",
+      "kind": "scaled_performance_variant",
+      "note": "H008_atanh_alias: 4,000,000 float64 elements; open domain retained.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.arctanh",
+        "np.multiply",
+        "np.subtract"
+      ],
+      "migration_time_s": 2.92,
+      "total_rewrites": 4,
+      "program.py": {
+        "path": "cases/H008_atanh_alias_4m/program.py",
+        "sha256": "9bdb5bea2a06b13a0b92ed199035d6168e9099004a2849c94788b696bee1a509"
+      },
+      "migrated.py": {
+        "path": "cases/H008_atanh_alias_4m/migrated.py",
+        "sha256": "8a1c2ce915039a13e4e2cb8b8d501d065cd3cd227550b6e7c2a7cfb98063937c"
+      },
+      "case.json": {
+        "path": "cases/H008_atanh_alias_4m/case.json",
+        "sha256": "31c4d68fedb790b2db9f05335ef8b54bd07969a6dae4b8ed2628801851de46b1"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 418.86585438624024,
+        "npu_end_to_end_ms": 94.6859773248434,
+        "speedup_end_to_end": 4.423736927266627,
+        "cpu_compute_only_ms": 380.8893864043057,
+        "npu_device_resident_ms": 54.45618601515889,
+        "speedup_device_resident": 6.994419078454706,
+        "npu_cold_ms": 94.8766227811575,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 5.087504266754195e-07,
+              "max_rel_diff": 6.362518627840721e-07,
+              "name": "difference"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 4.848569359339194e-07,
+              "max_rel_diff": 2.7839509443361305e-07,
+              "name": "full"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 1.1510954567306442e-07,
+              "max_rel_diff": 2.854989869299222e-07,
+              "name": "half"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "H009_variance_64x256x256",
+      "base_case": "H009_variance",
+      "group": "H_gap_official",
+      "kind": "scaled_performance_variant",
+      "note": "H009_variance: 64 x 256 x 256 float32; two reduction axes.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.mean",
+        "np.square",
+        "np.subtract"
+      ],
+      "migration_time_s": 3.69,
+      "total_rewrites": 8,
+      "program.py": {
+        "path": "cases/H009_variance_64x256x256/program.py",
+        "sha256": "11579413a719bda681e01029c3591e7d7f78986024e3b46822c29da8452bcf2d"
+      },
+      "migrated.py": {
+        "path": "cases/H009_variance_64x256x256/migrated.py",
+        "sha256": "074e6b077b15706bb57c4390672ecd05a0145b5b651cf75baa4c6f70847b311f"
+      },
+      "case.json": {
+        "path": "cases/H009_variance_64x256x256/case.json",
+        "sha256": "58a2b4a7b9e8c654e2793e9f927db275eb4153d268cf9f5c79fd2e7262c5ce32"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 79.44429060444236,
+        "npu_end_to_end_ms": 45.92707520350814,
+        "speedup_end_to_end": 1.7297920725936846,
+        "cpu_compute_only_ms": 37.39445470273495,
+        "npu_device_resident_ms": 1.0333522222936153,
+        "speedup_device_resident": 36.18752047557869,
+        "npu_cold_ms": 48.29024337232113,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "name": "channels"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 2.384185791015625e-07,
+              "max_rel_diff": 2.3576976233936416e-07,
+              "name": "rows"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "H010_standard_deviation_4096x1024",
+      "base_case": "H010_standard_deviation",
+      "group": "H_gap_official",
+      "kind": "scaled_performance_variant",
+      "note": "H010_standard_deviation: 4,096 x 1,024 float32; row and column std.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.mean",
+        "np.sqrt",
+        "np.square",
+        "np.subtract"
+      ],
+      "migration_time_s": 4.04,
+      "total_rewrites": 10,
+      "program.py": {
+        "path": "cases/H010_standard_deviation_4096x1024/program.py",
+        "sha256": "ea92ef5be094517b8d23bdf09af6391c976907c38b293bef8cf12ce73a7550c7"
+      },
+      "migrated.py": {
+        "path": "cases/H010_standard_deviation_4096x1024/migrated.py",
+        "sha256": "4232988b559de5f490b18ef3b92bfb9f7f0656654041327a977df39c4b99ed42"
+      },
+      "case.json": {
+        "path": "cases/H010_standard_deviation_4096x1024/case.json",
+        "sha256": "4bb840b9ab9bafa0028d57adb5b4c1f0adce48f9e81f0a840d2d969efd0db92b"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 82.99087034538388,
+        "npu_end_to_end_ms": 46.04717530310154,
+        "speedup_end_to_end": 1.8023010054168074,
+        "cpu_compute_only_ms": 35.77688429504633,
+        "npu_device_resident_ms": 1.1994913220405579,
+        "speedup_device_resident": 29.82671373910667,
+        "npu_cold_ms": 48.53022284805775,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 1.3113021850585938e-06,
+              "max_rel_diff": 1.3113018724198646e-06,
+              "name": "column"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 2.384185791015625e-07,
+              "max_rel_diff": 2.3155105399724269e-07,
+              "name": "row"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "H011_peak_to_peak_4096x1024",
+      "base_case": "H011_peak_to_peak",
+      "group": "H_gap_official",
+      "kind": "scaled_performance_variant",
+      "note": "H011_peak_to_peak: 4,096 x 1,024 float32; row and column ptp.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.max",
+        "np.min",
+        "np.subtract"
+      ],
+      "migration_time_s": 3.07,
+      "total_rewrites": 6,
+      "program.py": {
+        "path": "cases/H011_peak_to_peak_4096x1024/program.py",
+        "sha256": "325ac7222b10d97b1a82a4a22a1a8029364ed414263518aa5d49f6845f30c1cb"
+      },
+      "migrated.py": {
+        "path": "cases/H011_peak_to_peak_4096x1024/migrated.py",
+        "sha256": "eda28776904dd69f10f644060e4afc2b57dc31e95e5969706a17d5bac547e756"
+      },
+      "case.json": {
+        "path": "cases/H011_peak_to_peak_4096x1024/case.json",
+        "sha256": "15a509008da33399af417b570285ba79a1731d8aa54cda3f4f06fc8b7eae9a7e"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 56.90723471343517,
+        "npu_end_to_end_ms": 45.13460258021951,
+        "speedup_end_to_end": 1.2608338494238807,
+        "cpu_compute_only_ms": 12.505659367889166,
+        "npu_device_resident_ms": 0.7912330329418182,
+        "speedup_device_resident": 15.80527966760046,
+        "npu_cold_ms": 47.56924416869879,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "name": "column"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "name": "row"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "H012_logarithmic_grid_4m",
+      "base_case": "H012_logarithmic_grid",
+      "group": "H_gap_official",
+      "kind": "scaled_performance_variant",
+      "note": "H012_logarithmic_grid: 4,000,000-point logspace grids; num 17 -> 4,000,000.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes/constants changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.add",
+        "np.full_like",
+        "np.linspace",
+        "np.multiply",
+        "np.power",
+        "np.subtract"
+      ],
+      "migration_time_s": 16.79,
+      "total_rewrites": 16,
+      "program.py": {
+        "path": "cases/H012_logarithmic_grid_4m/program.py",
+        "sha256": "dea9df5b4720b8bc9b93ea0e573015a0421d065ea1d772d233e956dbac4a0b83"
+      },
+      "migrated.py": {
+        "path": "cases/H012_logarithmic_grid_4m/migrated.py",
+        "sha256": "0c47e0c7f7c381a45a8efdd7cfd175304fdbf1ca50ff76a9549737ffd852cbda"
+      },
+      "case.json": {
+        "path": "cases/H012_logarithmic_grid_4m/case.json",
+        "sha256": "168b82fdaa887fda943aa5f0593a9e2d820bff1156d72f5e4844d64dd8c57cb2"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 375.87122805416584,
+        "npu_end_to_end_ms": 101.72998812049627,
+        "speedup_end_to_end": 3.694792803956264,
+        "cpu_compute_only_ms": 374.52694214880466,
+        "npu_device_resident_ms": 116.00584257394075,
+        "speedup_device_resident": 3.2285179249492164,
+        "npu_cold_ms": 104.22789491713047,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "name": "decades"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "name": "octaves"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "H013_geometric_grid_4m",
+      "base_case": "H013_geometric_grid",
+      "group": "H_gap_official",
+      "kind": "scaled_performance_variant",
+      "note": "H013_geometric_grid: 4,000,000-point geomspace grids; num 21 -> 4,000,000.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes/constants changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.divide",
+        "np.linspace",
+        "np.multiply",
+        "np.power"
+      ],
+      "migration_time_s": 6.27,
+      "total_rewrites": 8,
+      "program.py": {
+        "path": "cases/H013_geometric_grid_4m/program.py",
+        "sha256": "3162d47786e28ce33236c8016bb4598cde1e2d081d8377865e8369472e0926eb"
+      },
+      "migrated.py": {
+        "path": "cases/H013_geometric_grid_4m/migrated.py",
+        "sha256": "c80b51d0f59ebcdcfa6f6ecceefb38691c6238455253be705278c17f0b88c17c"
+      },
+      "case.json": {
+        "path": "cases/H013_geometric_grid_4m/case.json",
+        "sha256": "55af77bc6c58d28f0ba818ea91a3730a79cdae2acdd67bd32990d7b0858157c5"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 394.2003413103521,
+        "npu_end_to_end_ms": 64.4122576341033,
+        "speedup_end_to_end": 6.1199584642666105,
+        "cpu_compute_only_ms": 394.5157411508262,
+        "npu_device_resident_ms": 71.73145702108741,
+        "speedup_device_resident": 5.499898615398926,
+        "npu_cold_ms": 68.32229718565941,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 2.4158453015843406e-13,
+              "max_rel_diff": 1.9534871654963677e-15,
+              "name": "ascending"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 8.526512829121202e-14,
+              "max_rel_diff": 1.5306175426523236e-15,
+              "name": "descending"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "H014_nan_minimum_4096x1024",
+      "base_case": "H014_nan_minimum",
+      "group": "H_gap_official",
+      "kind": "scaled_performance_variant",
+      "note": "H014_nan_minimum: 4,096 x 1,024 float32 with NaN pattern.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.nanmin"
+      ],
+      "migration_time_s": 2.17,
+      "total_rewrites": 2,
+      "program.py": {
+        "path": "cases/H014_nan_minimum_4096x1024/program.py",
+        "sha256": "be998a33d5bd0f26cd4f1530f008b35cbd1d72107cb5dda0cc34ee291bd87ed3"
+      },
+      "migrated.py": {
+        "path": "cases/H014_nan_minimum_4096x1024/migrated.py",
+        "sha256": "f8f5d0f36ea9585de662bbec7bfd0ccb9fc6e1b69e449c903ce52e32ebc2889d"
+      },
+      "case.json": {
+        "path": "cases/H014_nan_minimum_4096x1024/case.json",
+        "sha256": "1637148e47eba81f36c4f93942a40646fd291e5f50761884f7eea9a719918de7"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 50.7177272811532,
+        "npu_end_to_end_ms": 45.33348744735122,
+        "speedup_end_to_end": 1.1187695925678576,
+        "cpu_compute_only_ms": 6.268772296607494,
+        "npu_device_resident_ms": 0.4660184495151043,
+        "speedup_device_resident": 13.451768493565435,
+        "npu_cold_ms": 47.911664471030235,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "name": "columns"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "name": "rows"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "H015_real_vecdot_16384x256",
+      "base_case": "H015_real_vecdot",
+      "group": "H_gap_official",
+      "kind": "scaled_performance_variant",
+      "note": "H015_real_vecdot: 16,384 x 256 float32; vecdot over both axes.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.multiply",
+        "np.sum"
+      ],
+      "migration_time_s": 2.51,
+      "total_rewrites": 4,
+      "program.py": {
+        "path": "cases/H015_real_vecdot_16384x256/program.py",
+        "sha256": "ecb4d9a13e9b36700fde57918e50f0c134726f8caafb5473c5e6e472f0e41ab1"
+      },
+      "migrated.py": {
+        "path": "cases/H015_real_vecdot_16384x256/migrated.py",
+        "sha256": "2d5d8d0eccae40e9d695008c0023e117fed6899e183605f756fb1471e95a5cd5"
+      },
+      "case.json": {
+        "path": "cases/H015_real_vecdot_16384x256/case.json",
+        "sha256": "4f41faff9930bdd8449a130d3dbb10b5c16c98688307632c1d945542550ab510"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 175.198910292238,
+        "npu_end_to_end_ms": 89.71414109691978,
+        "speedup_end_to_end": 1.9528572435750962,
+        "cpu_compute_only_ms": 91.97539975866675,
+        "npu_device_resident_ms": 0.558122992515564,
+        "speedup_device_resident": 164.79414213723135,
+        "npu_cold_ms": 93.82964484393597,
+        "numeric_ok": false,
+        "comparison": {
+          "consistent": false,
+          "items": [
+            {
+              "consistent": false,
+              "max_abs_diff": 0.001708984375,
+              "max_rel_diff": 0.00025480891015497697,
+              "name": "columns"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 1.9073486328125e-05,
+              "max_rel_diff": 0.010169491525423728,
+              "name": "rows"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "I001_cube_root_4m",
+      "base_case": "I001_cube_root",
+      "group": "I_gap_model",
+      "kind": "scaled_performance_variant",
+      "note": "I001_cube_root: 4,000,000 float32 elements; signed zero retained.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.absolute",
+        "np.copysign",
+        "np.full_like",
+        "np.power"
+      ],
+      "migration_time_s": 5.82,
+      "total_rewrites": 4,
+      "program.py": {
+        "path": "cases/I001_cube_root_4m/program.py",
+        "sha256": "6bbfd18e2da0c946b18c866ea21a616d25757a6d7a119b34c2f173d2f5589ae8"
+      },
+      "migrated.py": {
+        "path": "cases/I001_cube_root_4m/migrated.py",
+        "sha256": "8f2d80d0a27193d49bd5b61289de2e8c5a56e6070ceac109efc58d934558d25e"
+      },
+      "case.json": {
+        "path": "cases/I001_cube_root_4m/case.json",
+        "sha256": "b5025d1ec17a3a7d63aaaf0e6c05848b9f2dcd47f3016a0088470e5a5f384f6f"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 153.40934228152037,
+        "npu_end_to_end_ms": 47.048147302120924,
+        "speedup_end_to_end": 3.2606882752767756,
+        "cpu_compute_only_ms": 113.37433010339737,
+        "npu_device_resident_ms": 2.021034248173237,
+        "speedup_device_resident": 56.0971840065915,
+        "npu_cold_ms": 51.57581437379122,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 4.76837158203125e-07,
+              "max_rel_diff": 3.6156584041640815e-07,
+              "name": "out"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "I003_nan_classification_4m",
+      "base_case": "I003_nan_classification",
+      "group": "I_gap_model",
+      "kind": "scaled_performance_variant",
+      "note": "I003_nan_classification: 4,000,000 float32 elements; NaN/Inf/signed-zero pattern.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.not_equal"
+      ],
+      "migration_time_s": 2.37,
+      "total_rewrites": 1,
+      "program.py": {
+        "path": "cases/I003_nan_classification_4m/program.py",
+        "sha256": "391ab17f832f180e1a5ced19434eb67ecc5fca5f16270b354725919e2645f567"
+      },
+      "migrated.py": {
+        "path": "cases/I003_nan_classification_4m/migrated.py",
+        "sha256": "7b85a996344e665cd02f1d93b337672b80b88de8f3d921fefbe5b6b4e2c9fe31"
+      },
+      "case.json": {
+        "path": "cases/I003_nan_classification_4m/case.json",
+        "sha256": "cff078aeb370789856c68619d3062e4a6c79a82cc65aee133341bf2c7547970b"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 104.89470418542624,
+        "npu_end_to_end_ms": 101.4095931313932,
+        "speedup_end_to_end": 1.0343666801770666,
+        "cpu_compute_only_ms": 3.6113448441028595,
+        "npu_device_resident_ms": 0.8930033072829247,
+        "speedup_device_resident": 4.044044198549312,
+        "npu_cold_ms": 113.49702905863523,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "name": "out"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "S10_boolean_logic_4m",
+      "base_case": "A010_boolean_logic",
+      "group": "A_direct_simple",
+      "kind": "scaled_performance_variant",
+      "note": "A010 boolean mask graph on 4,000,000 bool elements.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes/constants changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.logical_and",
+        "np.logical_or"
+      ],
+      "migration_time_s": 2.03,
+      "total_rewrites": 2,
+      "program.py": {
+        "path": "cases/S10_boolean_logic_4m/program.py",
+        "sha256": "2cd4e77b45ea43931e468d22762d703413f0e9658d03adeb0fd98ad3def5bb69"
+      },
+      "migrated.py": {
+        "path": "cases/S10_boolean_logic_4m/migrated.py",
+        "sha256": "7457c286ed8f98a78eae3be2c4b6d7e63a2f2bf2237e80d49f1276b9d78db7fb"
+      },
+      "case.json": {
+        "path": "cases/S10_boolean_logic_4m/case.json",
+        "sha256": "5b0fca21af58365261669d240d7aae8b77027ed4d074832cce8c05ddb0f37f3e"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 86.79654961451888,
+        "npu_end_to_end_ms": 83.7665437720716,
+        "speedup_end_to_end": 1.0361720289032328,
+        "cpu_compute_only_ms": 3.047321457415819,
+        "npu_device_resident_ms": 1.170717179775238,
+        "speedup_device_resident": 2.6029527114318625,
+        "npu_cold_ms": 94.27633322775364,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "name": "both"
+            },
+            {
+              "consistent": true,
+              "name": "either"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "S1_add_sqrt_4m",
+      "base_case": "A001_add_sqrt",
+      "group": "A_direct_simple",
+      "kind": "scaled_performance_variant",
+      "note": "A001 operator graph on 4,000,000 float32 elements.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.add",
+        "np.sqrt",
+        "np.square"
+      ],
+      "migration_time_s": 1.62,
+      "total_rewrites": 3,
+      "program.py": {
+        "path": "cases/S1_add_sqrt_4m/program.py",
+        "sha256": "32190195aa554ee79c33ceb2aed8e46e7780c499358ddb9174cd13f3b12a4f86"
+      },
+      "migrated.py": {
+        "path": "cases/S1_add_sqrt_4m/migrated.py",
+        "sha256": "f9f8874f9e431f31f3ad1dfa3bf54654b7e1aa8e884784285c4375af722491a8"
+      },
+      "case.json": {
+        "path": "cases/S1_add_sqrt_4m/case.json",
+        "sha256": "46175e71e2f1b7e2d73ffc24f5e6214f19f061fa4ce95f05e6743c802d616bb1"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 122.19919031485915,
+        "npu_end_to_end_ms": 86.60863572731614,
+        "speedup_end_to_end": 1.4109354025572978,
+        "cpu_compute_only_ms": 27.398687787353992,
+        "npu_device_resident_ms": 1.6498197801411152,
+        "speedup_device_resident": 16.60707921989545,
+        "npu_cold_ms": 90.25084506720304,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 4.76837158203125e-07,
+              "max_rel_diff": 8.393082991727861e-08,
+              "name": "out"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "S2_heat_diffusion_1024",
+      "base_case": "C001_heat_diffusion",
+      "group": "C_direct_structure",
+      "kind": "scaled_performance_variant",
+      "note": "C001 stencil graph on a 1024x1024 float32 grid.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.add",
+        "np.full",
+        "np.maximum",
+        "np.multiply",
+        "np.square",
+        "np.subtract",
+        "np.sum"
+      ],
+      "migration_time_s": 8.13,
+      "total_rewrites": 32,
+      "program.py": {
+        "path": "cases/S2_heat_diffusion_1024/program.py",
+        "sha256": "9b704f71420e23755200a280e34e16ac2ca373271f175accbebeee503fb73f9f"
+      },
+      "migrated.py": {
+        "path": "cases/S2_heat_diffusion_1024/migrated.py",
+        "sha256": "cf6f7c1eeebc07be91710cd540e03780c904ce66d34ad770230a605a7fda161c"
+      },
+      "case.json": {
+        "path": "cases/S2_heat_diffusion_1024/case.json",
+        "sha256": "abb2eb6b27a6de963aec7e05bbb15db28e701c5c386451de6bc4f2cf08055fd3"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 63.277751207351685,
+        "npu_end_to_end_ms": 29.488106723874807,
+        "speedup_end_to_end": 2.145873650006813,
+        "cpu_compute_only_ms": 35.96557816490531,
+        "npu_device_resident_ms": 5.387954879552126,
+        "speedup_device_resident": 6.675181765422458,
+        "npu_cold_ms": 33.95375423133373,
+        "numeric_ok": false,
+        "comparison": {
+          "consistent": false,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "name": "change"
+            },
+            {
+              "consistent": false,
+              "max_abs_diff": 4.57763671875e-05,
+              "max_rel_diff": 1.0,
+              "name": "energy_delta"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "name": "out"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "S3_residual_gemm_512",
+      "base_case": "C011_residual_gemm",
+      "group": "C_direct_structure",
+      "kind": "scaled_performance_variant",
+      "note": "C011 residual-GEMM graph with 512x512 projections.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.add",
+        "np.full",
+        "np.matmul",
+        "np.maximum",
+        "np.mean",
+        "np.multiply",
+        "np.sqrt",
+        "np.square",
+        "np.sum",
+        "np.tanh"
+      ],
+      "migration_time_s": 9.63,
+      "total_rewrites": 31,
+      "program.py": {
+        "path": "cases/S3_residual_gemm_512/program.py",
+        "sha256": "7952df7771b2e5fc215150e527be5563a80169436825a28ba134ce14b43a3bf8"
+      },
+      "migrated.py": {
+        "path": "cases/S3_residual_gemm_512/migrated.py",
+        "sha256": "c0db0b293028bc70ee246b85f13d578aab2f02d0d165cfccfb3ec186b4353e12"
+      },
+      "case.json": {
+        "path": "cases/S3_residual_gemm_512/case.json",
+        "sha256": "ac4cadb7041085b2c60fc0b488774d2dd2419ff4ec6712ffd6d5b8fae9017add"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 60.63634343445301,
+        "npu_end_to_end_ms": 14.837642665952444,
+        "speedup_end_to_end": 4.086656135316809,
+        "cpu_compute_only_ms": 50.66822189837694,
+        "npu_device_resident_ms": 4.79388190433383,
+        "speedup_device_resident": 10.569351291814504,
+        "npu_cold_ms": 15.605236403644085,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 5.0067901611328125e-06,
+              "max_rel_diff": 0.4143375287253716,
+              "name": "hidden"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 8.58306884765625e-06,
+              "max_rel_diff": 0.010645484086842143,
+              "name": "out"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 2.47955322265625e-05,
+              "max_rel_diff": 6.756153836348107e-05,
+              "name": "row_logits"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 1.1920928955078125e-07,
+              "max_rel_diff": 1.533617313251228e-07,
+              "name": "summary"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "S4_residual_gemm_1024",
+      "base_case": "C011_residual_gemm",
+      "group": "C_direct_structure",
+      "kind": "scaled_performance_variant",
+      "note": "C011 residual-GEMM graph with 1024x1024 projections.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.add",
+        "np.full",
+        "np.matmul",
+        "np.maximum",
+        "np.mean",
+        "np.multiply",
+        "np.sqrt",
+        "np.square",
+        "np.sum",
+        "np.tanh"
+      ],
+      "migration_time_s": 9.63,
+      "total_rewrites": 31,
+      "program.py": {
+        "path": "cases/S4_residual_gemm_1024/program.py",
+        "sha256": "8147a4e530417dbf4c135da783764ec86c0e4687bca05c621c74dba28b06303b"
+      },
+      "migrated.py": {
+        "path": "cases/S4_residual_gemm_1024/migrated.py",
+        "sha256": "15fc4a349192095910338ce5dc39a0aed49b717d5ed1a9827a16eea3dc9657bd"
+      },
+      "case.json": {
+        "path": "cases/S4_residual_gemm_1024/case.json",
+        "sha256": "667e771a74afcf50fb977a7302a6c9d2a186c45c3243316c0cf4cdd875ba87b7"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 401.5026167035103,
+        "npu_end_to_end_ms": 47.565871849656105,
+        "speedup_end_to_end": 8.440980919524828,
+        "cpu_compute_only_ms": 363.0925943143666,
+        "npu_device_resident_ms": 6.978409830480814,
+        "speedup_device_resident": 52.03084988336797,
+        "npu_cold_ms": 48.78211487084627,
+        "numeric_ok": false,
+        "comparison": {
+          "consistent": false,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 1.2308359146118164e-05,
+              "max_rel_diff": 0.3585513791911634,
+              "name": "hidden"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 1.71661376953125e-05,
+              "max_rel_diff": 0.5810795228945935,
+              "name": "out"
+            },
+            {
+              "consistent": false,
+              "max_abs_diff": 9.918212890625e-05,
+              "max_rel_diff": 0.0003538122337097399,
+              "name": "row_logits"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 1.1920928955078125e-07,
+              "max_rel_diff": 1.452186575479031e-07,
+              "name": "summary"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "S5_trig_pair_4m",
+      "base_case": "A003_trig_pair",
+      "group": "A_direct_simple",
+      "kind": "scaled_performance_variant",
+      "note": "A003 sin/cos graph on 4,000,000 float32 elements.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes/constants changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.cos",
+        "np.sin"
+      ],
+      "migration_time_s": 1.52,
+      "total_rewrites": 2,
+      "program.py": {
+        "path": "cases/S5_trig_pair_4m/program.py",
+        "sha256": "6a53f6a0823d39169163b9cf34423a9040d5808938988bf4f4b3fee81569976e"
+      },
+      "migrated.py": {
+        "path": "cases/S5_trig_pair_4m/migrated.py",
+        "sha256": "e5ed0e056b64fc60af4cf5e6e1683688b68e4687dd8274a3db6b637ebad67aa3"
+      },
+      "case.json": {
+        "path": "cases/S5_trig_pair_4m/case.json",
+        "sha256": "c6e4486fde25a9a9aa947f6fa36b831a15723a0369252e6a642db619b56986de"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 103.26315043494105,
+        "npu_end_to_end_ms": 56.274957023561,
+        "speedup_end_to_end": 1.834975198500946,
+        "cpu_compute_only_ms": 59.911681804805994,
+        "npu_device_resident_ms": 14.359495136886835,
+        "speedup_device_resident": 4.172269375328119,
+        "npu_cold_ms": 59.951442293822765,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 1.7881393432617188e-07,
+              "max_rel_diff": 3.7295997884571e-07,
+              "name": "cos"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 1.7881393432617188e-07,
+              "max_rel_diff": 1.7912219734214901e-07,
+              "name": "sin"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "S6_row_sum_4096",
+      "base_case": "A004_row_sum",
+      "group": "A_direct_simple",
+      "kind": "scaled_performance_variant",
+      "note": "A004 row-sum graph on a 4096x4096 float32 matrix.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes/constants changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.sum"
+      ],
+      "migration_time_s": 1.82,
+      "total_rewrites": 1,
+      "program.py": {
+        "path": "cases/S6_row_sum_4096/program.py",
+        "sha256": "92335664bf5be04cf11c0fc728464eae867e72aece24e9d9bba41a23c8a4e552"
+      },
+      "migrated.py": {
+        "path": "cases/S6_row_sum_4096/migrated.py",
+        "sha256": "072f432e07a78c5fa75aef67fe5cca95547cc98102d9779e5462913d1d318fe9"
+      },
+      "case.json": {
+        "path": "cases/S6_row_sum_4096/case.json",
+        "sha256": "733c399d96a3164a87c176f53e9c7483009ffaa2b6f357e22f342a80fdb84e2e"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 192.19300104305148,
+        "npu_end_to_end_ms": 184.21208299696445,
+        "speedup_end_to_end": 1.0433246175616968,
+        "cpu_compute_only_ms": 11.914366856217384,
+        "npu_device_resident_ms": 0.20337430760264397,
+        "speedup_device_resident": 58.58344152052809,
+        "npu_cold_ms": 184.79467183351517,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 4.57763671875e-05,
+              "max_rel_diff": 8.752332035838497e-05,
+              "name": "out"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "S7_row_max_4096",
+      "base_case": "A006_row_max",
+      "group": "A_direct_simple",
+      "kind": "scaled_performance_variant",
+      "note": "A006 row-max graph on a 4096x4096 float32 matrix.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes/constants changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.max"
+      ],
+      "migration_time_s": 1.97,
+      "total_rewrites": 1,
+      "program.py": {
+        "path": "cases/S7_row_max_4096/program.py",
+        "sha256": "82e20aabaa3b50ac281f1b1f22a6b7e8ee5eb14c6bb20389e093dca8a03f197d"
+      },
+      "migrated.py": {
+        "path": "cases/S7_row_max_4096/migrated.py",
+        "sha256": "cf1fa47c0c9185db8e94ae024eeadfbe79615ba7e26b6f019be8281c71776dce"
+      },
+      "case.json": {
+        "path": "cases/S7_row_max_4096/case.json",
+        "sha256": "75e0e25d5fd6223e84745bf695af311d16b9d3c0e92518cd4b341d77b02d1a30"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 197.52947241067886,
+        "npu_end_to_end_ms": 183.94703464582562,
+        "speedup_end_to_end": 1.0738388514444122,
+        "cpu_compute_only_ms": 16.921853180974722,
+        "npu_device_resident_ms": 0.19018957391381264,
+        "speedup_device_resident": 88.97361108050603,
+        "npu_cold_ms": 184.5562718808651,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "name": "out"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "S8_integer_modulo_4m",
+      "base_case": "A011_integer_modulo",
+      "group": "A_direct_simple",
+      "kind": "scaled_performance_variant",
+      "note": "A011 remainder graph on 4,000,000 int32 elements.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes/constants changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.remainder"
+      ],
+      "migration_time_s": 2.17,
+      "total_rewrites": 1,
+      "program.py": {
+        "path": "cases/S8_integer_modulo_4m/program.py",
+        "sha256": "52f3e47371c7955c0dc95a142f09f4d774bbc6809f405c7c36f173dc9de46d1a"
+      },
+      "migrated.py": {
+        "path": "cases/S8_integer_modulo_4m/migrated.py",
+        "sha256": "2f514936393448760006e964c834c1e9b643ca76a0932dd68885190c12d4decf"
+      },
+      "case.json": {
+        "path": "cases/S8_integer_modulo_4m/case.json",
+        "sha256": "9904ceedc77cc1565ad6693a95faec538b3b5706e4e481ebb07de14fed9b8170"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 81.57658623531461,
+        "npu_end_to_end_ms": 47.44156263768673,
+        "speedup_end_to_end": 1.7195172692417098,
+        "cpu_compute_only_ms": 29.468903318047523,
+        "npu_device_resident_ms": 1.5160455368459225,
+        "speedup_device_resident": 19.43800671011275,
+        "npu_cold_ms": 51.35876592248678,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "name": "out"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "S9_logistic_training_65536x128",
+      "base_case": "C014_logistic_training",
+      "group": "C_direct_structure",
+      "kind": "scaled_performance_variant",
+      "note": "C014 7-epoch logistic-training graph with a 65536x128 batch.",
+      "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes/constants changed.",
+      "scalable": true,
+      "replaced_apis": [
+        "np.add",
+        "np.clip",
+        "np.divide",
+        "np.exp",
+        "np.full",
+        "np.log",
+        "np.log1p",
+        "np.matmul",
+        "np.multiply",
+        "np.negative",
+        "np.reciprocal",
+        "np.subtract"
+      ],
+      "migration_time_s": 23.55,
+      "total_rewrites": 136,
+      "program.py": {
+        "path": "cases/S9_logistic_training_65536x128/program.py",
+        "sha256": "c01f62ccab24e151fe165ddfff0b99a05f01a9971d983b5cbe0982b44f2a9a0d"
+      },
+      "migrated.py": {
+        "path": "cases/S9_logistic_training_65536x128/migrated.py",
+        "sha256": "c5120ce08a1edcde9a8256b5144da27b8eea952f6a7c5e18f6a0ac3f08f8475d"
+      },
+      "case.json": {
+        "path": "cases/S9_logistic_training_65536x128/case.json",
+        "sha256": "76c09d9719ecfa3f3d389f0bcccc5f03c49c9b15cd2e79472f4925bb3acfd314"
+      },
+      "timing": {
+        "cpu_end_to_end_ms": 238.61695593222976,
+        "npu_end_to_end_ms": 188.97721031680703,
+        "speedup_end_to_end": 1.262675830234795,
+        "cpu_compute_only_ms": 69.6374149993062,
+        "npu_device_resident_ms": 20.81447746604681,
+        "speedup_device_resident": 3.3456239827735677,
+        "npu_cold_ms": 188.38669266551733,
+        "numeric_ok": true,
+        "comparison": {
+          "consistent": true,
+          "items": [
+            {
+              "consistent": true,
+              "max_abs_diff": 2.384185791015625e-07,
+              "max_rel_diff": 3.5095618891059166e-07,
+              "name": "loss"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 8.940696716308594e-08,
+              "max_rel_diff": 1.8216632927438414e-07,
+              "name": "probability"
+            },
+            {
+              "consistent": true,
+              "max_abs_diff": 1.862645149230957e-09,
+              "max_rel_diff": 3.930310168575157e-05,
+              "name": "weights"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "case": "A009_matrix_chain_2048",
+  "base_case": "A009_matrix_chain",
+  "kind": "scaled_performance_variant",
+  "note": "A009_matrix_chain: two 2048 x 2048 float32 matmuls; 34.4 GFLOP.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+  "scalable": true
+}

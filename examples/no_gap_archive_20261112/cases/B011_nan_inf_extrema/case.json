@@ -1,0 +1,25 @@
+{
+  "case": "B011_nan_inf_extrema",
+  "elapsed_s": 2.7,
+  "engine": "llm",
+  "expected_rewrites": {
+    "fmax": 1,
+    "maximum": 1
+  },
+  "group": "B_direct_semantics",
+  "migrated": "cases/B011_nan_inf_extrema/migrated.py",
+  "migrated_sha256": "fb7656f83ae8054c005268f5a55febe44de266c1fd94756a31526b03414d2410",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 8,
+  "numerically_consistent": true,
+  "repair_attempts": 0,
+  "route": "direct_migration",
+  "source": "cases/B011_nan_inf_extrema/program.py",
+  "source_sha256": "3f5aedbbbcadd71e80980aaf09dc8ca4bad04bbcce9e7e2dba52212ea31256b4",
+  "status": "pass",
+  "total_rewrites": 2
+}

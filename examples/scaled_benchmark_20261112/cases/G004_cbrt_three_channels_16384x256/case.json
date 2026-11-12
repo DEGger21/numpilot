@@ -1,0 +1,8 @@
+{
+  "case": "G004_cbrt_three_channels_16384x256",
+  "base_case": "G004_cbrt_three_channels",
+  "kind": "scaled_performance_variant",
+  "note": "G004_cbrt_three_channels: 16,384 x 256 float32; three cube-root channels.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+  "scalable": true
+}

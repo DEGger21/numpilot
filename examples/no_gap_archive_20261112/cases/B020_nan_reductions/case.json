@@ -1,0 +1,25 @@
+{
+  "case": "B020_nan_reductions",
+  "elapsed_s": 1.62,
+  "engine": "llm",
+  "expected_rewrites": {
+    "nancumsum": 1,
+    "nansum": 1
+  },
+  "group": "B_direct_semantics",
+  "migrated": "cases/B020_nan_reductions/migrated.py",
+  "migrated_sha256": "22b20b23cbb924a1477d575682e6d567573633aa4d61d4d5bda5b29bfa76f57f",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 9,
+  "numerically_consistent": true,
+  "repair_attempts": 0,
+  "route": "direct_migration",
+  "source": "cases/B020_nan_reductions/program.py",
+  "source_sha256": "1ecadf9775344d38bfea937a5a5628f19c29e2649448613e1ce63ea24c17ef77",
+  "status": "pass",
+  "total_rewrites": 2
+}

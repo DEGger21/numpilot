@@ -1,0 +1,32 @@
+{
+  "case": "C013_markov_relaxation",
+  "elapsed_s": 13.29,
+  "engine": "llm",
+  "expected_rewrites": {
+    "absolute": 1,
+    "add": 8,
+    "divide": 8,
+    "full": 32,
+    "matmul": 8,
+    "maximum": 16,
+    "multiply": 16,
+    "subtract": 1,
+    "sum": 10
+  },
+  "group": "C_direct_structure",
+  "migrated": "cases/C013_markov_relaxation/migrated.py",
+  "migrated_sha256": "0a3f73c34db3868bb8ef2de791bdfb41edfa717d7f3ae23c1927b85ea1f9069f",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 9,
+  "numerically_consistent": true,
+  "repair_attempts": 0,
+  "route": "direct_migration",
+  "source": "cases/C013_markov_relaxation/program.py",
+  "source_sha256": "31bee27a2a9447c9b007114d98b274955df68e1a4568952b5d9b8ed6ef70f83f",
+  "status": "pass",
+  "total_rewrites": 100
+}

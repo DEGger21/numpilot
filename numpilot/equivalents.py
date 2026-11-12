@@ -17,7 +17,8 @@ floating-point inputs:
 ``np.cbrt(x)`` → ``copysign(power(|x|, full_like(x, 1/3, x.dtype)), x)``
 ``np.logspace(a, b, n, base=c)`` → ``power(c, a + (b - a) * linspace(0, 1, n))``
 ``np.geomspace(a, b, n)`` → ``a * power(b / a, linspace(0, 1, n))``
-``np.sort(x, axis=a, kind=k)`` → ``np.sort(x, axis=a)``
+``np.sort(x, axis=a, kind=k)`` → ``np.sort(x, axis=a)``; ``kind="stable"``
+becomes ``stable=True`` (the NumPy 2 and AsNumpy spelling), never dropped.
 
 It also lowers Python arithmetic dunders on values that are statically proven
 to be arrays (``a - b`` → ``np.subtract(a, b)``), because AsNumpy does not
@@ -102,8 +103,10 @@ _FORBIDDEN_PTP_KEYWORDS = frozenset({"out"})
 _FORBIDDEN_VECDOT_KEYWORDS = frozenset()
 _GRID_DEFAULT_KEYWORDS = frozenset({"endpoint", "dtype", "axis"})
 # Removing kind is value/bit-pattern exact only for NumPy default quicksort.
-# Other algorithms can reorder signed zeros and NaNs.
-_SORT_KINDS = frozenset({"quicksort"})
+# ``stable`` is not dropped: it is rewritten to the documented NumPy 2 /
+# AsNumpy ``stable=True`` keyword, because dropping it would reorder signed
+# zeros and NaNs.
+_SORT_KINDS = frozenset({"quicksort", "stable"})
 
 _VAR_TEMPLATE = (
     "__np__.mean(__np__.square(__np__.subtract("
@@ -390,7 +393,10 @@ class _FunctionLowerer(ast.NodeTransformer):
             original=original,
             replacement=ast.unparse(replacement),
         ))
-        return replacement
+        # The new ``np.<op>`` call must pass through the same scalar-broadcast
+        # lowering as an authored call; otherwise ``x + 1.0`` would become
+        # ``np.add(x, 1.0)`` and leave a scalar operand on the NPU surface.
+        return self.visit_Call(replacement)
 
     def visit_UnaryOp(self, node):
         original = ast.unparse(node)
@@ -484,12 +490,14 @@ class _FunctionLowerer(ast.NodeTransformer):
         return replacement
 
     def _lower_sort(self, node):
-        """Drop only the default kind=quicksort from numpy.sort.
+        """Lower the two documented sort spellings.
 
-        Other algorithms can change the order of equal elements, including
-        the sign of zero and the placement of NaNs. They stay untouched so
-        the ordinary contract check rejects them instead of claiming a
-        value-only equivalence.
+        ``kind="quicksort"`` is dropped because it is NumPy's default.
+        ``kind="stable"`` becomes ``stable=True``, the spelling shared by
+        NumPy 2 and AsNumpy; dropping it would change equal-element order,
+        signed zeros and NaN placement.  Any other algorithm stays untouched
+        so the ordinary contract check rejects it instead of claiming an
+        equivalence that was never proved.
         """
 
         if len(node.args) > 2:
@@ -507,6 +515,10 @@ class _FunctionLowerer(ast.NodeTransformer):
             keywords.append(keyword)
         if kind_value is None:
             return None
+        if kind_value.value == "stable":
+            keywords.append(
+                ast.keyword(arg="stable", value=ast.Constant(value=True))
+            )
         return ast.Call(
             func=node.func,
             args=list(node.args),

@@ -1,0 +1,7 @@
+{
+  "case": "S9_logistic_training_65536x128",
+  "base_case": "C014_logistic_training",
+  "kind": "scaled_performance_variant",
+  "note": "C014 7-epoch logistic-training graph with a 65536x128 batch.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes/constants changed."
+}

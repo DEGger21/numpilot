@@ -1,0 +1,31 @@
+{
+  "case": "C010_energy_feedback",
+  "elapsed_s": 12.54,
+  "engine": "llm",
+  "expected_rewrites": {
+    "add": 10,
+    "full": 4,
+    "mean": 1,
+    "multiply": 8,
+    "sqrt": 6,
+    "square": 13,
+    "subtract": 1,
+    "tanh": 6
+  },
+  "group": "C_direct_structure",
+  "migrated": "cases/C010_energy_feedback/migrated.py",
+  "migrated_sha256": "7e95615eedf711e5a5762dba7d053e000ac6fb64f6dc5e5f163a32c422a8114e",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 444,
+  "numerically_consistent": true,
+  "repair_attempts": 0,
+  "route": "direct_migration",
+  "source": "cases/C010_energy_feedback/program.py",
+  "source_sha256": "b94c0530ebd996226129634b5dacfa1def218c3951ada1372a7ae10cfeb46117",
+  "status": "pass",
+  "total_rewrites": 49
+}

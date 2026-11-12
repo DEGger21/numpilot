@@ -1,0 +1,8 @@
+{
+  "case": "D1001_signed_compression_16384x256",
+  "base_case": "D1001_signed_compression",
+  "kind": "scaled_performance_variant",
+  "note": "D1001_signed_compression: 16,384 x 256 float32; two cube-root branches.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+  "scalable": true
+}

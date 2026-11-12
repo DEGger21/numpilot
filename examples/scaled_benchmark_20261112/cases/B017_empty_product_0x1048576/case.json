@@ -1,0 +1,8 @@
+{
+  "case": "B017_empty_product_0x1048576",
+  "base_case": "B017_empty_product",
+  "kind": "scaled_performance_variant",
+  "note": "B017_empty_product: 0 x 1,048,576 int32; empty axis retained.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+  "scalable": true
+}

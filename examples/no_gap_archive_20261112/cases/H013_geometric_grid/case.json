@@ -1,0 +1,27 @@
+{
+  "case": "H013_geometric_grid",
+  "elapsed_s": 6.27,
+  "engine": "llm",
+  "expected_rewrites": {
+    "divide": 2,
+    "linspace": 2,
+    "multiply": 2,
+    "power": 2
+  },
+  "group": "H_gap_official",
+  "migrated": "cases/H013_geometric_grid/migrated.py",
+  "migrated_sha256": "d0366637cd944138d3a6a9ccb63213fb1265ff6444af271aff93d1a1a5bd182f",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 42,
+  "numerically_consistent": true,
+  "repair_attempts": 0,
+  "route": "direct_migration",
+  "source": "cases/H013_geometric_grid/program.py",
+  "source_sha256": "aa8b56ba12bc16f164bd1ce80a29e5c5739b5cb53c674183024feddc90252db0",
+  "status": "pass",
+  "total_rewrites": 8
+}

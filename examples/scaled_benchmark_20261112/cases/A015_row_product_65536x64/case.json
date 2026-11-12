@@ -1,0 +1,8 @@
+{
+  "case": "A015_row_product_65536x64",
+  "base_case": "A015_row_product",
+  "kind": "scaled_performance_variant",
+  "note": "A015_row_product: 65,536 x 64 float32; 4,194,304 elements.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+  "scalable": true
+}

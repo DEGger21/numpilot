@@ -121,24 +121,40 @@ class BenchmarkLowering:
     source: str
     rewrites: tuple[EquivalentRewrite, ...] = ()
     notes: tuple[str, ...] = ()
+    source_changed: bool = False
 
     @property
     def applied(self) -> bool:
-        return bool(self.rewrites)
+        return bool(self.rewrites) or self.source_changed
+
+    @property
+    def normalized(self) -> bool:
+        """True when only the straight-line surface was re-emitted."""
+
+        return self.source_changed and not self.rewrites
 
     def to_dict(self) -> dict:
         return {
             "applied": self.applied,
+            "source_changed": self.source_changed,
+            "normalized": self.normalized,
             "rewrites": [item.to_dict() for item in self.rewrites],
             "notes": list(self.notes),
         }
 
 
-def lower_benchmark_program(source: str) -> BenchmarkLowering:
+def lower_benchmark_program(
+    source: str, protected_helpers=None
+) -> BenchmarkLowering:
     """Adapt one benchmark program for analysis and migration.
 
     The returned source is only an analysis/migration surface.  Callers must
     keep the original source as the NumPy verification oracle.
+
+    ``protected_helpers`` names top-level functions that must remain call
+    boundaries.  ``None`` auto-detects ``numpilot.operator_spec`` helpers,
+    which are intentional domain-operator boundaries rather than ordinary
+    inlineable helpers.
     """
 
     try:
@@ -146,8 +162,19 @@ def lower_benchmark_program(source: str) -> BenchmarkLowering:
     except SyntaxError:
         return BenchmarkLowering(source, (), ("syntax_error",))
 
+    if protected_helpers is None:
+        from numpilot.operator_specs import collect_static_operator_specs
+
+        protected_helpers = frozenset(
+            collect_static_operator_specs(tree).specs
+        )
+    else:
+        protected_helpers = frozenset(protected_helpers)
+
     try:
-        inlined, rewrites = _PartialEvaluator(tree).run()
+        inlined, rewrites = _PartialEvaluator(
+            tree, protected_helpers=protected_helpers
+        ).run()
     except _CannotLower as exc:
         return BenchmarkLowering(
             source,
@@ -165,10 +192,21 @@ def lower_benchmark_program(source: str) -> BenchmarkLowering:
         )
 
     lowered = lower_equivalents(inlined)
+    combined = tuple(rewrites) + tuple(lowered.rewrites)
+    notes = tuple(lowered.notes)
+    source_changed = lowered.source != source
+    if source_changed and not combined:
+        # The partial evaluator always re-emits ``forward`` as straight-line
+        # SSA temporaries.  Record that surface-only change explicitly so an
+        # ``applied=False`` record never hides a changed analysis source.
+        notes += (
+            "analysis surface normalized to straight-line SSA temporaries",
+        )
     return BenchmarkLowering(
         lowered.source,
-        tuple(rewrites) + tuple(lowered.rewrites),
-        tuple(lowered.notes),
+        combined,
+        notes,
+        source_changed,
     )
 
 
@@ -179,8 +217,9 @@ class _ReturnSignal(Exception):
 
 
 class _PartialEvaluator:
-    def __init__(self, tree: ast.Module):
+    def __init__(self, tree: ast.Module, protected_helpers=()):
         self.tree = tree
+        self.protected_helpers = frozenset(protected_helpers)
         self.functions = {
             node.name: node
             for node in tree.body
@@ -600,6 +639,24 @@ class _PartialEvaluator:
         return False
 
     def _eval_helper_call(self, name, node):
+        if name in self.protected_helpers:
+            # A declared domain operator is a device-call boundary.  Keep the
+            # call (with statically evaluated arguments) instead of inlining
+            # its NumPy fallback body and losing its OperatorSpec identity.
+            arguments = [self._to_expr(self._eval(argument)) for argument in node.args]
+            keywords = []
+            for keyword in node.keywords:
+                if keyword.arg is None:
+                    raise _CannotLower("keyword unpacking")
+                keywords.append(ast.keyword(
+                    arg=keyword.arg,
+                    value=self._to_expr(self._eval(keyword.value)),
+                ))
+            return _Array(ast.Call(
+                func=copy.deepcopy(node.func),
+                args=arguments,
+                keywords=keywords,
+            ))
         function = self.functions.get(name)
         if function is None:
             raise _CannotLower("unknown helper %s" % name)

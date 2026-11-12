@@ -1,0 +1,8 @@
+{
+  "case": "A005_column_mean_8192x512",
+  "base_case": "A005_column_mean",
+  "kind": "scaled_performance_variant",
+  "note": "A005_column_mean: 8,192 x 512 float32; 4,194,304 elements.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+  "scalable": true
+}

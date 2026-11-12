@@ -16,11 +16,19 @@ _BASE = (
     '        concatenate,\n'
     '    )\n'
     '    from .io import load, save, savez, savez_compressed\n'
+    '    from .math import (\n'
+    '        absolute,\n'
+    '    )\n'
+    '    from .nn import softmax\n'
     '\n_LAZY_MAPPING = {\n'
     '    # .array\n'
     '    "concatenate": ".array",\n'
     '    # .linalg\n'
     '    "matmul": ".linalg.direct",\n'
+    '    # .math\n'
+    '    "absolute": ".math",\n'
+    '    # .random\n'
+    '    "random": ".random",\n'
     '}\n'
 )
 
@@ -68,7 +76,7 @@ def test_preserved_export_still_requires_exact_protocol_binding(tamper, reason):
     elif tamper == 'label':
         payload = payload.replace('LABEL: type_checking_array_imports', 'LABEL: unrelated_imports')
     else:
-        payload = payload.replace('WINDOW_COUNT: 2', 'WINDOW_COUNT: 1')
+        payload = payload.replace('WINDOW_COUNT: 4', 'WINDOW_COUNT: 1')
     with pytest.raises(DraftGenerationError, match=reason):
         provider._apply_official_window_replace_response(
             payload, expected_path=_PATH, base_content=_BASE, allow_unchanged=True,

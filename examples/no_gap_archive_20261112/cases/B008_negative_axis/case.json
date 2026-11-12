@@ -1,0 +1,24 @@
+{
+  "case": "B008_negative_axis",
+  "elapsed_s": 2.52,
+  "engine": "llm",
+  "expected_rewrites": {
+    "sum": 1
+  },
+  "group": "B_direct_semantics",
+  "migrated": "cases/B008_negative_axis/migrated.py",
+  "migrated_sha256": "f1f3e76da6053500bcc52f758696c0c252c630b7bdbb4acda3ab921f577f2e1c",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 12,
+  "numerically_consistent": true,
+  "repair_attempts": 0,
+  "route": "direct_migration",
+  "source": "cases/B008_negative_axis/program.py",
+  "source_sha256": "b0c67c0e9ecffc06766996a6c89a9e5d5bccaef2bc7c4e4d53d52e7641fbc694",
+  "status": "pass",
+  "total_rewrites": 1
+}

@@ -1,0 +1,24 @@
+{
+  "case": "B004_mixed_int_float",
+  "elapsed_s": 2.17,
+  "engine": "llm",
+  "expected_rewrites": {
+    "add": 1
+  },
+  "group": "B_direct_semantics",
+  "migrated": "cases/B004_mixed_int_float/migrated.py",
+  "migrated_sha256": "2575b0a1bcb92e6c84b8742e576a58e32ff5eaa455e5cc52348348ab12709f43",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 3,
+  "numerically_consistent": true,
+  "repair_attempts": 0,
+  "route": "direct_migration",
+  "source": "cases/B004_mixed_int_float/program.py",
+  "source_sha256": "a419dc1770fe83e1f067e6059af087207d46a80249d4247f5ad94d65d43dffb1",
+  "status": "pass",
+  "total_rewrites": 1
+}

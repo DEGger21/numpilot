@@ -277,7 +277,10 @@ def _build_asnumpy_call_contracts():
         ("x",),
         ("x",),
     )
-    add("sort", 2, ("a", "axis"), ("a",), ("a", "axis"))
+    # ``stable`` is the NumPy 2 spelling that the equivalent lowering produces
+    # from ``kind="stable"``; the pinned AsNumpy runtime accepts it and was
+    # proved bit-exact against NumPy stable sort on the NPU.
+    add("sort", 2, ("a", "axis", "stable"), ("a",), ("a", "axis"))
 
     # These are real AsNumpy extensions in the pinned public mapping. Runtime
     # provenance still decides whether an exact wheel may execute them.

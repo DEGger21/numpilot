@@ -1,0 +1,577 @@
+{
+  "schema": "numpilot.scaled-variant-generation",
+  "schema_version": 1,
+  "source_archive": "examples/no_gap_archive_20261112/cases",
+  "method": "build_inputs replaced; forward copied verbatim except H012/H013 fixed grid size",
+  "reused": {
+    "A001_add_sqrt": "S1_add_sqrt_4m",
+    "A003_trig_pair": "S5_trig_pair_4m",
+    "A004_row_sum": "S6_row_sum_4096",
+    "A006_row_max": "S7_row_max_4096",
+    "A010_boolean_logic": "S10_boolean_logic_4m",
+    "A011_integer_modulo": "S8_integer_modulo_4m",
+    "C001_heat_diffusion": "S2_heat_diffusion_1024",
+    "C011_residual_gemm": "S4_residual_gemm_1024",
+    "C014_logistic_training": "S9_logistic_training_65536x128"
+  },
+  "generated": [
+    {
+      "base_case": "A002_bounded_product",
+      "case": "A002_bounded_product_4m",
+      "scale": "4,000,000 float32 elements",
+      "forward_constants_changed": false,
+      "source_program_sha256": "fdb97dbc69984765661e5862e0f838f0bdfeb598262ffd846db8e7ab19cf22f2",
+      "scaled_program_sha256": "d26669fb1e496c4193c27736322a3f0000b908ecb9a9343a21747821ccb58988",
+      "scaled_migrated_sha256": "569c061c01f43292bb0891e0d2581dc5d13cf32ddef81822dbb49b44b32c8326"
+    },
+    {
+      "base_case": "A005_column_mean",
+      "case": "A005_column_mean_8192x512",
+      "scale": "8,192 x 512 float32; 4,194,304 elements",
+      "forward_constants_changed": false,
+      "source_program_sha256": "4cfe79ebc3c8275b0ce4e10eee36f6a925a05f118265bb2e687755d2e38112fd",
+      "scaled_program_sha256": "14c9d19cc5c9133323c330b07469de68a14afe76514ef2626008d2fd57a18d8e",
+      "scaled_migrated_sha256": "c8ad8aa3157e2c79ae01e40403eec7fc74064df77202f5dde8bc8a3ee455fef3"
+    },
+    {
+      "base_case": "A007_matrix_product",
+      "case": "A007_matrix_product_2048",
+      "scale": "2048 x 2048 float32 matmul; 17.2 GFLOP",
+      "forward_constants_changed": false,
+      "source_program_sha256": "68601174efcf121859e041a6f4d16e0c7b5149a09992d3b28372fe08337a6687",
+      "scaled_program_sha256": "7cf31b80de15c2ccd86a90790d49649d3c8e87727ed7091e7305ba9a619076e9",
+      "scaled_migrated_sha256": "de480d009e6e0666ffc1237018ebd77f95ff6e76dd8083b4f452ba2dfdf1aa72"
+    },
+    {
+      "base_case": "A008_matrix_activation",
+      "case": "A008_matrix_activation_2048",
+      "scale": "2048 x 2048 float32 matmul plus tanh",
+      "forward_constants_changed": false,
+      "source_program_sha256": "5ce1fdd429ef33236da84b1753894e207dc88ac077298e9fb17d523a84c5612f",
+      "scaled_program_sha256": "624c48777143d694619b0199886b6f755b0de9a68c575e3c9a607a989762bc7b",
+      "scaled_migrated_sha256": "ce1fd3119fbc42d7a43a6a64d9cb847e0c4069b7151fe7fdd086483529da4113"
+    },
+    {
+      "base_case": "A009_matrix_chain",
+      "case": "A009_matrix_chain_2048",
+      "scale": "two 2048 x 2048 float32 matmuls; 34.4 GFLOP",
+      "forward_constants_changed": false,
+      "source_program_sha256": "2cf785dd5ed304955f461dc242286be42f1f5aaed8dce3d46341dc2e65dabd72",
+      "scaled_program_sha256": "2d1d3b87c65b969abd1793b6f281e63efd4f40fe91cb14a7e5366b75af249006",
+      "scaled_migrated_sha256": "e0adaa6b5f7d145647b17e9271dcbd02d6f270d16f04dee2a871b21e846eca0f"
+    },
+    {
+      "base_case": "A012_half_rounding",
+      "case": "A012_half_rounding_4m",
+      "scale": "4,000,000 float16 elements",
+      "forward_constants_changed": false,
+      "source_program_sha256": "ad490de17cb8d1c01cecfaf6226c0f8aa06d60be464390f0407250eb386a347a",
+      "scaled_program_sha256": "9bad83fffcc8a9b7d43e689c6fdf712ec107f468c19f3fc880bfcac20599758b",
+      "scaled_migrated_sha256": "9a7822ba5369510588d9f7c0a88dd757b8695c50da1512105ab0edda67201001"
+    },
+    {
+      "base_case": "A013_exponential_decay",
+      "case": "A013_exponential_decay_4m",
+      "scale": "4,000,000 float32 elements",
+      "forward_constants_changed": false,
+      "source_program_sha256": "3bfd4e5511ff8a797f2ddb69d18646f88a100219718a41666945e909a575e43f",
+      "scaled_program_sha256": "6640ab75b65d33f7d0fe51f271d97ac70092e8a3c39af70d9f71f85b65813b4e",
+      "scaled_migrated_sha256": "65804dfb4741d95c56b074c6a6dab0c8fcf74f807a40ff59791ceb696fd2bd68"
+    },
+    {
+      "base_case": "A014_prefix_sum",
+      "case": "A014_prefix_sum_4096x1024",
+      "scale": "4,096 x 1,024 float32; cumsum over 1,024-wide rows",
+      "forward_constants_changed": false,
+      "source_program_sha256": "79bfe017a56b35fa3245997bdf5224db35abfe591e0e2253ced23d4408f016bc",
+      "scaled_program_sha256": "e4734e684b55d03ec30ead632f87e7f13abe67c5e1d5ae48e72eb389736632db",
+      "scaled_migrated_sha256": "ce1f8bae961e6c1ba35802a37022aa3689828fba5aedb885876d08ea963b5b86"
+    },
+    {
+      "base_case": "A015_row_product",
+      "case": "A015_row_product_65536x64",
+      "scale": "65,536 x 64 float32; 4,194,304 elements",
+      "forward_constants_changed": false,
+      "source_program_sha256": "48eaf7c270fb128ae9d50e948225207e3fc708cb464848b7948d0aa2c0c22fbb",
+      "scaled_program_sha256": "96ee776c9dabe8972281826040bd85f6c25aa58acc102c99cf67e6a39f6c9845",
+      "scaled_migrated_sha256": "b69b08178867b6a9b32f571cff597fe4f5116f3cf681be97a918bffc856b3af2"
+    },
+    {
+      "base_case": "B004_mixed_int_float",
+      "case": "B004_mixed_int_float_4m",
+      "scale": "4,000,000 int32/float32 elements; 16777217 trap retained",
+      "forward_constants_changed": false,
+      "source_program_sha256": "a419dc1770fe83e1f067e6059af087207d46a80249d4247f5ad94d65d43dffb1",
+      "scaled_program_sha256": "4bfae2327453a304df32007c4617c15e8d9c47e509a6315894e51faba0edd95e",
+      "scaled_migrated_sha256": "f2870598ff98ed3ff27d9030418632a267e5f5e62cedc9a1cea161b50c9ab08c"
+    },
+    {
+      "base_case": "B005_mixed_float_precision",
+      "case": "B005_mixed_float_precision_4m",
+      "scale": "4,000,000 float32 + float64 elements; 1e-10 increments retained",
+      "forward_constants_changed": false,
+      "source_program_sha256": "acca1b11ca680adea3390c2b3952982ec8ece6df5025ab49be3c58334a31b252",
+      "scaled_program_sha256": "d99f2650d88bcdd269dacd1a31a6fde0e5688b36346d6c5e944355c303d6716e",
+      "scaled_migrated_sha256": "2fb034c28e35aa230215295e6c65d13f0235612348482bc103e1d46f026dced3"
+    },
+    {
+      "base_case": "B006_transposed_input",
+      "case": "B006_transposed_input_4096x2048",
+      "scale": "4,096 x 2,048 base matrix; transposed view",
+      "forward_constants_changed": false,
+      "source_program_sha256": "58c85d3485ba02ffee9ded9ec6bcea3895dabcd8f8216830bc4482f9b507bf74",
+      "scaled_program_sha256": "d7f1e5c5fcb644bb4bf4e7b7d479db85987e5d4c8c11db982b3137569878ccef",
+      "scaled_migrated_sha256": "55315849d9af826d5b68b244fbd79a668b5356bee1331528d2b6db212f76de7f"
+    },
+    {
+      "base_case": "B007_strided_input",
+      "case": "B007_strided_input_4m",
+      "scale": "4,000,000-element base; 1-in-3 strided view",
+      "forward_constants_changed": false,
+      "source_program_sha256": "817ee07e56f4b747a66620f15535c0a9267f13ba3d223494c7ff4a49e5e6dbb2",
+      "scaled_program_sha256": "925b7bc88dc7d9e19d0d6fb645c820e5731b1b99158db948028fbf83eb4464f1",
+      "scaled_migrated_sha256": "801c641f78bb565bca608343a5d80ca9aae3287d717447169f2aa09f9c3375ba"
+    },
+    {
+      "base_case": "B008_negative_axis",
+      "case": "B008_negative_axis_64x256x256",
+      "scale": "64 x 256 x 256 float32; reduction over axis -1",
+      "forward_constants_changed": false,
+      "source_program_sha256": "b0c67c0e9ecffc06766996a6c89a9e5d5bccaef2bc7c4e4d53d52e7641fbc694",
+      "scaled_program_sha256": "67470dff34a819239bcffb39f7208d8a2d9c79fdad1e3ced547eaff4188aea9d",
+      "scaled_migrated_sha256": "dffacbbdf03373208060b7521a5f7395b6291581e15c9821f2f5a0bb8abf7ca7"
+    },
+    {
+      "base_case": "B009_keepdims",
+      "case": "B009_keepdims_4096x1024",
+      "scale": "4,096 x 1,024 float32; keepdims plus broadcast",
+      "forward_constants_changed": false,
+      "source_program_sha256": "a3bd071a8cae6bfe1fe26978ac42c0d9090525683db21311e706a74a9f3752c5",
+      "scaled_program_sha256": "5a0d482685dab7d1e8b4e285d98b7026fa4115a8947797a6d1756cbcc7424607",
+      "scaled_migrated_sha256": "5b7578c7e8ca4faede71f15a6eb4a22c8d2bd48cd4e4a666baacf039796ad511"
+    },
+    {
+      "base_case": "B010_empty_sum",
+      "case": "B010_empty_sum_16384x0x256",
+      "scale": "16,384 x 0 x 256 float32; empty axis retained",
+      "forward_constants_changed": false,
+      "source_program_sha256": "1fd51c55580388370e6d6e46721af808fbb0b503eb703cef16481a7ff8a418f5",
+      "scaled_program_sha256": "bd7a7dff43b232034a359a17371d7b2e14d88c280bd750d58f5af22c9839456b",
+      "scaled_migrated_sha256": "664fc901db6fead0cc45af9ed6a975434fa2f8d4ee7aad1ca63377d8f3e47379"
+    },
+    {
+      "base_case": "B011_nan_inf_extrema",
+      "case": "B011_nan_inf_extrema_4m",
+      "scale": "4,000,000 float32 elements with tiled NaN/Inf pattern",
+      "forward_constants_changed": false,
+      "source_program_sha256": "3f5aedbbbcadd71e80980aaf09dc8ca4bad04bbcce9e7e2dba52212ea31256b4",
+      "scaled_program_sha256": "0b7343847df3d1c343237dd8abc9707a395ad608d4ba35ec31ec36514d381a9c",
+      "scaled_migrated_sha256": "0c84238dfe6b5b6d5b63731f7f6ee4c3e09b85623f908d7898ace32998848378"
+    },
+    {
+      "base_case": "B012_zero_dimensional",
+      "case": "B012_zero_dimensional_1elem",
+      "scale": "zero-dimensional contract witness; not scalable",
+      "forward_constants_changed": false,
+      "source_program_sha256": "fceb9fdc9b7492daf632914f40aa2a0cf227ea406d972b09265af93f4f55c9ff",
+      "scaled_program_sha256": "173804a08435bcb1edde5b5aea7b914970213f011ddb324e4d47937639c617d1",
+      "scaled_migrated_sha256": "14e493fac645fb6e9e5b2c7e4ea22968707af7565143ddf78af4038b7b7248db"
+    },
+    {
+      "base_case": "B013_three_axis_broadcast",
+      "case": "B013_three_axis_broadcast_64x64x1024",
+      "scale": "64 x 1 x 1,024 broadcast with 1 x 64 x 1",
+      "forward_constants_changed": false,
+      "source_program_sha256": "0a976266eacd147a8224af5c4b02e53d177d264b1d830f47d468cfd6a28d2e8d",
+      "scaled_program_sha256": "b1f96301c373ea99e1d56f8511f257ef94fbe1e837ac976f0f3954dd684aecd7",
+      "scaled_migrated_sha256": "099add2ea533960db51e112d3634e10c3490a90bd8a7c351e2f121d9063abb3d"
+    },
+    {
+      "base_case": "B015_fortran_matmul",
+      "case": "B015_fortran_matmul_2048",
+      "scale": "2048 x 2048 Fortran-ordered float32 matmul",
+      "forward_constants_changed": false,
+      "source_program_sha256": "a1c9c61b410cdd5cddab8492aa04f69be5750d7d4354e53bd98dfa3c36e923ad",
+      "scaled_program_sha256": "bda7c13df8400abfc3789edba4d649274ff2c8718d380661b1a1e3cbe7864765",
+      "scaled_migrated_sha256": "f632b6ec602e57fd19365df87e6a94777b99c5a60b5d7491a9507eb1c45ec748"
+    },
+    {
+      "base_case": "B016_reverse_strides",
+      "case": "B016_reverse_strides_4m",
+      "scale": "4,000,000 float32 elements with negative stride",
+      "forward_constants_changed": false,
+      "source_program_sha256": "c8ff985f3e01432dcf5e7924b5d47ea1b9bb55332597c73c0dd043e630b84089",
+      "scaled_program_sha256": "3edf48b6eca538dd75f20ca6ccb1d7df4efc16f15c584b8c61318fc14cb815ab",
+      "scaled_migrated_sha256": "0134905f8ea7e1f0e1a1a3fe598421d4ffbe508b74f31b7222e1464597798f22"
+    },
+    {
+      "base_case": "B017_empty_product",
+      "case": "B017_empty_product_0x1048576",
+      "scale": "0 x 1,048,576 int32; empty axis retained",
+      "forward_constants_changed": false,
+      "source_program_sha256": "655353bdfdbb4512de5b8fb5e41c77ed420222fdebceb9bcf0b56e137ff82f84",
+      "scaled_program_sha256": "d909b9e33c0e86a97006f9efc4d195dab09a00af2b56976447f75d64829889c6",
+      "scaled_migrated_sha256": "f048e0c4242a01d110c137007171e74b508be3812b2726f5d2531d1e845a7825"
+    },
+    {
+      "base_case": "B018_signed_zero",
+      "case": "B018_signed_zero_4m",
+      "scale": "4,000,000 float32 elements with tiled signed zeros",
+      "forward_constants_changed": false,
+      "source_program_sha256": "3968ad9665a9cee0bd3ac145e07f56dd71d5f5c764d7208d3352188fb63e99ad",
+      "scaled_program_sha256": "ceec327f68ece114c02a38cac5bbe6038b6aad46a76faa6527e35e2921a9fb9e",
+      "scaled_migrated_sha256": "96b34601b7c92dbf6db1cca63b82b875afd86ededcbf3b3424586a769d96c2a7"
+    },
+    {
+      "base_case": "B019_boolean_keepdims",
+      "case": "B019_boolean_keepdims_512x256x64",
+      "scale": "512 x 256 x 64 boolean tensor",
+      "forward_constants_changed": false,
+      "source_program_sha256": "d3d8ff86a25ea0fa5168c7cee510fd3fa823b2282c45b26816cb0e7f1d5ab9d5",
+      "scaled_program_sha256": "024e4c89904145ce1614d30e7a8bd14c55ec493a90527a9a275cc5100fd0e282",
+      "scaled_migrated_sha256": "63cfe0e40ec03b1094040be1b196e041dd885777a305621a4c00c64c6a6f2a4b"
+    },
+    {
+      "base_case": "B020_nan_reductions",
+      "case": "B020_nan_reductions_65536x64",
+      "scale": "65,536 x 64 float32 with NaN/Inf rows",
+      "forward_constants_changed": false,
+      "source_program_sha256": "1ecadf9775344d38bfea937a5a5628f19c29e2649448613e1ce63ea24c17ef77",
+      "scaled_program_sha256": "0a3b540a703cb4f86558a9fb5396bf25b1d4f79d80cecb1828030965483ae2b1",
+      "scaled_migrated_sha256": "fd14dd5772254ca8cf88e78c42a0b8be16eff12d58885b284920fe75998794b7"
+    },
+    {
+      "base_case": "C002_mlp_inference",
+      "case": "C002_mlp_inference_65536x128",
+      "scale": "65,536 x 128 input; 128-256-64 MLP",
+      "forward_constants_changed": false,
+      "source_program_sha256": "bd7ccb68f50ef2218313ed28c909894a434a48f8d598fabd8543a998221ad9fa",
+      "scaled_program_sha256": "059c126c1b06a271c3ea4c6c3d89c80cf89bf1eb507b3e5c077570150c1c4b0b",
+      "scaled_migrated_sha256": "005587c5d8aa9b259eb9de81b6a210cd7b4d23d2ef31ab4febbcd485b31d12f8"
+    },
+    {
+      "base_case": "C003_layer_normalization",
+      "case": "C003_layer_normalization_16384x256",
+      "scale": "16,384 x 256 float32; two normalization passes",
+      "forward_constants_changed": false,
+      "source_program_sha256": "2b0d6c5a7f67828d93e37df6f534735bcdb13959ceb1113905a88a13658f8f64",
+      "scaled_program_sha256": "3aaf0a3021a51ddf0813f099c999fd04ac90fca46430c9f7bf5ab4f8549e2531",
+      "scaled_migrated_sha256": "83d7a2f717e9ab3e2f11d330e6cb23d33cd453047673263ca257607b3b1f6efd"
+    },
+    {
+      "base_case": "C004_cosine_rows",
+      "case": "C004_cosine_rows_16384x256",
+      "scale": "16,384 x 256 float32 row cosine",
+      "forward_constants_changed": false,
+      "source_program_sha256": "b741ed2f3ee1d66bd7d3dbea3234c4398556ad4ba822aa89bd648d0277d1068b",
+      "scaled_program_sha256": "b985f92c016ea4753494be13ced8157426183b9e97645fd8d382ce33a964e127",
+      "scaled_migrated_sha256": "e8828b165aca075b823d39473cb2a8405ad731cf7800aa64d9310d891d7845c8"
+    },
+    {
+      "base_case": "C005_distance_refinement",
+      "case": "C005_distance_refinement_16384x256",
+      "scale": "16,384 x 256 float32; five contraction steps",
+      "forward_constants_changed": false,
+      "source_program_sha256": "68e1718504b62ab145e83345341a7222c814f2542f0cf99df3954e1d1a24d1f4",
+      "scaled_program_sha256": "7ac40f2814021b14140558e02e2cb348ebff025fe4b41d32bd3a79d7e4ddeadf",
+      "scaled_migrated_sha256": "0aec2fdd9c2b9bf518bd38b6de30d9ae56d30a2b4a0e1d8b4877a84390aa94ce"
+    },
+    {
+      "base_case": "C006_softplus_network",
+      "case": "C006_softplus_network_4096x1024",
+      "scale": "4,096 x 1,024 float32; stable softplus network",
+      "forward_constants_changed": false,
+      "source_program_sha256": "9fdd4039acb9b7a30c94e8d6931e2a09182e500fc931cd6641b3a7ab9ac21d9f",
+      "scaled_program_sha256": "cbfaefa73b5f3b2ee4808eeac0d69c846ad7b0a21083472143067c8a26b5aad4",
+      "scaled_migrated_sha256": "e4cc7367517e88b4ac96e200a7f20f6ffa687db31a7b4ff670c135cfced9125c"
+    },
+    {
+      "base_case": "C007_least_squares_steps",
+      "case": "C007_least_squares_steps_16384x256",
+      "scale": "16,384 x 256 float32; six gradient steps",
+      "forward_constants_changed": false,
+      "source_program_sha256": "b7d0e7914bfb00b1f376ca8005ce00f69dddf09a1a127de06c84b0e26ac38d55",
+      "scaled_program_sha256": "c345c2f5c3a9e0867122ec42c14570ce48b73abc39d8d45007ecd9c6ab2e0f99",
+      "scaled_migrated_sha256": "7d4cb50c2044c1eebbbc331395bd92f90e071d7c3f89380eae1679d3dca087a2"
+    },
+    {
+      "base_case": "C008_portfolio_repricing",
+      "case": "C008_portfolio_repricing_4m",
+      "scale": "4,000,000 float32 scenarios; four price evaluations",
+      "forward_constants_changed": false,
+      "source_program_sha256": "4f04a8a171bfcee44c0b011bea7d5198e381b6abe1c232bde49e6a282179e2d7",
+      "scaled_program_sha256": "f570d83a68939da5d767f070fccc7d4e72e484c9191a48f99057a3ac9ddf59e9",
+      "scaled_migrated_sha256": "5bc1a5cff914629bdf582ea929f511256ef5dfa50d27b1fbcea142ca5fd16e49"
+    },
+    {
+      "base_case": "C009_poisson_robust_map",
+      "case": "C009_poisson_robust_map_2048",
+      "scale": "2,048 x 2,048 float32; four robust-map steps",
+      "forward_constants_changed": false,
+      "source_program_sha256": "9a4a3d00b3fae6a6d4cb9a8328b3ab9ce5712298993c01142805e243eb34a816",
+      "scaled_program_sha256": "a729234dc17ba686420d32a2ce911c959b032a465d8ef5f6e092a7c6d43fcaa1",
+      "scaled_migrated_sha256": "07f76f79c522ed3e59b0e63bd9e2590a5fb4c2c88ba40d405a1d1087f4909c98"
+    },
+    {
+      "base_case": "C010_energy_feedback",
+      "case": "C010_energy_feedback_2048",
+      "scale": "2,048 x 2,048 float32; four damped feedback steps",
+      "forward_constants_changed": false,
+      "source_program_sha256": "b94c0530ebd996226129634b5dacfa1def218c3951ada1372a7ae10cfeb46117",
+      "scaled_program_sha256": "c6017e1c3568e989560e4f27a12d728df83f5533622bdfc8a75e036b22400d26",
+      "scaled_migrated_sha256": "1466fc58642c13d759420c77f923a74bd2415e8ac1a526dcfc9e438324559e7b"
+    },
+    {
+      "base_case": "C012_calibrated_projection",
+      "case": "C012_calibrated_projection_16384x256",
+      "scale": "16,384 x 256 features; 256-64 projection",
+      "forward_constants_changed": false,
+      "source_program_sha256": "77acb535b01d33d592e0327f8096c961ffcbded7b03feb39b5211d6a6040ffe2",
+      "scaled_program_sha256": "979991701583bfbd07c2c4d04999857ea754dfcc51deeddffbd4aae3c27d1600",
+      "scaled_migrated_sha256": "df748055deba357d159cbb09222a0a51a4e5267efb7562396a500ebd4ce3734f"
+    },
+    {
+      "base_case": "C013_markov_relaxation",
+      "case": "C013_markov_relaxation_4096x1024",
+      "scale": "4,096 states x 1,024 classes; eight relaxation steps",
+      "forward_constants_changed": false,
+      "source_program_sha256": "31bee27a2a9447c9b007114d98b274955df68e1a4568952b5d9b8ed6ef70f83f",
+      "scaled_program_sha256": "f644f613e5e63383997f7e33f176c85309a4473f7e8267058ea0e81d8f79163c",
+      "scaled_migrated_sha256": "b57d44cc23eb08d2e62dcb5c69fd084b94bab114730def8067f1662c4eece766"
+    },
+    {
+      "base_case": "C015_tensor_moments",
+      "case": "C015_tensor_moments_128x256x128",
+      "scale": "128 x 256 x 128 float32; five moment steps",
+      "forward_constants_changed": false,
+      "source_program_sha256": "2ebef98eba2f3e143449fbf0f5f4b5fbdc7615410216ce6b68bc684871916df8",
+      "scaled_program_sha256": "dc4acb7d7bccfb2d195651c36f82d86dd3dc1a3490f2da65d671dff79f08ba3f",
+      "scaled_migrated_sha256": "99cd8221db8773e0a415e50501ed5af9ea9ca1fdd869b27016d74bd59d71318a"
+    },
+    {
+      "base_case": "D1001_signed_compression",
+      "case": "D1001_signed_compression_16384x256",
+      "scale": "16,384 x 256 float32; two cube-root branches",
+      "forward_constants_changed": false,
+      "source_program_sha256": "95a5793af20ce232494f9b02f21fa59f9007b594ecc87f46e2171e21473ca46a",
+      "scaled_program_sha256": "ec5fa38ad0be38ef9934f3acf1fd0824f1e4f6bc77c5d508e18b9f4952da0a73",
+      "scaled_migrated_sha256": "5bc05297da6320ba06693edf09bafa00984520f75f38b611dd7a1a68f8850311"
+    },
+    {
+      "base_case": "D2001_absolute_alias",
+      "case": "D2001_absolute_alias_16384x256",
+      "scale": "16,384 x 256 float32",
+      "forward_constants_changed": false,
+      "source_program_sha256": "f4b0a87fec60296af3d8bfd18088c22fbdabc5391598440000401d53b9f874ba",
+      "scaled_program_sha256": "69840990c3f964108e169780ba65a62f91590a6cfdcd8d0ab451d571873af5c6",
+      "scaled_migrated_sha256": "613bc3f2d43d52cbe26a8c483165a63e1f643ce0e904a2590f2327672274b55d"
+    },
+    {
+      "base_case": "D2002_round_alias",
+      "case": "D2002_round_alias_16384x256",
+      "scale": "16,384 x 256 float32",
+      "forward_constants_changed": false,
+      "source_program_sha256": "3fb3cfd9c9f68817e6ef12532d2d9233e21de2a3267732d080882fe901415d28",
+      "scaled_program_sha256": "275da3f1060f5bb18167ef57a4550a4cb859e95f63c40ab643eacd3ab06ff09a",
+      "scaled_migrated_sha256": "477d3f5046e0569458f8a3152fd1e7103025223ee50c6f8d292bcebb286c9619"
+    },
+    {
+      "base_case": "D2003_acos_alias",
+      "case": "D2003_acos_alias_16384x256",
+      "scale": "16,384 x 256 float32",
+      "forward_constants_changed": false,
+      "source_program_sha256": "4228f62b87c45850065ceaacfba597f9a1306e4596028cf1b7351ee70c603dc4",
+      "scaled_program_sha256": "96c69de7b9b1332398e0d29ffa7ab86ee0ea42a88e8608614b8bbca09e72a71e",
+      "scaled_migrated_sha256": "00dce2615e9afba23c0c4d71afd6411e1815268f6fbfc0ddc7f68b6ba48759f2"
+    },
+    {
+      "base_case": "D2004_variance_composition",
+      "case": "D2004_variance_composition_16384x256",
+      "scale": "16,384 x 256 float32",
+      "forward_constants_changed": false,
+      "source_program_sha256": "8b12857e5e0c8a4b5e4f3c51023ebef5992bcff916e1ab4bd714471929c9a5be",
+      "scaled_program_sha256": "f4ac8bb16f07507e1bf6c877f84d2603c2a36c010edbdaf660c68f0e78238230",
+      "scaled_migrated_sha256": "6befe680f00bbd4c52ba9317b11f85560bdd5cc8423e4ef8b01602155a461e7d"
+    },
+    {
+      "base_case": "D2005_range_composition",
+      "case": "D2005_range_composition_16384x256",
+      "scale": "16,384 x 256 float32",
+      "forward_constants_changed": false,
+      "source_program_sha256": "0be8f67f23d0efa2aaabbfc4d3c37681723543bcd63ce1d36f1bbfa3241b4f6b",
+      "scaled_program_sha256": "9569b61bf55b5d88c15cc9a2db2d80363bdfee4477eb617a0b2d4830f59e519b",
+      "scaled_migrated_sha256": "c5c887f1c55d3438f7cdeb2d17f91473674a39b06c6070b2aa0ad17606489845"
+    },
+    {
+      "base_case": "F007_sort_kind",
+      "case": "F007_sort_kind_2048x2048",
+      "scale": "2,048 x 2,048 float32 stable row sort",
+      "forward_constants_changed": false,
+      "source_program_sha256": "e3eef697aa31b37e3684c7214ced27c5310bb56e6ac1946b374cd2eab4179b07",
+      "scaled_program_sha256": "185bad852a9cc7bcaa1eaa14e78e61f48b9afb65eb713e930678a9cae32523a4",
+      "scaled_migrated_sha256": "bbc8fa58a922839ec43a0181850f8505547a1bd35bae9cbd4382d3681b4bf481"
+    },
+    {
+      "base_case": "G004_cbrt_three_channels",
+      "case": "G004_cbrt_three_channels_16384x256",
+      "scale": "16,384 x 256 float32; three cube-root channels",
+      "forward_constants_changed": false,
+      "source_program_sha256": "7e35f07109bc1590b5652b6d24e90fb54bfe5fa68ef7c1be07d2e980ec940c95",
+      "scaled_program_sha256": "77b2a19860ba85063b54e1973898dd08b5f1b07507b8a77ef69725b1f0922915",
+      "scaled_migrated_sha256": "11bdfd6f97c3709abd0db49efeacaba7261dfbc03a22eef38c61d5c5cf71af67"
+    },
+    {
+      "base_case": "H001_abs_alias",
+      "case": "H001_abs_alias_16384x256",
+      "scale": "16,384 x 256 float32; signed-zero witness retained",
+      "forward_constants_changed": false,
+      "source_program_sha256": "8fa458c2400465ffdc1222b095f9a5c9cbf673f9cd35ee8f96f5e48f8be534ae",
+      "scaled_program_sha256": "4e031ca2e930477e3c4d2f5757433d2c08ef24c044ef968b3cffc0a1037f46c8",
+      "scaled_migrated_sha256": "a6cd1674a271691d236bc6d5658528bbec6f2a4d73cb3cf299c71d949579e5f4"
+    },
+    {
+      "base_case": "H002_round_alias",
+      "case": "H002_round_alias_4m",
+      "scale": "4,000,000 float32 and float64 elements; half-way pattern",
+      "forward_constants_changed": false,
+      "source_program_sha256": "7efd427aeed74a6dd2cf9248b9487c8c805b0ca649b7a1c735995b16e50fd01b",
+      "scaled_program_sha256": "9ed3ae079f8a6586484981e572b0a18b841c6f2730a72f4c42e0481ddb4bfe5f",
+      "scaled_migrated_sha256": "520c9a7de5bcf87764eb273252b9f533de7786399a73eea31cdd73e81df70f55"
+    },
+    {
+      "base_case": "H003_acos_alias",
+      "case": "H003_acos_alias_4m",
+      "scale": "4,000,000 float32 elements; endpoint witness retained",
+      "forward_constants_changed": false,
+      "source_program_sha256": "90912495fd6e0153bc13fb91a7b43f7da12a8cf66e5b7d7938250b78ae69f91a",
+      "scaled_program_sha256": "549509e046d5b1b7cc44de597944b5d6d8ccd51fdd7f5af96d45138c8aeb2fc9",
+      "scaled_migrated_sha256": "bfbfb1421e1cb45ebbaa10c88c6bc31d4740e2e1da9c9541b7de0d10795db5ae"
+    },
+    {
+      "base_case": "H004_asin_alias",
+      "case": "H004_asin_alias_4m",
+      "scale": "4,000,000 float64 elements; finite difference retained",
+      "forward_constants_changed": false,
+      "source_program_sha256": "cf618abbf60a04b8863ebe6bb946db78cf379d1592520aa6c39da4a7da064fee",
+      "scaled_program_sha256": "bcaf381154e0352d1e0368ca8d2652c6787be1047d465ea2f93464124801e292",
+      "scaled_migrated_sha256": "d27a890993c5a0f691763e5b683ba7c0460fb8984d2810f7bad9075177a2e9de"
+    },
+    {
+      "base_case": "H005_atan_alias",
+      "case": "H005_atan_alias_4m",
+      "scale": "4,000,000 float32 elements; two scales",
+      "forward_constants_changed": false,
+      "source_program_sha256": "0d6d0a2e9373f6bfb177439fb51a5b726e2c631ca9f4dcace07c7ec0c617d1f2",
+      "scaled_program_sha256": "19389bf2c2444353e2b32ecb4c026ac95ffb3ec54d44c784d6ac1fbfff3af7eb",
+      "scaled_migrated_sha256": "5c732c15c42de8a6433ef26b7bed8f0b0c47cadfd8e67e3351b958670f188098"
+    },
+    {
+      "base_case": "H006_acosh_alias",
+      "case": "H006_acosh_alias_2048",
+      "scale": "2,048 x 2,048 float32",
+      "forward_constants_changed": false,
+      "source_program_sha256": "db4da33dcde8f03950d6eca0ba9d78e1f7ed2342e3418b585584a89b64d18907",
+      "scaled_program_sha256": "fbcb85bec12166a3449a23dd84eb59137568bd2c2f63b98b0bab8f63daec9d05",
+      "scaled_migrated_sha256": "1cded996ccf89225bc8173e50ff27922842632b98524958952e9573402d9b655"
+    },
+    {
+      "base_case": "H007_asinh_alias",
+      "case": "H007_asinh_alias_2048",
+      "scale": "2,048 x 2,048 float32; broadcast gain",
+      "forward_constants_changed": false,
+      "source_program_sha256": "cdd95f98ec9705c64b29a22100c154c24c142f3eb390f5e747c2b291444cbcd3",
+      "scaled_program_sha256": "85385062aedaca6e43d67e6cf4728205e90059612cb0617377b4f265fa815c7b",
+      "scaled_migrated_sha256": "3f99b7730af0f67a3c29b1c33ef6864f05cbf8e04925782c20d3e6446f729e14"
+    },
+    {
+      "base_case": "H008_atanh_alias",
+      "case": "H008_atanh_alias_4m",
+      "scale": "4,000,000 float64 elements; open domain retained",
+      "forward_constants_changed": false,
+      "source_program_sha256": "cfb008dd34ed502cd806e745fa93c6986bdd014f7aa923f87dd4b10a33b1e849",
+      "scaled_program_sha256": "9bdb5bea2a06b13a0b92ed199035d6168e9099004a2849c94788b696bee1a509",
+      "scaled_migrated_sha256": "8a1c2ce915039a13e4e2cb8b8d501d065cd3cd227550b6e7c2a7cfb98063937c"
+    },
+    {
+      "base_case": "H009_variance",
+      "case": "H009_variance_64x256x256",
+      "scale": "64 x 256 x 256 float32; two reduction axes",
+      "forward_constants_changed": false,
+      "source_program_sha256": "f4f4d3ef9a68426e62d8ad30317d0365b9cc8e4b32b27651e5feaadf79a539b3",
+      "scaled_program_sha256": "11579413a719bda681e01029c3591e7d7f78986024e3b46822c29da8452bcf2d",
+      "scaled_migrated_sha256": "074e6b077b15706bb57c4390672ecd05a0145b5b651cf75baa4c6f70847b311f"
+    },
+    {
+      "base_case": "H010_standard_deviation",
+      "case": "H010_standard_deviation_4096x1024",
+      "scale": "4,096 x 1,024 float32; row and column std",
+      "forward_constants_changed": false,
+      "source_program_sha256": "b3b27e335ba00eff6eb07db64f0b4561c850c8ca6651afad762e264d39217fb3",
+      "scaled_program_sha256": "ea92ef5be094517b8d23bdf09af6391c976907c38b293bef8cf12ce73a7550c7",
+      "scaled_migrated_sha256": "4232988b559de5f490b18ef3b92bfb9f7f0656654041327a977df39c4b99ed42"
+    },
+    {
+      "base_case": "H011_peak_to_peak",
+      "case": "H011_peak_to_peak_4096x1024",
+      "scale": "4,096 x 1,024 float32; row and column ptp",
+      "forward_constants_changed": false,
+      "source_program_sha256": "4b49e12a6a3ccbd936cd1fdf300d722062bfaccd436c700337dc78cf839e4183",
+      "scaled_program_sha256": "325ac7222b10d97b1a82a4a22a1a8029364ed414263518aa5d49f6845f30c1cb",
+      "scaled_migrated_sha256": "eda28776904dd69f10f644060e4afc2b57dc31e95e5969706a17d5bac547e756"
+    },
+    {
+      "base_case": "H012_logarithmic_grid",
+      "case": "H012_logarithmic_grid_4m",
+      "scale": "4,000,000-point logspace grids; num 17 -> 4,000,000",
+      "forward_constants_changed": true,
+      "source_program_sha256": "fa2bfb21bc7100f140d1398d8da30823bae802d281049365a889a92c096ad658",
+      "scaled_program_sha256": "dea9df5b4720b8bc9b93ea0e573015a0421d065ea1d772d233e956dbac4a0b83",
+      "scaled_migrated_sha256": "0c47e0c7f7c381a45a8efdd7cfd175304fdbf1ca50ff76a9549737ffd852cbda"
+    },
+    {
+      "base_case": "H013_geometric_grid",
+      "case": "H013_geometric_grid_4m",
+      "scale": "4,000,000-point geomspace grids; num 21 -> 4,000,000",
+      "forward_constants_changed": true,
+      "source_program_sha256": "aa8b56ba12bc16f164bd1ce80a29e5c5739b5cb53c674183024feddc90252db0",
+      "scaled_program_sha256": "3162d47786e28ce33236c8016bb4598cde1e2d081d8377865e8369472e0926eb",
+      "scaled_migrated_sha256": "c80b51d0f59ebcdcfa6f6ecceefb38691c6238455253be705278c17f0b88c17c"
+    },
+    {
+      "base_case": "H014_nan_minimum",
+      "case": "H014_nan_minimum_4096x1024",
+      "scale": "4,096 x 1,024 float32 with NaN pattern",
+      "forward_constants_changed": false,
+      "source_program_sha256": "1bf3c1b26a99dfd9f51d85d1b0c3665b2c632acfa48ec6c32d7b11fd757d6f87",
+      "scaled_program_sha256": "be998a33d5bd0f26cd4f1530f008b35cbd1d72107cb5dda0cc34ee291bd87ed3",
+      "scaled_migrated_sha256": "f8f5d0f36ea9585de662bbec7bfd0ccb9fc6e1b69e449c903ce52e32ebc2889d"
+    },
+    {
+      "base_case": "H015_real_vecdot",
+      "case": "H015_real_vecdot_16384x256",
+      "scale": "16,384 x 256 float32; vecdot over both axes",
+      "forward_constants_changed": false,
+      "source_program_sha256": "85f891a666d9da6a081225dab35f950b22258512d0e5aac19c0d7a5759d4e055",
+      "scaled_program_sha256": "ecb4d9a13e9b36700fde57918e50f0c134726f8caafb5473c5e6e472f0e41ab1",
+      "scaled_migrated_sha256": "2d5d8d0eccae40e9d695008c0023e117fed6899e183605f756fb1471e95a5cd5"
+    },
+    {
+      "base_case": "I001_cube_root",
+      "case": "I001_cube_root_4m",
+      "scale": "4,000,000 float32 elements; signed zero retained",
+      "forward_constants_changed": false,
+      "source_program_sha256": "c5f0b7809cc832059095067d3cbb024b72ea5014fa8c673bd983f8358f25738b",
+      "scaled_program_sha256": "6bbfd18e2da0c946b18c866ea21a616d25757a6d7a119b34c2f173d2f5589ae8",
+      "scaled_migrated_sha256": "8f2d80d0a27193d49bd5b61289de2e8c5a56e6070ceac109efc58d934558d25e"
+    },
+    {
+      "base_case": "I003_nan_classification",
+      "case": "I003_nan_classification_4m",
+      "scale": "4,000,000 float32 elements; NaN/Inf/signed-zero pattern",
+      "forward_constants_changed": false,
+      "source_program_sha256": "62f3f60159d847fe6348ac9d87ffc09e7992da07f3339627e0572a7dd2c5b866",
+      "scaled_program_sha256": "391ab17f832f180e1a5ced19434eb67ecc5fca5f16270b354725919e2645f567",
+      "scaled_migrated_sha256": "7b85a996344e665cd02f1d93b337672b80b88de8f3d921fefbe5b6b4e2c9fe31"
+    }
+  ]
+}

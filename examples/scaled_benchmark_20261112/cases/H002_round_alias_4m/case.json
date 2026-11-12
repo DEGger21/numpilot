@@ -1,0 +1,8 @@
+{
+  "case": "H002_round_alias_4m",
+  "base_case": "H002_round_alias",
+  "kind": "scaled_performance_variant",
+  "note": "H002_round_alias: 4,000,000 float32 and float64 elements; half-way pattern.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+  "scalable": true
+}

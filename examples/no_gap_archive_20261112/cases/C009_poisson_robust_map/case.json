@@ -1,0 +1,33 @@
+{
+  "case": "C009_poisson_robust_map",
+  "elapsed_s": 9.47,
+  "engine": "llm",
+  "expected_rewrites": {
+    "absolute": 2,
+    "add": 2,
+    "clip": 2,
+    "full": 11,
+    "minimum": 2,
+    "multiply": 11,
+    "sin": 2,
+    "square": 2,
+    "subtract": 12,
+    "tanh": 2
+  },
+  "group": "C_direct_structure",
+  "migrated": "cases/C009_poisson_robust_map/migrated.py",
+  "migrated_sha256": "a8c01c74999910b474f316a5a08665477ad16577fc534b5a834f54912abcf0db",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 324,
+  "numerically_consistent": true,
+  "repair_attempts": 0,
+  "route": "direct_migration",
+  "source": "cases/C009_poisson_robust_map/program.py",
+  "source_sha256": "9a4a3d00b3fae6a6d4cb9a8328b3ab9ce5712298993c01142805e243eb34a816",
+  "status": "pass",
+  "total_rewrites": 48
+}

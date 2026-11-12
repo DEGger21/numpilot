@@ -57,8 +57,8 @@ set -e
 source /usr/local/Ascend/ascend-toolkit/set_env.sh
 set -u
 
-repo=/home/ma-user/work/numpilot
-demo=/home/ma-user/work/documents/gpu4pyscf-sandwich-demo
+repo=/path/to/numpilot
+demo=/path/to/gpu4pyscf-sandwich-demo
 science_python="$demo/runtime-venv/bin/python"
 science_program="$repo/examples/scientific/gpu4pyscf_sandwich/numpy_program.py"
 
@@ -108,7 +108,7 @@ done
 
 本次固定输入程序 SHA-256 为 `e0c6aa6f364a5c284f4dec8e32377009d53f0625d94077301161f1166b4e5dc2`；仓库程序与实测使用的 `documents/.../numpy_program.py` 字节一致。实测 runtime identity 为 `e01f3baf024ecf51a3903315b07b12b7f08d08ad311f3073a34589eb37dc3fd7`。
 
-服务器证据根目录：`/home/ma-user/work/documents/gpu4pyscf-sandwich-demo/`。
+服务器证据根目录：`<evidence-root>/gpu4pyscf-sandwich-demo/`。
 
 | 证据 | 位置（相对证据根目录） |
 |---|---|

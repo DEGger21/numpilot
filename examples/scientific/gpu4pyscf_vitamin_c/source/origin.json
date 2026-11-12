@@ -1,0 +1,60 @@
+{
+  "schema": "numpilot.gpu4pyscf-vitamin-c-origin.v2",
+  "upstream_repository": "https://github.com/pyscf/gpu4pyscf",
+  "upstream_commit": "5fde981316127cd3506d9d3c7d5633647fcc4508",
+  "upstream_files": {
+    "examples/post_HF/18-ccsd.py": "8bbc52f3c8dd9b345ba6253591e1897af989df4bc3ed60c69fda7b993cffc5a8",
+    "examples/Vitamin_C.xyz": "aa5b176f9b29d23f1d6afb33f05d94429f72dc7df82b85cbac48757894e290ff",
+    "gpu4pyscf/gpu4pyscf/dft/numint.py": "4929671be0b8dd50468314ad6e47271c625123a70ed6bd604408eb6db97ded1f"
+  },
+  "selected_kernel": "gpu4pyscf/gpu4pyscf/dft/numint.py:_dot_ao_dm:2381-2382",
+  "original_expression": "cupy.dot(dm.T, ao)",
+  "scientific_context": "Vitamin C DFT numerical integration: contract an AO density matrix with AO values on a real-space grid",
+  "workflow": {
+    "molecule": "Vitamin C (ascorbic acid), 20 atoms",
+    "scf": "RKS / PBE / cc-pVDZ, DFT grid level 1; SCF and grid/AO construction remain on CPU",
+    "total_energy_hartree": -684.0044734045816,
+    "electron_number": 92,
+    "basis_functions": 208,
+    "grid_points": 81936,
+    "dtype": "float32",
+    "inputs_sha256": "c1ae039c6550b11ead1bd7dce87065450b6470cf915e18fb67d0fa77be74151f"
+  },
+  "adaptation": [
+    "keep the real 20-atom Vitamin C geometry as the human-readable scenario anchor",
+    "replay the converged RKS/PBE/cc-pVDZ SCF density matrix dm and AO values on the real 81936-point DFT grid; do not rerun SCF inside the timing script",
+    "materialize dm.T as C-contiguous float32 before timing to meet the admitted NPU matmul profile",
+    "hand-migrate numpy.matmul, numpy.multiply and numpy.sum to AsNumpy under the NumPilot RuntimeProfileGuard",
+    "do not use ap.dot for the electron count because the capability catalog marks it as a conditional CPU fallback"
+  ],
+  "model_called": false,
+  "numpy_program_sha256": "5bbd0109a5c25ceedba75ddb4e7e4bb5bb7c1dcbdae7bd7fbc184c82e4265ffa",
+  "asnumpy_program_sha256": "285a1cc382eeb2c86531300fa9ac856845bcb4f7406b8efc553c39e2837b985e",
+  "evidence": {
+    "root": "gpu4pyscf-vitamin-c-rdm-grid",
+    "numpy_baseline": {
+      "path": "real-numpy-baseline-20261111-v2/numpy_baseline.json",
+      "sha256": "d283f6b73294c45b73c77f9341c420d10f6d1844799d3ecb8b562c27b319bbf8"
+    },
+    "numpy_fullchain_receipt": {
+      "path": "real-numpy-fullchain-20261111-v1/numpy_fullchain_receipt.json",
+      "sha256": "4fcd161080adb200037509296db4ee87699bd962215d457bdb58972357b98e8c"
+    },
+    "asnumpy_fullchain_receipt": {
+      "path": "real-asnumpy-fullchain-20261111-v1/asnumpy_fullchain_receipt.json",
+      "sha256": "94ec7f7d3d3fdaaa7eb9b856339f606b0fdf30674097ecdc9a017e61e1190a78"
+    },
+    "aclnn_evidence": {
+      "path": "real-asnumpy-fullchain-20261111-v1/aclnn_evidence.json",
+      "sha256": "e8df4ac8e67012691e59b21ff22a96b81f86af5c65b11631b9d2ce95c9853385"
+    },
+    "runtime_identity_sha256": "e01f3baf024ecf51a3903315b07b12b7f08d08ad311f3073a34589eb37dc3fd7"
+  },
+  "boundary": {
+    "actual_scf_and_grid_inputs": true,
+    "full_scf_accelerated": false,
+    "scf_rerun_in_timing_script": false,
+    "chemical_accuracy_claimed": false,
+    "fit_for": "Ascend910B3 single card, CANN 9.2.0-beta.2, float32, this input shape"
+  }
+}

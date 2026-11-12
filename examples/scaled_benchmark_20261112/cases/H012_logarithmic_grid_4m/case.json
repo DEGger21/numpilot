@@ -1,0 +1,8 @@
+{
+  "case": "H012_logarithmic_grid_4m",
+  "base_case": "H012_logarithmic_grid",
+  "kind": "scaled_performance_variant",
+  "note": "H012_logarithmic_grid: 4,000,000-point logspace grids; num 17 -> 4,000,000.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes/constants changed.",
+  "scalable": true
+}

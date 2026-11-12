@@ -30,6 +30,7 @@ from datetime import datetime, timezone
 from typing import Dict, Optional, Tuple
 
 from numpilot.contracts import OffloadPlan
+from numpilot.asnumpy_guide import render_asnumpy_guide
 from numpilot.engines.base import MigrationEngine
 from numpilot.llm_config import (
     DEFAULT_PROVIDER_LABEL,
@@ -637,19 +638,32 @@ def _decode_stream_completion(payload: bytes) -> Dict[str, object]:
     }
 
 _SYSTEM_PROMPT = (
-    "你是 NumPilot 的代码迁移智能体。把用户给的 NumPy 程序迁移为 AsNumpy(NPU)版本。\n"
-    "AsNumpy 用 `import asnumpy as ap`, API 与 NumPy 基本一致, 但有以下**硬约束**必须遵守:\n"
-    "1) 二元算子(add/subtract/multiply/divide/matmul/maximum/minimum/power 等)"
-    "**两侧都必须是 NPUArray, 不接受 Python 标量**。\n"
-    "2) 因此 `np.maximum(x, 0)` 或 `np.maximum(0, x)`(即 ReLU)**必须改写为 `ap.relu(x)`**, "
-    "不能写成 `ap.maximum(x, 0)`(会因标量 0 报错)。\n"
-    "3) 其余 `np.<op>(...)` 直接改为 `ap.<op>(...)`;`np` 命名空间的 import 保留。\n"
-    "4) 只迁移 `forward(...)` 计算主体;`build_inputs()` 保持用 numpy 构造(它产出 CPU 输入)。\n"
-    "5) 在 forward 入口为每个数组参数加入幂等边界:`if isinstance(x, np.ndarray): "
-    "x = ap.ndarray.from_numpy(x)`。设备数组和标量必须保持原样。\n"
-    "6) 不改变计算逻辑、函数名与签名, 保证与原程序数值等价。\n"
-    "只输出完整的迁移后 Python 源码, 用 ```python 代码块包裹, 不要任何解释文字。"
+    "你是 NumPilot 的 Code Migrator。把用户给的 NumPy 程序迁移为 AsNumpy(NPU) 版本。\n"
+    "严格遵守下面的 AsNumpy 代码格式；Planner 任务书中的逐调用点事实优先于一般规则。\n"
+    "只输出完整的迁移后 Python 源码, 用 ```python 代码块包裹, 不要任何解释文字。\n\n"
+    + render_asnumpy_guide()
 )
+
+
+def _taskbook_block(taskbook) -> str:
+    """Render the Planner hand-off as a stable, model-readable block."""
+
+    if not taskbook:
+        return ""
+    return (
+        "\n\n迁移任务书（Planner 生成，逐调用点事实；含已完成的整程序准备）:\n"
+        "```json\n"
+        + json.dumps(taskbook, ensure_ascii=False, indent=2, sort_keys=True)
+        + "\n```"
+    )
+
+
+def _diagnosis_block(diagnosis) -> str:
+    if hasattr(diagnosis, "to_dict"):
+        value = diagnosis.to_dict()
+    else:
+        value = diagnosis
+    return json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True, default=str)
 
 
 class LlmEngine(MigrationEngine):
@@ -663,9 +677,39 @@ class LlmEngine(MigrationEngine):
     def is_configured(self) -> bool:
         return all(os.getenv(k) for k in _REQUIRED_ENV)
 
-    def rewrite(self, source: str, plan: OffloadPlan) -> str:
+    def rewrite(
+        self, source: str, plan: OffloadPlan, taskbook=None
+    ) -> str:
         self.last_receipt = {}
         self.last_identity = {}
+        npu_ops = sorted(op for op, p in plan.placement.items() if p == "NPU")
+        user_msg = (
+            f"需上 NPU 的算子: {npu_ops}\n\n"
+            f"源码:\n```python\n{source}\n```"
+            + _taskbook_block(taskbook)
+        )
+        return self._request_code(_SYSTEM_PROMPT, user_msg)
+
+    def repair(
+        self, source: str, plan: OffloadPlan, previous_source: str, diagnosis,
+        taskbook=None,
+    ) -> str:
+        """One bounded repair attempt driven by the Diagnostics Agent."""
+
+        self.last_receipt = {}
+        self.last_identity = {}
+        npu_ops = sorted(op for op, p in plan.placement.items() if p == "NPU")
+        user_msg = (
+            "上一版迁移没有通过确定性验证。请依据诊断修复，并输出完整的新源码。\n"
+            f"需上 NPU 的算子: {npu_ops}\n\n"
+            f"诊断:\n```json\n{_diagnosis_block(diagnosis)}\n```\n\n"
+            f"上一版迁移源码:\n```python\n{previous_source}\n```\n\n"
+            f"原始（已准备）源码:\n```python\n{source}\n```"
+            + _taskbook_block(taskbook)
+        )
+        return self._request_code(_SYSTEM_PROMPT, user_msg)
+
+    def _request_code(self, system: str, user_msg: str) -> str:
         if not self.is_configured():
             missing = [k for k in _REQUIRED_ENV if not os.getenv(k)]
             raise LlmError(
@@ -675,8 +719,6 @@ class LlmEngine(MigrationEngine):
             )
 
         model = os.environ["NUMPILOT_LLM_MODEL"]
-        npu_ops = sorted(op for op, p in plan.placement.items() if p == "NPU")
-        user_msg = f"需上 NPU 的算子: {npu_ops}\n\n源码:\n```python\n{source}\n```"
         try:
             identity = require_model_configuration(
                 os.getenv("NUMPILOT_LLM_PROVIDER", DEFAULT_PROVIDER_LABEL),
@@ -691,9 +733,7 @@ class LlmEngine(MigrationEngine):
                     )
                 ),
             )
-            content, receipt = self._chat_with_receipt(
-                _SYSTEM_PROMPT, user_msg
-            )
+            content, receipt = self._chat_with_receipt(system, user_msg)
             validated_receipt = validate_configured_model_receipt(
                 receipt,
                 content,

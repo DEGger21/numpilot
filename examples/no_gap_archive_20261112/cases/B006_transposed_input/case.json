@@ -1,0 +1,24 @@
+{
+  "case": "B006_transposed_input",
+  "elapsed_s": 2.07,
+  "engine": "llm",
+  "expected_rewrites": {
+    "multiply": 1
+  },
+  "group": "B_direct_semantics",
+  "migrated": "cases/B006_transposed_input/migrated.py",
+  "migrated_sha256": "65b98771aff401f0780b6d8791af38bc199c4e279379eb07d467c12e9d31f96b",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 24,
+  "numerically_consistent": true,
+  "repair_attempts": 0,
+  "route": "direct_migration",
+  "source": "cases/B006_transposed_input/program.py",
+  "source_sha256": "58c85d3485ba02ffee9ded9ec6bcea3895dabcd8f8216830bc4482f9b507bf74",
+  "status": "pass",
+  "total_rewrites": 1
+}

@@ -1,0 +1,8 @@
+{
+  "case": "A013_exponential_decay_4m",
+  "base_case": "A013_exponential_decay",
+  "kind": "scaled_performance_variant",
+  "note": "A013_exponential_decay: 4,000,000 float32 elements.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+  "scalable": true
+}

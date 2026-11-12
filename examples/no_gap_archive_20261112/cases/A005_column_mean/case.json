@@ -1,0 +1,24 @@
+{
+  "case": "A005_column_mean",
+  "elapsed_s": 1.82,
+  "engine": "llm",
+  "expected_rewrites": {
+    "mean": 1
+  },
+  "group": "A_direct_simple",
+  "migrated": "cases/A005_column_mean/migrated.py",
+  "migrated_sha256": "40da43310c721bb679a2577686b78af41c7e67d8e84624bdfd90a2a90640ca0a",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 6,
+  "numerically_consistent": true,
+  "repair_attempts": 0,
+  "route": "direct_migration",
+  "source": "cases/A005_column_mean/program.py",
+  "source_sha256": "4cfe79ebc3c8275b0ce4e10eee36f6a925a05f118265bb2e687755d2e38112fd",
+  "status": "pass",
+  "total_rewrites": 1
+}

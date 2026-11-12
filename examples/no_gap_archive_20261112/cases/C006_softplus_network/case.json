@@ -1,0 +1,36 @@
+{
+  "case": "C006_softplus_network",
+  "elapsed_s": 18.04,
+  "engine": "llm",
+  "expected_rewrites": {
+    "absolute": 3,
+    "add": 10,
+    "clip": 1,
+    "exp": 4,
+    "full": 4,
+    "log1p": 3,
+    "max": 1,
+    "maximum": 3,
+    "mean": 1,
+    "multiply": 1,
+    "negative": 4,
+    "reciprocal": 1,
+    "tanh": 1
+  },
+  "group": "C_direct_structure",
+  "migrated": "cases/C006_softplus_network/migrated.py",
+  "migrated_sha256": "1fbda82c79cc579fb5b504a99d4490ba8043d31b7ec80f578556a3587874dc19",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 393,
+  "numerically_consistent": true,
+  "repair_attempts": 0,
+  "route": "direct_migration",
+  "source": "cases/C006_softplus_network/program.py",
+  "source_sha256": "9fdd4039acb9b7a30c94e8d6931e2a09182e500fc931cd6641b3a7ab9ac21d9f",
+  "status": "pass",
+  "total_rewrites": 37
+}

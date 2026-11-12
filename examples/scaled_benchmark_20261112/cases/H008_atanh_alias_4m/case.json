@@ -1,0 +1,8 @@
+{
+  "case": "H008_atanh_alias_4m",
+  "base_case": "H008_atanh_alias",
+  "kind": "scaled_performance_variant",
+  "note": "H008_atanh_alias: 4,000,000 float64 elements; open domain retained.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+  "scalable": true
+}

@@ -1,0 +1,24 @@
+{
+  "case": "H003_acos_alias",
+  "elapsed_s": 2.47,
+  "engine": "llm",
+  "expected_rewrites": {
+    "arccos": 2
+  },
+  "group": "H_gap_official",
+  "migrated": "cases/H003_acos_alias/migrated.py",
+  "migrated_sha256": "594a6e644df55773572211645041b34066392fe5b84510948265635ff550865d",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 30,
+  "numerically_consistent": true,
+  "repair_attempts": 0,
+  "route": "direct_migration",
+  "source": "cases/H003_acos_alias/program.py",
+  "source_sha256": "90912495fd6e0153bc13fb91a7b43f7da12a8cf66e5b7d7938250b78ae69f91a",
+  "status": "pass",
+  "total_rewrites": 2
+}

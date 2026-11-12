@@ -1,0 +1,8 @@
+{
+  "case": "C004_cosine_rows_16384x256",
+  "base_case": "C004_cosine_rows",
+  "kind": "scaled_performance_variant",
+  "note": "C004_cosine_rows: 16,384 x 256 float32 row cosine.",
+  "provenance": "Operator graph and migrated code derived from the archived no-gap case; only input sizes changed.",
+  "scalable": true
+}

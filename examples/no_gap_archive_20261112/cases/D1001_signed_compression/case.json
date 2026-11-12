@@ -1,0 +1,35 @@
+{
+  "case": "D1001_signed_compression",
+  "elapsed_s": 4.9,
+  "engine": "llm",
+  "expected_rewrites": {
+    "absolute": 4,
+    "add": 1,
+    "copysign": 2,
+    "divide": 2,
+    "full": 2,
+    "full_like": 2,
+    "maximum": 2,
+    "mean": 3,
+    "power": 2,
+    "square": 1,
+    "subtract": 2,
+    "tanh": 1
+  },
+  "group": "D1_partial_low_kernel",
+  "migrated": "cases/D1001_signed_compression/migrated.py",
+  "migrated_sha256": "0a0dc3a0e3401fb0f701b8dc13e18871810a08c2ff3a7db55609159377a5bb8f",
+  "model": {
+    "configured_model": "deepseek-flash",
+    "response_model": "deepseek-flash",
+    "response_model_identity": "exact"
+  },
+  "n_elements": 136,
+  "numerically_consistent": true,
+  "repair_attempts": 0,
+  "route": "direct_migration",
+  "source": "cases/D1001_signed_compression/program.py",
+  "source_sha256": "95a5793af20ce232494f9b02f21fa59f9007b594ecc87f46e2171e21473ca46a",
+  "status": "pass",
+  "total_rewrites": 24
+}
