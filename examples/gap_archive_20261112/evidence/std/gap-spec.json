@@ -1,0 +1,54 @@
+{
+  "api_name": "std",
+  "asnumpy_api": "asnumpy.std",
+  "callsites": [
+    {
+      "call_expr": "numpy.std(<arg0>, axis=<redacted>)",
+      "col_offset": 8,
+      "lineno": 10,
+      "qualified_api": "numpy.std",
+      "reason": "API 不在静态覆盖集"
+    }
+  ],
+  "cann_version": "9.2.0-beta.2",
+  "dtype_rules": [
+    "runtime_profile_required"
+  ],
+  "gap_id": "std-7af7d72ee3a16eba",
+  "qualified_api": "numpy.std",
+  "reference_cases": [],
+  "route": "ascendc_registry_candidate",
+  "route_decisions": [
+    {
+      "reason": "requires a semantic composition resolver",
+      "route": "asnumpy_composite",
+      "status": "not_evaluated"
+    },
+    {
+      "reason": "check a pinned CANN operator catalog before new kernel work",
+      "route": "cann_existing",
+      "status": "review_required"
+    },
+    {
+      "reason": "explicit draft generation is allowed; execution remains gated",
+      "route": "ascendc_registry",
+      "status": "candidate_for_draft"
+    }
+  ],
+  "schema_version": 1,
+  "semantic_source": "numpy.std",
+  "shape_rules": [
+    "runtime_profile_required"
+  ],
+  "signature_variants": [
+    {
+      "keyword_args": [
+        "axis"
+      ],
+      "positional_args": 1
+    }
+  ],
+  "source_path": "std/source/std_contract.py",
+  "source_sha256": "b3526fd459981a66b39f98a77be9964fcd9372f332849b4872c080131c1baf94",
+  "target_soc": "Ascend910B3"
+}

@@ -1,0 +1,11 @@
+{
+  "count": 1,
+  "attempts": [
+    {
+      "attempt": "1",
+      "bytes": 34469,
+      "mtime": "2026-11-12T22:31:36",
+      "sha256": "b707e7ff4f6e4c6e6b7eaba5eb0026ad092a3967ab796a4443e95200da4ce223"
+    }
+  ]
+}

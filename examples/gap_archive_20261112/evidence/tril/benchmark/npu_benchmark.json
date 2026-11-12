@@ -1,0 +1,277 @@
+{
+  "schema_version": 1,
+  "status": "pass",
+  "file": "tril/source/tril_contract.py",
+  "source_sha256": "d916e98aa99223f185b6c6f6a4c5f24a47cc9cd50d774904e08f9b5fe55a1636",
+  "migrated_sha256": "c6ad3ecfd37635a8da8a1b60b93da4244d6cf3c4a9660f7cf1b93ce6838677eb",
+  "net": "tril_contract",
+  "engine": "ast",
+  "backend": "npu",
+  "backend_version": "0.3.1",
+  "backend_module": "tril/custom-v1/adapter-build-v1/stage/asnumpy/__init__.py",
+  "rewrites": {
+    "tril": 1
+  },
+  "expected_rewrites": {
+    "tril": 1
+  },
+  "rewrite_integrity": true,
+  "model_receipt": {},
+  "model_identity": {},
+  "allow_cpu_fallback": false,
+  "fallback_override_used": false,
+  "provenance": {
+    "ok": true,
+    "audit_source": "NpuBackend.prepare_profile_guard",
+    "audit_error": null,
+    "required_ops": [
+      "tril"
+    ],
+    "planned_cpu_ops": [],
+    "cpu_fallback_ops": [],
+    "unknown_ops": [],
+    "backend_version": "0.3.1",
+    "audit_id": "unaudited-asnumpy-version",
+    "environment": {
+      "cann_home": "/usr/local/Ascend/cann-9.2.0-beta.2",
+      "cann_version": "9.2.0-beta.2",
+      "module_path": "tril/custom-v1/adapter-build-v1/stage/asnumpy/__init__.py",
+      "python_version": "3.12.14",
+      "soc_version": "Ascend910B3"
+    },
+    "strict_npu": true,
+    "profile_status": "not_required",
+    "profile_guard_integrity_error": false,
+    "provenance_by_op": {
+      "tril": "custom_npu"
+    },
+    "capabilities": {
+      "tril": {
+        "name": "tril",
+        "available": true,
+        "provenance": "custom_npu",
+        "strict_npu": true,
+        "evidence": "custom-operator admission 29e97b8cab2d8808a721c6267fe40c33969ad00b52b8859f68f6b44739bbae5f; adapter manifest sha256 1b630858704fa1efe47b04b2e3c11655adcf30adda0e302708201a1895e23540; adapter build receipt sha256 12a04c544d9eae7de0e367ed3de7af8487ba54d1a6eb03f9ea1804e9243dd6bc; wheel sha256 0846a67dada73aebaa395093daeab4dfcf678d5256eddb010c3e7c1a487832c4; profile enforced by the adapter",
+        "constraints": [],
+        "signature_variants": []
+      }
+    },
+    "issues": [],
+    "static_forward_surface": {
+      "ok": true,
+      "ap_calls": {
+        "tril": 1
+      },
+      "violations": []
+    },
+    "profile_scoped": [],
+    "runtime_profile_checks": {},
+    "runtime_call_counts": {
+      "kernel": {
+        "tril": 1
+      },
+      "artifact": {
+        "tril": 1
+      }
+    },
+    "runtime_trace_ok": true,
+    "schema_version": "1.1",
+    "backend": "npu",
+    "preflight_ok": true,
+    "preflight_strict_npu": true,
+    "missing": [],
+    "non_strict": [],
+    "runtime_profile_ok": true,
+    "runtime_target_integrity_ok": true,
+    "runtime_target_integrity_errors": [],
+    "profile_guard": {
+      "schema_version": "1.1",
+      "backend": "npu",
+      "backend_version": "0.3.1",
+      "audit_id": "unaudited-asnumpy-version",
+      "environment": {
+        "cann_home": "/usr/local/Ascend/cann-9.2.0-beta.2",
+        "cann_version": "9.2.0-beta.2",
+        "module_path": "tril/custom-v1/adapter-build-v1/stage/asnumpy/__init__.py",
+        "python_version": "3.12.14",
+        "soc_version": "Ascend910B3"
+      },
+      "strict_npu": true,
+      "ok": true,
+      "preflight_ok": true,
+      "preflight_strict_npu": true,
+      "profile_status": "not_required",
+      "required_ops": [
+        "tril"
+      ],
+      "missing": [],
+      "non_strict": [],
+      "profile_scoped": [],
+      "runtime_profile_ok": true,
+      "runtime_profile_checks": {},
+      "runtime_target_integrity_ok": true,
+      "runtime_target_integrity_errors": [],
+      "capabilities": {
+        "tril": {
+          "name": "tril",
+          "available": true,
+          "provenance": "custom_npu",
+          "strict_npu": true,
+          "evidence": "custom-operator admission 29e97b8cab2d8808a721c6267fe40c33969ad00b52b8859f68f6b44739bbae5f; adapter manifest sha256 1b630858704fa1efe47b04b2e3c11655adcf30adda0e302708201a1895e23540; adapter build receipt sha256 12a04c544d9eae7de0e367ed3de7af8487ba54d1a6eb03f9ea1804e9243dd6bc; wheel sha256 0846a67dada73aebaa395093daeab4dfcf678d5256eddb010c3e7c1a487832c4; profile enforced by the adapter",
+          "constraints": [],
+          "signature_variants": []
+        }
+      }
+    },
+    "runtime_execution_ok": true
+  },
+  "performance_valid": true,
+  "performance_issues": [],
+  "speedup": 8.586519586937033,
+  "comparison": {
+    "consistent": true,
+    "max_abs_diff": 0.0,
+    "max_rel_diff": 0.0,
+    "atol": 1e-05,
+    "rtol": 0.0001,
+    "failure_path": null,
+    "failure_index": null,
+    "reason": null,
+    "n_elements": 4194304
+  },
+  "t_cpu_ms": 14.156665652990341,
+  "t_npu_ms": 1.6487082466483116,
+  "npu_timing": {
+    "clock": "time.perf_counter",
+    "warmup_iterations": 3,
+    "measurement_iterations": 10,
+    "samples_ms": [
+      1.6698483377695084,
+      1.6835182905197144,
+      1.6621770337224007,
+      1.6315784305334091,
+      1.669498160481453,
+      1.6292771324515343,
+      1.6274480149149895,
+      1.6269972547888756,
+      1.6487082466483116,
+      1.6114171594381332
+    ],
+    "median_ms": 1.6487082466483116
+  },
+  "cpu_baseline": {
+    "file": "tril/source/tril_contract.py",
+    "source_sha256": "d916e98aa99223f185b6c6f6a4c5f24a47cc9cd50d774904e08f9b5fe55a1636",
+    "net": "tril_contract",
+    "t_cpu_ms": 14.156665652990341,
+    "timing": {
+      "clock": "time.perf_counter",
+      "warmup_iterations": 3,
+      "measurement_iterations": 10,
+      "samples_ms": [
+        14.684637077152729,
+        14.240795746445656,
+        13.865862973034382,
+        14.110574498772621,
+        14.180496335029602,
+        14.242324978113174,
+        13.85310385376215,
+        14.156665652990341,
+        13.832923956215382,
+        14.064704068005085
+      ],
+      "median_ms": 14.156665652990341
+    },
+    "n_elements": 4194304,
+    "output_shape": [
+      2048,
+      2048
+    ],
+    "cpu_threads": 1,
+    "cpu_threads_requested": 1,
+    "blas": {
+      "source": "threadpoolctl",
+      "effective_threads": 1,
+      "pools": [
+        {
+          "internal_api": "openblas",
+          "num_threads": 1,
+          "prefix": "libscipy_openblas",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "tsv110"
+        }
+      ]
+    },
+    "dtype": "float32"
+  },
+  "npu_process_blas": {
+    "source": "threadpoolctl",
+    "effective_threads": 64,
+    "pools": [
+      {
+        "internal_api": "openblas",
+        "num_threads": 64,
+        "prefix": "libscipy_openblas",
+        "version": "0.3.34.106.0",
+        "threading_layer": "pthreads",
+        "architecture": "tsv110"
+      }
+    ]
+  },
+  "artifact_inputs_executed": true,
+  "timing_scope": {
+    "classification": "device_resident_inputs_plus_d2h_sync",
+    "inputs_resident_on_device": true,
+    "includes_h2d": false,
+    "includes_d2h_sync_each_iteration": true,
+    "kernel_only": false,
+    "end_to_end": false,
+    "description": "forward 输入预先驻留设备；每轮计时包含递归 D2H 回传同步"
+  },
+  "input_comparison": {
+    "consistent": true,
+    "max_abs_diff": 0.0,
+    "max_rel_diff": 0.0,
+    "atol": 1e-05,
+    "rtol": 0.0001,
+    "failure_path": null,
+    "failure_index": null,
+    "reason": null,
+    "n_elements": 4194304
+  },
+  "kernel_comparison": {
+    "consistent": true,
+    "max_abs_diff": 0.0,
+    "max_rel_diff": 0.0,
+    "atol": 1e-05,
+    "rtol": 0.0001,
+    "failure_path": null,
+    "failure_index": null,
+    "reason": null,
+    "n_elements": 4194304
+  },
+  "artifact_comparison": {
+    "consistent": true,
+    "max_abs_diff": 0.0,
+    "max_rel_diff": 0.0,
+    "atol": 1e-05,
+    "rtol": 0.0001,
+    "failure_path": null,
+    "failure_index": null,
+    "reason": null,
+    "n_elements": 4194304
+  },
+  "baseline_output_comparison": {
+    "consistent": true,
+    "max_abs_diff": 0.0,
+    "max_rel_diff": 0.0,
+    "atol": 1e-05,
+    "rtol": 0.0001,
+    "failure_path": null,
+    "failure_index": null,
+    "reason": null,
+    "n_elements": 4194304
+  },
+  "baseline_compatible": true
+}

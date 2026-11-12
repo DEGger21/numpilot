@@ -1,0 +1,26 @@
+{
+  "schema": "numpilot.operator_repair.v1",
+  "operator": "std",
+  "repairs": [
+    {
+      "id": "ub-vector-alignment",
+      "symptom": "vector core exception (507035) on every shape where a core owns two or more rows, i.e. rows > 40 on this 40-AIV 910B",
+      "root_cause": "row results were packed with Duplicate at a 4-byte offset; vector instructions require 32-byte-aligned UB addresses",
+      "fix": "each row result occupies its own 32-byte UB block and is flushed with one 4-byte DataCopyPad through a VECOUT queue"
+    }
+  ],
+  "files": [
+    {
+      "path": "op_kernel/arch22/std.h",
+      "sha256_before": "a4b4bd15348ff1c12777522f24d3a1fd7bdeb7a0e1392fd65c1425734fd2d0de",
+      "sha256_after": "e652e9a170150ca47482eed941ecbeca72e093ec8f7f114196e208c1bf078b61",
+      "edits": [
+        "out-block-constant",
+        "out-queue-init",
+        "write-row-decl",
+        "write-row-impl",
+        "process-loop"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "aclnn": {
+    "call_style": "two-stage",
+    "execute": "aclnnEdiff1d",
+    "get_workspace_size": "aclnnEdiff1dGetWorkspaceSize"
+  },
+  "header": {
+    "relative_path": "op_api/include/aclnn_ediff1d.h",
+    "sha256": "23d0798fc969ff51a36decebc41831169e8b896d3766f8b765197695558bf56f"
+  },
+  "library": {
+    "relative_path": "op_api/lib/libcust_opapi.so",
+    "sha256": "af74dddad3f899d60e23af2c14248fc5fc8eecfff4b84ad76a2b8c2268422289",
+    "size": 210896
+  },
+  "operator": "ediff1d",
+  "receipt_sha256": "c1bc7b1f90b6f850ec376ac7b0068b390a54cee8c673bf8b830965cad5b001df",
+  "schema": "numpilot.custom-opp-provenance",
+  "schema_version": 1,
+  "vendor_root": "ediff1d/custom-v1/deploy-v1/vendors/ediff1d_custom",
+  "verification_scope": "read-only-filesystem-hash-and-header-declaration",
+  "version_info": {
+    "custom_opp_compiler_version": "9.2.0-beta.2"
+  },
+  "version_info_sha256": "7e5200644e61a2732438bd2fac2c3447ea8325e71ea36513499db8858bcb1b4b"
+}

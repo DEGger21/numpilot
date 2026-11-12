@@ -1,0 +1,83 @@
+{
+  "count": 13,
+  "attempts": [
+    {
+      "attempt": "1",
+      "bytes": 16451,
+      "mtime": "2026-11-12T21:45:52",
+      "sha256": "f3fda65c23a91e8f4a24cd716b20adc59b13072461ff38ecda4df844fa2fbb15"
+    },
+    {
+      "attempt": "10",
+      "bytes": 35854,
+      "mtime": "2026-11-12T22:03:50",
+      "sha256": "ccf2c5d2ea7844d5d2b82025b3d16b8c446ddcc8124b116f0dfa665dcc79da53"
+    },
+    {
+      "attempt": "11",
+      "bytes": 37590,
+      "mtime": "2026-11-12T22:07:26",
+      "sha256": "675b1408be60ede59827bf7890119d171b1a3a3412093ac2e5cdc01d759658fc"
+    },
+    {
+      "attempt": "12",
+      "bytes": 39325,
+      "mtime": "2026-11-12T22:09:35",
+      "sha256": "1fd0951632360f2152e2b8ad3b6b100a6fc01916a5a54bab0f93afbc20c8b538"
+    },
+    {
+      "attempt": "13",
+      "bytes": 41064,
+      "mtime": "2026-11-12T22:12:46",
+      "sha256": "d2fe82ff6e430d019247ac2dcb4a61e725c9ac44cf8cca280a7ccb6d1df5598e"
+    },
+    {
+      "attempt": "2",
+      "bytes": 33684,
+      "mtime": "2026-11-12T21:46:29",
+      "sha256": "bfaba4c753fcb941923e7cfe1a99ca5f4042ecb69509b13367ae2152cdb66662"
+    },
+    {
+      "attempt": "3",
+      "bytes": 23812,
+      "mtime": "2026-11-12T21:47:30",
+      "sha256": "f094771eaa20bd3fd65a46fc056bba7ca2e54758a5f73e5e069ed1537df88227"
+    },
+    {
+      "attempt": "4",
+      "bytes": 21257,
+      "mtime": "2026-11-12T21:47:58",
+      "sha256": "617c9e0053a1301c342d436adfaf4b583f56682266b9c0a498f43c617444076c"
+    },
+    {
+      "attempt": "5",
+      "bytes": 21301,
+      "mtime": "2026-11-12T21:48:40",
+      "sha256": "dcd2bfdd41fe8bb402db482ed5ea905c1032152a95359462c3ed5aa2b9c142ba"
+    },
+    {
+      "attempt": "6",
+      "bytes": 21255,
+      "mtime": "2026-11-12T21:49:36",
+      "sha256": "bbdccd312ed39be21c5a185eb8e775eb618efe094cec761ae055f75ca0c137aa"
+    },
+    {
+      "attempt": "7",
+      "bytes": 13744,
+      "mtime": "2026-11-12T21:52:44",
+      "sha256": "0fd64818dcf7948fddc4fc93d3f16b43abd15b100f87762c8530419ddd031052"
+    },
+    {
+      "attempt": "8",
+      "bytes": 32891,
+      "mtime": "2026-11-12T21:53:44",
+      "sha256": "8233d8852be7f552dc62a76759feeaa47e7d76b50368248daf46f432cfffe3a1"
+    },
+    {
+      "attempt": "9",
+      "bytes": 6665,
+      "mtime": "2026-11-12T21:54:58",
+      "sha256": "b7cb9dbbf2b3697eea66b4cd7b4c79ee6c17f6be030cf2a6be08c7ed393dfc7b"
+    }
+  ]
+}

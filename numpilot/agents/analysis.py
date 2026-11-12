@@ -345,6 +345,7 @@ class _OpVisitor(ast.NodeVisitor):
         known_non_array_names=(),
         strict_operand_types=False,
         extra_array_ops=(),
+        custom_contracts=None,
     ):
         # Local name -> canonical NumPy object, e.g. {"np": "numpy",
         # "fft": "numpy.fft.fft"}. Bindings come only from real imports.
@@ -359,6 +360,10 @@ class _OpVisitor(ast.NodeVisitor):
         # overlay profile match.  They are not part of SUPPORTED_OPS, so the
         # static surface alone must keep rejecting them.
         self.extra_array_ops = frozenset(extra_array_ops)
+        # Run-scoped admitted custom operators.  Each entry is bound to
+        # an adapter manifest and a passing adapter build receipt; these
+        # names are deliberately not part of the pinned catalog.
+        self.custom_contracts = dict(custom_contracts or {})
         self._call_argument_depth = 0
         self.op_uses = []
 
@@ -575,10 +580,14 @@ class _OpVisitor(ast.NodeVisitor):
         # The frozen coverage snapshot describes the top-level AsNumpy
         # namespace. A matching leaf is not evidence that a nested API such
         # as numpy.linalg.matmul is exposed at the same path.
-        if qualified_name != "numpy." + name or not is_supported(name):
+        custom = self.custom_contracts.get(name)
+        if qualified_name != "numpy." + name or not (
+            is_supported(name) or custom is not None
+        ):
             return False, _MISSING_API_REASON
         required, positional_limit, allowed_keywords, positional_names = (
-            _ASNUMPY_CALL_CONTRACTS[name]
+            custom if custom is not None
+            else _ASNUMPY_CALL_CONTRACTS[name]
         )
         if any(isinstance(argument, ast.Starred) for argument in node.args):
             return False, "AsNumpy 未验证动态位置参数展开: *args"
@@ -910,6 +919,7 @@ class _OpVisitor(ast.NodeVisitor):
                 and (
                     resolved[0] in SUPPORTED_OPS
                     or resolved[0] in self.extra_array_ops
+                    or resolved[0] in self.custom_contracts
                 )
             ):
                 return True
@@ -1354,6 +1364,7 @@ class AnalysisAgent:
         *,
         profiles: AnalysisProfileSet = None,
         strict_input_types: bool = False,
+        custom_contracts=None,
     ) -> AnalysisResult:
         if profiles is not None and not isinstance(profiles, AnalysisProfileSet):
             raise TypeError("profiles must be AnalysisProfileSet")
@@ -1372,6 +1383,7 @@ class AnalysisAgent:
             forwards,
             static_specs,
             strict_input_types=strict_input_types,
+            custom_contracts=custom_contracts,
         )
         # A missing top-level API becomes a proven array producer only when an
         # exact call profile matched.  The first pass discovers those matches;
@@ -1393,6 +1405,7 @@ class AnalysisAgent:
                 static_specs,
                 strict_input_types=strict_input_types,
                 extra_array_ops=promoted,
+                custom_contracts=custom_contracts,
             )
             self._apply_matched_profiles(op_uses, matched_keys)
         unsupported = sorted({op.name for op in op_uses if not op.supported})
@@ -1411,6 +1424,7 @@ class AnalysisAgent:
         *,
         strict_input_types,
         extra_array_ops=(),
+        custom_contracts=None,
     ):
         op_uses = []
         for forward in forwards:
@@ -1451,6 +1465,7 @@ class AnalysisAgent:
                 ) if parameter_kinds is not None else (),
                 strict_operand_types=parameter_kinds is not None,
                 extra_array_ops=extra_array_ops,
+                custom_contracts=custom_contracts,
             )
             for statement in forward.body:
                 visitor.visit(statement)

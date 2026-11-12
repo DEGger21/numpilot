@@ -1,0 +1,54 @@
+{
+  "api_name": "flip",
+  "asnumpy_api": "asnumpy.flip",
+  "callsites": [
+    {
+      "call_expr": "numpy.flip(<arg0>, axis=<redacted>)",
+      "col_offset": 8,
+      "lineno": 10,
+      "qualified_api": "numpy.flip",
+      "reason": "API 不在静态覆盖集"
+    }
+  ],
+  "cann_version": "9.2.0-beta.2",
+  "dtype_rules": [
+    "runtime_profile_required"
+  ],
+  "gap_id": "flip-90b571f77ade33f6",
+  "qualified_api": "numpy.flip",
+  "reference_cases": [],
+  "route": "ascendc_registry_candidate",
+  "route_decisions": [
+    {
+      "reason": "requires a semantic composition resolver",
+      "route": "asnumpy_composite",
+      "status": "not_evaluated"
+    },
+    {
+      "reason": "check a pinned CANN operator catalog before new kernel work",
+      "route": "cann_existing",
+      "status": "review_required"
+    },
+    {
+      "reason": "explicit draft generation is allowed; execution remains gated",
+      "route": "ascendc_registry",
+      "status": "candidate_for_draft"
+    }
+  ],
+  "schema_version": 1,
+  "semantic_source": "numpy.flip",
+  "shape_rules": [
+    "runtime_profile_required"
+  ],
+  "signature_variants": [
+    {
+      "keyword_args": [
+        "axis"
+      ],
+      "positional_args": 1
+    }
+  ],
+  "source_path": "flip/source/flip_contract.py",
+  "source_sha256": "d89f11b95c02dc443cb12edbb853bf769856286eed87ac667a8d602bfe84d9d0",
+  "target_soc": "Ascend910B3"
+}

@@ -2,19 +2,18 @@
 
 <h1><img src="docs/assets/brand/numpilot-wordmark.png" alt="NumPilot" width="560"></h1>
 
-### Auditable NumPy → AsNumpy migration for Ascend NPUs
+### End-to-end NumPy → AsNumpy migration for Ascend NPUs
 
 <p>
   <a href="README.zh-CN.md">简体中文</a> ·
-  <a href="docs/installation.md">Installation</a> ·
-  <a href="docs/architecture.md">Implementation notes</a> ·
-  <a href="CONTRIBUTING.md">Contributing</a> ·
-  <a href="LICENSE">License</a>
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#architecture">Architecture</a> ·
+  <a href="#results">Results</a> ·
+  <a href="#contributing--license">Contributing</a>
 </p>
 
 <p>
   <img alt="Version" src="https://img.shields.io/badge/version-0.3.0a1.dev0-6D5CE7?style=flat-square">
-  <img alt="Status" src="https://img.shields.io/badge/status-active%20refactor-F59E0B?style=flat-square">
   <img alt="Release stage" src="https://img.shields.io/badge/status-alpha-F59E0B?style=flat-square">
   <img alt="Python" src="https://img.shields.io/badge/Python-as%20supported%20by%20AsNumpy-3776AB?style=flat-square&amp;logo=python&amp;logoColor=white">
   <img alt="NPU" src="https://img.shields.io/badge/NPU-Ascend%20(runtime--detected)-008AA3?style=flat-square">
@@ -23,293 +22,118 @@
 
 </div>
 
-> **Project status: active refactor.**
-> NumPilot is being re-architected around the three-stage, six-role pipeline shown in the canonical PNG
-> architecture diagrams below. The old architecture SVGs and their generator have been removed. The
-> repository still contains legacy execution paths while the primary CLI is being connected to the new
-> pipeline. CLI entry points, module layout, and internal interfaces may change until the refactor
-> completes. For reproducible use, pin a commit or release.
-
 ## Overview
 
-NumPilot is a migration framework for statically analyzable NumPy programs targeting AsNumpy on Ascend
-NPUs. It separates model-generated candidates from deterministic admission: parsing, capability
-resolution, builds, correctness checks, full-program validation, and receipts are deterministic; models
-are used for understanding, planning, code migration, gap filling, diagnosis, and reporting.
+NumPilot is an end-to-end migration framework that turns complete NumPy programs into complete
+AsNumpy programs for Ascend NPUs, with every stage producing auditable receipts.
 
-Unsupported or ambiguous programs stop with a stable failure code instead of being silently rewritten or
-routed to CPU.
+[AsNumpy](https://github.com/asnumpy/asnumpy) is the NumPy-compatible tensor library for Ascend
+NPUs, developed by the AISS team at Harbin Institute of Technology led by Prof. Tonghua Su.
 
-## Visible progress and implementation requirements
+## Quick start
 
-The CLI shows the active role, activity, execution mode, elapsed time and blocked state.
-Deterministic validation is shown separately. Before generation, each gap retains a
-`GAP_TASKBOOK.md` and `GAP_TASKBOOK.json` containing source bindings, call contracts,
-unknowns, integration dependencies and acceptance requirements. Developers or external
-coding agents can use the same taskbook when a model fails. The current candidate scope
-focuses on float32 inputs; unknown profiles and generated code are never reported as
-qualified capabilities. See the [taskbook and progress guide](docs/gap-taskbook.zh-CN.md).
-
-## Target architecture
-
-<p align="center">
-  <a href="docs/assets/architecture/numpilot-architecture-en.png">
-    <img src="docs/assets/architecture/numpilot-architecture-en.png" alt="NumPilot: LLM-native NumPy to AsNumpy migration" width="100%">
-  </a>
-</p>
-
-<p align="center"><sub>English architecture diagram · <a href="docs/assets/architecture/numpilot-architecture-zh.png">中文架构图</a></sub></p>
-
-The target pipeline has three stages and six model roles:
-
-| Stage | Deterministic backbone | Model roles | Stage exit |
-| --- | --- | --- | --- |
-| Understand | AST, Program IR, DAG, capability analysis | ① Analyzer · ② Planner | Validated migration plan |
-| Migrate | API registry, contracts, builds, API correctness check | ③ API Gap Filler · ④ Code Migrator | Migrated AsNumpy code |
-| Validate | Full-program validation, receipts, manifest | ⑤ Diagnostics Agent · ⑥ Migration Reporter | Program + evidence + report |
-
-The diagram describes the target design, not a module dependency graph of the current tree.
-
-Two gates are never delegated to a model:
-
-- **API correctness check** — per gap: build, load, dtype/shape/edge behavior, and numerical comparison
-  with the NumPy oracle.
-- **Full-program validation** — the migrated program against the source program, with named outputs,
-  dtype/shape/numeric comparison, and a write-once receipt.
-
-A generated operator remains `generated_unverified` until the API correctness check passes. A single
-qualified operator does not imply a qualified program; the whole program must still clear full-program
-validation.
-
-## Refactor status
-
-The refactor is organized around the following workstreams. Status labels describe the repository, not the
-target design.
-
-| Workstream | Status | Notes |
-| --- | --- | --- |
-| Architecture contract | Defined | This README and the architecture diagram define the target |
-| Unified fact layer | In progress | Consolidating duplicated AST and call-site scanning |
-| Capability registry | In progress | Merging coverage, catalog, and profile logic into one registry |
-| ModelGateway | In progress | The private configured model is available; all role calls are being routed through one gateway |
-| Analyzer / Planner | Implemented (deterministic) | Analyzer emits call-site facts; Planner routes and seals `TRANSLATION_TASKBOOK.json/.md` with per-callsite target APIs and acceptance boundaries |
-| Code Migrator | Implemented (AST + configured model) | Direct AST rewrites and configured-model `rewrite`/`repair` share the AsNumpy format guide and taskbook; surface audit and numerical oracle remain deterministic gates |
-| API Gap Filler | Scaffolded | Gap classification exists; candidate generation and API-gate integration remain |
-| Full-program validation | Implemented | Retained as the deterministic program-level gate |
-| Competition direct vertical slice | Implemented (scoped) | Direct routing and numerical receipts are recorded; a 71/71 no-gap real-model batch passed on the shim backend; strict-NPU provenance still requires a runtime audit |
-| Benchmark adapter | Implemented | 150 cases: 68 migrated, 15 refused, 66 gap stop, 1 audit failure, 0 unexpected |
-| Diagnostics / Reporter | Scaffolded | Role records exist; validation-driven diagnosis and reporting remain to be unified |
-| Legacy pipelines | To be retired | Moved to `compat/legacy` after parity is established |
-
-## Development order
-
-The development order follows the canonical PNG architecture and keeps one reviewable vertical slice in front of broad coverage:
-
-1. Freeze role, artifact, receipt, and CLI contracts; finish the shared `ModelGateway`.
-2. Complete a straight-line direct migration with `migrate --out RUN_DIR`, deterministic validation, `verify`, and `replay`.
-3. Complete one real gap, `np.concatenate`, through official-first resolution, API correctness, integration, and full-program validation.
-4. Demonstrate rejection and repair of an intentionally bad candidate.
-5. Qualify the current AsNumpy runtime before publishing strict-NPU or performance claims.
-6. Adapt the 150-case benchmark, bundle CANNBot skills, and finish release/performance evidence.
-
-The private `llm.json` is used only through the shared `ModelGateway`. Tokens, endpoints, and raw model responses must never enter run artifacts, logs, commits, or reports.
-
-### What is changing
-
-| Area | Current repository | Target |
-| --- | --- | --- |
-| Entry points | CLI, wizard, Agent Skill, legacy contract path | CLI dispatch plus one workflow coordinator |
-| Model access | Per-module model providers | One ModelGateway |
-| Capability logic | Multiple scanners and catalogs | One ApiRegistry |
-| Migration paths | Parallel ordinary, contract, and gap chains | One Understand → Migrate → Validate pipeline |
-| Receipts | Stage-specific variants | Unified receipt schema and run manifest |
-
-## Requirements
-
-NumPilot follows **your AsNumpy installation**, not a hard-coded environment matrix. If NumPy and AsNumpy
-work in your interpreter, you have the environment NumPilot targets.
-
-- **Python / NumPy**: the versions your AsNumpy build supports. NumPilot does not introduce its own upper
-  pins.
-- **AsNumpy**: installed and importable in the same interpreter that runs NumPilot.
-- **CANN / Ascend driver / SoC**: discovered at runtime; NumPilot does not install or pin them.
-- **NPU**: optional. Without one, analysis and shim verification still work; strict-NPU and performance
-  claims require a real device and a qualified profile.
-
-`numpilot doctor` reports the detected environment. An unknown combination is marked
-`qualification_required`; it is not rejected and it is not silently treated as verified.
-
-## Installation
-
-Install NumPilot into the environment where AsNumpy already works:
+**Requirements:** Python with NumPy and AsNumpy installed. CANN and an Ascend NPU are required for
+device execution; analysis and shim verification work without a device.
 
 ```bash
 git clone --branch main --depth 1 https://gitcode.com/li-xingHIT/numpilot.git
 cd numpilot
-python3 -m venv .venv
-. .venv/bin/activate
-python -m pip install .            # core CLI: plain-text fallback, no rich required
-# python -m pip install '.[ui]'    # optional: colored TUI and interactive wizard
-
-# NumPy and AsNumpy must already work in this interpreter
-python -c "import numpy, asnumpy; print(numpy.__version__, asnumpy.__version__)"
-
-python -m numpilot doctor --backend shim   # no NPU required
-python -m numpilot doctor --backend npu    # on an Ascend machine
+python3 -m venv .venv && . .venv/bin/activate
+python -m pip install .
+python -m numpilot doctor --backend npu
 ```
 
-If AsNumpy lives in another virtual environment, activate that environment and install NumPilot there.
-NumPilot uses the AsNumpy importable from its own interpreter. Frozen releases also carry the author-owned
-hash-bound AsNumpy component and CANNBot skill snapshot under `components/`; the automatic runtime path
-reads those snapshots and does not fetch or upgrade them.
-
-For air-gapped, hash-bound, or reproducible deployments, see
-[Installation and verification](docs/installation.md) and the
-[AsNumpy API and CANNBot snapshot catalog](docs/asnumpy-api-support.zh-CN.md).
-
-## Usage
-
-> The CLI is the canonical execution contract. The commands below mark lower-level compatibility paths
-> explicitly so reproducible workflows use the same stage names and receipts.
-
-### Canonical CLI contract
-
-The CLI is NumPilot's only formal execution contract. It owns the workflow state, hash-bound
-artifacts, deterministic gates, and JSON receipts. The IDE/sidebar Agent Skill is an optional
-adapter over this contract; it does not implement a second migration or verification engine.
-
-The public stage commands are:
+Migrate and verify a complete program:
 
 ```bash
-numpilot analyze SOURCE [--json]
-numpilot migrate SOURCE --out RUN_DIR
-numpilot verify SOURCE \
-  --migration-report RUN_DIR/migration/script-migration-report.json \
-  --output result --out RUN_DIR/verification.json [--json]
-numpilot replay RUN_DIR [--json]
+numpilot analyze program.py
+numpilot migrate program.py --out runs/demo
+numpilot verify program.py \
+  --migration-report runs/demo/migration/script-migration-report.json \
+  --output result --out runs/demo/verification.json
 ```
 
-`run` remains a convenience coordinator for the same stages. `verify-script`,
-`benchmark-script`, `interactive-migrate`, and `--mode contract` remain lower-level or
-compatibility interfaces; they share the same receipts and gates and are not separate products.
-`replay` is read-only: it validates the workflow report and stage receipts without invoking a
-model, executing user source, or running an NPU stage.
-
-### Terminal/configured CLI lane
-
-The terminal lane is the canonical configured-model adapter over the CLI contract. NumPilot can use an OpenAI-compatible model configured explicitly for it. The configuration is private and
-opt-in; during the refactor, `llm.json` is consumed only by the shared `ModelGateway` and never copied into
-run artifacts. The repository ships a blank `llm.example.json`; copy it to the git-ignored `llm.json` and fill in
-your own values.
+For configured-model gap completion, copy the blank template and fill in your own endpoint:
 
 ```bash
 install -m 600 llm.example.json llm.json
 # edit llm.json: base_url, auth_token, model
-python -m numpilot paths --get llm_config
 python -m numpilot configure-llm --check
-python -m numpilot configure-llm --probe
-numpilot
 ```
 
-Inside the interactive shell:
+The CLI is the canonical execution contract. See [Installation](docs/installation.md) for
+air-gapped and hash-bound deployments.
 
-```text
-check llm
-migrate /absolute/path/to/program.py
-y
-execute
-exit
-```
+## Architecture
 
-`y` authorizes candidate generation; `execute` separately authorizes running the displayed source and
-candidate. Keep `llm.json` at mode `0600`; it is git-ignored, and `llm.example.json` must stay blank. Never
-commit a filled configuration.
+<p align="center">
+  <img src="docs/assets/architecture/numpilot-architecture-en.png" alt="NumPilot architecture" width="100%">
+</p>
 
-### Agent Skill workflow (optional sidebar adapter)
+The pipeline runs six roles — Analyzer, Planner, API Gap Filler, Code Migrator, Diagnostics,
+Migration Reporter — across three stages: analyze, migrate, verify. Deterministic gates own
+parsing, capability resolution, builds, numerical comparison and receipts; a model may propose
+code, but it cannot upgrade an unverified claim.
 
-If you use an IDE/sidebar AI that can read the workspace and run approved commands, NumPilot can operate
-without `llm.json`. The sidebar model authors the candidate, while the adapter invokes the same canonical
-CLI commands and displays their receipts. It must not duplicate migration, verification, capability,
-or performance logic.
+## Results
 
-```text
-Read /absolute/path/to/numpilot/skill/SKILL.md and use its agent/no-llm lane.
-Migrate /absolute/path/to/source.py with the model already available in this sidebar.
-Do not read llm.json, do not run configure-llm or check llm, and do not invoke NumPilot's
-configured-model provider. First perform read-only analysis and show me the plan. After I confirm,
-author the candidate and submit only supported artifacts to NumPilot's deterministic gates.
-Report stopped, unverified, numeric, runtime, and performance states without upgrading them.
-```
+### 1. Vitamin C: real quantum-chemistry grid-density chain
 
-A candidate without a registered adapter stops as `agent_authored_draft`; it cannot inherit strict-NPU or
-performance claims.
+The example uses a real Vitamin C molecule (20 atoms, 92 electrons, 208 basis functions, 81,936 DFT
+grid points) and runs the chain `dm.T @ AO → rho → weighted → electron_count`.
 
-## Design principles
+| Scope | CPU single core | NPU resident | NPU warm end-to-end |
+| --- | ---: | ---: | ---: |
+| Full grid-density chain | 341.750 ms | 13.157 ms (**25.98x**) | 17.419 ms (**19.62x**) |
 
-- **Deterministic facts first.** Parsing, call-site extraction, capability resolution, builds, validation,
-  and receipts are deterministic. Models do not add, remove, or silently reinterpret call sites.
-- **Models generate; validators decide.** Every model output is a candidate. `ValidationReceipt` is
-  written only by the validator.
-- **AsNumpy is the compatibility source of truth.** Capability evidence is bound to the actual AsNumpy,
-  Python ABI, CANN, and SoC in use. `hasattr` is not evidence.
-- **No silent fallback.** Unsupported, ambiguous, or unqualified behavior stops with a stable failure
-  code; CPU/host fallback requires explicit consent and disables strict-NPU/performance claims.
-- **Write once, replay always.** Each run writes a new directory with hashes, model calls, receipts, and
-  artifacts. Replay does not regenerate or recompile.
+The SCF (~294.7 s) stays on CPU; the speedup covers the grid-density sub-stage only. Inputs are
+float32, `projected` max absolute error is 9.54e-6, `rho` is 1.83e-4, and the electron count
+matches the CPU same-form result exactly. This example is a hand-written migration using
+NumPilot's audit runtime (`model_called=false`), not a model-generated operator.
 
-## Claims and evidence
+Details: [Vitamin C example](examples/scientific/gpu4pyscf_vitamin_c/README.md).
 
-- A migrated program is not verified merely because it was generated or compiled.
-- A single qualified operator does not imply a qualified program.
-- A benchmark of an isolated operator is not a whole-program speedup.
-- An unqualified SoC/CANN/Python combination is not a strict-NPU result.
+### 2. 71 programs without API gaps
 
-A claim without a receipt in the current run is reported as `qualification_required`,
-`performance_valid=false`, or `blocked`.
+71 complete NumPy programs using only APIs already covered by AsNumpy; 66 have CPU/NPU
+measurements, with a median speedup of 11.06x. The four fastest by speedup:
 
-## Repository layout
+| Program | Workload | CPU / NPU (ms) | Speedup |
+| --- | --- | ---: | ---: |
+| `A009_matrix_chain_2048` | two 2048 × 2048 float32 matmuls; 34.4 GFLOP | 1225.11 / 2.00 | **612.41x** |
+| `A007_matrix_product_2048` | 2048 × 2048 float32 matmul; 17.2 GFLOP | 608.88 / 1.68 | **361.58x** |
+| `B015_fortran_matmul_2048` | 2048 × 2048 Fortran-ordered float32 matmul | 634.30 / 1.79 | **355.01x** |
+| `H015_real_vecdot_16384x256` | 16,384 × 256 float32; vecdot over both axes | 91.98 / 0.56 | **164.79x** |
 
-```text
-numpilot/            CLI and core modules (being reorganized)
-docs/                architecture, contracts, verification, installation
-skill/               Agent Skill contract and references
-components/asnumpy/  author-maintained AsNumpy wheel, source baseline, provenance, and contract probe
-components/cannbot-skills/  author-maintained static CANNBot skill bundle
-tests/               regression tests and fixtures
-tools/               repository and release utilities
-```
+Full table: [71-case migration benchmark](examples/scaled_benchmark_20261112/BENCHMARK_TABLE.md).
 
-## Documentation
+### 3. Programs with real API gaps
 
-- [Installation and verification](docs/installation.md)
-- [Current implementation notes and trust boundaries](docs/architecture.md) — describes the current code
-  while the canonical target remains the PNG architecture diagrams
-- [Model configuration and transport contract](docs/model-contract.md)
-- [Numerical verification](docs/script-verification.md)
-- [Strict-NPU benchmarking](docs/script-benchmark.md)
-- [Large-scale migration performance table — 71 cases (CANN 9.2.0-beta.2 / Ascend 910B3)](examples/scaled_benchmark_20261112/BENCHMARK_TABLE.md)
-- [No-gap migration correctness archive (71/71)](examples/no_gap_archive_20261112/README.md)
-- [Agent Skill contract](skill/SKILL.md)
-- [Changelog](CHANGELOG.md)
+Six complete programs whose NumPy call is a real API gap. Each operator was generated by the
+configured model (`llm.json`), built, deployed, numerically validated and admitted before the
+whole program was migrated through NumPilot's six-role pipeline. The four positive speedups:
 
-## Security notes
+| Program | Gap API | Workload | End-to-end time | CPU / NPU (ms) | Speedup |
+| --- | --- | --- | ---: | ---: | ---: |
+| `std` | `np.std` | 2048 × 2048 float32; std over axis=1 | 90.9 min | 15.96 / 0.3718 | **42.92x** |
+| `tril` | `np.tril` | 2048 × 2048 float32; lower triangle | 38.4 min | 14.16 / 1.649 | **8.59x** |
+| `ediff1d` | `np.ediff1d` | 2048 × 2048 float32 flattened; 4,194,303 differences | 60.7 min | 4.48 / 1.664 | **2.69x** |
+| `pad` | `np.pad` | 2048 × 2048 float32; constant pad | 47.0 min | 4.117 / 1.724 | **2.39x** |
 
-- Migrate and execute only source code you trust. `python -I` isolation is not an operating-system
-  sandbox.
-- A configured remote model may receive source code and may incur usage charges.
-- Generated kernels and integrations remain unverified until all required gates pass.
-- Runtime identity or artifact drift produces an explicit blocked/audit-required result.
+End-to-end time starts at the real operator-generation call and includes build, repair, deployment,
+numerical validation, adapter build and tests, complete-program migration, and the CPU/NPU
+benchmark. The migration command itself takes 6–8 s.
 
-Report vulnerabilities through [SECURITY.md](SECURITY.md).
+All 6/6 programs pass whole-program numerical comparison; 84 adapter tests pass. The full table
+also records `flip` (0.0042x, CPU view baseline) and `argpartition` (0.03x, 512-element
+launch-bound) as correctness cases.
 
-## Contributing
+Full table: [gap-operator migration archive](examples/gap_archive_20261112/BENCHMARK_TABLE.md).
 
-Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md), add tests for behavioral changes, and
-run the relevant test and release-tree checks before opening a pull request. During the refactor, prefer
-small, reviewable changes and keep legacy behavior behind `compat/legacy` rather than extending it.
+## Contributing & License
 
-## License
+Issues and pull requests are welcome. Open an issue on the repository, or contact
+[li-xing@stu.hit.edu.cn](mailto:li-xing@stu.hit.edu.cn). See [CONTRIBUTING.md](CONTRIBUTING.md)
+and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
-NumPilot is licensed under the [Apache License 2.0](LICENSE). Third-party components retain their own
-licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Product names and logos remain the property
-of their respective owners and do not imply endorsement.
+NumPilot is released under the [Apache-2.0 License](LICENSE).

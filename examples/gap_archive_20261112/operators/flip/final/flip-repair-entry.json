@@ -1,0 +1,18 @@
+{
+  "schema": "numpilot.operator_repair.v1",
+  "operator": "flip",
+  "repairs": [
+    {
+      "id": "concrete-kernel-entry",
+      "symptom": "opbuild wrapper calls <op>_0_tilingkey; templated entry has no plain symbol",
+      "fix": "extern \"C\" entry instantiating the only admitted type/mode"
+    }
+  ],
+  "files": [
+    {
+      "path": "flip/custom-v1/build-v1/project/op_kernel/flip_arch22.cpp",
+      "sha256_before": "33427c1c7bab0e30217f66373f0bbb75732efc48d25d17bcfc1c2e736ed656b9",
+      "sha256_after": "54310af4b67762113e11ea25628ca9cc36861ae2c91c213699f32dafdde44ca2"
+    }
+  ]
+}

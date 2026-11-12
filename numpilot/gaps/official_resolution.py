@@ -43,7 +43,10 @@ from numpilot.gaps.official_source import (
     OpsNnSourceResolver,
 )
 from numpilot.gaps.pipeline import GapPreparation
-from numpilot.gaps.spec import is_custom_generation_operator_gap
+from numpilot.gaps.spec import (
+    is_custom_generation_numpy_gap,
+    is_custom_generation_operator_gap,
+)
 
 
 OFFICIAL_RESOLUTION_SCHEMA_VERSION = 1
@@ -159,6 +162,39 @@ def _source_has_candidates(payload: Mapping[str, Any]) -> bool:
     )
 
 
+_CUSTOM_PROOF_FIELDS = frozenset({
+    "operator_spec_provenance",
+    "operator_spec_route",
+    "official_equivalence",
+})
+
+
+def _custom_proof_source_kind(payload: Mapping[str, Any]) -> Optional[str]:
+    """Return the proof's source kind, or ``None`` when the proof is invalid.
+
+    Receipts written before the plain-NumPy custom lane existed carry the
+    three-field proof and are, by construction, OperatorSpec-based.
+    """
+
+    proof = payload.get("custom_generation_proof")
+    if not isinstance(proof, Mapping):
+        return None
+    if (
+        proof.get("operator_spec_provenance") != "custom_generation_candidate"
+        or proof.get("operator_spec_route") != "ascendc_registry_candidate"
+        or proof.get("official_equivalence") != "not_proven"
+    ):
+        return None
+    fields = frozenset(proof)
+    if fields == _CUSTOM_PROOF_FIELDS:
+        return "operator_spec"
+    if fields == _CUSTOM_PROOF_FIELDS | {"source_kind"}:
+        kind = proof.get("source_kind")
+        if kind in {"operator_spec", "numpy_api"}:
+            return kind
+    return None
+
+
 def _custom_generation_proof(payload: Mapping[str, Any]) -> bool:
     """Validate the non-equivalence evidence attached to a custom route.
 
@@ -168,20 +204,7 @@ def _custom_generation_proof(payload: Mapping[str, Any]) -> bool:
     the source-bound recheck runs.
     """
 
-    proof = payload.get("custom_generation_proof")
-    return (
-        isinstance(proof, Mapping)
-        and set(proof) == {
-            "operator_spec_provenance",
-            "operator_spec_route",
-            "official_equivalence",
-        }
-        and proof.get("operator_spec_provenance")
-        == "custom_generation_candidate"
-        and proof.get("operator_spec_route")
-        == "ascendc_registry_candidate"
-        and proof.get("official_equivalence") == "not_proven"
-    )
+    return _custom_proof_source_kind(payload) is not None
 
 
 def _custom_route_evidence(
@@ -365,12 +388,16 @@ class OfficialGapResolution:
             # custom route merely records an explicit user opt-in and never
             # relabels that ambiguity as ``no_match``.
             expected_route = CUSTOM_OPERATOR_ROUTE
-        if self.route == CUSTOM_OPERATOR_ROUTE and not self.qualified_api.startswith(
-            "operator."
-        ):
-            raise OfficialResolutionError(
-                "custom route requires an operator.* qualified API"
+        if self.route == CUSTOM_OPERATOR_ROUTE:
+            proof_kind = _custom_proof_source_kind(installed)
+            prefix = {"operator_spec": "operator.", "numpy_api": "numpy."}.get(
+                proof_kind or ""
             )
+            if prefix is None or not self.qualified_api.startswith(prefix):
+                raise OfficialResolutionError(
+                    "custom route requires an operator.* or numpy.* qualified API "
+                    "that matches its non-equivalence proof"
+                )
         if self.route != expected_route:
             raise OfficialResolutionError(
                 "official-resolution route contradicts provider evidence"
@@ -428,6 +455,10 @@ class OfficialGapResolution:
                 "operator_spec_provenance": "custom_generation_candidate",
                 "operator_spec_route": "ascendc_registry_candidate",
                 "official_equivalence": "not_proven",
+                "source_kind": (
+                    "numpy_api" if self.qualified_api.startswith("numpy.")
+                    else "operator_spec"
+                ),
             }
         return result
 
@@ -697,11 +728,13 @@ class OfficialOperatorResolutionReport:
             if decision.route != CUSTOM_OPERATOR_ROUTE:
                 continue
             spec = specs_by_key.get((decision.gap_id, decision.qualified_api))
-            if spec is None or not is_custom_generation_operator_gap(
-                preparation.source, spec
+            if spec is None or not (
+                is_custom_generation_operator_gap(preparation.source, spec)
+                or is_custom_generation_numpy_gap(preparation.source, spec)
             ):
                 raise OfficialResolutionError(
-                    "custom route is not bound to an explicit custom OperatorSpec"
+                    "custom route is not bound to an explicit custom OperatorSpec "
+                    "or a plainly imported NumPy gap"
                 )
             if not _custom_generation_proof(decision.installed_cann):
                 raise OfficialResolutionError(
@@ -961,6 +994,7 @@ def resolve_official_operators(
     for spec in specs:
         custom_opt_in = allow_custom_operator_generation and (
             is_custom_generation_operator_gap(preparation.source, spec)
+            or is_custom_generation_numpy_gap(preparation.source, spec)
         )
         if inventory is None:
             installed_payload = {
@@ -1027,10 +1061,11 @@ def resolve_official_operators(
                 adapter_generation_required=True,
             ))
             continue
-        # An unreviewed ``operator.*`` API may enter the explicit custom lane,
-        # but only after its identity was proven from the source AST.  All
-        # ordinary gaps and all other ambiguous/error statuses retain the
-        # historical fail-closed branch below.
+        # An unreviewed custom API (``operator.*`` OperatorSpec or a plain
+        # ``numpy.*`` gap) may enter the explicit custom lane, but only after
+        # its identity was proven from the source AST.  All ordinary gaps and
+        # all other ambiguous/error statuses retain the historical fail-closed
+        # branch below.
         custom_unreviewed = custom_opt_in and (
             installed_payload.get("status") == AMBIGUOUS
             and installed_payload.get("reason_code") == "catalog_unreviewed_api"
@@ -1087,8 +1122,8 @@ def resolve_official_operators(
                 # turn the unreviewed installed catalog into a clean miss.
                 route = CUSTOM_OPERATOR_ROUTE
                 reason = (
-                    "explicit custom OperatorSpec opt-in; installed ACLNN "
-                    "catalog is unreviewed for this operator, so official "
+                    "explicit custom operator-generation opt-in; installed ACLNN "
+                    "catalog is unreviewed for this API, so official "
                     "equivalence is not proven"
                 )
                 installed_payload = dict(installed_payload)
@@ -1096,6 +1131,10 @@ def resolve_official_operators(
                     "operator_spec_provenance": "custom_generation_candidate",
                     "operator_spec_route": "ascendc_registry_candidate",
                     "official_equivalence": "not_proven",
+                    "source_kind": (
+                        "numpy_api" if spec.qualified_api.startswith("numpy.")
+                        else "operator_spec"
+                    ),
                 }
                 allow_kernel = True
                 needs_adapter = False
@@ -1139,7 +1178,7 @@ def resolve_official_operators(
                 # official equivalence remains unproven.
                 route = CUSTOM_OPERATOR_ROUTE
                 reason = (
-                    "explicit custom OperatorSpec opt-in; official catalog "
+                    "explicit custom operator-generation opt-in; official catalog "
                     "lookup is unreviewed and no official equivalence proof "
                     "was available"
                 )
@@ -1148,6 +1187,10 @@ def resolve_official_operators(
                     "operator_spec_provenance": "custom_generation_candidate",
                     "operator_spec_route": "ascendc_registry_candidate",
                     "official_equivalence": "not_proven",
+                    "source_kind": (
+                        "numpy_api" if spec.qualified_api.startswith("numpy.")
+                        else "operator_spec"
+                    ),
                 }
                 allow_kernel = True
                 needs_adapter = False

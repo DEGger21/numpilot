@@ -1,0 +1,26 @@
+{
+  "aclnn": {
+    "call_style": "two-stage",
+    "execute": "aclnnTril",
+    "get_workspace_size": "aclnnTrilGetWorkspaceSize"
+  },
+  "header": {
+    "relative_path": "op_api/include/aclnn_tril.h",
+    "sha256": "da92ffca54b824e9e20d761711a72a45cf7442606c80f643cd8d473ac4700f27"
+  },
+  "library": {
+    "relative_path": "op_api/lib/libcust_opapi.so",
+    "sha256": "e0cef686251e4ae85579cd94e2a60c3035c166960d89b72378809d702c440c2d",
+    "size": 55216
+  },
+  "operator": "tril",
+  "receipt_sha256": "3834eec1ca702601daffe4639378706d223dee3ed93818a368b1dc3fba11f0ed",
+  "schema": "numpilot.custom-opp-provenance",
+  "schema_version": 1,
+  "vendor_root": "tril/custom-v1/deploy-v1/vendors/tril_custom",
+  "verification_scope": "read-only-filesystem-hash-and-header-declaration",
+  "version_info": {
+    "custom_opp_compiler_version": "9.2.0-beta.2"
+  },
+  "version_info_sha256": "7e5200644e61a2732438bd2fac2c3447ea8325e71ea36513499db8858bcb1b4b"
+}

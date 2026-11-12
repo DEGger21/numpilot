@@ -66,6 +66,10 @@ class GapPreparation:
     unsupported: Tuple[str, ...]
     specs: Tuple[GapSpec, ...]
     blocked: Tuple[Mapping[str, Any], ...]
+    # Optional ``InputObservation`` receipt from the CLI's explicit CPU
+    # observation stage.  It is hash-bound to ``source``; taskbook building
+    # rejects a receipt from a different source revision.
+    observed: Any = None
 
 
 _MAX_SOURCE_BYTES = 4 * 1024 * 1024
@@ -583,6 +587,85 @@ class GapCompletionResult:
         return result
 
 
+def _prepare_script_gap_specs(
+    source: str,
+    source_path: str,
+    *,
+    target_soc: str,
+    cann_version: str,
+) -> Optional[Tuple[Tuple[GapSpec, ...], Tuple[Mapping[str, Any], ...], Tuple[str, ...]]]:
+    """Rebuild the ordinary-script GapSpecs that ``migrate`` published.
+
+    The legacy analyzer deliberately models only the explicit
+    ``build_inputs``/``forward`` contract, so a flat ordinary script yields no
+    gap there.  Re-run the script-lane scan/classification against the live
+    runtime and build the same canonical script GapSpecs.  Any mismatch in the
+    environment, source mode, or receipt contract degrades to ``None`` so the
+    caller keeps the legacy (empty) result instead of inventing a gap.
+    """
+
+    try:
+        from numpilot.backends.base import select_backend
+        from numpilot.gaps.spec import build_script_gap_specs
+        from numpilot.qualified_analysis import analyze_qualified_script
+        from numpilot.script_migration import (
+            classify_script,
+            detect_source_mode,
+            scan_numpy_script,
+        )
+
+        if detect_source_mode(source) != "script":
+            return None
+        backend = select_backend("npu")
+        identity_provider = getattr(backend, "runtime_identity", None)
+        if not callable(identity_provider):
+            return None
+        qualified = analyze_qualified_script(
+            source,
+            source_path,
+            runtime_identity=identity_provider(),
+        )
+        scan = scan_numpy_script(
+            source,
+            source_path,
+            qualified_analysis=qualified,
+        )
+        if not scan.ok:
+            return None
+        analysis = classify_script(scan, backend, qualified_analysis=qualified)
+        generatable = [
+            item.to_dict() for item in analysis.unsupported if item.generatable
+        ]
+        blocked = tuple(
+            {
+                "name": item.api_path,
+                "qualified_api": item.qualified_api,
+                "lineno": item.callsites[0].lineno if item.callsites else 0,
+                "reason": item.evidence or item.status,
+            }
+            for item in analysis.unsupported
+            if not item.generatable
+        )
+        if not generatable:
+            return None
+        specs = build_script_gap_specs(
+            source,
+            source_path,
+            generatable,
+            target_soc=target_soc,
+            cann_version=cann_version,
+        )
+        if not specs:
+            return None
+        return (
+            tuple(specs),
+            tuple(dict(item) for item in blocked),
+            tuple(spec.qualified_api for spec in specs),
+        )
+    except Exception:
+        return None
+
+
 def prepare_gap_completion(
     source_path: str,
     *,
@@ -633,6 +716,15 @@ def prepare_gap_completion(
             ) from exc
         blocked = blocked_unsupported(analysis)
         unsupported = tuple(analysis.unsupported)
+        if not specs and not blocked:
+            script = _prepare_script_gap_specs(
+                source,
+                str(source_file),
+                target_soc=target_soc,
+                cann_version=cann_version,
+            )
+            if script is not None:
+                specs, blocked, unsupported = script
     else:
         specs = _validate_requested_specs(
             source,
@@ -677,7 +769,8 @@ def persist_preparation_taskbooks(preparation: GapPreparation, out_dir: str) -> 
     try:
         for spec in preparation.specs:
             workspace = Path(out_dir) / "gaps" / spec.gap_id
-            taskbook = build_gap_taskbook(spec, source=preparation.source)
+            taskbook = build_gap_taskbook(spec, source=preparation.source,
+                                          observed=preparation.observed)
             refs.append(persist_gap_taskbook(workspace, taskbook))
     except (OSError, ValueError) as exc:
         raise GapCompletionError("cannot persist generation taskbook: %s" % exc) from exc
@@ -896,7 +989,8 @@ class GapCompletionPipeline:
                 replace=False,
             )
             try:
-                taskbook = build_gap_taskbook(spec, source=source)
+                taskbook = build_gap_taskbook(spec, source=source,
+                                              observed=preparation.observed)
                 semantic_contract = extract_semantic_contract(source, spec)
                 request = render_generation_request(
                     spec,

@@ -140,6 +140,15 @@ _QUALIFIED_ANALYSIS_FIELDS = frozenset(
         "required_rewrites",
     }
 )
+
+
+# ``overlay_qualification`` was added to the schema-2 report when capability
+# overlays landed.  Recovery ingest receives no overlay evidence root, so a
+# non-null admission cannot be verified here; accept only an absent field
+# (older receipts) or an explicit null.
+_QUALIFIED_ANALYSIS_FIELDS_WITH_OVERLAY = _QUALIFIED_ANALYSIS_FIELDS | {
+    "overlay_qualification"
+}
 _GAP_REQUEST_FIELDS = frozenset(
     {
         "schema_version",
@@ -510,7 +519,8 @@ def _validate_migration_report(
     scan = analysis.get("scan")
     if (
         frozenset(analysis) != _ANALYSIS_FIELDS
-        or frozenset(qualified) != _QUALIFIED_ANALYSIS_FIELDS
+        or frozenset(qualified)
+        not in (_QUALIFIED_ANALYSIS_FIELDS, _QUALIFIED_ANALYSIS_FIELDS_WITH_OVERLAY)
         or not isinstance(scan, Mapping)
         or frozenset(scan) != _SCAN_FIELDS
     ):
@@ -553,6 +563,7 @@ def _validate_migration_report(
         or qualified.get("runtime_identity_status") != "matched"
         or not _is_sha256(qualified.get("runtime_identity_sha256"))
         or qualified.get("speedup") is not None
+        or qualified.get("overlay_qualification") is not None
         or not isinstance(qualified.get("imports"), list)
         or not isinstance(qualified.get("issues"), list)
         or not isinstance(qualified.get("calls"), list)

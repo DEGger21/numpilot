@@ -144,6 +144,82 @@ def is_custom_generation_operator_gap(source: str, spec: GapSpec) -> bool:
     return False
 
 
+def _numpy_module_aliases(tree: ast.AST) -> Dict[str, str]:
+    """Names bound to the NumPy module by ``import numpy [as alias]``."""
+    aliases: Dict[str, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == "numpy":
+                    aliases[alias.asname or "numpy"] = "numpy"
+    return aliases
+
+
+def is_custom_generation_numpy_gap(source: str, spec: GapSpec) -> bool:
+    """Return whether ``spec`` is a plainly imported NumPy API gap.
+
+    The advertised custom lane targets exactly the inputs a concrete NumPy
+    program passes to a missing API; it does not require an ``OperatorSpec``.
+    This predicate re-parses the inert source and verifies that every recorded
+    callsite is a literal ``np.<api>(...)`` / ``numpy.<api>(...)`` call, so a
+    hand-edited GapSpec cannot opt an unrelated gap into kernel generation.
+    No user code is imported or executed here.
+    """
+
+    if not isinstance(source, str) or not isinstance(spec, GapSpec):
+        return False
+    if (
+        not spec.qualified_api.startswith("numpy.")
+        or spec.qualified_api != "numpy." + spec.api_name
+        or spec.asnumpy_api != "asnumpy." + spec.api_name
+        or spec.route != "ascendc_registry_candidate"
+        or spec.semantic_source != spec.qualified_api
+    ):
+        return False
+    states = {
+        (str(item.get("route", "")), str(item.get("status", "")))
+        for item in spec.route_decisions
+        if isinstance(item, Mapping)
+    }
+    if (
+        ("ascendc_registry", "candidate_for_draft") not in states
+        or ("asnumpy_composite", "not_evaluated") not in states
+        or ("cann_existing", "review_required") not in states
+    ):
+        return False
+    # The API name is also a Python module attribute; reject a spec whose name
+    # would not be a plain attribute access on the NumPy module.
+    if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", spec.api_name):
+        return False
+    if not spec.callsites or len(spec.callsites) > 32:
+        return False
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, TypeError, ValueError, MemoryError, RecursionError):
+        return False
+    aliases = _numpy_module_aliases(tree)
+    if not aliases:
+        return False
+    calls = {
+        (node.lineno, node.col_offset): node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+    }
+    for site in spec.callsites:
+        if site.qualified_api != spec.qualified_api:
+            return False
+        node = calls.get((site.lineno, site.col_offset))
+        if node is None:
+            return False
+        function = node.func
+        if not isinstance(function, ast.Attribute) or function.attr != spec.api_name:
+            return False
+        base = function.value
+        if not isinstance(base, ast.Name) or base.id not in aliases:
+            return False
+    return True
+
+
 _SCRIPT_REPLACEABLE_PROVENANCE = frozenset({
     "cpu_fallback",
     "conditional_cpu_fallback",

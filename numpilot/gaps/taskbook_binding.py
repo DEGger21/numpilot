@@ -80,9 +80,30 @@ def validate_adapter_taskbook(taskbook, *, operator_artifact, adapter_contract):
     if "operator" in contract:
         check(operator, "adapter_contract.operator", {
             **expected, "source_api": spec.qualified_api, "public_api": spec.asnumpy_api})
+    # The custom-operator draft generator writes a draft-stage operator
+    # manifest whose identity lives under api.numpy / api.asnumpy and
+    # names.python_wrapper_callable.  Validate that shape exactly instead of
+    # silently accepting an unbound or conflicting producer.
+    draft_names = contract.get("names")
+    draft_identity_present = (
+        isinstance(api, Mapping) and ("numpy" in api or "asnumpy" in api)
+    ) or isinstance(draft_names, Mapping)
+    if draft_identity_present:
+        check(api, "adapter_contract.api", {
+            "numpy": spec.qualified_api, "asnumpy": spec.asnumpy_api})
+        check(draft_names, "adapter_contract.names", {
+            "python_wrapper_callable": spec.api_name,
+            "python_public_api": spec.asnumpy_api})
     has_api_identity = (any(key in contract for key in ("api_name", "qualified_api", "asnumpy_api"))
                         or any(key in api for key in ("api_name", "qualified_api", "asnumpy_api"))
-                        or any(key in operator for key in ("source_api", "public_api")))
+                        or any(key in operator for key in ("source_api", "public_api"))
+                        or (
+                            isinstance(api, Mapping)
+                            and api.get("numpy") == spec.qualified_api
+                            and api.get("asnumpy") == spec.asnumpy_api
+                            and isinstance(draft_names, Mapping)
+                            and draft_names.get("python_wrapper_callable") == spec.api_name
+                        ))
     if not has_api_identity:
         raise ValueError("taskbook binding adapter API identity is missing")
     for mapping, label in ((contract, "adapter_contract"), (operator, "adapter_contract.operator")):

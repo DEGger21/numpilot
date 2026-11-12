@@ -88,6 +88,37 @@ def _clone_tree(value):
     return value
 
 
+def _invoke(fn, inputs):
+    """Call a contract ``forward`` with the shape ``build_inputs`` returned.
+
+    Sequences keep the historical positional contract; mappings are
+    passed as keyword arguments, matching named contract migration.
+    """
+
+    if isinstance(inputs, dict):
+        return fn(**inputs)
+    return fn(*inputs)
+
+
+def _single_output(value):
+    """Return the one array a benchmark measures from ``forward``.
+
+    Named contracts return a one-entry mapping; the historical
+    benchmark contract returns a bare array.  A multi-output mapping
+    is rejected: one speedup number must not silently stand for
+    several outputs.
+    """
+
+    if isinstance(value, dict):
+        if len(value) != 1:
+            raise TypeError(
+                "benchmark 目前只支持单输出 contract；forward 返回了 %d 个输出"
+                % len(value)
+            )
+        return next(iter(value.values()))
+    return value
+
+
 def _to_device(backend, value):
     if isinstance(value, dict):
         return {key: _to_device(backend, item) for key, item in value.items()}
@@ -110,13 +141,13 @@ def _timing_samples_ms(fn, args, sync=None, warmup=3, iters=10):
     ):
         raise ValueError("warmup must be >= 0 and iters must be >= 1")
     for _ in range(warmup):
-        result = fn(*args)
+        result = _invoke(fn, args)
         if sync is not None:
             sync(result)
     samples_ms = []
     for _ in range(iters):
         start = time.perf_counter()
-        result = fn(*args)
+        result = _invoke(fn, args)
         if sync is not None:
             sync(result)
         samples_ms.append((time.perf_counter() - start) * 1e3)
@@ -443,7 +474,7 @@ def run_cpu_baseline(file, out_dir, cpu_threads):
         source = stream.read()
     namespace = _load_namespace(source)
     inputs = namespace["build_inputs"]()
-    out = _to_numpy(namespace["forward"](*inputs))
+    out = _to_numpy(_single_output(_invoke(namespace["forward"], inputs)))
     if not isinstance(out, np.ndarray):
         raise TypeError("bench-cpu 当前要求 forward 返回单个 ndarray")
     timing = _timing_samples_ms(namespace["forward"], inputs)
@@ -483,7 +514,7 @@ def run_cpu_baseline(file, out_dir, cpu_threads):
 # ───────────────────────── ② NPU 对比 ─────────────────────────
 def run_npu_compare(
         file, out_dir, engine=None, threshold=1_000_000, allow_cpu_fallback=False,
-        *, backend=None, analysis_profiles=None):
+        *, backend=None, analysis_profiles=None, custom_contracts=None):
     with open(file, encoding="utf-8") as stream:
         source = stream.read()
 
@@ -497,6 +528,7 @@ def run_npu_compare(
         source,
         file,
         profiles=analysis_profiles,
+        custom_contracts=custom_contracts,
     )
     net = _net_name(file)
     print(f"── NumPilot NPU 对比 · {net} " + "─" * max(4, 30 - len(net)))
@@ -637,7 +669,9 @@ def run_npu_compare(
         # dispatch instead of inheriting a stale qualification receipt.
         orig_ns = _load_namespace(source)
         inputs = orig_ns["build_inputs"]()
-        reference = _to_numpy(orig_ns["forward"](*_clone_tree(inputs)))
+        reference = _to_numpy(
+            _single_output(_invoke(orig_ns["forward"], _clone_tree(inputs)))
+        )
 
         with temporary_module("asnumpy", execution_module):
             migrated_ns = _load_namespace(migration.migrated_source)
@@ -650,14 +684,20 @@ def run_npu_compare(
 
             # 同一规范输入验证迁移计算主体，防止通过篡改 build_inputs 补偿错误 forward。
             common_dev_inputs = _to_device(backend, _clone_tree(inputs))
-            common_output = _to_host(backend, forward(*common_dev_inputs))
-            kernel_comparison = compare_outputs(reference, _to_numpy(common_output))
+            common_output = _to_host(
+                backend, _invoke(forward, common_dev_inputs)
+            )
+            kernel_comparison = compare_outputs(
+                reference, _to_numpy(_single_output(common_output))
+            )
             kernel_runtime_counts = dict(runtime_call_counts)
 
             # 独立执行产物自己的 build_inputs + forward，作为 artifact 完整性门禁。
             dev_inputs = _to_device(backend, _clone_tree(migrated_inputs))
-            out_npu = _to_host(backend, forward(*dev_inputs))
-            artifact_comparison = compare_outputs(reference, _to_numpy(out_npu))
+            out_npu = _to_host(backend, _invoke(forward, dev_inputs))
+            artifact_comparison = compare_outputs(
+                reference, _to_numpy(_single_output(out_npu))
+            )
             artifact_runtime_counts = {
                 name: runtime_call_counts[name] - kernel_runtime_counts[name]
                 for name in runtime_call_counts

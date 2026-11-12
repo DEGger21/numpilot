@@ -1,0 +1,26 @@
+{
+  "aclnn": {
+    "call_style": "two-stage",
+    "execute": "aclnnNumpyStd",
+    "get_workspace_size": "aclnnNumpyStdGetWorkspaceSize"
+  },
+  "header": {
+    "relative_path": "op_api/include/aclnn_numpy_std.h",
+    "sha256": "f208c3c15a5ce1e11c90f8644dfdb1b309020565cdbdd83f69eb9bd0bcd67cd5"
+  },
+  "library": {
+    "relative_path": "op_api/lib/libcust_opapi.so",
+    "sha256": "104bb66a0ce27101224d8ecdf6c0ee767a21e65b1bff19b97990fd5a24892c20",
+    "size": 269464
+  },
+  "operator": "numpy_std",
+  "receipt_sha256": "96c823ec95fb70054a47af3e2d22dbc6880fd6c54a351e9d29800cf1cb6773dc",
+  "schema": "numpilot.custom-opp-provenance",
+  "schema_version": 1,
+  "vendor_root": "std/deploy-v4/vendors/std_custom",
+  "verification_scope": "read-only-filesystem-hash-and-header-declaration",
+  "version_info": {
+    "custom_opp_compiler_version": "9.2.0-beta.2"
+  },
+  "version_info_sha256": "7e5200644e61a2732438bd2fac2c3447ea8325e71ea36513499db8858bcb1b4b"
+}

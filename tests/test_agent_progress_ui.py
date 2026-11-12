@@ -408,7 +408,8 @@ def test_bench_npu_wrapper_preserves_return_code_arguments_and_only_system_event
     def benchmark(file, out, **kwargs):
         assert len(received) == 1 and received[0].state == 'running'
         assert kwargs == {'engine': engine, 'threshold': 123, 'allow_cpu_fallback': False,
-                          'backend': backend, 'analysis_profiles': profiles}
+                          'backend': backend, 'analysis_profiles': profiles,
+                          'custom_contracts': None}
         calls.append((file, out))
         return code
     monkeypatch.setattr(cli, 'run_npu_compare', benchmark)

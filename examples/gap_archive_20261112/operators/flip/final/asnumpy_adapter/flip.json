@@ -1,0 +1,1072 @@
+{
+  "schema": "numpilot.asnumpy_adapter.test_manifest",
+  "schema_version": 1,
+  "manifest_id": "flip-adapter-tests-02",
+  "stage": "17/17:test_adapter_02",
+  "gap_id": "flip-90b571f77ade33f6",
+  "status": "unverified_candidate",
+  "claim_level": "unverified_candidate_only",
+  "qualification": "pending",
+  "generated_for": {
+    "soc": "Ascend910B3",
+    "cann_version": "9.2.0-beta.2"
+  },
+  "operator": {
+    "api_name": "flip",
+    "public_api": "asnumpy.flip",
+    "semantic_source": "numpy.flip",
+    "cxx_op_type": "Flip",
+    "file_stem": "flip"
+  },
+  "notes": [
+    "This manifest only declares adapter assertions; it is not a capability certificate and grants no activation.",
+    "Every case must run in-process against the same isolated build of asnumpy_adapter that the deterministic validator installed; no case may be satisfied by a CPU/NumPy re-implementation.",
+    "No case permits an implicit dtype cast, an implicit dtype inference, or a silent fallback to numpy.flip.",
+    "The only observed CPU profile is float32, rank 2, shape [2048, 2048], C-contiguous, call axis=1; wider rank-2 shapes are supported by design and remain unverified until measured.",
+    "Comparison masks are boolean and are never cast to float32; the operator output dtype is float32, identical to the admitted input dtype."
+  ],
+  "name_mapping": {
+    "public_api": "asnumpy.flip",
+    "python_wrapper_file": "asnumpy_adapter/flip.py",
+    "python_wrapper_symbol": "flip",
+    "pybind_module": "asnumpy_adapter._flip",
+    "pybind_module_note": "private extension module imported by the wrapper as _flip",
+    "pybind_symbol": "flip",
+    "native_l0_header": "op_api/flip.h",
+    "native_l0_symbol": "flip",
+    "aclnn_l2_header": "op_api/aclnn_flip.h",
+    "aclnn_l2_get_workspace_size": "aclnnFlipGetWorkspaceSize",
+    "aclnn_l2_execute": "aclnnFlip",
+    "host_op_def": "op_host/flip_def.cpp",
+    "host_infershape": "op_host/flip_infershape.cpp",
+    "host_tiling_glob": "op_host/**/flip_tiling.cpp",
+    "kernel_entry": "flip",
+    "kernel_source": "op_kernel/flip.cpp"
+  },
+  "signature": {
+    "positional_args": 1,
+    "keyword_args": [
+      "axis"
+    ],
+    "defaults": {
+      "axis": null
+    },
+    "axis_forms_supported": [
+      "None (reverse all axes)",
+      "int in [-2, 1] for rank-2 input, normalized as axis % 2"
+    ],
+    "axis_forms_rejected": [
+      "tuple or list of axes",
+      "non-integer axis (float, bool, str)",
+      "integer axis outside [-2, 1]"
+    ],
+    "extra_positional_arguments": "rejected by the Python binding (TypeError)",
+    "unknown_keyword_arguments": "rejected by the Python binding (TypeError)"
+  },
+  "support_scope": {
+    "input_dtype": [
+      "float32"
+    ],
+    "output_dtype": "float32 (same as input)",
+    "rank": 2,
+    "shape": "arbitrary rank-2 extent pair, including zero extents; only [2048, 2048] carries an observed CPU profile",
+    "layout": "C-contiguous input required; non-contiguous inputs are rejected rather than silently copied or cast",
+    "observed_profile": {
+      "dtype": "float32",
+      "shape": [
+        2048,
+        2048
+      ],
+      "rank": 2,
+      "c_contiguous": true,
+      "axis": 1,
+      "source": "observed CPU execution of the original numpy program"
+    },
+    "observed_output": {
+      "dtype": "float32",
+      "shape": [
+        2048,
+        2048
+      ],
+      "rank": 2,
+      "c_contiguous": false,
+      "note": "NumPy returns a reversed-stride view; the adapter returns a freshly materialized contiguous device-backed tensor, so stride equality with NumPy is deliberately not asserted."
+    },
+    "unresolved_facts": [
+      "axis",
+      "oracle_inputs",
+      "numerical_tolerances",
+      "candidate_support_and_rejection_profiles"
+    ]
+  },
+  "rejection_policy": [
+    {
+      "condition": "input dtype not float32",
+      "exception": "TypeError",
+      "forbidden": "cast to float32 or dispatch to a host implementation"
+    },
+    {
+      "condition": "input rank not 2",
+      "exception": "ValueError",
+      "forbidden": "squeeze, reshape or reinterpret the tensor"
+    },
+    {
+      "condition": "input not C-contiguous",
+      "exception": "ValueError",
+      "forbidden": "implicit ascontiguousarray copy or host copy"
+    },
+    {
+      "condition": "axis outside [-2, 1]",
+      "exception": "ValueError",
+      "forbidden": "clamping or modulo wrap of an out-of-range literal"
+    },
+    {
+      "condition": "axis is a tuple, list, float, bool or str",
+      "exception": "ValueError or TypeError",
+      "forbidden": "coercing to int or dropping the argument"
+    },
+    {
+      "condition": "unknown keyword argument such as out=, dtype=, casting=, where=",
+      "exception": "TypeError",
+      "forbidden": "silently ignoring the keyword"
+    }
+  ],
+  "tolerances": {
+    "float32": {
+      "rtol": 0.0,
+      "atol": 0.0,
+      "comparison": "bitwise_equal",
+      "nan_handling": "compare NaN positions by bit pattern (uint32 view); a NaN must not be compared with ==",
+      "signbit_handling": "signbit must match for +0.0/-0.0 and for every finite and infinite value",
+      "rationale": "flip is a pure permutation; any bit difference indicates an indexing, tiling or cast defect, so exact comparison is stricter and safer than a relative tolerance"
+    },
+    "bool": {
+      "comparison": "exact_equality",
+      "note": "comparison masks are bool arrays and must never be cast to float32"
+    }
+  },
+  "oracle": {
+    "semantic_source": "numpy.flip",
+    "python": "import numpy as np\n\ndef numpy_oracle(*args, **kwargs):\n    return np.flip(*args, **kwargs)\n",
+    "status": "inputs_observed_cpu",
+    "device_region_status": "unverified"
+  },
+  "cases": [
+    {
+      "id": "adapter_import_public_api",
+      "category": "binding",
+      "gates": [
+        "build",
+        "unit_and_boundary"
+      ],
+      "purpose": "asnumpy exposes flip as a public callable owned by the adapter package, not aliased to numpy.flip.",
+      "assertions": [
+        "callable(asnumpy.flip)",
+        "asnumpy.flip is not numpy.flip",
+        "asnumpy.flip.__module__.split('.')[0] in ('asnumpy', 'asnumpy_adapter')"
+      ]
+    },
+    {
+      "id": "signature_axis_keyword_and_extra_positional",
+      "category": "binding",
+      "gates": [
+        "build",
+        "unit_and_boundary"
+      ],
+      "purpose": "The declared signature takes exactly one positional argument plus the keyword axis.",
+      "preconditions": [
+        "a = np.zeros((4, 4), dtype=np.float32)"
+      ],
+      "assertions": [
+        "asnumpy.flip(a, axis=1).shape == (4, 4)",
+        "asnumpy.flip(a, axis=None).shape == (4, 4)",
+        "asnumpy.flip(a, axis=-1).shape == (4, 4)",
+        "raises TypeError: asnumpy.flip(a, 1, 0)"
+      ]
+    },
+    {
+      "id": "static_mapping_symbols_present",
+      "category": "documentation",
+      "gates": [
+        "build"
+      ],
+      "purpose": "Public API -> Python wrapper -> pybind -> native -> ACLNN two-stage symbol mapping is present and mutually consistent.",
+      "checks": [
+        {
+          "scope": [
+            "asnumpy_adapter/",
+            "op_api/"
+          ],
+          "contains_all": [
+            "asnumpy.flip",
+            "aclnnFlipGetWorkspaceSize",
+            "aclnnFlip"
+          ]
+        },
+        {
+          "scope": [
+            "op_host/"
+          ],
+          "contains_all": [
+            "Flip",
+            "OP_ADD"
+          ]
+        },
+        {
+          "scope": [
+            "op_kernel/"
+          ],
+          "contains_any": [
+            "flip"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "observed_profile_axis1",
+      "category": "numerical",
+      "gates": [
+        "numerical",
+        "native_execution",
+        "whole_program"
+      ],
+      "purpose": "Observed callsite profile: float32 [2048, 2048] C-contiguous with axis=1 must match numpy.flip exactly.",
+      "input": {
+        "dtype": "float32",
+        "shape": [
+          2048,
+          2048
+        ],
+        "layout": "c_contiguous",
+        "values": "np.arange(2048 * 2048, dtype=np.float32).reshape(2048, 2048) * np.float32(0.5) - np.float32(7.0)"
+      },
+      "axis": 1,
+      "expected": {
+        "oracle": "numpy.flip(a, axis=1)",
+        "dtype": "float32",
+        "shape": [
+          2048,
+          2048
+        ],
+        "comparison": "bitwise_exact"
+      },
+      "artifacts": [
+        "saved input .npy",
+        "saved expected output .npy",
+        "saved actual output .npy",
+        "NPU profiler trace naming the flip kernel"
+      ]
+    },
+    {
+      "id": "axis_none_rank2",
+      "category": "numerical",
+      "gates": [
+        "numerical"
+      ],
+      "purpose": "axis=None reverses both axes for a rank-2 input.",
+      "input": {
+        "dtype": "float32",
+        "shape": [
+          64,
+          96
+        ],
+        "layout": "c_contiguous",
+        "values": "np.arange(64 * 96, dtype=np.float32).reshape(64, 96) * np.float32(-0.25) + np.float32(1.5)"
+      },
+      "axis": null,
+      "expected": {
+        "oracle": "numpy.flip(a, axis=None)",
+        "dtype": "float32",
+        "shape": [
+          64,
+          96
+        ],
+        "comparison": "bitwise_exact"
+      }
+    },
+    {
+      "id": "axis_0",
+      "category": "numerical",
+      "gates": [
+        "numerical"
+      ],
+      "purpose": "axis=0 reverses rows only.",
+      "input": {
+        "dtype": "float32",
+        "shape": [
+          37,
+          53
+        ],
+        "layout": "c_contiguous",
+        "values": "np.linspace(-3.0, 3.0, 37 * 53, dtype=np.float32).reshape(37, 53)"
+      },
+      "axis": 0,
+      "expected": {
+        "oracle": "numpy.flip(a, axis=0)",
+        "dtype": "float32",
+        "shape": [
+          37,
+          53
+        ],
+        "comparison": "bitwise_exact"
+      }
+    },
+    {
+      "id": "axis_negative_one_matches_axis_one",
+      "category": "numerical",
+      "gates": [
+        "numerical",
+        "unit_and_boundary"
+      ],
+      "purpose": "Negative axis normalization: axis=-1 is identical to axis=1.",
+      "input": {
+        "dtype": "float32",
+        "shape": [
+          37,
+          53
+        ],
+        "layout": "c_contiguous",
+        "values": "np.linspace(-3.0, 3.0, 37 * 53, dtype=np.float32).reshape(37, 53)"
+      },
+      "axis": -1,
+      "expected": {
+        "oracle": "numpy.flip(a, axis=-1)",
+        "also_equals": "numpy.flip(a, axis=1)",
+        "comparison": "bitwise_exact"
+      }
+    },
+    {
+      "id": "axis_negative_two_matches_axis_zero",
+      "category": "numerical",
+      "gates": [
+        "numerical",
+        "unit_and_boundary"
+      ],
+      "purpose": "Negative axis normalization: axis=-2 is identical to axis=0.",
+      "input": {
+        "dtype": "float32",
+        "shape": [
+          37,
+          53
+        ],
+        "layout": "c_contiguous",
+        "values": "np.linspace(-3.0, 3.0, 37 * 53, dtype=np.float32).reshape(37, 53)"
+      },
+      "axis": -2,
+      "expected": {
+        "oracle": "numpy.flip(a, axis=-2)",
+        "also_equals": "numpy.flip(a, axis=0)",
+        "comparison": "bitwise_exact"
+      }
+    },
+    {
+      "id": "axis_none_equals_sequential_both_axes",
+      "category": "numerical",
+      "gates": [
+        "numerical"
+      ],
+      "purpose": "axis=None equals flipping axis 0 and axis 1 in sequence.",
+      "input": {
+        "dtype": "float32",
+        "shape": [
+          7,
+          11
+        ],
+        "layout": "c_contiguous",
+        "values": "np.arange(7 * 11, dtype=np.float32).reshape(7, 11)"
+      },
+      "axis": null,
+      "expected": {
+        "oracle": "numpy.flip(numpy.flip(a, axis=0), axis=1)",
+        "comparison": "bitwise_exact"
+      }
+    },
+    {
+      "id": "empty_rows_and_cols",
+      "category": "boundary",
+      "gates": [
+        "unit_and_boundary",
+        "numerical"
+      ],
+      "purpose": "Zero-extent dimensions must not fault the tiling or the wrapper.",
+      "sub_cases": [
+        {
+          "input": {
+            "dtype": "float32",
+            "shape": [
+              0,
+              8
+            ],
+            "layout": "c_contiguous",
+            "values": "np.empty((0, 8), dtype=np.float32)"
+          },
+          "axis": 1,
+          "expected": {
+            "oracle": "numpy.flip(a, axis=1)",
+            "shape": [
+              0,
+              8
+            ]
+          }
+        },
+        {
+          "input": {
+            "dtype": "float32",
+            "shape": [
+              8,
+              0
+            ],
+            "layout": "c_contiguous",
+            "values": "np.empty((8, 0), dtype=np.float32)"
+          },
+          "axis": 0,
+          "expected": {
+            "oracle": "numpy.flip(a, axis=0)",
+            "shape": [
+              8,
+              0
+            ]
+          }
+        }
+      ],
+      "comparison": "shape_and_bitwise_exact"
+    },
+    {
+      "id": "singleton_extents",
+      "category": "boundary",
+      "gates": [
+        "unit_and_boundary",
+        "numerical"
+      ],
+      "purpose": "Single-row, single-column and 1x1 tensors exercise the degenerate tiling branches.",
+      "sub_cases": [
+        {
+          "input": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              1
+            ],
+            "layout": "c_contiguous",
+            "values": "np.array([[42.5]], dtype=np.float32)"
+          },
+          "axis": 1
+        },
+        {
+          "input": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              4096
+            ],
+            "layout": "c_contiguous",
+            "values": "np.arange(4096, dtype=np.float32).reshape(1, 4096)"
+          },
+          "axis": 1
+        },
+        {
+          "input": {
+            "dtype": "float32",
+            "shape": [
+              4096,
+              1
+            ],
+            "layout": "c_contiguous",
+            "values": "np.arange(4096, dtype=np.float32).reshape(4096, 1)"
+          },
+          "axis": 0
+        }
+      ],
+      "expected": {
+        "oracle": "numpy.flip(a, axis=axis)",
+        "comparison": "bitwise_exact"
+      }
+    },
+    {
+      "id": "odd_dimensions_tail",
+      "category": "boundary",
+      "gates": [
+        "numerical"
+      ],
+      "purpose": "Odd extents exercise UB tail handling on both axes.",
+      "sub_cases": [
+        {
+          "input": {
+            "dtype": "float32",
+            "shape": [
+              17,
+              19
+            ],
+            "layout": "c_contiguous",
+            "values": "np.arange(17 * 19, dtype=np.float32).reshape(17, 19) * np.float32(0.125)"
+          },
+          "axis": 1
+        },
+        {
+          "input": {
+            "dtype": "float32",
+            "shape": [
+              2047,
+              1
+            ],
+            "layout": "c_contiguous",
+            "values": "np.arange(2047, dtype=np.float32).reshape(2047, 1)"
+          },
+          "axis": 0
+        },
+        {
+          "input": {
+            "dtype": "float32",
+            "shape": [
+              1,
+              2047
+            ],
+            "layout": "c_contiguous",
+            "values": "np.arange(2047, dtype=np.float32).reshape(1, 2047)"
+          },
+          "axis": 1
+        }
+      ],
+      "expected": {
+        "oracle": "numpy.flip(a, axis=axis)",
+        "comparison": "bitwise_exact"
+      }
+    },
+    {
+      "id": "large_non_power_of_two",
+      "category": "numerical",
+      "gates": [
+        "numerical"
+      ],
+      "purpose": "Non-power-of-two extents far above one UB tile validate multi-block scheduling.",
+      "input": {
+        "dtype": "float32",
+        "shape": [
+          513,
+          1025
+        ],
+        "layout": "c_contiguous",
+        "values": "np.arange(513 * 1025, dtype=np.float32).reshape(513, 1025) * np.float32(0.25) - np.float32(11.0)"
+      },
+      "axis": 1,
+      "expected": {
+        "oracle": "numpy.flip(a, axis=1)",
+        "comparison": "bitwise_exact"
+      }
+    },
+    {
+      "id": "double_flip_bitwise_identity",
+      "category": "numerical",
+      "gates": [
+        "numerical",
+        "unit_and_boundary"
+      ],
+      "purpose": "Applying flip twice on the same axis must restore the original bits.",
+      "input": {
+        "dtype": "float32",
+        "shape": [
+          129,
+          257
+        ],
+        "layout": "c_contiguous",
+        "values": "np.arange(129 * 257, dtype=np.float32).reshape(129, 257) * np.float32(-0.5) + np.float32(3.25)"
+      },
+      "axis": 1,
+      "expected": {
+        "constraint": "asnumpy.flip(asnumpy.flip(a, axis=1), axis=1) is bitwise equal to a",
+        "comparison": "bitwise_exact"
+      }
+    },
+    {
+      "id": "nan_payload_bitwise_preserved",
+      "category": "special_values",
+      "gates": [
+        "numerical"
+      ],
+      "purpose": "NaN payloads move with the permutation and are never canonicalized.",
+      "input": {
+        "dtype": "float32",
+        "shape": [
+          4,
+          8
+        ],
+        "layout": "c_contiguous",
+        "values": "np.tile(np.array([0x7FC00000, 0x7FC00001, 0xFFC00000, 0x7F800001, 0x00000000, 0x80000000, 0x7F7FFFFF, 0xFF7FFFFF], dtype=np.uint32), 4).reshape(4, 8).view(np.float32)"
+      },
+      "axis": 1,
+      "expected": {
+        "oracle": "numpy.flip(a, axis=1)",
+        "comparison": "uint32_bitexact",
+        "nan_handling": "positional bit-pattern equality, no == comparison against NaN"
+      }
+    },
+    {
+      "id": "inf_and_signed_zero_preserved",
+      "category": "special_values",
+      "gates": [
+        "numerical"
+      ],
+      "purpose": "Infinities, signed zeros, subnormals and float32 extrema keep their signbit and bit pattern.",
+      "input": {
+        "dtype": "float32",
+        "shape": [
+          2,
+          6
+        ],
+        "layout": "c_contiguous",
+        "values": "np.array([[np.inf, -np.inf, 0.0, -0.0, np.finfo(np.float32).tiny, np.finfo(np.float32).max], [-0.0, 0.0, -np.inf, np.inf, np.float32(1.0), np.float32(-1.0)]], dtype=np.float32)"
+      },
+      "axis": 1,
+      "expected": {
+        "oracle": "numpy.flip(a, axis=1)",
+        "comparison": "bitwise_exact",
+        "signbit_handling": "np.signbit(actual) == np.signbit(expected) elementwise"
+      }
+    },
+    {
+      "id": "reject_float16",
+      "category": "rejection",
+      "gates": [
+        "unit_and_boundary"
+      ],
+      "input": {
+        "dtype": "float16",
+        "shape": [
+          8,
+          8
+        ],
+        "layout": "c_contiguous",
+        "values": "np.arange(64, dtype=np.float16).reshape(8, 8)"
+      },
+      "axis": 1,
+      "expected_exception": {
+        "type": "TypeError",
+        "message_contains": [
+          "float32"
+        ]
+      },
+      "forbidden_behaviour": "casting float16 to float32 before dispatch"
+    },
+    {
+      "id": "reject_float64",
+      "category": "rejection",
+      "gates": [
+        "unit_and_boundary"
+      ],
+      "input": {
+        "dtype": "float64",
+        "shape": [
+          8,
+          8
+        ],
+        "layout": "c_contiguous",
+        "values": "np.arange(64, dtype=np.float64).reshape(8, 8)"
+      },
+      "axis": 1,
+      "expected_exception": {
+        "type": "TypeError",
+        "message_contains": [
+          "float32"
+        ]
+      },
+      "forbidden_behaviour": "downcasting float64 to float32 or computing on the host"
+    },
+    {
+      "id": "reject_int32_and_bool",
+      "category": "rejection",
+      "gates": [
+        "unit_and_boundary"
+      ],
+      "sub_cases": [
+        {
+          "input": {
+            "dtype": "int32",
+            "shape": [
+              8,
+              8
+            ],
+            "layout": "c_contiguous",
+            "values": "np.arange(64, dtype=np.int32).reshape(8, 8)"
+          },
+          "axis": 1
+        },
+        {
+          "input": {
+            "dtype": "bool",
+            "shape": [
+              8,
+              8
+            ],
+            "layout": "c_contiguous",
+            "values": "np.arange(64).reshape(8, 8) % 2 == 0"
+          },
+          "axis": 1
+        }
+      ],
+      "expected_exception": {
+        "type": "TypeError",
+        "message_contains": [
+          "float32"
+        ]
+      },
+      "forbidden_behaviour": "int32 or bool inputs being accepted through an implicit numeric cast"
+    },
+    {
+      "id": "reject_rank1_and_rank3",
+      "category": "rejection",
+      "gates": [
+        "unit_and_boundary"
+      ],
+      "sub_cases": [
+        {
+          "input": {
+            "dtype": "float32",
+            "shape": [
+              64
+            ],
+            "layout": "c_contiguous",
+            "values": "np.arange(64, dtype=np.float32)"
+          },
+          "axis": 0
+        },
+        {
+          "input": {
+            "dtype": "float32",
+            "shape": [
+              4,
+              4,
+              4
+            ],
+            "layout": "c_contiguous",
+            "values": "np.arange(64, dtype=np.float32).reshape(4, 4, 4)"
+          },
+          "axis": 1
+        }
+      ],
+      "expected_exception": {
+        "type": "ValueError",
+        "message_contains": [
+          "2"
+        ]
+      },
+      "forbidden_behaviour": "reshape, squeeze or flatten to force rank 2"
+    },
+    {
+      "id": "reject_axis_out_of_range",
+      "category": "rejection",
+      "gates": [
+        "unit_and_boundary"
+      ],
+      "preconditions": [
+        "a = np.zeros((8, 8), dtype=np.float32)"
+      ],
+      "sub_cases": [
+        {
+          "axis": 2
+        },
+        {
+          "axis": -3
+        }
+      ],
+      "expected_exception": {
+        "type": "ValueError",
+        "message_contains": [
+          "axis"
+        ]
+      },
+      "forbidden_behaviour": "wrapping or clamping the axis"
+    },
+    {
+      "id": "reject_tuple_axis",
+      "category": "rejection",
+      "gates": [
+        "unit_and_boundary"
+      ],
+      "preconditions": [
+        "a = np.zeros((8, 8), dtype=np.float32)"
+      ],
+      "axis": [
+        0,
+        1
+      ],
+      "expected_exception": {
+        "accepted_types": [
+          "ValueError",
+          "TypeError",
+          "NotImplementedError"
+        ],
+        "message_contains": [
+          "axis"
+        ]
+      },
+      "forbidden_behaviour": "silently using only the first element of the tuple"
+    },
+    {
+      "id": "reject_non_contiguous_input",
+      "category": "rejection",
+      "gates": [
+        "unit_and_boundary"
+      ],
+      "input": {
+        "dtype": "float32",
+        "shape": [
+          8,
+          8
+        ],
+        "layout": "c_contiguous=False (transpose view)",
+        "values": "np.arange(64, dtype=np.float32).reshape(8, 8).T"
+      },
+      "axis": 0,
+      "expected_exception": {
+        "type": "ValueError",
+        "message_contains": [
+          "contiguous"
+        ]
+      },
+      "forbidden_behaviour": "implicit ascontiguousarray copy or host-side gather"
+    },
+    {
+      "id": "reject_unknown_kwargs",
+      "category": "rejection",
+      "gates": [
+        "unit_and_boundary"
+      ],
+      "preconditions": [
+        "a = np.zeros((8, 8), dtype=np.float32)"
+      ],
+      "sub_cases": [
+        {
+          "call": "asnumpy.flip(a, axis=1, out=a)"
+        },
+        {
+          "call": "asnumpy.flip(a, axis=1, dtype=np.float64)"
+        },
+        {
+          "call": "asnumpy.flip(a, axis=1, casting='unsafe')"
+        },
+        {
+          "call": "asnumpy.flip(a, axis=1, where=True)"
+        }
+      ],
+      "expected_exception": {
+        "type": "TypeError"
+      },
+      "forbidden_behaviour": "ignoring or forwarding unsupported keywords"
+    },
+    {
+      "id": "repeated_call_lifecycle",
+      "category": "lifecycle",
+      "gates": [
+        "unit_and_boundary",
+        "native_execution"
+      ],
+      "purpose": "Five consecutive calls on the same input produce identical results and leave the input untouched.",
+      "preconditions": [
+        "a = np.arange(64 * 64, dtype=np.float32).reshape(64, 64) * np.float32(0.5)",
+        "snapshot = a.copy()"
+      ],
+      "assertions": [
+        "for i in range(5): asnumpy.flip(a, axis=1) is bitwise equal to numpy.flip(a, axis=1)",
+        "a is bitwise equal to snapshot after the loop",
+        "each returned tensor has dtype float32 and shape (64, 64)"
+      ]
+    },
+    {
+      "id": "input_not_mutated_and_output_independent",
+      "category": "lifecycle",
+      "gates": [
+        "unit_and_boundary",
+        "numerical"
+      ],
+      "purpose": "The adapter neither writes into the input nor aliases the output buffer to it.",
+      "preconditions": [
+        "a = np.arange(32 * 32, dtype=np.float32).reshape(32, 32)",
+        "snapshot = a.copy()"
+      ],
+      "assertions": [
+        "r = asnumpy.flip(a, axis=1)",
+        "r is not a",
+        "a is bitwise equal to snapshot",
+        "after r[...] = np.float32(-1.0), a is still bitwise equal to snapshot"
+      ]
+    },
+    {
+      "id": "valid_call_after_rejection",
+      "category": "lifecycle",
+      "gates": [
+        "unit_and_boundary"
+      ],
+      "purpose": "A rejected call leaves no stale workspace, stream or dtype state behind.",
+      "assertions": [
+        "raises TypeError: asnumpy.flip(np.zeros((8, 8), dtype=np.float16), axis=1)",
+        "asnumpy.flip(np.arange(64, dtype=np.float32).reshape(8, 8), axis=1) matches numpy.flip exactly"
+      ]
+    },
+    {
+      "id": "output_dtype_preserved",
+      "category": "dtype_contract",
+      "gates": [
+        "numerical",
+        "unit_and_boundary"
+      ],
+      "purpose": "The operator returns float32, not a float64 tensor produced by host arithmetic.",
+      "preconditions": [
+        "a = np.arange(16 * 16, dtype=np.float32).reshape(16, 16)"
+      ],
+      "assertions": [
+        "asnumpy.flip(a, axis=1).dtype == np.dtype('float32')",
+        "asnumpy.flip(a, axis=1).shape == (16, 16)"
+      ]
+    },
+    {
+      "id": "comparison_mask_is_bool",
+      "category": "dtype_contract",
+      "gates": [
+        "numerical"
+      ],
+      "purpose": "Numerical comparison results are boolean and are never cast to float32.",
+      "preconditions": [
+        "expected = numpy.flip(a, axis=1)",
+        "actual = asnumpy.flip(a, axis=1)",
+        "mask = expected.view(np.uint32) == actual.view(np.uint32)"
+      ],
+      "assertions": [
+        "mask.dtype == np.dtype('bool')",
+        "mask.shape == expected.shape",
+        "mask.all()"
+      ]
+    },
+    {
+      "id": "no_host_fallback_and_native_evidence",
+      "category": "native",
+      "gates": [
+        "native_execution",
+        "whole_program"
+      ],
+      "purpose": "The call really executes the Ascend C flip kernel through ACLNN and never falls back to NumPy on the host.",
+      "preconditions": [
+        "numpy.flip is monkeypatched to raise RuntimeError",
+        "golden = saved numpy.flip output computed before monkeypatching",
+        "NPU profiler collects one trace around the call"
+      ],
+      "assertions": [
+        "asnumpy.flip(a, axis=1) succeeds while numpy.flip is patched to raise",
+        "the returned tensor is bitwise equal to golden",
+        "the profiler trace contains at least one device kernel whose name contains 'flip' (case-insensitive)",
+        "the trace shows an ACLNN two-stage invocation (aclnnFlipGetWorkspaceSize followed by aclnnFlip) on device 0",
+        "no host-side memcpy-only implementation path is recorded for the output"
+      ],
+      "evidence": [
+        "profiler trace file",
+        "adapter native call log line including the operator name flip"
+      ]
+    },
+    {
+      "id": "error_messages_identify_argument",
+      "category": "rejection",
+      "gates": [
+        "unit_and_boundary"
+      ],
+      "purpose": "Diagnostics name the offending argument so callers can fix the call without guessing.",
+      "assertions": [
+        "the dtype rejection message names the dtype or the input argument",
+        "the axis rejection message contains 'axis' and the rejected value",
+        "the rank rejection message contains the received rank or the required rank 2"
+      ]
+    }
+  ],
+  "coverage": {
+    "observed_profile": [
+      "observed_profile_axis1"
+    ],
+    "axis_semantics": [
+      "axis_none_rank2",
+      "axis_0",
+      "axis_negative_one_matches_axis_one",
+      "axis_negative_two_matches_axis_zero",
+      "axis_none_equals_sequential_both_axes"
+    ],
+    "shape_and_layout": [
+      "empty_rows_and_cols",
+      "singleton_extents",
+      "odd_dimensions_tail",
+      "large_non_power_of_two",
+      "reject_non_contiguous_input"
+    ],
+    "special_values": [
+      "nan_payload_bitwise_preserved",
+      "inf_and_signed_zero_preserved"
+    ],
+    "rejection": [
+      "reject_float16",
+      "reject_float64",
+      "reject_int32_and_bool",
+      "reject_rank1_and_rank3",
+      "reject_axis_out_of_range",
+      "reject_tuple_axis",
+      "reject_unknown_kwargs",
+      "error_messages_identify_argument"
+    ],
+    "lifecycle": [
+      "repeated_call_lifecycle",
+      "input_not_mutated_and_output_independent",
+      "valid_call_after_rejection"
+    ],
+    "native_and_fallback_guard": [
+      "no_host_fallback_and_native_evidence"
+    ],
+    "dtype_contract": [
+      "output_dtype_preserved",
+      "comparison_mask_is_bool"
+    ]
+  },
+  "required_artifacts": [
+    "saved float32 input for the observed [2048, 2048] axis=1 profile",
+    "saved numpy.flip expected output for every numerical case",
+    "saved device actual output for every numerical case",
+    "per-case pass/fail record with the exact rtol/atol used (0.0/0.0 for float32)",
+    "NPU profiler trace proving device execution of the flip kernel",
+    "adapter import log proving asnumpy.flip resolves to the adapter package"
+  ],
+  "pending_gates": [
+    {
+      "id": "build",
+      "status": "pending",
+      "owner": "deterministic_validator"
+    },
+    {
+      "id": "unit_and_boundary",
+      "status": "pending",
+      "owner": "deterministic_validator"
+    },
+    {
+      "id": "numerical",
+      "status": "pending",
+      "owner": "deterministic_validator"
+    },
+    {
+      "id": "native_execution",
+      "status": "pending",
+      "owner": "deterministic_validator"
+    },
+    {
+      "id": "whole_program",
+      "status": "pending",
+      "owner": "deterministic_validator"
+    },
+    {
+      "id": "performance",
+      "status": "pending",
+      "owner": "deterministic_validator"
+    },
+    {
+      "id": "activation",
+      "status": "pending",
+      "owner": "deterministic_validator"
+    }
+  ],
+  "activation": {
+    "permitted": false,
+    "reason": "All gates remain pending; this manifest is an unverified candidate artifact and must not be installed into a shared AsNumpy checkout or the system CANN installation before deterministic validation."
+  }
+}

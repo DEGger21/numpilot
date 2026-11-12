@@ -72,6 +72,10 @@ def _install_dispatch_probe(array_module, native_module):
 
 
 CBRT_API_NAME = "numpy.cbrt"
+INVERT_API_NAME = "numpy.invert"
+ARGSORT_API_NAME = "numpy.argsort"
+SEARCHSORTED_API_NAME = "numpy.searchsorted"
+MEDIAN_API_NAME = "numpy.median"
 
 
 def _finish(result, publish):
@@ -247,6 +251,623 @@ def _run_cbrt(arguments, result, publish, record, numpy, ap):
     return _finish(result, publish)
 
 
+def _run_invert(arguments, result, publish, record, numpy, ap):
+    """Deterministic NumPy oracle suite for the reviewed invert adapter."""
+
+    if not callable(getattr(ap, "invert", None)):
+        raise RuntimeError("asnumpy.invert is not available")
+    public_module = importlib.import_module("asnumpy.logic")
+    core_module = importlib.import_module("asnumpy._core.logic")
+    native = getattr(core_module, "invert", None)
+    if not callable(native):
+        raise RuntimeError("reviewed native invert binding is missing")
+    aliases = [
+        name for name, value in vars(public_module).items() if value is native
+    ]
+    if not aliases:
+        raise RuntimeError(
+            "public logic module does not import the reviewed invert binding"
+        )
+
+    originals = {name: getattr(public_module, name) for name in aliases}
+
+    def forbidden(*_args, **_kwargs):
+        raise RuntimeError("official invert binding probe")
+
+    # Binding probe: the public wrapper must resolve one of these module-level
+    # aliases at call time, otherwise patching it cannot intercept the call.
+    for name in aliases:
+        setattr(public_module, name, forbidden)
+    try:
+        probe = numpy.array([1], dtype=numpy.int32)
+        try:
+            ap.invert(ap.ndarray.from_numpy(probe))
+        except BaseException as exc:
+            if "official invert binding probe" in str(exc):
+                record("native_binding_selected", "passed")
+            else:
+                record("native_binding_selected", "failed", _detail(exc))
+        else:
+            record(
+                "native_binding_selected",
+                "failed",
+                "public invert bypassed the reviewed native binding",
+            )
+    finally:
+        for name, value in originals.items():
+            setattr(public_module, name, value)
+
+    observed = {"native_calls": 0}
+
+    def checked_native(*args, **kwargs):
+        observed["native_calls"] += 1
+        return native(*args, **kwargs)
+
+    for name in aliases:
+        setattr(public_module, name, checked_native)
+
+    def compare(name, values):
+        try:
+            expected = numpy.invert(values)
+            actual = ap.invert(ap.ndarray.from_numpy(values)).to_numpy()
+            if actual.dtype != expected.dtype:
+                raise AssertionError(
+                    "dtype %r != %r" % (actual.dtype, expected.dtype)
+                )
+            if actual.shape != expected.shape:
+                raise AssertionError(
+                    "shape %r != %r" % (actual.shape, expected.shape)
+                )
+            numpy.testing.assert_array_equal(actual, expected)
+            result["oracle_comparisons"] += 1
+            record(name, "passed")
+        except BaseException as exc:
+            record(name, "failed", _detail(exc))
+
+    def reject(name, values):
+        try:
+            ap.invert(ap.ndarray.from_numpy(values))
+        except (TypeError, ValueError, RuntimeError):
+            # The C++ dtype guard surfaces as std::runtime_error.
+            record(name, "passed")
+        except BaseException as exc:
+            record(name, "failed", _detail(exc))
+        else:
+            record(name, "failed", "unsupported dtype was accepted")
+
+    compare(
+        "bool_values",
+        numpy.array([True, False, True, True, False], dtype=numpy.bool_),
+    )
+    compare(
+        "int8_boundaries",
+        numpy.array([-128, -2, -1, 0, 1, 126, 127], dtype=numpy.int8),
+    )
+    compare(
+        "int16_boundaries",
+        numpy.array([-32768, -1, 0, 1, 32767], dtype=numpy.int16),
+    )
+    compare(
+        "int32_boundaries",
+        numpy.array([-2147483648, -1, 0, 1, 2147483647], dtype=numpy.int32),
+    )
+    compare(
+        "int64_boundaries",
+        numpy.array([-9223372036854775808, -1, 0, 1, 9223372036854775807],
+                    dtype=numpy.int64),
+    )
+    compare(
+        "uint8_values",
+        numpy.array([0, 1, 2, 127, 254, 255], dtype=numpy.uint8),
+    )
+    compare(
+        "rank_two_int32",
+        numpy.arange(-6, 6, dtype=numpy.int32).reshape(3, 4),
+    )
+    reject("float32_rejected", numpy.array([1.0, -2.0], dtype=numpy.float32))
+    reject("float64_rejected", numpy.array([1.0, -2.0], dtype=numpy.float64))
+    reject("uint16_rejected", numpy.array([1, 2], dtype=numpy.uint16))
+    reject("uint32_rejected", numpy.array([1, 2], dtype=numpy.uint32))
+
+    base = numpy.array([-128, -1, 0, 1, 127], dtype=numpy.int8)
+    expected_base = numpy.invert(base)
+    repeated_failure = None
+    for index in range(REPEATED_CALLS):
+        try:
+            actual = ap.invert(ap.ndarray.from_numpy(base)).to_numpy()
+            numpy.testing.assert_array_equal(actual, expected_base)
+            result["oracle_comparisons"] += 1
+        except BaseException as exc:
+            repeated_failure = "iteration %d: %s" % (index, _detail(exc))
+            break
+    if repeated_failure is not None:
+        record("repeated_calls_stable", "failed", repeated_failure)
+    else:
+        record("repeated_calls_stable", "passed")
+
+    result["dispatch_observation"] = dict(observed)
+    dispatch_passed = observed["native_calls"] >= result["oracle_comparisons"] > 0
+    record(
+        "official_aclnn_dispatch",
+        "passed" if dispatch_passed else "failed",
+        "native=%d" % observed["native_calls"],
+    )
+    return _finish(result, publish)
+
+
+def _bind_sorting_native(public_module, core_module, name, api):
+    """Return the module-level aliases bound to the reviewed extension."""
+
+    native = getattr(core_module, name, None)
+    if not callable(native):
+        raise RuntimeError("reviewed native %s binding is missing" % api)
+    aliases = [
+        alias for alias, value in vars(public_module).items() if value is native
+    ]
+    if not aliases:
+        raise RuntimeError(
+            "public sorting module does not import the reviewed %s binding" % api
+        )
+    return native, aliases
+
+
+def _probe_sorting_alias(public_module, aliases, call, record, name):
+    """Insert a trap on every alias and require the public call to hit it."""
+
+    originals = {alias: getattr(public_module, alias) for alias in aliases}
+
+    def forbidden(*_args, **_kwargs):
+        raise RuntimeError("official %s binding probe" % name)
+
+    for alias in aliases:
+        setattr(public_module, alias, forbidden)
+    try:
+        try:
+            call()
+        except BaseException as exc:
+            if "official %s binding probe" % name in str(exc):
+                record("native_binding_selected", "passed")
+            else:
+                record("native_binding_selected", "failed", _detail(exc))
+        else:
+            record(
+                "native_binding_selected",
+                "failed",
+                "public %s bypassed the reviewed native binding" % name,
+            )
+    finally:
+        for alias, value in originals.items():
+            setattr(public_module, alias, value)
+
+
+def _install_sorting_counter(public_module, aliases, native):
+    observed = {"native_calls": 0}
+
+    def checked(*args, **kwargs):
+        observed["native_calls"] += 1
+        return native(*args, **kwargs)
+
+    for alias in aliases:
+        setattr(public_module, alias, checked)
+    return observed
+
+
+def _run_argsort(arguments, result, publish, record, numpy, ap):
+    """Deterministic NumPy oracle suite for the reviewed argsort adapter."""
+
+    if not callable(getattr(ap, "argsort", None)):
+        raise RuntimeError("asnumpy.argsort is not available")
+    public_module = importlib.import_module("asnumpy.sorting")
+    core_module = importlib.import_module("asnumpy._core.sorting")
+    native, aliases = _bind_sorting_native(
+        public_module, core_module, "argsort", "argsort"
+    )
+    probe_values = numpy.array([3.0, 1.0], dtype=numpy.float32)
+    _probe_sorting_alias(
+        public_module,
+        aliases,
+        lambda: ap.argsort(ap.ndarray.from_numpy(probe_values)),
+        record,
+        "argsort",
+    )
+    observed = _install_sorting_counter(public_module, aliases, native)
+
+    def compare(name, values, axis=-1):
+        try:
+            expected = numpy.argsort(values, axis=axis)
+            actual = ap.argsort(ap.ndarray.from_numpy(values), axis=axis).to_numpy()
+            if actual.dtype != numpy.int64:
+                raise AssertionError("dtype %r != int64" % (actual.dtype,))
+            if actual.shape != expected.shape:
+                raise AssertionError(
+                    "shape %r != %r" % (actual.shape, expected.shape)
+                )
+            numpy.testing.assert_array_equal(actual, expected)
+            result["oracle_comparisons"] += 1
+            record(name, "passed")
+        except BaseException as exc:
+            record(name, "failed", _detail(exc))
+
+    def reject(name, values, axis=-1):
+        try:
+            ap.argsort(ap.ndarray.from_numpy(values), axis=axis)
+        except (TypeError, ValueError, RuntimeError, IndexError):
+            record(name, "passed")
+        except BaseException as exc:
+            record(name, "failed", _detail(exc))
+        else:
+            record(name, "failed", "unsupported input was accepted")
+
+    compare(
+        "descending_ramp_1d",
+        numpy.array([9.0, 7.0, 5.0, 3.0, 1.0], dtype=numpy.float32),
+    )
+    compare(
+        "ascending_ramp_1d",
+        numpy.array([1.0, 5.0, 3.0, 7.0, 9.0], dtype=numpy.float32),
+    )
+    compare(
+        "irregular_values_1d",
+        numpy.array([0.5, -2.25, 3.75, -1.0, 2.0, 0.0], dtype=numpy.float32),
+    )
+    compare("single_element", numpy.array([-4.0], dtype=numpy.float32))
+    compare(
+        "rank_two_default_axis",
+        numpy.array([[3.0, 1.0, 2.0], [6.0, 4.0, 5.0]], dtype=numpy.float32),
+    )
+    compare(
+        "rank_two_axis_zero",
+        numpy.array([[3.0, 1.0, 2.0], [6.0, 4.0, 5.0]], dtype=numpy.float32),
+        axis=0,
+    )
+    compare(
+        "rank_three_axis_one",
+        numpy.linspace(-3.0, 3.0, 12, dtype=numpy.float32).reshape(2, 3, 2),
+        axis=1,
+    )
+    reject(
+        "int32_rejected",
+        numpy.array([3, 1, 2], dtype=numpy.int32),
+    )
+    reject(
+        "float64_rejected",
+        numpy.array([3.0, 1.0, 2.0], dtype=numpy.float64),
+    )
+    reject(
+        "axis_out_of_range_rejected",
+        numpy.array([3.0, 1.0, 2.0], dtype=numpy.float32),
+        axis=2,
+    )
+    reject(
+        "negative_axis_out_of_range_rejected",
+        numpy.array([3.0, 1.0, 2.0], dtype=numpy.float32),
+        axis=-2,
+    )
+
+    base = numpy.array([9.0, 7.0, 5.0, 3.0, 1.0], dtype=numpy.float32)
+    expected_base = numpy.argsort(base)
+    repeated_failure = None
+    for index in range(REPEATED_CALLS):
+        try:
+            actual = ap.argsort(ap.ndarray.from_numpy(base)).to_numpy()
+            numpy.testing.assert_array_equal(actual, expected_base)
+            result["oracle_comparisons"] += 1
+        except BaseException as exc:
+            repeated_failure = "iteration %d: %s" % (index, _detail(exc))
+            break
+    if repeated_failure is not None:
+        record("repeated_calls_stable", "failed", repeated_failure)
+    else:
+        record("repeated_calls_stable", "passed")
+
+    result["dispatch_observation"] = dict(observed)
+    dispatch_passed = observed["native_calls"] >= result["oracle_comparisons"] > 0
+    record(
+        "official_aclnn_dispatch",
+        "passed" if dispatch_passed else "failed",
+        "native=%d" % observed["native_calls"],
+    )
+    return _finish(result, publish)
+
+
+def _run_searchsorted(arguments, result, publish, record, numpy, ap):
+    """Deterministic NumPy oracle suite for the reviewed searchsorted adapter."""
+
+    if not callable(getattr(ap, "searchsorted", None)):
+        raise RuntimeError("asnumpy.searchsorted is not available")
+    public_module = importlib.import_module("asnumpy.sorting")
+    core_module = importlib.import_module("asnumpy._core.sorting")
+    native, aliases = _bind_sorting_native(
+        public_module, core_module, "searchsorted", "searchsorted"
+    )
+    probe_boundaries = numpy.array([0.0, 1.0, 2.0], dtype=numpy.float32)
+    probe_values = numpy.array([0.5, 1.5], dtype=numpy.float32)
+    _probe_sorting_alias(
+        public_module,
+        aliases,
+        lambda: ap.searchsorted(
+            ap.ndarray.from_numpy(probe_boundaries),
+            ap.ndarray.from_numpy(probe_values),
+        ),
+        record,
+        "searchsorted",
+    )
+    observed = _install_sorting_counter(public_module, aliases, native)
+
+    def compare(name, boundaries, probes, right=False):
+        try:
+            expected = numpy.searchsorted(
+                boundaries, probes, side="right" if right else "left"
+            )
+            actual = ap.searchsorted(
+                ap.ndarray.from_numpy(boundaries),
+                ap.ndarray.from_numpy(probes),
+                right=right,
+            ).to_numpy()
+            if actual.dtype != numpy.int64:
+                raise AssertionError("dtype %r != int64" % (actual.dtype,))
+            if actual.shape != expected.shape:
+                raise AssertionError(
+                    "shape %r != %r" % (actual.shape, expected.shape)
+                )
+            numpy.testing.assert_array_equal(actual, expected)
+            result["oracle_comparisons"] += 1
+            record(name, "passed")
+        except BaseException as exc:
+            record(name, "failed", _detail(exc))
+
+    def reject(name, boundaries, probes, right=False):
+        try:
+            ap.searchsorted(
+                ap.ndarray.from_numpy(boundaries),
+                ap.ndarray.from_numpy(probes),
+                right=right,
+            )
+        except (TypeError, ValueError, RuntimeError):
+            record(name, "passed")
+        except BaseException as exc:
+            record(name, "failed", _detail(exc))
+        else:
+            record(name, "failed", "unsupported input was accepted")
+
+    ramp = numpy.linspace(0.0, 1.0, 11, dtype=numpy.float32)
+    compare(
+        "probes_inside_and_outside_left",
+        ramp,
+        numpy.array([-0.5, 0.0, 0.05, 0.5, 0.95, 1.0, 1.5], dtype=numpy.float32),
+    )
+    compare(
+        "probes_inside_and_outside_right",
+        ramp,
+        numpy.array([-0.5, 0.0, 0.05, 0.5, 0.95, 1.0, 1.5], dtype=numpy.float32),
+        right=True,
+    )
+    duplicates = numpy.array([0.0, 0.0, 1.0, 1.0, 2.0], dtype=numpy.float32)
+    compare(
+        "duplicate_boundaries_left",
+        duplicates,
+        numpy.array([0.0, 0.5, 1.0, 1.5, 2.0], dtype=numpy.float32),
+    )
+    compare(
+        "duplicate_boundaries_right",
+        duplicates,
+        numpy.array([0.0, 0.5, 1.0, 1.5, 2.0], dtype=numpy.float32),
+        right=True,
+    )
+    compare(
+        "all_probes_below_range",
+        ramp,
+        numpy.array([-3.0, -2.0, -1.0], dtype=numpy.float32),
+    )
+    compare(
+        "all_probes_above_range",
+        ramp,
+        numpy.array([2.0, 3.0, 4.0], dtype=numpy.float32),
+    )
+    compare(
+        "single_probe_exact_hit",
+        ramp,
+        numpy.array([0.5], dtype=numpy.float32),
+    )
+    reject(
+        "two_dimensional_sequence_rejected",
+        numpy.zeros((2, 3), dtype=numpy.float32),
+        numpy.array([0.5], dtype=numpy.float32),
+    )
+    reject(
+        "float64_inputs_rejected",
+        ramp.astype(numpy.float64),
+        numpy.array([0.5], dtype=numpy.float64),
+    )
+    # Documented reviewed boundary: the ACLNN pair has no empty-tensor route,
+    # so both empty operands must be refused rather than silently answered.
+    reject(
+        "empty_sequence_boundary_rejected",
+        numpy.array([], dtype=numpy.float32),
+        numpy.array([0.5], dtype=numpy.float32),
+    )
+    reject(
+        "empty_values_boundary_rejected",
+        ramp,
+        numpy.array([], dtype=numpy.float32),
+    )
+
+    base_boundaries = numpy.linspace(0.0, 1.0, 11, dtype=numpy.float32)
+    base_probes = numpy.array([-0.5, 0.25, 0.75, 1.5], dtype=numpy.float32)
+    expected_base = numpy.searchsorted(base_boundaries, base_probes)
+    repeated_failure = None
+    for index in range(REPEATED_CALLS):
+        try:
+            actual = ap.searchsorted(
+                ap.ndarray.from_numpy(base_boundaries),
+                ap.ndarray.from_numpy(base_probes),
+            ).to_numpy()
+            numpy.testing.assert_array_equal(actual, expected_base)
+            result["oracle_comparisons"] += 1
+        except BaseException as exc:
+            repeated_failure = "iteration %d: %s" % (index, _detail(exc))
+            break
+    if repeated_failure is not None:
+        record("repeated_calls_stable", "failed", repeated_failure)
+    else:
+        record("repeated_calls_stable", "passed")
+
+    result["dispatch_observation"] = dict(observed)
+    dispatch_passed = observed["native_calls"] >= result["oracle_comparisons"] > 0
+    record(
+        "official_aclnn_dispatch",
+        "passed" if dispatch_passed else "failed",
+        "native=%d" % observed["native_calls"],
+    )
+    return _finish(result, publish)
+
+
+def _run_median(arguments, result, publish, record, numpy, ap):
+    """Deterministic NumPy oracle suite for the reviewed median adapter."""
+
+    if not callable(getattr(ap, "median", None)):
+        raise RuntimeError("asnumpy.median is not available")
+    public_module = importlib.import_module("asnumpy.statistics")
+    core_module = importlib.import_module("asnumpy._core.statistics")
+    native = getattr(core_module, "median", None)
+    if not callable(native):
+        raise RuntimeError("reviewed native median binding is missing")
+    aliases = [
+        name for name, value in vars(public_module).items() if value is native
+    ]
+    if not aliases:
+        raise RuntimeError(
+            "public statistics module does not import the reviewed median binding"
+        )
+
+    originals = {name: getattr(public_module, name) for name in aliases}
+
+    def forbidden(*_args, **_kwargs):
+        raise RuntimeError("official median binding probe")
+
+    for name in aliases:
+        setattr(public_module, name, forbidden)
+    try:
+        try:
+            ap.median(ap.ndarray.from_numpy(
+                numpy.array([1.0], dtype=numpy.float32)
+            ))
+        except BaseException as exc:
+            if "official median binding probe" in str(exc):
+                record("native_binding_selected", "passed")
+            else:
+                record("native_binding_selected", "failed", _detail(exc))
+        else:
+            record(
+                "native_binding_selected",
+                "failed",
+                "public median bypassed the reviewed native binding",
+            )
+    finally:
+        for name, value in originals.items():
+            setattr(public_module, name, value)
+
+    observed = {"native_calls": 0}
+
+    def checked_native(*args, **kwargs):
+        observed["native_calls"] += 1
+        return native(*args, **kwargs)
+
+    for name in aliases:
+        setattr(public_module, name, checked_native)
+
+    def scalar_of(actual):
+        payload = actual
+        if hasattr(payload, "to_numpy"):
+            payload = payload.to_numpy()
+        payload = numpy.asarray(payload)
+        if payload.size != 1:
+            raise AssertionError(
+                "median returned %d values, expected one" % payload.size
+            )
+        return float(payload.reshape(-1)[0])
+
+    def compare(name, values):
+        try:
+            expected = float(numpy.median(values))
+            actual = scalar_of(ap.median(ap.ndarray.from_numpy(values)))
+            if not numpy.isclose(actual, expected, rtol=1e-6, atol=1e-6):
+                raise AssertionError(
+                    "median %.9g != numpy %.9g" % (actual, expected)
+                )
+            result["oracle_comparisons"] += 1
+            record(name, "passed")
+        except BaseException as exc:
+            record(name, "failed", _detail(exc))
+
+    def reject(name, values):
+        try:
+            ap.median(ap.ndarray.from_numpy(values))
+        except (TypeError, ValueError, RuntimeError):
+            record(name, "passed")
+        except BaseException as exc:
+            record(name, "failed", _detail(exc))
+        else:
+            record(name, "failed", "unsupported input was accepted")
+
+    compare(
+        "odd_length_1d",
+        numpy.array([3.0, 1.0, 2.0, 5.0, 4.0], dtype=numpy.float32),
+    )
+    compare(
+        "even_length_1d",
+        numpy.array([1.0, 2.0, 3.0, 4.0], dtype=numpy.float32),
+    )
+    compare("single_element", numpy.array([7.5], dtype=numpy.float32))
+    compare(
+        "negative_values",
+        numpy.array([-4.0, -1.0, -3.0, -2.0], dtype=numpy.float32),
+    )
+    compare(
+        "all_equal",
+        numpy.full(6, 2.25, dtype=numpy.float32),
+    )
+    compare(
+        "rank_two_flattened",
+        numpy.array([[1.0, 2.0], [3.0, 4.0]], dtype=numpy.float32),
+    )
+    compare(
+        "rank_three_flattened",
+        numpy.linspace(-3.0, 3.0, 12, dtype=numpy.float32).reshape(2, 3, 2),
+    )
+    reject("int32_rejected", numpy.array([1, 2, 3], dtype=numpy.int32))
+    reject("float64_rejected", numpy.array([1.0, 2.0], dtype=numpy.float64))
+    reject("empty_rejected", numpy.array([], dtype=numpy.float32))
+
+    base = numpy.array([3.0, 1.0, 2.0, 5.0, 4.0], dtype=numpy.float32)
+    expected_base = float(numpy.median(base))
+    repeated_failure = None
+    for index in range(REPEATED_CALLS):
+        try:
+            actual = scalar_of(ap.median(ap.ndarray.from_numpy(base)))
+            if not numpy.isclose(actual, expected_base, rtol=1e-6, atol=1e-6):
+                raise AssertionError(
+                    "median %.9g != numpy %.9g" % (actual, expected_base)
+                )
+            result["oracle_comparisons"] += 1
+        except BaseException as exc:
+            repeated_failure = "iteration %d: %s" % (index, _detail(exc))
+            break
+    if repeated_failure is not None:
+        record("repeated_calls_stable", "failed", repeated_failure)
+    else:
+        record("repeated_calls_stable", "passed")
+
+    result["dispatch_observation"] = dict(observed)
+    dispatch_passed = observed["native_calls"] >= result["oracle_comparisons"] > 0
+    record(
+        "official_aclnn_dispatch",
+        "passed" if dispatch_passed else "failed",
+        "native=%d" % observed["native_calls"],
+    )
+    return _finish(result, publish)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--result", required=True)
@@ -303,6 +924,16 @@ def main(argv=None):
             )
         if arguments.api == CBRT_API_NAME:
             return _run_cbrt(arguments, result, publish, record, numpy, ap)
+        if arguments.api == INVERT_API_NAME:
+            return _run_invert(arguments, result, publish, record, numpy, ap)
+        if arguments.api == ARGSORT_API_NAME:
+            return _run_argsort(arguments, result, publish, record, numpy, ap)
+        if arguments.api == SEARCHSORTED_API_NAME:
+            return _run_searchsorted(
+                arguments, result, publish, record, numpy, ap
+            )
+        if arguments.api == MEDIAN_API_NAME:
+            return _run_median(arguments, result, publish, record, numpy, ap)
         if arguments.api != API_NAME:
             raise RuntimeError(
                 "unsupported integration gate API: %s" % arguments.api

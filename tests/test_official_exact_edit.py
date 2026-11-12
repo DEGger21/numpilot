@@ -384,19 +384,33 @@ def test_concatenate_exact_edit_windows_cover_reviewed_targets():
             "        zeros,\n"
             "    )\n"
             "    from .io import load, save, savez, savez_compressed\n"
+"    from .logic import (\n"
+"        equal,\n"
+"    )\n"
             "    from .math import (\n"
             "        absolute,\n"
             "    )\n"
-            "    from .nn import softmax\n\n"
+            "    from .nn import softmax\n"
+"    from .sorting import sort\n"
+"    from .statistics import mean\n"
+"    from .utils import broadcast_shape, ndarray\n\n"
             "_LAZY_MAPPING = {\n"
             "    # .array\n"
             '    "zeros": ".array",\n'
             "    # .linalg\n"
             '    "linalg": ".linalg",\n'
+"    # .logic\n"
+'    "equal": ".logic",\n'
             "    # .math\n"
             '    "absolute": ".math",\n'
             "    # .random\n"
             '    "random": ".random",\n'
+"    # .sorting\n"
+'    "sort": ".sorting",\n'
+"    # .statistics\n"
+'    "mean": ".statistics",\n'
+"    # .nn\n"
+'    "softmax": ".nn",\n'
             "}\n"
         ),
         "tests/asnumpy_tests/creation_tests/test_basic.py": (
@@ -501,19 +515,33 @@ def _malformed_cbrt_init_base():
         "    from .array import (\n"
         "        zeros,\n"
         "    )    from .io import load, save, savez, savez_compressed\n"
+"    from .logic import (\n"
+"        equal,\n"
+"    )\n"
         "    from .math import (\n"
         "        exp,\n"
         "    )\n"
-        "    from .nn import softmax\n\n"
+        "    from .nn import softmax\n"
+"    from .sorting import sort\n"
+"    from .statistics import mean\n"
+"    from .utils import broadcast_shape, ndarray\n\n"
         "_LAZY_MAPPING = {\n"
         "    # .array\n"
         '    "zeros": ".array",\n'
         "    # .linalg\n"
         '    "linalg": ".linalg",\n'
+"    # .logic\n"
+'    "equal": ".logic",\n'
         "    # .math\n"
         '    "exp": ".math",\n'
         "    # .random\n"
         '    "random": ".random",\n'
+"    # .sorting\n"
+'    "sort": ".sorting",\n'
+"    # .statistics\n"
+'    "mean": ".statistics",\n'
+"    # .nn\n"
+'    "softmax": ".nn",\n'
         "}\n"
     )
 
@@ -602,18 +630,32 @@ def test_window_replace_allows_mid_line_comment_suffix_without_newline():
         "        zeros,\n"
         "    )\n"
         "    from .io import load, save, savez, savez_compressed\n"
+"    from .logic import (\n"
+"        equal,\n"
+"    )\n"
         "    from .math import (\n"
         "        exp,\n"
         "    )\n"
-        "    from .nn import softmax\n\n"
+        "    from .nn import softmax\n"
+"    from .sorting import sort\n"
+"    from .statistics import mean\n"
+"    from .utils import broadcast_shape, ndarray\n\n"
         "_LAZY_MAPPING = {\n"
         "    # .array\n"
         '    "zeros": ".array",    # .linalg\n'
         '    "linalg": ".linalg",\n'
+"    # .logic\n"
+'    "equal": ".logic",\n'
         "    # .math\n"
         '    "exp": ".math",\n'
         "    # .random\n"
         '    "random": ".random",\n'
+"    # .sorting\n"
+'    "sort": ".sorting",\n'
+"    # .statistics\n"
+'    "mean": ".statistics",\n'
+"    # .nn\n"
+'    "softmax": ".nn",\n'
         "}\n"
     )
     _rendered, intervals = (
@@ -637,7 +679,7 @@ def test_window_replace_allows_mid_line_comment_suffix_without_newline():
 
 
 
-def test_window_replace_requires_trailing_newline_at_line_boundary():
+def test_window_replace_restores_trailing_newline_at_line_boundary():
     path = "src/asnumpy/__init__.py"
     base = (
         "if TYPE_CHECKING:\n"
@@ -645,19 +687,33 @@ def test_window_replace_requires_trailing_newline_at_line_boundary():
         "        zeros,\n"
         "    )\n"
         "    from .io import load, save, savez, savez_compressed\n"
+"    from .logic import (\n"
+"        equal,\n"
+"    )\n"
         "    from .math import (\n"
         "        exp,\n"
         "    )\n"
-        "    from .nn import softmax\n\n"
+        "    from .nn import softmax\n"
+"    from .sorting import sort\n"
+"    from .statistics import mean\n"
+"    from .utils import broadcast_shape, ndarray\n\n"
         "_LAZY_MAPPING = {\n"
         "    # .array\n"
         '    "zeros": ".array",\n'
         "    # .linalg\n"
         '    "linalg": ".linalg",\n'
+"    # .logic\n"
+'    "equal": ".logic",\n'
         "    # .math\n"
         '    "exp": ".math",\n'
         "    # .random\n"
         '    "random": ".random",\n'
+"    # .sorting\n"
+'    "sort": ".sorting",\n'
+"    # .statistics\n"
+'    "mean": ".statistics",\n'
+"    # .nn\n"
+'    "softmax": ".nn",\n'
         "}\n"
     )
     _rendered, intervals = (
@@ -669,15 +725,18 @@ def test_window_replace_requires_trailing_newline_at_line_boundary():
     response = _window_response(
         path,
         base,
-        (("        zeros,\n    )\n", "        zeros,\n    )"),),
+        (("        zeros,\n    )\n", "        zeros,  # keep\n    )"),),
     )
-    with pytest.raises(DraftGenerationError, match="line boundary"):
-        provider_module._apply_official_window_replace_response(
-            response,
-            expected_path=path,
-            base_content=base,
-            allowed_intervals=intervals,
-        )
+    rebuilt = provider_module._apply_official_window_replace_response(
+        response,
+        expected_path=path,
+        base_content=base,
+        allowed_intervals=intervals,
+    )
+    # A dropped final line terminator at a line boundary is restored instead
+    # of rejected, and the restored content still parses.
+    assert "        zeros,  # keep\n    )\n" in rebuilt
+    ast.parse(rebuilt)
 
 
 def test_exact_edit_can_insert_missing_newline_inside_array_window():
@@ -731,19 +790,33 @@ def test_cbrt_exact_edit_windows_cover_reviewed_math_targets():
             "        zeros,\n"
             "    )\n"
             "    from .io import load, save, savez, savez_compressed\n"
+"    from .logic import (\n"
+"        equal,\n"
+"    )\n"
             "    from .math import (\n"
             "        exp,\n"
             "    )\n"
-            "    from .nn import softmax\n\n"
+            "    from .nn import softmax\n"
+"    from .sorting import sort\n"
+"    from .statistics import mean\n"
+"    from .utils import broadcast_shape, ndarray\n\n"
             "_LAZY_MAPPING = {\n"
             "    # .array\n"
             '    "zeros": ".array",\n'
             "    # .linalg\n"
             '    "linalg": ".linalg",\n'
+"    # .logic\n"
+'    "equal": ".logic",\n'
             "    # .math\n"
             '    "exp": ".math",\n'
             "    # .random\n"
             '    "random": ".random",\n'
+"    # .sorting\n"
+'    "sort": ".sorting",\n'
+"    # .statistics\n"
+'    "mean": ".statistics",\n'
+"    # .nn\n"
+'    "softmax": ".nn",\n'
             "}\n"
         ),
         "tests/asnumpy_tests/math_tests/test_exponents_and_logarithms.py": (
@@ -762,9 +835,15 @@ def test_cbrt_exact_edit_windows_cover_reviewed_math_targets():
         "src/asnumpy/math.py": ("complete_math_dispatch_module",),
         "src/asnumpy/__init__.py": (
             "type_checking_array_imports",
+            "type_checking_logic_imports",
             "type_checking_math_imports",
+            "type_checking_sorting_imports",
+            "type_checking_statistics_imports",
             "lazy_array_exports",
+            "lazy_logic_exports",
             "lazy_math_exports",
+            "lazy_sorting_exports",
+            "lazy_statistics_exports",
         ),
         "tests/asnumpy_tests/math_tests/test_exponents_and_logarithms.py": (
             "complete_math_exponents_test_module",

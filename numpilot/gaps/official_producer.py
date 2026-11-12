@@ -102,7 +102,7 @@ class _EntrySpec:
     key: str
     constraints: Tuple[str, ...]
     signatures: Tuple[OperatorSignature, ...]
-    test_marker: str
+    test_marker: Optional[str]
 
 
 _ENTRY_SPECS: Mapping[str, _EntrySpec] = {
@@ -149,9 +149,83 @@ _ENTRY_SPECS: Mapping[str, _EntrySpec] = {
         ),
         test_marker="zeros",
     ),
+    "invert": _EntrySpec(
+        key="invert",
+        constraints=("dtype=bool", "rank>=1", "rank<=8", "contiguous=true"),
+        signatures=(OperatorSignature(positional_args=1, keyword_args=()),),
+        test_marker=None,
+    ),
+    "argsort": _EntrySpec(
+        key="argsort",
+        constraints=("dtype=float32", "rank>=1", "rank<=8", "contiguous=true"),
+        signatures=(
+            OperatorSignature(positional_args=1, keyword_args=()),
+            OperatorSignature(positional_args=1, keyword_args=("axis",)),
+            OperatorSignature(positional_args=2, keyword_args=()),
+        ),
+        test_marker=None,
+    ),
+    "searchsorted": _EntrySpec(
+        key="searchsorted",
+        constraints=("dtype=float32", "rank>=1", "rank<=1", "contiguous=true"),
+        signatures=(
+            OperatorSignature(positional_args=2, keyword_args=()),
+            OperatorSignature(positional_args=2, keyword_args=("right",)),
+            OperatorSignature(positional_args=3, keyword_args=()),
+        ),
+        test_marker=None,
+    ),
+    "median": _EntrySpec(
+        key="median",
+        constraints=("dtype=float32", "rank>=1", "rank<=8", "contiguous=true"),
+        signatures=(OperatorSignature(positional_args=1, keyword_args=()),),
+        test_marker=None,
+    ),
 }
 
-_ENTRY_ORDER = ("concatenate", "ones", "zeros")
+_ENTRY_ORDER = (
+    "concatenate",
+    "ones",
+    "zeros",
+    "invert",
+    "argsort",
+    "searchsorted",
+    "median",
+)
+
+# APIs whose qualification is owned by the integrated-adaptation lane.  They
+# are admitted one at a time because each binds a different wrapper module.
+_API_LANE = frozenset({"invert", "argsort", "searchsorted", "median"})
+_TEST_FILES = {
+    "concatenate": "tests/asnumpy_tests/creation_tests/test_basic.py",
+    "ones": "tests/asnumpy_tests/creation_tests/test_basic.py",
+    "zeros": "tests/asnumpy_tests/creation_tests/test_basic.py",
+    "invert": "tests/asnumpy_tests/logic_tests/test_logic.py",
+    "argsort": "tests/asnumpy_tests/sort_tests/test_sorting.py",
+    "searchsorted": "tests/asnumpy_tests/sort_tests/test_sorting.py",
+    "median": (
+        "tests/asnumpy_tests/statistics_tests/test_averages_and_variances.py"
+    ),
+}
+_API_WRAPPER = {
+    "concatenate": "array.py",
+    "ones": "array.py",
+    "zeros": "array.py",
+    "invert": "logic.py",
+    "argsort": "sorting.py",
+    "searchsorted": "sorting.py",
+    "median": "statistics.py",
+}
+_API_NATIVE = {
+    "concatenate": ("array", "_concatenate"),
+    "ones": ("array", "_ones"),
+    "zeros": ("array", "_zeros"),
+    "invert": ("logic", "_invert"),
+    "argsort": ("sorting", "_argsort"),
+    "searchsorted": ("sorting", "_searchsorted"),
+    "median": ("statistics", "_median"),
+}
+_SCALAR_TARGETS = frozenset({"median"})
 
 
 @dataclass(frozen=True)
@@ -220,7 +294,9 @@ def _verify_integrated_source(attempt_dir: Path, transaction: Mapping[str, Any])
         raise OfficialProducerError("unexpected file in the integrated source tree")
 
 
-def _validate_transaction_runtime_site(attempt_dir, transaction, wheel_path, runtime_site, identity):
+def _validate_transaction_runtime_site(
+    attempt_dir, transaction, wheel_path, runtime_site, identity, entries=()
+):
     runtime_site = Path(runtime_site).resolve(strict=True)
     bound_site = attempt_dir / _relative_path(transaction["runtime"]["site_relative"], "runtime site")
     if runtime_site != bound_site.resolve(strict=True) or bound_site.is_symlink():
@@ -247,8 +323,14 @@ def _validate_transaction_runtime_site(attempt_dir, transaction, wheel_path, run
             raise OfficialProducerError("runtime member does not match bound wheel: " + name)
     if _sha256_file(module_path) != identity.module_sha256:
         raise OfficialProducerError("runtime module identity hash mismatch")
-    for relative in ("array.py", "__init__.py"):
-        if members["asnumpy/" + relative] != dict(identity.wrapper_sha256).get(relative):
+    wrappers = dict(identity.wrapper_sha256)
+    bound_wrappers = {"array.py", "__init__.py", *(_API_WRAPPER[key] for key in entries)}
+    for relative in sorted(bound_wrappers):
+        if relative not in wrappers:
+            raise OfficialProducerError(
+                "runtime identity has no %s wrapper hash" % relative
+            )
+        if members["asnumpy/" + relative] != wrappers.get(relative):
             raise OfficialProducerError("runtime wrapper identity hash mismatch")
     generated_version = attempt_dir / "source/src/asnumpy/_version.py"
     if generated_version.exists() and _sha256_file(generated_version) != members.get("asnumpy/_version.py"):
@@ -256,12 +338,21 @@ def _validate_transaction_runtime_site(attempt_dir, transaction, wheel_path, run
     _verify_integrated_source(attempt_dir, transaction)
 
 
-def _public_concat_host_markers(wrapper_text: str) -> int:
-    """Audit only public concatenate, allowing NumPy metadata checks, not compute."""
+def _public_host_markers(wrapper_text: str, function_name: str) -> int:
+    """Audit one public wrapper, allowing NumPy metadata checks, not compute."""
     tree = ast.parse(wrapper_text)
-    functions = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "concatenate"]
+    functions = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == function_name
+    ]
     if len(functions) != 1:
-        raise OfficialProducerError("expected one public concatenate wrapper")
+        raise OfficialProducerError(
+            "expected one public %s wrapper" % function_name
+        )
+    forbidden_names = {"eval", "exec", "__import__"}
+    if function_name == "concatenate":
+        forbidden_names.add("_concatenate_legacy")
     problems = 0
     for node in ast.walk(functions[0]):
         if not isinstance(node, ast.Call):
@@ -276,9 +367,14 @@ def _public_concat_host_markers(wrapper_text: str) -> int:
             if isinstance(root, ast.Name) and root.id in {"np", "numpy"}:
                 if not (isinstance(target.value, ast.Name) and target.attr == "dtype"):
                     problems += 1
-        elif isinstance(target, ast.Name) and target.id in {"_concatenate_legacy", "eval", "exec", "__import__"}:
+        elif isinstance(target, ast.Name) and target.id in forbidden_names:
             problems += 1
     return problems
+
+
+def _public_concat_host_markers(wrapper_text: str) -> int:
+    """Backward-compatible concatenate audit used by archived evidence."""
+    return _public_host_markers(wrapper_text, "concatenate")
 
 
 def _relative_path(value: str, label: str) -> str:
@@ -454,7 +550,9 @@ def _matching_gap_spec(
     return matches[0]
 
 
-def _collect_runtime_identity(*, attempt_dir=None, transaction=None, wheel_path=None, runtime_site=None):
+def _collect_runtime_identity(
+    *, attempt_dir=None, transaction=None, wheel_path=None, runtime_site=None, entries=()
+):
     from numpilot.backends.npu import NpuBackend
 
     backend = NpuBackend()
@@ -473,7 +571,9 @@ def _collect_runtime_identity(*, attempt_dir=None, transaction=None, wheel_path=
     if runtime_site is not None:
         if attempt_dir is None or transaction is None or wheel_path is None:
             raise OfficialProducerError("explicit runtime site requires its integration transaction")
-        _validate_transaction_runtime_site(attempt_dir, transaction, wheel_path, runtime_site, identity)
+        _validate_transaction_runtime_site(
+            attempt_dir, transaction, wheel_path, runtime_site, identity, entries
+        )
     elif not module_path.is_relative_to(prefix):
         raise OfficialProducerError(
             "the producer is not running under the qualification runtime"
@@ -564,13 +664,14 @@ def _run_build_gate(context: _Context) -> Dict[str, Dict[str, Any]]:
     claims = _artifact_integrity_claims(context)
     members = _wheel_members(context.wheel_path)
     wrapper_hashes = dict(context.identity.wrapper_sha256)
-    required = ("asnumpy/array.py", "asnumpy/__init__.py")
+    wrapper = _API_WRAPPER[context.entries[0]]
+    required = ("asnumpy/" + wrapper, "asnumpy/__init__.py")
     for name in required:
         if name not in members:
             raise OfficialProducerError("candidate wheel is missing %s" % name)
-    if members["asnumpy/array.py"] != wrapper_hashes.get("array.py"):
+    if members["asnumpy/" + wrapper] != wrapper_hashes.get(wrapper):
         raise OfficialProducerError(
-            "candidate wheel concatenate wrapper disagrees with the runtime"
+            "candidate wheel %s wrapper disagrees with the runtime" % wrapper
         )
     if members["asnumpy/__init__.py"] != wrapper_hashes.get("__init__.py"):
         raise OfficialProducerError(
@@ -612,7 +713,7 @@ def _run_build_gate(context: _Context) -> Dict[str, Dict[str, Any]]:
 
 def _run_pytest(
     context: _Context,
-    marker: str,
+    marker: Optional[str],
     junit_path: Path,
     log_path: Path,
 ) -> int:
@@ -653,8 +754,7 @@ def _run_pytest(
                             "-q",
                             "-p",
                             "no:cacheprovider",
-                            "-k",
-                            marker,
+                            *(["-k", marker] if marker is not None else []),
                             "--junitxml",
                             str(junit_path),
                             "test_basic.py",
@@ -732,12 +832,18 @@ def _run_unit_test_gate(context: _Context) -> Dict[str, Dict[str, Any]]:
             "junit_sha256": _sha256_file(junit_path),
             "test_names": stats["test_names"],
         }
+        marker_matched = bool(
+            spec.test_marker is not None
+            and any(
+                spec.test_marker in name.lower() for name in stats["test_names"]
+            )
+        )
         target_passed = bool(
             returncode == 0
             and stats["failures"] == 0
             and stats["errors"] == 0
             and stats["passed"] >= 1
-            and any(spec.test_marker in name.lower() for name in stats["test_names"])
+            and (spec.test_marker is None or marker_matched)
         )
         targets[key] = {
             "status": "passed" if target_passed else "failed",
@@ -840,6 +946,143 @@ def _numerical_cases(key: str, integrated: bool = False):
             device = asnumpy.ndarray.from_numpy(host)
             cases.append(("rank_three_single_input", lambda: asnumpy.concatenate([device], axis=-1), lambda: host))
         return cases
+    if key == "invert":
+        cases = []
+        for name, values in (
+            (
+                "bool_rank_one",
+                numpy.array([True, False, True, True], dtype=numpy.bool_),
+            ),
+            (
+                "bool_rank_two",
+                numpy.array(
+                    [[True, False, True], [False, True, False]],
+                    dtype=numpy.bool_,
+                ),
+            ),
+            (
+                "bool_rank_three",
+                numpy.array(
+                    [[[True], [False]], [[False], [True]]],
+                    dtype=numpy.bool_,
+                ),
+            ),
+            ("bool_all_true", numpy.ones((3, 2), dtype=numpy.bool_)),
+        ):
+            device = asnumpy.ndarray.from_numpy(values)
+            cases.append(
+                (
+                    name,
+                    lambda d=device: asnumpy.invert(d),
+                    lambda v=values: numpy.invert(v),
+                )
+            )
+        return cases
+    if key == "argsort":
+        cases = []
+        for name, values, axis in (
+            (
+                "rank_one_default",
+                numpy.array([9.0, 7.0, 5.0, 3.0, 1.0], dtype=dtype),
+                -1,
+            ),
+            (
+                "rank_two_default",
+                numpy.array(
+                    [[3.0, 1.0, 2.0], [6.0, 4.0, 5.0]], dtype=dtype
+                ),
+                -1,
+            ),
+            (
+                "rank_two_axis_zero",
+                numpy.array(
+                    [[3.0, 1.0, 2.0], [6.0, 4.0, 5.0]], dtype=dtype
+                ),
+                0,
+            ),
+            (
+                "rank_three_axis_one",
+                numpy.linspace(-3.0, 3.0, 12, dtype=dtype).reshape(2, 3, 2),
+                1,
+            ),
+        ):
+            device = asnumpy.ndarray.from_numpy(values)
+            cases.append(
+                (
+                    name,
+                    lambda d=device, a=axis: asnumpy.argsort(d, axis=a),
+                    lambda v=values, a=axis: numpy.argsort(v, axis=a),
+                )
+            )
+        return cases
+    if key == "searchsorted":
+        ramp = numpy.linspace(0.0, 1.0, 11, dtype=dtype)
+        probes = numpy.array(
+            [-0.5, 0.0, 0.05, 0.5, 0.95, 1.0, 1.5], dtype=dtype
+        )
+        duplicates = numpy.array(
+            [0.0, 0.0, 1.0, 1.0, 2.0], dtype=dtype
+        )
+        duplicate_probes = numpy.array(
+            [0.0, 0.5, 1.0, 1.5, 2.0], dtype=dtype
+        )
+        cases = []
+        for name, boundaries, values, right in (
+            ("ramp_left", ramp, probes, False),
+            ("ramp_right", ramp, probes, True),
+            ("duplicates_left", duplicates, duplicate_probes, False),
+            ("duplicates_right", duplicates, duplicate_probes, True),
+            (
+                "probes_below",
+                ramp,
+                numpy.array([-3.0, -2.0, -1.0], dtype=dtype),
+                False,
+            ),
+        ):
+            device_boundaries = asnumpy.ndarray.from_numpy(boundaries)
+            device_values = asnumpy.ndarray.from_numpy(values)
+            cases.append(
+                (
+                    name,
+                    lambda b=device_boundaries, v=device_values, r=right: (
+                        asnumpy.searchsorted(b, v, right=r)
+                    ),
+                    lambda b=boundaries, v=values, r=right: numpy.searchsorted(
+                        b, v, side="right" if r else "left"
+                    ),
+                )
+            )
+        return cases
+    if key == "median":
+        cases = []
+        for name, values in (
+            (
+                "odd_length_1d",
+                numpy.array([3.0, 1.0, 2.0, 5.0, 4.0], dtype=dtype),
+            ),
+            (
+                "even_length_1d",
+                numpy.array([1.0, 2.0, 3.0, 4.0], dtype=dtype),
+            ),
+            ("single_element", numpy.array([7.5], dtype=dtype)),
+            (
+                "rank_two_flattened",
+                numpy.array([[1.0, 2.0], [3.0, 4.0]], dtype=dtype),
+            ),
+            (
+                "rank_three_flattened",
+                numpy.linspace(-3.0, 3.0, 12, dtype=dtype).reshape(2, 3, 2),
+            ),
+        ):
+            device = asnumpy.ndarray.from_numpy(values)
+            cases.append(
+                (
+                    name,
+                    lambda d=device: asnumpy.median(d),
+                    lambda v=values: float(numpy.median(v)),
+                )
+            )
+        return cases
     creation = getattr(asnumpy, key)
     return [
         (
@@ -879,8 +1122,15 @@ def _run_numerical_gate(context: _Context) -> Dict[str, Dict[str, Any]]:
                 "detail": "",
             }
             try:
-                actual = numpy.asarray(call().to_numpy())
-                expected = oracle()
+                value = call()
+                if key in _SCALAR_TARGETS:
+                    actual = numpy.asarray(float(value), dtype=numpy.float64)
+                    expected = numpy.asarray(
+                        float(oracle()), dtype=numpy.float64
+                    )
+                else:
+                    actual = numpy.asarray(value.to_numpy())
+                    expected = oracle()
                 case_comparisons, okay = _compare_arrays(actual, expected)
                 comparisons += case_comparisons
                 elements += int(expected.size)
@@ -937,17 +1187,38 @@ def _run_numerical_gate(context: _Context) -> Dict[str, Dict[str, Any]]:
     return targets
 
 
-def _assert_public_output(value: Any, shape: Tuple[int, ...], key: str) -> None:
+def _assert_public_output(
+    value: Any,
+    shape: Tuple[int, ...],
+    dtype: Any,
+    key: str,
+) -> None:
     import asnumpy
     import numpy
 
+    if key in _SCALAR_TARGETS:
+        if isinstance(value, asnumpy.ndarray):
+            payload = numpy.asarray(value.to_numpy())
+            if payload.size != 1:
+                raise OfficialProducerError(
+                    "%s signature variant returned %d values"
+                    % (key, payload.size)
+                )
+            return
+        try:
+            float(value)
+        except (TypeError, ValueError) as exc:
+            raise OfficialProducerError(
+                "%s signature variant did not return a scalar" % key
+            ) from exc
+        return
     if not isinstance(value, asnumpy.ndarray):
         raise OfficialProducerError(
             "%s signature variant did not return asnumpy.ndarray" % key
         )
     if tuple(value.shape) != shape:
         raise OfficialProducerError("%s signature variant returned wrong shape" % key)
-    if numpy.dtype(value.dtype) != numpy.dtype(numpy.float32):
+    if numpy.dtype(value.dtype) != numpy.dtype(dtype):
         raise OfficialProducerError("%s signature variant returned wrong dtype" % key)
 
 
@@ -963,16 +1234,19 @@ def _public_api_cases(key: str, integrated: bool = False):
             (
                 (1, ("axis",)),
                 lambda: asnumpy.concatenate([first, second], axis=0),
+                dtype,
                 (3, 3),
             ),
             (
                 (2, ()),
                 lambda: asnumpy.concatenate([first, second], 0),
+                dtype,
                 (3, 3),
             ),
             (
                 (1, ()),
                 lambda: asnumpy.concatenate([first, second]),
+                dtype,
                 (3, 3),
             ),
         ]
@@ -1010,9 +1284,9 @@ def _public_api_cases(key: str, integrated: bool = False):
             first3 = asnumpy.ndarray.from_numpy(numpy.arange(60, dtype=dtype).reshape(3, 4, 5))
             second3 = asnumpy.ndarray.from_numpy(numpy.arange(30, dtype=dtype).reshape(3, 2, 5))
             variants = [
-                ((1, ("axis",)), lambda: asnumpy.concatenate([first3, second3], axis=1), (3, 6, 5)),
-                ((2, ()), lambda: asnumpy.concatenate([first3, second3], -2), (3, 6, 5)),
-                ((1, ()), lambda: asnumpy.concatenate([first3, first3]), (6, 4, 5)),
+                ((1, ("axis",)), lambda: asnumpy.concatenate([first3, second3], axis=1), dtype, (3, 6, 5)),
+                ((2, ()), lambda: asnumpy.concatenate([first3, second3], -2), dtype, (3, 6, 5)),
+                ((1, ()), lambda: asnumpy.concatenate([first3, first3]), dtype, (6, 4, 5)),
             ]
             class NonContiguous(asnumpy.ndarray):
                 @property
@@ -1034,16 +1308,213 @@ def _public_api_cases(key: str, integrated: bool = False):
                 ("dtype_keyword", lambda: asnumpy.concatenate([first3], axis=1, dtype=dtype), (TypeError,)),
             ])
         return variants, rejections
+    if key == "invert":
+        values = numpy.array([True, False, True, True], dtype=numpy.bool_)
+        device = asnumpy.ndarray.from_numpy(values)
+        variants = [
+            ((1, ()), lambda: asnumpy.invert(device), numpy.bool_, (4,)),
+        ]
+        rejections = [
+            (
+                "float32_rejected",
+                lambda: asnumpy.invert(
+                    asnumpy.ndarray.from_numpy(
+                        numpy.array([1.0], dtype=numpy.float32)
+                    )
+                ),
+                (RuntimeError, TypeError, ValueError),
+            ),
+            (
+                "float64_rejected",
+                lambda: asnumpy.invert(
+                    asnumpy.ndarray.from_numpy(
+                        numpy.array([1.0], dtype=numpy.float64)
+                    )
+                ),
+                (RuntimeError, TypeError, ValueError),
+            ),
+        ]
+        return variants, rejections
+    if key == "argsort":
+        values = numpy.array(
+            [[3.0, 1.0, 2.0], [6.0, 4.0, 5.0]], dtype=dtype
+        )
+        device = asnumpy.ndarray.from_numpy(values)
+        variants = [
+            ((1, ()), lambda: asnumpy.argsort(device), numpy.int64, (2, 3)),
+            (
+                (1, ("axis",)),
+                lambda: asnumpy.argsort(device, axis=0),
+                numpy.int64,
+                (2, 3),
+            ),
+            (
+                (2, ()),
+                lambda: asnumpy.argsort(device, 0),
+                numpy.int64,
+                (2, 3),
+            ),
+        ]
+        rejections = [
+            (
+                "int32_rejected",
+                lambda: asnumpy.argsort(
+                    asnumpy.ndarray.from_numpy(
+                        numpy.array([3, 1, 2], dtype=numpy.int32)
+                    )
+                ),
+                (TypeError, RuntimeError, ValueError),
+            ),
+            (
+                "float64_rejected",
+                lambda: asnumpy.argsort(
+                    asnumpy.ndarray.from_numpy(
+                        numpy.array([3.0, 1.0], dtype=numpy.float64)
+                    )
+                ),
+                (TypeError, RuntimeError, ValueError),
+            ),
+            (
+                "axis_out_of_range_rejected",
+                lambda: asnumpy.argsort(device, axis=2),
+                (IndexError, ValueError, RuntimeError),
+            ),
+            (
+                "numpy_input_rejected",
+                lambda: asnumpy.argsort(values),
+                (TypeError,),
+            ),
+        ]
+        return variants, rejections
+    if key == "searchsorted":
+        boundaries = numpy.linspace(0.0, 1.0, 11, dtype=dtype)
+        probes = numpy.array([-0.5, 0.25, 0.75, 1.5], dtype=dtype)
+        device_boundaries = asnumpy.ndarray.from_numpy(boundaries)
+        device_probes = asnumpy.ndarray.from_numpy(probes)
+        variants = [
+            (
+                (2, ()),
+                lambda: asnumpy.searchsorted(
+                    device_boundaries, device_probes
+                ),
+                numpy.int64,
+                (4,),
+            ),
+            (
+                (2, ("right",)),
+                lambda: asnumpy.searchsorted(
+                    device_boundaries, device_probes, right=True
+                ),
+                numpy.int64,
+                (4,),
+            ),
+            (
+                (3, ()),
+                lambda: asnumpy.searchsorted(
+                    device_boundaries, device_probes, True
+                ),
+                numpy.int64,
+                (4,),
+            ),
+        ]
+        rejections = [
+            (
+                "two_dimensional_sequence_rejected",
+                lambda: asnumpy.searchsorted(
+                    asnumpy.ndarray.from_numpy(
+                        numpy.zeros((2, 3), dtype=dtype)
+                    ),
+                    device_probes,
+                ),
+                (ValueError, TypeError),
+            ),
+            (
+                "float64_rejected",
+                lambda: asnumpy.searchsorted(
+                    asnumpy.ndarray.from_numpy(
+                        boundaries.astype(numpy.float64)
+                    ),
+                    asnumpy.ndarray.from_numpy(
+                        probes.astype(numpy.float64)
+                    ),
+                ),
+                (ValueError, TypeError),
+            ),
+            (
+                "empty_sequence_rejected",
+                lambda: asnumpy.searchsorted(
+                    asnumpy.ndarray.from_numpy(
+                        numpy.array([], dtype=dtype)
+                    ),
+                    device_probes,
+                ),
+                (ValueError, TypeError),
+            ),
+            (
+                "empty_values_rejected",
+                lambda: asnumpy.searchsorted(
+                    device_boundaries,
+                    asnumpy.ndarray.from_numpy(
+                        numpy.array([], dtype=dtype)
+                    ),
+                ),
+                (ValueError, TypeError),
+            ),
+        ]
+        return variants, rejections
+    if key == "median":
+        values = numpy.array([3.0, 1.0, 2.0, 5.0, 4.0], dtype=dtype)
+        device = asnumpy.ndarray.from_numpy(values)
+        variants = [
+            ((1, ()), lambda: asnumpy.median(device), numpy.float64, ()),
+        ]
+        rejections = [
+            (
+                "int32_rejected",
+                lambda: asnumpy.median(
+                    asnumpy.ndarray.from_numpy(
+                        numpy.array([1, 2, 3], dtype=numpy.int32)
+                    )
+                ),
+                (TypeError, RuntimeError, ValueError),
+            ),
+            (
+                "float64_rejected",
+                lambda: asnumpy.median(
+                    asnumpy.ndarray.from_numpy(
+                        numpy.array([1.0, 2.0], dtype=numpy.float64)
+                    )
+                ),
+                (TypeError, RuntimeError, ValueError),
+            ),
+            (
+                "empty_rejected",
+                lambda: asnumpy.median(
+                    asnumpy.ndarray.from_numpy(
+                        numpy.array([], dtype=dtype)
+                    )
+                ),
+                (TypeError, RuntimeError, ValueError),
+            ),
+            (
+                "numpy_input_rejected",
+                lambda: asnumpy.median(values),
+                (TypeError,),
+            ),
+        ]
+        return variants, rejections
     creation = getattr(asnumpy, key)
     variants = [
         (
             (1, ("dtype",)),
             lambda: creation((2, 3), dtype=dtype),
+            dtype,
             (2, 3),
         ),
         (
             (2, ()),
             lambda: creation((2, 3), dtype),
+            dtype,
             (2, 3),
         ),
     ]
@@ -1065,23 +1536,29 @@ def _public_api_cases(key: str, integrated: bool = False):
 def _run_public_api_gate(context: _Context) -> Dict[str, Dict[str, Any]]:
     import asnumpy
 
-    module_path = Path(asnumpy.__file__).resolve().parent / "array.py"
-    wrapper_sha256 = _sha256_file(module_path)
-    expected_wrapper = dict(context.identity.wrapper_sha256).get("array.py")
-    if wrapper_sha256 != expected_wrapper:
-        raise OfficialProducerError(
-            "live concatenate wrapper disagrees with the runtime identity"
-        )
-    try:
-        wrapper_text = module_path.read_text(encoding="utf-8")
-    except (OSError, UnicodeError) as exc:
-        raise OfficialProducerError("live concatenate wrapper is unreadable") from exc
-    lowered = wrapper_text.lower()
-    marker_count = (_public_concat_host_markers(wrapper_text) if context.runtime_site is not None
-                    else sum(lowered.count(marker) for marker in _HOST_FALLBACK_MARKERS))
-
     targets = {}
     for key in context.entries:
+        wrapper = _API_WRAPPER[key]
+        module_path = Path(asnumpy.__file__).resolve().parent / wrapper
+        wrapper_sha256 = _sha256_file(module_path)
+        expected_wrapper = dict(context.identity.wrapper_sha256).get(wrapper)
+        if wrapper_sha256 != expected_wrapper:
+            raise OfficialProducerError(
+                "live %s wrapper disagrees with the runtime identity" % key
+            )
+        try:
+            wrapper_text = module_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            raise OfficialProducerError(
+                "live %s wrapper is unreadable" % key
+            ) from exc
+        if context.runtime_site is not None:
+            marker_count = _public_host_markers(wrapper_text, key)
+        else:
+            lowered = wrapper_text.lower()
+            marker_count = sum(
+                lowered.count(marker) for marker in _HOST_FALLBACK_MARKERS
+            )
         api = getattr(asnumpy, key, None)
         callable_value = callable(api)
         variants, rejections = _public_api_cases(key, context.runtime_site is not None)
@@ -1091,7 +1568,7 @@ def _run_public_api_gate(context: _Context) -> Dict[str, Dict[str, Any]]:
             (item.positional_args, tuple(item.keyword_args))
             for item in _entry_spec(context, key).signatures
         }
-        for signature, call, shape in variants:
+        for signature, call, expected_dtype, shape in variants:
             try:
                 value = call()
             except Exception as exc:  # noqa: BLE001 - evidence must record failures
@@ -1100,7 +1577,7 @@ def _run_public_api_gate(context: _Context) -> Dict[str, Dict[str, Any]]:
                 )
                 continue
             try:
-                _assert_public_output(value, shape, key)
+                _assert_public_output(value, shape, expected_dtype, key)
             except OfficialProducerError as exc:
                 failures.append(str(exc))
                 continue
@@ -1196,6 +1673,26 @@ def _npu_call(key: str, integrated: bool = False):
         first = asnumpy.full((2, 3), 1.0, dtype=dtype)
         second = asnumpy.full((1, 3), 2.0, dtype=dtype)
         return lambda: asnumpy.concatenate([first, second], axis=0)
+    if key == "invert":
+        values = numpy.array([True, False, True, True], dtype=numpy.bool_)
+        device = asnumpy.ndarray.from_numpy(values)
+        return lambda: asnumpy.invert(device)
+    if key == "argsort":
+        values = numpy.array(
+            [[3.0, 1.0, 2.0], [6.0, 4.0, 5.0]], dtype=dtype
+        )
+        device = asnumpy.ndarray.from_numpy(values)
+        return lambda: asnumpy.argsort(device)
+    if key == "searchsorted":
+        boundaries = numpy.linspace(0.0, 1.0, 11, dtype=dtype)
+        probes = numpy.array([-0.5, 0.25, 0.75, 1.5], dtype=dtype)
+        device_boundaries = asnumpy.ndarray.from_numpy(boundaries)
+        device_probes = asnumpy.ndarray.from_numpy(probes)
+        return lambda: asnumpy.searchsorted(device_boundaries, device_probes)
+    if key == "median":
+        values = numpy.array([3.0, 1.0, 2.0, 5.0, 4.0], dtype=dtype)
+        device = asnumpy.ndarray.from_numpy(values)
+        return lambda: asnumpy.median(device)
     return lambda: getattr(asnumpy, key)((2, 3), dtype)
 
 
@@ -1305,6 +1802,195 @@ def _validate_kernel_profile(context: _Context) -> Tuple[int, list]:
     return count, refs
 
 
+_API_KERNEL_TASK_TYPES = frozenset(
+    {"AI_VECTOR_CORE", "AI_CORE", "MIX_AIV", "AI_CPU"}
+)
+
+
+def _validate_api_kernel_profile(
+    context: _Context, key: str
+) -> Tuple[int, list]:
+    """Recount observed device tasks for one API-lane adapter.
+
+    ``AI_CPU`` rows are device-side AI CPU tasks selected by CANN, not host
+    fallbacks; they are recorded with their task type rather than relabelled.
+    """
+    import csv
+    import io
+    import math
+
+    root = context.kernel_profile_root
+    if root is None:
+        raise OfficialProducerError(
+            "%s qualification requires real kernel profile evidence" % key
+        )
+    profile_path = root / "kernel-profile.json"
+    profile = _read_json(profile_path, "kernel profile")
+    wrapper = _API_WRAPPER[key]
+    if (
+        profile.get("schema") != "numpilot.integrated-api-kernel-profile.v1"
+        or profile.get("status") != "passed"
+        or profile.get("api") != "numpy." + key
+        or profile.get("performance_claim") is not False
+        or profile.get("wrapper_module") != wrapper
+    ):
+        raise OfficialProducerError("API kernel profile schema/status is invalid")
+    for field, expected in {
+        "transaction_sha256": context.transaction["transaction_sha256"],
+        "transaction_file_sha256": context.transaction_file_sha256,
+        "runtime_core_sha256": context.runtime_core_sha256,
+        "runtime_module_sha256": context.identity.module_sha256,
+        "runtime_wrapper_sha256": dict(context.identity.wrapper_sha256)[wrapper],
+    }.items():
+        if profile.get(field) != expected:
+            raise OfficialProducerError(
+                "API kernel profile binding mismatch: " + field
+            )
+    destination = context.gates_dir / "kernel-profile"
+    _ensure_private_directory(destination)
+    refs = []
+
+    def bound_file(ref):
+        if not isinstance(ref, Mapping):
+            raise OfficialProducerError(
+                "API kernel profile file reference is invalid"
+            )
+        relative = _relative_path(ref.get("path"), "API kernel evidence")
+        source = root / relative
+        if not source.resolve(strict=True).is_relative_to(
+            root.resolve(strict=True)
+        ):
+            raise OfficialProducerError("API kernel evidence escaped profile root")
+        payload = _read_private_file(
+            source, "API kernel evidence", max_bytes=_MAX_EVIDENCE_FILE_BYTES
+        )
+        if _sha256_bytes(payload) != ref.get("sha256"):
+            raise OfficialProducerError("API kernel evidence hash mismatch")
+        target = destination / relative
+        current = destination
+        for part in PurePosixPath(relative).parts[:-1]:
+            current = current / part
+            _ensure_private_directory(current)
+        _copy_verified(source, target, ref["sha256"], "API kernel evidence")
+        refs.append(_evidence_ref(target, context.bundle))
+        return payload
+
+    worker = profile.get("worker")
+    bound_file(worker)
+    execution = _parse_json(
+        bound_file(profile.get("execution")), "API kernel execution"
+    )
+    cases = execution.get("cases", [])
+    dispatch = execution.get("dispatch", {})
+    if (
+        execution.get("schema") != "numpilot.integrated-api-profile-worker.v1"
+        or execution.get("status") != "passed"
+        or execution.get("api") != "numpy." + key
+        or execution.get("worker_sha256") != worker.get("sha256")
+        or execution.get("transaction_sha256") != context.transaction_file_sha256
+        or type(dispatch.get("legacy_calls")) is not int
+        or dispatch.get("legacy_calls") != 0
+        or not cases
+        or any(case.get("exact_equal") is not True for case in cases)
+    ):
+        raise OfficialProducerError(
+            "API kernel execution receipt does not prove native correctness"
+        )
+    native_calls = dispatch.get("native_calls")
+    if (
+        type(native_calls) is not int
+        or native_calls < 2
+        or native_calls != len(cases)
+        or native_calls != profile.get("native_calls")
+    ):
+        raise OfficialProducerError(
+            "API kernel profile native-call evidence is inconsistent"
+        )
+    for name, digest in (
+        ("core", context.runtime_core_sha256),
+        ("module", context.identity.module_sha256),
+        ("wrapper", dict(context.identity.wrapper_sha256)[wrapper]),
+    ):
+        if execution.get("runtime", {}).get(name, {}).get("sha256") != digest:
+            raise OfficialProducerError(
+                "API kernel worker runtime identity mismatch"
+            )
+    if profile.get("tested_ranks") != sorted(
+        {case["rank"] for case in cases}
+    ):
+        raise OfficialProducerError(
+            "API kernel profile rank claims are inconsistent"
+        )
+    op_types = profile.get("kernel_op_types")
+    if (
+        not isinstance(op_types, list)
+        or not op_types
+        or any(not isinstance(item, str) or not item for item in op_types)
+    ):
+        raise OfficialProducerError(
+            "API kernel profile has no kernel operator names"
+        )
+    traces = profile.get("traces")
+    if not isinstance(traces, list) or not traces:
+        raise OfficialProducerError("API kernel profile has no raw CSV traces")
+    seen = set()
+    op_type_counts = {}
+    task_types = {}
+    count = 0
+    for ref in traces:
+        if ref.get("path") in seen:
+            raise OfficialProducerError("API kernel profile repeats a trace")
+        seen.add(ref.get("path"))
+        text = bound_file(ref).decode("utf-8-sig")
+        rows = list(csv.DictReader(io.StringIO(text)))
+        if ref.get("rows") != len(rows):
+            raise OfficialProducerError(
+                "API kernel profile CSV row count mismatch"
+            )
+        for row in rows:
+            op_type = row.get("OP Type", "")
+            op_type_counts[op_type] = op_type_counts.get(op_type, 0) + 1
+            if op_type not in op_types:
+                continue
+            task_type = row.get("Task Type")
+            task_types[task_type] = task_types.get(task_type, 0) + 1
+            if task_type not in _API_KERNEL_TASK_TYPES:
+                raise OfficialProducerError(
+                    "API kernel profile task type is not a device task"
+                )
+            if row.get("Device_id") not in (None, "", "0"):
+                raise OfficialProducerError(
+                    "API kernel profile ran on an unexpected device"
+                )
+            try:
+                duration = float(row["Task Duration(us)"])
+            except (KeyError, TypeError, ValueError) as exc:
+                raise OfficialProducerError(
+                    "API kernel profile duration is invalid"
+                ) from exc
+            if not math.isfinite(duration) or duration <= 0:
+                raise OfficialProducerError(
+                    "API kernel profile duration must be finite and positive"
+                )
+            count += 1
+    if op_type_counts != profile.get("op_type_counts"):
+        raise OfficialProducerError(
+            "API kernel profile operator counts disagree with raw traces"
+        )
+    if count < 1 or count != profile.get("kernel_rows"):
+        raise OfficialProducerError(
+            "API kernel profile kernel count does not match raw traces"
+        )
+    _copy_verified(
+        profile_path,
+        destination / "kernel-profile.json",
+        _sha256_file(profile_path),
+        "kernel profile",
+    )
+    refs.append(_evidence_ref(destination / "kernel-profile.json", context.bundle))
+    return count, refs
+
+
 def _ctypes_device_count() -> int:
     library = ctypes.CDLL("libascendcl.so")
     call = library.aclrtGetDeviceCount
@@ -1317,84 +2003,94 @@ def _ctypes_device_count() -> int:
 
 
 def _run_npu_execution_gate(context: _Context) -> Dict[str, Dict[str, Any]]:
-    if context.runtime_site is None or context.entries != ("concatenate",):
+    if context.runtime_site is None or len(context.entries) != 1:
         raise OfficialProducerError(
             "new NPU qualification requires independently measured kernels; "
-            "only the transaction-bound concatenate profiler route is supported"
+            "the transaction-bound profiler route is required"
         )
-    import numpy
-    import asnumpy.array as array_module
+    import importlib
 
+    import numpy
+    import asnumpy
+
+    key = context.entries[0]
+    if key != "concatenate" and key not in _API_LANE:
+        raise OfficialProducerError(
+            "new NPU qualification requires independently measured kernels; "
+            "only the transaction-bound concatenate route and reviewed API lanes "
+            "are supported"
+        )
+    if key not in _API_NATIVE:
+        raise OfficialProducerError(
+            "no profiled route is registered for " + key
+        )
     integrated = context.runtime_site is not None
-    kernel_count, kernel_refs = _validate_kernel_profile(context)
+    if key in _API_LANE:
+        kernel_count, kernel_refs = _validate_api_kernel_profile(context, key)
+    else:
+        kernel_count, kernel_refs = _validate_kernel_profile(context)
     device_count = _ctypes_device_count()
     if device_count < 1:
         raise OfficialProducerError("no NPU device is visible to the producer")
-    native_names = {
-        "concatenate": "_concatenate",
-        "ones": "_ones",
-        "zeros": "_zeros",
-    }
+    module_name, native_name = _API_NATIVE[key]
+    array_module = importlib.import_module("asnumpy." + module_name)
+    original = getattr(array_module, native_name)
+    counts = {"value": 0}
+
+    def counted(*args, _original=original, _counts=counts, **kwargs):
+        _counts["value"] += 1
+        return _original(*args, **kwargs)
+
+    legacy = None
+    if key in _API_LANE:
+        core = importlib.import_module("asnumpy._core." + module_name)
+        if original is not getattr(core, key):
+            raise OfficialProducerError(
+                "native dispatch does not identify the reviewed %s binding" % key
+            )
+    elif integrated:
+        import asnumpy._core as core
+        if key != "concatenate" or original is not core.array.concatenate_aclnn:
+            raise OfficialProducerError("native dispatch does not identify integrated ACLNN concatenate")
+        legacy = getattr(array_module, "_concatenate_legacy", None)
+        if legacy is None:
+            raise OfficialProducerError("expected separately bound legacy concatenate")
+        def forbidden_legacy(*args, **kwargs):
+            raise OfficialProducerError("public concatenate entered the legacy D2D path")
+        array_module._concatenate_legacy = forbidden_legacy
     targets = {}
-    for key in context.entries:
-        native_name = native_names[key]
-        original = getattr(array_module, native_name)
-        counts = {"value": 0}
-
-        def counted(*args, _original=original, _counts=counts, **kwargs):
-            _counts["value"] += 1
-            return _original(*args, **kwargs)
-
-        legacy = None
-        if integrated:
-            import asnumpy._core as core
-            if key != "concatenate" or original is not core.array.concatenate_aclnn:
-                raise OfficialProducerError("native dispatch does not identify integrated ACLNN concatenate")
-            legacy = getattr(array_module, "_concatenate_legacy", None)
-            if legacy is None:
-                raise OfficialProducerError("expected separately bound legacy concatenate")
-            def forbidden_legacy(*args, **kwargs):
-                raise OfficialProducerError("public concatenate entered the legacy D2D path")
-            array_module._concatenate_legacy = forbidden_legacy
-        call = _npu_call(key, integrated)
-        setattr(array_module, native_name, counted)
-        try:
-            first = call()
-            second = call()
-        finally:
-            setattr(array_module, native_name, original)
-            if legacy is not None:
-                array_module._concatenate_legacy = legacy
+    call = _npu_call(key, integrated)
+    setattr(array_module, native_name, counted)
+    try:
+        first = call()
+        second = call()
+    finally:
+        setattr(array_module, native_name, original)
+        if legacy is not None:
+            array_module._concatenate_legacy = legacy
+    if key in _SCALAR_TARGETS:
+        first_host = numpy.asarray(float(first), dtype=numpy.float64)
+        second_host = numpy.asarray(float(second), dtype=numpy.float64)
+    else:
         first_host = numpy.asarray(first.to_numpy())
         second_host = numpy.asarray(second.to_numpy())
-        try:
-            numpy.testing.assert_array_equal(first_host, second_host)
-            stable = True
-            detail = ""
-        except AssertionError:
-            stable = False
-            detail = "repeated native calls returned different values"
-        native_calls = int(counts["value"])
-        host_fallback_calls = max(0, _NATIVE_CALLS_PER_TARGET - native_calls)
-        evidence_path = context.gates_dir / ("npu_execution.%s.json" % key)
-        _write_json(
-            evidence_path,
-            {
-                "schema": GATE_EVIDENCE_SCHEMA,
-                "schema_version": GATE_EVIDENCE_SCHEMA_VERSION,
-                "gate": "npu_execution",
-                "target": key,
-                "device_count": device_count,
-                "soc_model": context.identity.soc_model,
-                "native_calls": native_calls,
-                "kernel_launches": kernel_count,
-                "repeated_calls": _REPEATED_CALLS_PER_TARGET,
-                "repeated_stable": stable,
-                "host_fallback_calls": host_fallback_calls,
-                "detail": detail,
-            },
-        )
-        claims = {
+    try:
+        numpy.testing.assert_array_equal(first_host, second_host)
+        stable = True
+        detail = ""
+    except AssertionError:
+        stable = False
+        detail = "repeated native calls returned different values"
+    native_calls = int(counts["value"])
+    host_fallback_calls = max(0, _NATIVE_CALLS_PER_TARGET - native_calls)
+    evidence_path = context.gates_dir / ("npu_execution.%s.json" % key)
+    _write_json(
+        evidence_path,
+        {
+            "schema": GATE_EVIDENCE_SCHEMA,
+            "schema_version": GATE_EVIDENCE_SCHEMA_VERSION,
+            "gate": "npu_execution",
+            "target": key,
             "device_count": device_count,
             "soc_model": context.identity.soc_model,
             "native_calls": native_calls,
@@ -1402,25 +2098,40 @@ def _run_npu_execution_gate(context: _Context) -> Dict[str, Dict[str, Any]]:
             "repeated_calls": _REPEATED_CALLS_PER_TARGET,
             "repeated_stable": stable,
             "host_fallback_calls": host_fallback_calls,
-        }
-        if integrated:
-            claims["kernel_evidence_scope"] = "independent_profile"
-            claims["execution_profile"] = _INTEGRATED_CONCAT_PROFILE
-        target_passed = bool(
-            device_count >= 1
-            and native_calls == _NATIVE_CALLS_PER_TARGET
-            and native_calls >= 1
-            and stable
-            and host_fallback_calls == 0
+            "detail": detail,
+        },
+    )
+    claims = {
+        "device_count": device_count,
+        "soc_model": context.identity.soc_model,
+        "native_calls": native_calls,
+        "kernel_launches": kernel_count,
+        "repeated_calls": _REPEATED_CALLS_PER_TARGET,
+        "repeated_stable": stable,
+        "host_fallback_calls": host_fallback_calls,
+    }
+    if integrated:
+        claims["kernel_evidence_scope"] = "independent_profile"
+        claims["execution_profile"] = (
+            _INTEGRATED_CONCAT_PROFILE
+            if key == "concatenate"
+            else "official_%s_aclnn_v1" % key
         )
-        targets[key] = {
-            "status": "passed" if target_passed else "failed",
-            "claims": claims,
-            "evidence": {
-                "files": [_evidence_ref(evidence_path, context.bundle), *kernel_refs],
-                "detail": detail,
-            },
-        }
+    target_passed = bool(
+        device_count >= 1
+        and native_calls == _NATIVE_CALLS_PER_TARGET
+        and native_calls >= 1
+        and stable
+        and host_fallback_calls == 0
+    )
+    targets[key] = {
+        "status": "passed" if target_passed else "failed",
+        "claims": claims,
+        "evidence": {
+            "files": [_evidence_ref(evidence_path, context.bundle), *kernel_refs],
+            "detail": detail,
+        },
+    }
     return targets
 
 
@@ -1676,6 +2387,10 @@ def _validate_entry_names(entries: Sequence[str]) -> Tuple[str, ...]:
     ordered = tuple(name for name in _ENTRY_ORDER if name in seen)
     if len(ordered) != len(selected):
         raise OfficialProducerError("official entry order is invalid")
+    if any(name in _API_LANE for name in ordered) and len(ordered) != 1:
+        raise OfficialProducerError(
+            "API-lane entries must be qualified one at a time"
+        )
     return ordered
 
 
@@ -1718,9 +2433,18 @@ def produce(
     transaction, transaction_file_sha256 = _load_transaction(attempt_dir)
     gap_request, gap_request_sha256 = _load_gap_request(gap_request_path, source_file, official_resolution)
     is_official = gap_request.get("request_type") == "official_candidate_gap"
+    is_api_lane = len(entries) == 1 and entries[0] in _API_LANE
+    if is_api_lane and gap_request.get("request_type") != "script_api_gap":
+        raise OfficialProducerError(
+            "API-lane qualification requires a script API gap request"
+        )
     if is_official and (runtime_site is None or kernel_profile_root is None or entries != ("concatenate",)):
         raise OfficialProducerError("official handoff qualification requires bound runtime, kernel profile and concatenate-only entries")
-    if not is_official and runtime_site is not None:
+    if is_api_lane and (runtime_site is None or kernel_profile_root is None):
+        raise OfficialProducerError(
+            "API-lane qualification requires the integrated runtime and a kernel profile"
+        )
+    if not is_official and not is_api_lane and runtime_site is not None:
         raise OfficialProducerError("explicit transaction runtime is only admitted for an official handoff")
     gap_id = transaction.get("gap_id")
     if not isinstance(gap_id, str) or not gap_id:
@@ -1740,12 +2464,21 @@ def produce(
     if not isinstance(source_overlay, Mapping):
         raise OfficialProducerError("integration source overlay is unavailable")
     source_overlay = {str(key): str(value) for key, value in source_overlay.items()}
-    test_key = "tests/asnumpy_tests/creation_tests/test_basic.py"
+    test_key = _TEST_FILES[entries[0]]
     candidate_test_sha256 = source_overlay.get(test_key)
     if candidate_test_sha256 is None:
-        raise OfficialProducerError(
-            "integration transaction does not bind the candidate unit test"
-        )
+        if not is_api_lane:
+            raise OfficialProducerError(
+                "integration transaction does not bind the candidate unit test"
+            )
+        # API-lane adapters leave the module regression suite untouched, so its
+        # bytes are bound here instead of by the transaction source overlay.
+        baseline_test = attempt_dir / "source" / test_key
+        if not baseline_test.is_file():
+            raise OfficialProducerError(
+                "integration source does not contain the candidate unit test"
+            )
+        candidate_test_sha256 = _sha256_file(baseline_test)
     if candidate_test_file is None:
         candidate_test_file = attempt_dir / "source" / test_key
     candidate_test_file = Path(candidate_test_file)
@@ -1845,8 +2578,13 @@ def produce(
     if is_official:
         _copy_verified(official_resolution, bundle / "official-resolution.json",
                        gap_request["official_resolution_sha256"], "official resolution")
-        backend, identity = _collect_runtime_identity(attempt_dir=attempt_dir, transaction=transaction,
-                                                     wheel_path=wheel_path, runtime_site=runtime_site)
+        backend, identity = _collect_runtime_identity(
+            attempt_dir=attempt_dir, transaction=transaction, wheel_path=wheel_path,
+            runtime_site=runtime_site, entries=entries)
+    elif is_api_lane:
+        backend, identity = _collect_runtime_identity(
+            attempt_dir=attempt_dir, transaction=transaction, wheel_path=wheel_path,
+            runtime_site=runtime_site, entries=entries)
     else:
         backend, identity = _collect_runtime_identity()
     base_manifest_sha256 = _base_manifest_sha256(backend, entries, identity)

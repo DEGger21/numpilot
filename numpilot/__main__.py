@@ -147,6 +147,7 @@ def _load_cannbot_api():
 
 _ASNUMPY_ADAPTER_MANIFEST_SCHEMA = "asnumpy.adapter.manifest.v1"
 _ASNUMPY_ADAPTER_API_NAME_RE = re.compile(r"[a-z][a-z0-9_]{0,63}")
+_ASNUMPY_OPERATOR_MANIFEST_SCHEMA = "numpilot.asnumpy_adapter.operator"
 
 
 def _resolve_asnumpy_adapter_api_name(adapter_data, spec):
@@ -186,6 +187,24 @@ def _resolve_asnumpy_adapter_api_name(adapter_data, spec):
             or legacy_api_name != expected_api_name
         ):
             return None
+
+    # The custom-operator draft generator emits a draft-stage operator
+    # manifest from the same producer family.  It is not the final overlay
+    # manifest, but generate-asnumpy-adapter must bind its identity before the
+    # adapter model is allowed to see the artifact.  Accept it only when every
+    # identity field agrees exactly with the requested gap.
+    if adapter_data.get("schema") == _ASNUMPY_OPERATOR_MANIFEST_SCHEMA:
+        draft_api = adapter_data.get("api")
+        draft_names = adapter_data.get("names")
+        if not isinstance(draft_api, Mapping) or not isinstance(draft_names, Mapping):
+            return None
+        if (
+            draft_api.get("numpy") != expected_source_api
+            or draft_api.get("asnumpy") != expected_public_api
+            or draft_names.get("python_wrapper_callable") != expected_api_name
+        ):
+            return None
+        return expected_api_name
 
     # A legacy object may carry unrelated metadata, so only enter the v1 path
     # when its nested identity fields are present.  This leaves the
@@ -4406,6 +4425,39 @@ def _cmd_resolve_gaps(args):
     return 1 if report.status == "blocked" else 0
 
 
+def _persist_input_observation(out_dir, observation):
+    """Write the observation receipt once; identical content is reusable."""
+
+    root = Path(out_dir).absolute()
+    for parent in (root, *root.parents):
+        if parent.is_symlink():
+            raise OSError("observation output is not a real directory")
+    root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    path = root / "observed-inputs.json"
+    payload = (
+        json.dumps(observation.to_dict(), ensure_ascii=False, indent=2, sort_keys=True)
+        + "\n"
+    ).encode("utf-8")
+    if len(payload) > 1024 * 1024:
+        raise OSError("observed-inputs.json exceeds the size limit")
+    try:
+        fd = os.open(
+            path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600
+        )
+    except FileExistsError:
+        try:
+            if path.read_bytes() == payload:
+                return path
+        except OSError:
+            pass
+        raise OSError("observed-inputs.json already exists with different content")
+    with os.fdopen(fd, "wb") as handle:
+        handle.write(payload)
+        handle.flush()
+        os.fsync(handle.fileno())
+    return path
+
+
 def _cmd_complete_gaps(args):
     """Prepare gap specs or ask the configured LLM for an unverified draft."""
     from numpilot.gaps.pipeline import (
@@ -4456,6 +4508,62 @@ def _cmd_complete_gaps(args):
         )
         return 2
 
+    observation = None
+    if getattr(args, "observe_inputs", False):
+        from dataclasses import replace
+
+        from numpilot.gaps.input_observation import observe_gap_inputs
+
+        if not preparation.specs:
+            print("[输入观测] 本文件没有缺口调用点，跳过", file=sys.stderr)
+        else:
+            started = time.monotonic()
+            try:
+                observation = observe_gap_inputs(
+                    args.file,
+                    gap_apis=[spec.qualified_api for spec in preparation.specs],
+                    timeout=args.observe_timeout,
+                    source_label=preparation.source_path,
+                )
+            except ValueError as exc:
+                print(
+                    "[输入观测] 本地校验失败: %s；尚未调用模型" % exc,
+                    file=sys.stderr,
+                )
+                return 2
+            elapsed = time.monotonic() - started
+            print(
+                "[输入观测] status=%s mode=%s deterministic=%s callsites=%d "
+                "elapsed=%.2fs"
+                % (observation.status, observation.mode,
+                   observation.deterministic, len(observation.callsites), elapsed)
+            )
+            for entry in observation.callsites:
+                for operand in entry["inputs"]:
+                    print(
+                        "[输入观测] %s:%s %s dtype=%s shape=%s c_contiguous=%s"
+                        % (Path(args.file).name, entry["lineno"], operand["name"],
+                           operand["dtype"], list(operand["shape"]),
+                           operand["c_contiguous"])
+                    )
+            try:
+                observation_path = _persist_input_observation(args.out, observation)
+            except OSError:
+                print(
+                    "[输入观测] observed-inputs.json 无法安全保存；尚未调用模型",
+                    file=sys.stderr,
+                )
+                return 2
+            print("[输入观测] observed-inputs.json -> %s" % observation_path)
+            if observation.status != "observed":
+                print(
+                    "[输入观测] 未取得确定性的 float32 观测（status=%s）；"
+                    "任务书保持未观测用途，尚未调用模型" % observation.status,
+                    file=sys.stderr,
+                )
+                return 2
+            preparation = replace(preparation, observed=observation)
+
     try:
         taskbook_refs = persist_preparation_taskbooks(preparation, args.out)
     except (OSError, ValueError, TypeError):
@@ -4465,7 +4573,8 @@ def _cmd_complete_gaps(args):
         print("[任务书] %s" % taskbook_ref["markdown"]["path"], file=sys.stderr)
     if args.provider in {"llm", "injected"}:
         from numpilot.gap_requirements import build_gap_taskbook
-        if any(not build_gap_taskbook(spec, source=preparation.source)["generation"]["allowed"]
+        if any(not build_gap_taskbook(spec, source=preparation.source,
+                                      observed=preparation.observed)["generation"]["allowed"]
                for spec in preparation.specs):
             print("[任务书] 输入不符合首期 float32 范围；已保存要求，尚未调用模型", file=sys.stderr)
             return 2
@@ -6352,6 +6461,50 @@ def _cmd_migrate_with_progress(args, progress):
     else:
         backend_name = _resolve_backend_name(args)
     backend, analysis_profiles = _qualified_runtime_inputs(args, backend_name)
+    custom_admission = None
+    custom_contracts = None
+    admission_path = getattr(args, "custom_operator_admission", None)
+    if admission_path:
+        if mode != "contract":
+            print(
+                "[自定义算子准入] 只支持 --mode contract",
+                file=sys.stderr,
+            )
+            return 2
+        from numpilot.custom_operator_admission import (
+            CustomOperatorAdmissionError,
+            load_custom_operator_admission,
+        )
+        try:
+            custom_admission = load_custom_operator_admission(admission_path)
+        except (OSError, CustomOperatorAdmissionError) as exc:
+            print("[自定义算子准入] 加载失败: %s" % exc, file=sys.stderr)
+            return 2
+        custom_contracts = custom_admission.contracts
+        print(
+            "[自定义算子准入] id=%s apis=%s soc=%s cann=%s"
+            % (
+                custom_admission.admission_id,
+                ",".join(custom_admission.names),
+                custom_admission.target_soc,
+                custom_admission.cann_version,
+            )
+        )
+        if backend_name == "shim":
+            from numpilot.backends.shim import ShimBackend
+            backend = ShimBackend(
+                extra_ops=custom_admission.names,
+                numpy_fallback_ops=custom_admission.names,
+            )
+        elif backend_name == "npu":
+            attach = getattr(backend, "set_custom_admission", None)
+            if not callable(attach):
+                print(
+                    "[自定义算子准入] 当前 NPU 后端不支持准入注入",
+                    file=sys.stderr,
+                )
+                return 2
+            attach(custom_admission)
     _preflight(backend_name, args.skip_env_check)
 
     if mode == "script":
@@ -6809,6 +6962,7 @@ def _cmd_migrate_with_progress(args, progress):
         engine=_make_engine(contract_engine),
         threshold=args.threshold,
         analysis_profiles=analysis_profiles,
+        custom_contracts=custom_contracts,
     )
     res = orch.run(
         args.file,
@@ -7105,6 +7259,14 @@ def main(argv=None):
         "--analysis-profiles",
         default=None,
         help="与源 SHA/callsite 精确绑定的 runtime profile JSON",
+    )
+    mig.add_argument(
+        "--custom-operator-admission",
+        default=None,
+        help=(
+            "本次 contract 迁移显式启用的自定义算子准入文件；"
+            "绑定 adapter manifest 与通过的 adapter 构建回执"
+        ),
     )
 
     run_parser = sub.add_parser(
@@ -7498,6 +7660,14 @@ def main(argv=None):
         "--analysis-profiles",
         default=None,
         help="与源 SHA/callsite 精确绑定的 runtime profile JSON",
+    )
+    bn.add_argument(
+        "--custom-operator-admission",
+        default=None,
+        help=(
+            "本次严格 NPU 评测显式启用的自定义算子准入文件；"
+            "绑定 adapter manifest 与通过的 adapter 构建回执"
+        ),
     )
 
     wiz = sub.add_parser(
@@ -8030,10 +8200,25 @@ def main(argv=None):
         "--allow-custom-operator-generation",
         action="store_true",
         help=(
-            "显式接受 custom OperatorSpec 的未验证 LLM 草稿路由；仅当 "
-            "official-resolution.json 明确记录 custom route 时生效，"
+            "显式接受 custom OperatorSpec 或普通 NumPy 缺口的未验证 LLM 草稿"
+            "路由；仅当 official-resolution.json 明确记录 custom route 时生效，"
             "仍需 LLM/Skill/代理门禁且不可激活"
         ),
+    )
+    gaps.add_argument(
+        "--observe-inputs",
+        action="store_true",
+        help=(
+            "在本地 CPU 上执行原 NumPy 程序，记录缺口 API 实际收到的 "
+            "dtype/shape/rank/连续性，写入任务书和 observed-inputs.json；"
+            "不执行设备区域、不读取 llm.json、不调用模型"
+        ),
+    )
+    gaps.add_argument(
+        "--observe-timeout",
+        type=float,
+        default=120.0,
+        help="输入观测子进程的超时秒数（默认 120，范围 1～3600）",
     )
     gaps.add_argument(
         "--out",
@@ -8501,6 +8686,43 @@ def main(argv=None):
                 if _llm_proxy_for_remote_call("NPU 评测迁移门禁") is None:
                     return 4
             backend, analysis_profiles = _qualified_runtime_inputs(args, "npu")
+            admission_path = getattr(
+                args, "custom_operator_admission", None
+            )
+            custom_contracts = None
+            if admission_path:
+                from numpilot.custom_operator_admission import (
+                    CustomOperatorAdmissionError,
+                    load_custom_operator_admission,
+                )
+                try:
+                    custom_admission = load_custom_operator_admission(
+                        admission_path
+                    )
+                except (OSError, CustomOperatorAdmissionError) as exc:
+                    print(
+                        "[自定义算子准入] 加载失败: %s" % exc,
+                        file=sys.stderr,
+                    )
+                    return 2
+                print(
+                    "[自定义算子准入] id=%s apis=%s soc=%s cann=%s"
+                    % (
+                        custom_admission.admission_id,
+                        ",".join(custom_admission.names),
+                        custom_admission.target_soc,
+                        custom_admission.cann_version,
+                    )
+                )
+                attach = getattr(backend, "set_custom_admission", None)
+                if not callable(attach):
+                    print(
+                        "[自定义算子准入] 当前 NPU 后端不支持准入注入",
+                        file=sys.stderr,
+                    )
+                    return 2
+                attach(custom_admission)
+                custom_contracts = custom_admission.contracts
             _preflight("npu", args.skip_env_check)
             # This command may migrate before it measures. Describe the whole
             # system step without claiming six model calls or adding timer hooks.
@@ -8510,7 +8732,8 @@ def main(argv=None):
                                            threshold=args.threshold,
                                            allow_cpu_fallback=args.allow_cpu_fallback,
                                            backend=backend,
-                                           analysis_profiles=analysis_profiles)
+                                           analysis_profiles=analysis_profiles,
+                                           custom_contracts=custom_contracts)
                     operation.finish("completed" if code == 0 else "blocked" if code == 1 else "failed",
                                      "NPU 性能流程结束，请以资格与性能回执为准")
                     return code

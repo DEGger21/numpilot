@@ -426,6 +426,7 @@ def test_cli_forwards_allow_cpu_fallback(monkeypatch, tmp_path):
         *,
         backend,
         analysis_profiles,
+        custom_contracts=None,
     ):
         seen["allow"] = allow_cpu_fallback
         seen["backend"] = backend

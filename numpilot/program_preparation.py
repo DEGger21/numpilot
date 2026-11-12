@@ -61,10 +61,10 @@ class ProgramPreparation:
         }
 
 
-def prepare_program(source: str) -> ProgramPreparation:
+def prepare_program(source: str, preserve=()) -> ProgramPreparation:
     """Return the deterministic analysis/migration surface for one program."""
 
-    lowering = lower_benchmark_program(source)
+    lowering = lower_benchmark_program(source, preserve=preserve)
     return ProgramPreparation(
         original_source=source,
         analysis_source=lowering.source,

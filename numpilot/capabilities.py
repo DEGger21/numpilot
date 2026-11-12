@@ -37,7 +37,10 @@ _PROFILE_RANK = re.compile(r"^rank>=(0|[1-9][0-9]*)$")
 _PROFILE_RANK_MAX = re.compile(r"^rank<=(0|[1-9][0-9]*)$")
 _PROFILE_NUMEL = re.compile(r"^numel>=(0|[1-9][0-9]*)$")
 _PROFILE_CONTIGUOUS = re.compile(r"^contiguous=(true|false)$")
-_PROFILE_DTYPES_V1 = frozenset({"float32"})
+# The v1 grammar is deliberately small.  ``bool`` is admitted because the
+# audited bitwise lane (invert) has no float32 form at all; every other
+# profile kind still applies uniformly to all tensor operands.
+_PROFILE_DTYPES_V1 = frozenset({"float32", "bool"})
 
 
 def _strict_json_object(pairs):

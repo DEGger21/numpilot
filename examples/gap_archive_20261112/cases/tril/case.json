@@ -1,0 +1,85 @@
+{
+  "case": "tril",
+  "gap_operator": "tril",
+  "numpy_call": "numpy.tril(a, k=0)",
+  "gap_id": "tril-9febcb163f0d6585",
+  "route": "ascendc_registry_candidate",
+  "source_sha256": "d916e98aa99223f185b6c6f6a4c5f24a47cc9cd50d774904e08f9b5fe55a1636",
+  "migrated_sha256": "c6ad3ecfd37635a8da8a1b60b93da4244d6cf3c4a9660f7cf1b93ce6838677eb",
+  "archive": {
+    "draft_files": 18,
+    "final_files": 18,
+    "adapter_files": 6
+  },
+  "metrics": {
+    "generation_s": 869,
+    "completion_build_deploy_verify_s": 1313,
+    "generation_plus_completion_s": 2182,
+    "adapter_build_plus_tests_s": 100,
+    "migrate_command_s": 8,
+    "bench_s": 9,
+    "end_to_end_s": 2304,
+    "build_attempts": 2,
+    "adapter_tests_passed": 13,
+    "timeline_stage_elapsed_s": {
+      "opp-build-attempt1": [
+        2
+      ],
+      "opp-build-attempt2": [
+        19
+      ],
+      "opp-deploy": [
+        1
+      ],
+      "adapter-wheel": [
+        93
+      ],
+      "adapter-stage": [
+        1
+      ],
+      "adapter-tests": [
+        6
+      ],
+      "migrate-npu-ast": [
+        0,
+        6,
+        8
+      ],
+      "bench-cpu": [
+        1
+      ],
+      "bench-npu": [
+        8
+      ]
+    }
+  },
+  "migration": {
+    "engine": "ast",
+    "status": "fail",
+    "rewrites": {
+      "tril": 1
+    },
+    "numerically_consistent": false,
+    "max_abs_diff": 1.7976931348623157e+308,
+    "max_rel_diff": 1.7976931348623157e+308,
+    "admission_id": "29e97b8cab2d8808a721c6267fe40c33969ad00b52b8859f68f6b44739bbae5f"
+  },
+  "benchmark": {
+    "status": "pass",
+    "engine": "ast",
+    "backend": "npu",
+    "n_elements": 4194304,
+    "t_cpu_ms": 14.156665652990341,
+    "t_npu_ms": 1.6487082466483116,
+    "speedup": 8.586519586937033,
+    "max_abs_diff": 0.0,
+    "max_rel_diff": 0.0,
+    "atol": 1e-05,
+    "rtol": 0.0001
+  },
+  "notes": [
+    "2 build attempts (first attempt failed on a C++ standard mismatch, fixed deterministically; second attempt succeeded).",
+    "13 adapter tests pass; exact equality.",
+    "2048x2048 lower triangle; 8.59x speedup."
+  ]
+}

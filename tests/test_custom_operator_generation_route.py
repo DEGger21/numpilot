@@ -1,5 +1,6 @@
-"""Offline contracts for the explicit custom OperatorSpec generation lane."""
+"""Offline contracts for the explicit custom operator-generation lane."""
 
+from dataclasses import replace
 import json
 from pathlib import Path
 
@@ -14,7 +15,10 @@ from numpilot.gaps.official_resolution import (
     write_official_resolution_report,
 )
 from numpilot.gaps.pipeline import prepare_gap_completion
-from numpilot.gaps.spec import is_custom_generation_operator_gap
+from numpilot.gaps.spec import (
+    is_custom_generation_numpy_gap,
+    is_custom_generation_operator_gap,
+)
 
 from tests.test_official_operator_resolution import _inventory
 
@@ -65,6 +69,7 @@ def test_custom_route_requires_explicit_opt_in_and_preserves_ambiguity(tmp_path)
         "operator_spec_provenance": "custom_generation_candidate",
         "operator_spec_route": "ascendc_registry_candidate",
         "official_equivalence": "not_proven",
+        "source_kind": "operator_spec",
     }
     assert decision.to_dict()["custom_generation_proof"]["official_equivalence"] == (
         "not_proven"
@@ -91,19 +96,53 @@ def test_custom_route_receipt_roundtrip_rechecks_source_binding(tmp_path):
         OfficialOperatorResolutionReport.from_dict(tampered)
 
 
-def test_custom_opt_in_cannot_relabel_an_ordinary_numpy_gap(tmp_path):
+def test_plain_numpy_gap_enters_custom_lane_only_with_explicit_opt_in(tmp_path):
     source = Path(__file__).parents[1] / "examples" / "gap_isnan.py"
     preparation = prepare_gap_completion(
         str(source), target_soc="Ascend910B4", cann_version="9.0.0"
     )
-    report = resolve_official_operators(
+    spec = preparation.specs[0]
+    assert is_custom_generation_numpy_gap(preparation.source, spec)
+    assert not is_custom_generation_operator_gap(preparation.source, spec)
+
+    default = resolve_official_operators(
+        preparation,
+        cann_root=str(tmp_path / "cann"),
+        inventory_loader=lambda _root: _inventory(tmp_path, arange=False),
+    )
+    assert default.status == "blocked"
+    assert all(item.route == BLOCKED_ROUTE for item in default.decisions)
+
+    opted = resolve_official_operators(
         preparation,
         cann_root=str(tmp_path / "cann"),
         allow_custom_operator_generation=True,
         inventory_loader=lambda _root: _inventory(tmp_path, arange=False),
     )
-    assert report.status == "blocked"
-    assert all(item.route == BLOCKED_ROUTE for item in report.decisions)
+    assert opted.status == "custom_operator_generation_allowed"
+    decision = opted.decisions[0]
+    assert decision.route == CUSTOM_OPERATOR_ROUTE
+    assert decision.qualified_api == "numpy.isnan"
+    assert decision.installed_cann["status"] == "ambiguous"
+    assert decision.installed_cann["custom_generation_proof"]["source_kind"] == (
+        "numpy_api"
+    )
+    restored = OfficialOperatorResolutionReport.from_dict(opted.to_dict())
+    restored.validate_preparation(preparation)
+
+
+def test_numpy_gap_predicate_rejects_a_relabelled_callsite(tmp_path):
+    source = Path(__file__).parents[1] / "examples" / "gap_isnan.py"
+    preparation = prepare_gap_completion(
+        str(source), target_soc="Ascend910B4", cann_version="9.0.0"
+    )
+    spec = preparation.specs[0]
+    original = spec.callsites[0]
+    moved = replace(
+        spec,
+        callsites=(replace(original, lineno=original.lineno + 1),),
+    )
+    assert not is_custom_generation_numpy_gap(preparation.source, moved)
 
 
 def test_official_source_candidate_still_wins_over_custom_opt_in(tmp_path):

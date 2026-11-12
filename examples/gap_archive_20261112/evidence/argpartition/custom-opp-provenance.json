@@ -1,0 +1,26 @@
+{
+  "aclnn": {
+    "call_style": "two-stage",
+    "execute": "aclnnArgpartition",
+    "get_workspace_size": "aclnnArgpartitionGetWorkspaceSize"
+  },
+  "header": {
+    "relative_path": "op_api/include/aclnn_argpartition.h",
+    "sha256": "cad8a22ad3ce857bb786297fc2aaddae887bf78031ef5773c2f136d33d46b51a"
+  },
+  "library": {
+    "relative_path": "op_api/lib/libcust_opapi.so",
+    "sha256": "56e58d2571b065e6e49d2a2b7522ee358725c46209d717e887923e596c1e8f34",
+    "size": 222928
+  },
+  "operator": "argpartition",
+  "receipt_sha256": "ab8f2af0d057dd3b7065212bdd315f5dee8a9a6942daec6edcc721dec3728ae4",
+  "schema": "numpilot.custom-opp-provenance",
+  "schema_version": 1,
+  "vendor_root": "argpartition/custom-v1/deploy-v1/vendors/argpartition_custom",
+  "verification_scope": "read-only-filesystem-hash-and-header-declaration",
+  "version_info": {
+    "custom_opp_compiler_version": "9.2.0-beta.2"
+  },
+  "version_info_sha256": "7e5200644e61a2732438bd2fac2c3447ea8325e71ea36513499db8858bcb1b4b"
+}

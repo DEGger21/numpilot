@@ -1,0 +1,55 @@
+{
+  "case": "ediff1d",
+  "gap_operator": "ediff1d",
+  "numpy_call": "numpy.ediff1d(a)",
+  "gap_id": "ediff1d-d3bacc55a5c1886b",
+  "route": "ascendc_registry_candidate",
+  "source_sha256": "9681613c066b42bb13ca58d0173d1731d32e55617161e999468c0170f088f4d8",
+  "migrated_sha256": "57994ac02a16216a243ee765666e803e986d0520d528037187e13ee6c001cd9b",
+  "archive": {
+    "draft_files": 19,
+    "final_files": 20,
+    "adapter_files": 6
+  },
+  "metrics": {
+    "generation_s": 882,
+    "completion_build_deploy_verify_s": 1082,
+    "generation_plus_completion_s": 1964,
+    "adapter_build_plus_tests_s": 143,
+    "migrate_command_s": 6,
+    "bench_s": null,
+    "end_to_end_s": 3644,
+    "build_attempts": 2,
+    "adapter_tests_passed": 10,
+    "timeline_stage_elapsed_s": {}
+  },
+  "migration": {
+    "engine": "ast",
+    "status": "pass",
+    "rewrites": {
+      "ediff1d": 1
+    },
+    "numerically_consistent": true,
+    "max_abs_diff": 0.0,
+    "max_rel_diff": 0.0,
+    "admission_id": "50c59ef61a65d4bbff947107e46747067fdbcf149cbb9179e999755858a98b54"
+  },
+  "benchmark": {
+    "status": "pass",
+    "engine": "ast",
+    "backend": "npu",
+    "n_elements": 4194303,
+    "t_cpu_ms": 4.480339586734772,
+    "t_npu_ms": 1.6644187271595001,
+    "speedup": 2.691834400578349,
+    "max_abs_diff": 0.0,
+    "max_rel_diff": 0.0,
+    "atol": 1e-05,
+    "rtol": 0.0001
+  },
+  "notes": [
+    "Model draft reached a working kernel after 2 build attempts.",
+    "10 adapter tests pass; exact equality.",
+    "4 Mi-element difference; 2.69x speedup."
+  ]
+}

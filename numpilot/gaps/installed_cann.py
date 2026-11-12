@@ -188,6 +188,14 @@ _ASNUMPY_ARRAY_LIBRARIES = ("libopapi.so", "libopapi_math.so")
 # that exact library; the math DSO remains a second audited provider for
 # the same two-stage ``aclnnPowTensorScalar`` symbols.
 _ASNUMPY_MATH_LIBRARIES = ("libopapi.so", "libopapi_math.so")
+# ``invert``, ``argsort`` and ``searchsorted`` are dispatched from existing
+# AsNumPy modules whose reviewed binding target links the monolithic ``opapi``
+# DSO.  This toolkit exports the same two-stage symbols from both audited
+# libraries, so the math DSO remains a second provider.
+_ASNUMPY_EXISTING_MODULE_LIBRARIES = ("libopapi.so", "libopapi_math.so")
+# ``median`` is exported only from the monolithic ``opapi`` DSO; the math DSO
+# lacks the symbol and must never be offered as a provider.
+_ASNUMPY_OPAPI_ONLY_LIBRARIES = ("libopapi.so",)
 _AUDITED_9_0 = ("9.0.0",)
 # Concatenate was audited only against the exact toolkit and device profile
 # recorded in docs/concatenate-official-audit.zh-CN.md.  Neither the broader
@@ -362,6 +370,83 @@ ACLNN_ADAPTER_CANDIDATES: Tuple[AclnnAdapterCandidate, ...] = (
         semantic_review=(
             "validate beta/sigma normalization and reduction-code mapping",
             "normalize scalar output shape and validate dtype/shape constraints",
+        ),
+    ),
+    # Four audited 9.2.0-beta.2 / Ascend910B3 mappings for NumPy APIs that the
+    # pinned AsNumPy export surface does not implement.  Each entry records
+    # only symbol presence plus a semantic-review checklist; equivalence is
+    # decided later by the deterministic API gate and the qualification
+    # receipt, never by this catalog.
+    AclnnAdapterCandidate(
+        candidate_id="numpy.invert-aclnn-bitwise-not",
+        qualified_api="numpy.invert",
+        header_name="aclnn_bitwise_not.h",
+        library_priority=_ASNUMPY_EXISTING_MODULE_LIBRARIES,
+        required_symbols=(
+            "aclnnBitwiseNotGetWorkspaceSize",
+            "aclnnBitwiseNot",
+        ),
+        audited_cann_versions=_AUDITED_9_2_BETA2,
+        audited_target_socs=_AUDITED_910B3,
+        semantic_review=(
+            "np.invert is bitwise NOT for integer and bool inputs; float inputs "
+            "must be rejected instead of silently cast",
+            "preserve input dtype and shape; validate bool logical-not versus "
+            "signed integer two's-complement patterns",
+        ),
+    ),
+    AclnnAdapterCandidate(
+        candidate_id="numpy.argsort-aclnn-argsort",
+        qualified_api="numpy.argsort",
+        header_name="aclnn_argsort.h",
+        library_priority=_ASNUMPY_EXISTING_MODULE_LIBRARIES,
+        required_symbols=(
+            "aclnnArgsortGetWorkspaceSize",
+            "aclnnArgsort",
+        ),
+        audited_cann_versions=_AUDITED_9_2_BETA2,
+        audited_target_socs=_AUDITED_910B3,
+        semantic_review=(
+            "np.argsort returns int64 indices; axis must be normalized and "
+            "negative axes resolved before dispatch",
+            "stability differences are allowed only for tied values; validate "
+            "that gathered values are sorted and indices are a permutation",
+        ),
+    ),
+    AclnnAdapterCandidate(
+        candidate_id="numpy.searchsorted-aclnn-search-sorted",
+        qualified_api="numpy.searchsorted",
+        header_name="aclnn_searchsorted.h",
+        library_priority=_ASNUMPY_EXISTING_MODULE_LIBRARIES,
+        required_symbols=(
+            "aclnnSearchSortedGetWorkspaceSize",
+            "aclnnSearchSorted",
+        ),
+        audited_cann_versions=_AUDITED_9_2_BETA2,
+        audited_target_socs=_AUDITED_910B3,
+        semantic_review=(
+            "np.searchsorted defaults to side='left'; the ACLNN right flag must "
+            "be mapped explicitly for left versus right",
+            "validate int64 index dtype, broadcasting of the values operand, "
+            "and the empty-sequence boundary",
+        ),
+    ),
+    AclnnAdapterCandidate(
+        candidate_id="numpy.median-aclnn-median",
+        qualified_api="numpy.median",
+        header_name="aclnn_median.h",
+        library_priority=_ASNUMPY_OPAPI_ONLY_LIBRARIES,
+        required_symbols=(
+            "aclnnMedianGetWorkspaceSize",
+            "aclnnMedian",
+        ),
+        audited_cann_versions=_AUDITED_9_2_BETA2,
+        audited_target_socs=_AUDITED_910B3,
+        semantic_review=(
+            "aclnnMedian reduces the flattened tensor to one value; axis, out "
+            "and keepdims must be rejected rather than approximated",
+            "validate even-length midpoint averaging, odd-length selection, "
+            "dtype preservation and NaN-free inputs",
         ),
     ),
 )

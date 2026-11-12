@@ -1,0 +1,654 @@
+{
+  "schema": "numpilot.asnumpy.adapter",
+  "schema_version": 1,
+  "stage": {
+    "index": 17,
+    "total": 17,
+    "name": "test_adapter_02"
+  },
+  "status": "unverified_candidate",
+  "gap": {
+    "gap_id": "tril-9febcb163f0d6585",
+    "qualified_api": "numpy.tril",
+    "asnumpy_api": "asnumpy.tril",
+    "semantic_source": "numpy.tril",
+    "source_path": "tril/source/tril_contract.py",
+    "source_sha256": "d916e98aa99223f185b6c6f6a4c5f24a47cc9cd50d774904e08f9b5fe55a1636",
+    "gap_spec_sha256": "2456c52dbf0c8234f91c8ffecc77467afb6a14814abdaa591afb09b6d11aa6b8"
+  },
+  "target": {
+    "soc": "Ascend910B3",
+    "cann_version": "9.2.0-beta.2",
+    "device_qualification": "pending",
+    "device_execution_observed": false
+  },
+  "operator": {
+    "numpy_api": "numpy.tril",
+    "asnumpy_api": "asnumpy.tril",
+    "aclnn_op_type": "Tril",
+    "op_type": "Tril",
+    "file_stem": "tril",
+    "kernel_entry": "tril",
+    "return_structure": "single_tensor",
+    "public_api_visibility": "public"
+  },
+  "public_contract": {
+    "python_callable": "asnumpy.tril",
+    "positional_args": [
+      "a"
+    ],
+    "positional_count": 1,
+    "keyword_args": [],
+    "internal_fixed_k": 0,
+    "public_k_parameter_exposed": false,
+    "public_call_example": "asnumpy.tril(a)",
+    "oracle_equivalent_call": "numpy.tril(a, k=0)",
+    "result": "single float32 tensor",
+    "out_of_place": true,
+    "input_mutation": "none",
+    "cpu_fallback": "forbidden"
+  },
+  "parameter_map": [
+    {
+      "index": 0,
+      "direction": "input",
+      "oracle_name": "a",
+      "host_name": "a",
+      "acl_tensor_name": "self",
+      "kernel_arg": "input",
+      "dtype": "float32",
+      "rank": 2,
+      "shape": [
+        2048,
+        2048
+      ],
+      "layout": "c_contiguous",
+      "required": true
+    },
+    {
+      "index": 1,
+      "direction": "output",
+      "oracle_name": "out",
+      "host_name": "out",
+      "acl_tensor_name": "out",
+      "kernel_arg": "output",
+      "dtype": "float32",
+      "rank": 2,
+      "shape": [
+        2048,
+        2048
+      ],
+      "layout": "c_contiguous",
+      "required": true
+    }
+  ],
+  "semantics": {
+    "operation": "lower_triangular_copy",
+    "definition": "out[i, j] = a[i, j] when j <= i + k, otherwise 0.0f; k is fixed to 0 for this adapter",
+    "k": 0,
+    "retained_region": "main diagonal and below",
+    "masked_region": "strictly above the main diagonal",
+    "masked_value": "+0.0f",
+    "broadcasting": "none",
+    "return_copy": true,
+    "dtype_promotion": "none",
+    "scalar_materialization": "not applicable",
+    "empty_input": "not admitted by this bounded profile",
+    "unsupported_kwargs": "including k, out, where, dtype, casting, order",
+    "input_output_alias": "not supported; output is a distinct tensor"
+  },
+  "profiles": {
+    "declared_gap_dtype_rules": [
+      "runtime_profile_required"
+    ],
+    "declared_gap_shape_rules": [
+      "runtime_profile_required"
+    ],
+    "unresolved_marker_interpretation": "runtime_profile_required is an unresolved marker, not a dtype or shape wildcard",
+    "observed_cpu_profile": {
+      "source": "observed-inputs.json#callsites",
+      "observation": "inputs_observed_cpu",
+      "callsite": {
+        "lineno": 10,
+        "col_offset": null,
+        "call_expr": "numpy.tril(<arg0>)"
+      },
+      "inputs": [
+        {
+          "name": "arg[0]",
+          "dtype": "float32",
+          "rank": 2,
+          "shape": [
+            2048,
+            2048
+          ],
+          "layout": "c_contiguous"
+        }
+      ],
+      "output": {
+        "dtype": "float32",
+        "rank": 2,
+        "shape": [
+          2048,
+          2048
+        ],
+        "layout": "c_contiguous"
+      },
+      "signature": {
+        "positional_args": 1,
+        "keyword_args": []
+      },
+      "device_execution": "not performed by AsNumpy before qualification"
+    },
+    "admitted_profile": {
+      "input_dtype": "float32",
+      "input_rank": 2,
+      "input_shape": [
+        2048,
+        2048
+      ],
+      "input_layout": "c_contiguous",
+      "output_dtype": "float32",
+      "output_rank": 2,
+      "output_shape": [
+        2048,
+        2048
+      ],
+      "output_layout": "c_contiguous",
+      "signature": {
+        "positional_args": 1,
+        "keyword_args": []
+      },
+      "internal_k": 0
+    }
+  },
+  "support_scope": {
+    "mode": "bounded_directed_specialization",
+    "supported_input_dtype": "float32",
+    "supported_input_rank": 2,
+    "supported_input_shape": [
+      2048,
+      2048
+    ],
+    "supported_input_layout": "c_contiguous",
+    "supported_signature": {
+      "positional_args": 1,
+      "keyword_args": []
+    },
+    "supported_k": 0,
+    "output_dtype": "float32",
+    "output_shape": "same as admitted input shape",
+    "all_other_profiles": "explicit rejection; no implicit cast, no NumPy fallback, no CPU fallback",
+    "qualification_scope": "only the tested observed profile after all gates pass; no global numpy.tril capability claim"
+  },
+  "rejection_contract": {
+    "unsupported_dtypes": [
+      "bool",
+      "int8",
+      "uint8",
+      "int16",
+      "uint16",
+      "int32",
+      "uint32",
+      "int64",
+      "uint64",
+      "float16",
+      "bfloat16",
+      "float64",
+      "complex64",
+      "complex128"
+    ],
+    "rules": [
+      {
+        "id": "input_dtype_not_float32",
+        "condition": "a.dtype != np.float32",
+        "error_class": "TypeError",
+        "message": "asnumpy.tril currently admits only float32 input tensors"
+      },
+      {
+        "id": "input_rank_not_2",
+        "condition": "a.ndim != 2",
+        "error_class": "ValueError",
+        "message": "asnumpy.tril currently admits only rank-2 tensors"
+      },
+      {
+        "id": "input_shape_not_observed_profile",
+        "condition": "a.shape != (2048, 2048)",
+        "error_class": "ValueError",
+        "message": "asnumpy.tril currently admits only the observed shape [2048, 2048]"
+      },
+      {
+        "id": "input_not_c_contiguous",
+        "condition": "not a.flags.c_contiguous",
+        "error_class": "ValueError",
+        "message": "asnumpy.tril currently requires c_contiguous input"
+      },
+      {
+        "id": "keyword_arguments_present",
+        "condition": "len(kwargs) != 0",
+        "error_class": "TypeError",
+        "message": "asnumpy.tril accepts no keyword arguments"
+      },
+      {
+        "id": "positional_count_not_one",
+        "condition": "len(args) != 1",
+        "error_class": "TypeError",
+        "message": "asnumpy.tril accepts exactly one positional argument"
+      },
+      {
+        "id": "unsupported_k",
+        "condition": "a keyword or positional k is supplied",
+        "error_class": "TypeError",
+        "message": "k is fixed internally to 0 and is not exposed by this adapter"
+      },
+      {
+        "id": "unsupported_out_or_where",
+        "condition": "out or where is supplied",
+        "error_class": "TypeError",
+        "message": "out and where semantics are unsupported by this adapter"
+      }
+    ],
+    "no_silent_cast": true,
+    "no_host_fallback": true
+  },
+  "symbol_mapping": {
+    "public_python_api": {
+      "qualified_name": "asnumpy.tril",
+      "module": "asnumpy",
+      "symbol": "tril"
+    },
+    "python_wrapper": {
+      "symbol": "asnumpy.tril",
+      "delegates_to": "asnumpy._C.tril",
+      "argument_order": [
+        "a"
+      ]
+    },
+    "pybind": {
+      "module": "asnumpy._C",
+      "symbol": "tril",
+      "call_example": "asnumpy._C.tril(a)"
+    },
+    "native": {
+      "symbol": "Tril",
+      "role": "native adapter entry",
+      "acl_tensor_order": [
+        "self",
+        "out"
+      ]
+    },
+    "aclnn_l2": {
+      "get_workspace_size": "aclnnTrilGetWorkspaceSize",
+      "execute": "aclnnTril",
+      "input_tensor_name": "self",
+      "output_tensor_name": "out",
+      "executor_type": "aclOpExecutor",
+      "stream_type": "aclrtStream"
+    },
+    "aclnn_l0": {
+      "symbol": "l0op::Tril",
+      "input_tensor_name": "self",
+      "output_tensor_name": "out",
+      "launcher_macro": "ADD_TO_LAUNCHER_LIST_AICORE(Tril, ...)"
+    },
+    "kernel": {
+      "entry": "tril",
+      "arg_order": [
+        "input",
+        "output",
+        "workspace",
+        "tiling"
+      ],
+      "init_copyin_compute_copyout": true
+    }
+  },
+  "aclnn_contract": {
+    "two_stage_call": true,
+    "workspace_size_query": "call aclnnTrilGetWorkspaceSize(self, out, &workspaceSize, &executor)",
+    "workspace_allocation": "allocate device workspace with aclrtMalloc only when workspaceSize > 0; otherwise pass nullptr",
+    "execute": "call aclnnTril(workspace, workspaceSize, executor, stream)",
+    "synchronization": "synchronize the same ACL stream before copying output back to host and before returning",
+    "error_handling": "check every aclnnStatus and aclError; on nonzero status release resources and raise RuntimeError with the failing symbol and code; never return partial output",
+    "workspace_release": "release workspace exactly once after execute and synchronization",
+    "executor_lifetime": "keep the executor valid for the complete two-stage call and do not reuse it after completion",
+    "stream": "current ACL stream supplied by the caller adapter",
+    "output_allocation": "allocate a distinct float32 device tensor of shape [2048, 2048] before calling ACLNN",
+    "workspace_size_overflow": "reject with RuntimeError if allocation would exceed the caller-provided workspace bound"
+  },
+  "runtime_contract": {
+    "device": "npu",
+    "input_transfer": "copy the admitted host numpy.ndarray to an ACL device tensor",
+    "output_transfer": "copy the ACL output tensor back to a host numpy.ndarray after synchronization",
+    "input_device_copy_required": true,
+    "output_device_copy_required": true,
+    "input_lifetime": "valid until the ACLNN execute call and subsequent synchronization complete",
+    "output_lifetime": "valid until host copy completes",
+    "repeated_call_lifecycle": "each call independently allocates, executes, synchronizes, copies, and releases resources; no state is retained between calls",
+    "input_mutation": "none",
+    "cpu_fallback": "forbidden",
+    "numpy_fallback": "forbidden",
+    "silent_cast": "forbidden",
+    "activation_allowed": false
+  },
+  "numerical_contract": {
+    "output_dtype": "float32",
+    "output_rank": 2,
+    "output_shape": [
+      2048,
+      2048
+    ],
+    "rtol": 0.0,
+    "atol": 0.0,
+    "exact_equality_required": true,
+    "tolerance_status": "declared_for_candidate_pending_numerical_gate",
+    "comparison": "assert dtype, shape, and contiguity; compare float32 bit patterns with np.array_equal(actual.view(np.uint32), expected.view(np.uint32)) so NaN payloads and signed zeros are checked exactly",
+    "nan_policy": "preserve NaN bits in the retained lower/on-diagonal region; any NaN above the diagonal must become +0.0f",
+    "positive_infinity_policy": "preserve +Inf in the retained region; any +Inf above the diagonal must become +0.0f",
+    "negative_infinity_policy": "preserve -Inf in the retained region; any -Inf above the diagonal must become +0.0f",
+    "positive_zero_policy": "preserve +0.0f in the retained region; masked region must be +0.0f",
+    "negative_zero_policy": "preserve -0.0f in the retained region; masked region must be +0.0f, not -0.0f",
+    "bool_comparison_results_exact": true,
+    "no_bool_output_tensor": true,
+    "comparison_result_dtype": "bool"
+  },
+  "adapter_tests": {
+    "status": "planned_not_executed",
+    "positive": [
+      {
+        "id": "observed_profile_random",
+        "call": "asnumpy.tril(a)",
+        "input": {
+          "dtype": "float32",
+          "shape": [
+            2048,
+            2048
+          ],
+          "layout": "C",
+          "generator": "np.random.default_rng(20261112).standard_normal((2048, 2048), dtype=np.float32)"
+        },
+        "expected": "np.tril(a, k=0)",
+        "assertions": [
+          "actual.dtype == np.float32",
+          "actual.shape == (2048, 2048)",
+          "actual.flags.c_contiguous",
+          "bitwise_equal(actual, expected)",
+          "actual is not a"
+        ]
+      },
+      {
+        "id": "all_negative_ones",
+        "call": "asnumpy.tril(a)",
+        "input": {
+          "dtype": "float32",
+          "shape": [
+            2048,
+            2048
+          ],
+          "layout": "C",
+          "generator": "np.full((2048, 2048), -1.0, dtype=np.float32)"
+        },
+        "expected": "np.tril(a, k=0)",
+        "assertions": [
+          "upper triangle is bitwise +0.0f",
+          "lower triangle and diagonal are -1.0f",
+          "bitwise_equal(actual, expected)"
+        ]
+      },
+      {
+        "id": "special_values_and_signed_zero",
+        "call": "asnumpy.tril(a)",
+        "input": {
+          "dtype": "float32",
+          "shape": [
+            2048,
+            2048
+          ],
+          "layout": "C",
+          "generator": "a = np.linspace(-10.0, 10.0, 2048 * 2048, dtype=np.float32).reshape(2048, 2048); a[0, 0] = np.float32(-0.0); a[0, 1] = np.float32(np.nan); a[1, 0] = np.float32(np.inf); a[1, 2] = np.float32(-np.inf); a[2, 2] = np.float32(np.nan)"
+        },
+        "expected": "np.tril(a, k=0)",
+        "assertions": [
+          "masked NaN and infinities become bitwise +0.0f",
+          "retained NaN, infinities, and -0.0f are bit-preserved",
+          "bitwise_equal(actual, expected)"
+        ]
+      },
+      {
+        "id": "repeated_call_lifecycle",
+        "call": "asnumpy.tril(a) three times with fresh admitted inputs",
+        "input": {
+          "dtype": "float32",
+          "shape": [
+            2048,
+            2048
+          ],
+          "layout": "C",
+          "generator": "np.full((2048, 2048), fill_value, dtype=np.float32) for fill_value in (-3.0, 0.0, 7.0)"
+        },
+        "expected": "np.tril(a, k=0) independently for each call",
+        "assertions": [
+          "no state leaks between calls",
+          "all three outputs match their corresponding oracle results",
+          "input arrays remain unchanged"
+        ]
+      }
+    ],
+    "negative": [
+      {
+        "id": "unsupported_dtype_float64",
+        "call": "asnumpy.tril(a)",
+        "input": {
+          "dtype": "float64",
+          "shape": [
+            2048,
+            2048
+          ],
+          "layout": "C"
+        },
+        "expected_error": "TypeError"
+      },
+      {
+        "id": "unsupported_dtype_float16",
+        "call": "asnumpy.tril(a)",
+        "input": {
+          "dtype": "float16",
+          "shape": [
+            2048,
+            2048
+          ],
+          "layout": "C"
+        },
+        "expected_error": "TypeError"
+      },
+      {
+        "id": "unsupported_dtype_int32",
+        "call": "asnumpy.tril(a)",
+        "input": {
+          "dtype": "int32",
+          "shape": [
+            2048,
+            2048
+          ],
+          "layout": "C"
+        },
+        "expected_error": "TypeError"
+      },
+      {
+        "id": "unsupported_dtype_bool",
+        "call": "asnumpy.tril(a)",
+        "input": {
+          "dtype": "bool",
+          "shape": [
+            2048,
+            2048
+          ],
+          "layout": "C"
+        },
+        "expected_error": "TypeError"
+      },
+      {
+        "id": "unsupported_rank_1",
+        "call": "asnumpy.tril(a)",
+        "input": {
+          "dtype": "float32",
+          "shape": [
+            2048
+          ],
+          "layout": "C"
+        },
+        "expected_error": "ValueError"
+      },
+      {
+        "id": "unsupported_rank_3",
+        "call": "asnumpy.tril(a)",
+        "input": {
+          "dtype": "float32",
+          "shape": [
+            8,
+            2048,
+            2048
+          ],
+          "layout": "C"
+        },
+        "expected_error": "ValueError"
+      },
+      {
+        "id": "unsupported_shape_2047_by_2048",
+        "call": "asnumpy.tril(a)",
+        "input": {
+          "dtype": "float32",
+          "shape": [
+            2047,
+            2048
+          ],
+          "layout": "C"
+        },
+        "expected_error": "ValueError"
+      },
+      {
+        "id": "unsupported_shape_1024_by_1024",
+        "call": "asnumpy.tril(a)",
+        "input": {
+          "dtype": "float32",
+          "shape": [
+            1024,
+            1024
+          ],
+          "layout": "C"
+        },
+        "expected_error": "ValueError"
+      },
+      {
+        "id": "unsupported_non_contiguous",
+        "call": "asnumpy.tril(a)",
+        "input": {
+          "dtype": "float32",
+          "shape": [
+            2048,
+            2048
+          ],
+          "layout": "strided",
+          "generator": "np.ones((2048, 4096), dtype=np.float32)[:, ::2]"
+        },
+        "expected_error": "ValueError"
+      },
+      {
+        "id": "unsupported_keyword_k",
+        "call": "asnumpy.tril(a, k=-1)",
+        "input": {
+          "dtype": "float32",
+          "shape": [
+            2048,
+            2048
+          ],
+          "layout": "C"
+        },
+        "expected_error": "TypeError"
+      },
+      {
+        "id": "unsupported_extra_positional",
+        "call": "asnumpy.tril(a, -1)",
+        "input": {
+          "dtype": "float32",
+          "shape": [
+            2048,
+            2048
+          ],
+          "layout": "C"
+        },
+        "expected_error": "TypeError"
+      },
+      {
+        "id": "missing_positional",
+        "call": "asnumpy.tril()",
+        "input": null,
+        "expected_error": "TypeError"
+      },
+      {
+        "id": "unsupported_out_keyword",
+        "call": "asnumpy.tril(a, out=out)",
+        "input": {
+          "dtype": "float32",
+          "shape": [
+            2048,
+            2048
+          ],
+          "layout": "C"
+        },
+        "expected_error": "TypeError"
+      }
+    ],
+    "boundary_checks": [
+      "diagonal element at [i, i] is retained",
+      "element at [i, i + 1] is masked to +0.0f",
+      "element at [i + 1, i] is retained",
+      "masked values are positive zero, including when input contained -0.0, NaN, +Inf, or -Inf",
+      "admitted profile has no broadcasting"
+    ]
+  },
+  "qualification": {
+    "overall": "pending",
+    "gates": {
+      "build": "pending",
+      "unit_and_boundary": "pending",
+      "numerical": "pending",
+      "native_execution": "pending",
+      "whole_program": "pending",
+      "performance": "pending",
+      "activation": "pending"
+    },
+    "numerical_qualified": false,
+    "device_qualified": false,
+    "dtype_qualified": false,
+    "shape_qualified": false,
+    "public_api_qualified": false,
+    "qualification_blockers": [
+      "unresolved dtype and shape facts remain runtime_profile_required",
+      "observed CPU profile has not been reproduced on Ascend910B3",
+      "numerical tolerances and special-value checks have not been executed",
+      "whole-program migration has not been exercised",
+      "activation rescan has not occurred"
+    ]
+  },
+  "activation": {
+    "allowed": false,
+    "status": "not_activated",
+    "reason": "unverified candidate; all required gates remain pending",
+    "forbidden_actions": [
+      "install or activate before every required gate passes",
+      "write to a system CANN installation",
+      "modify a shared AsNumpy checkout implicitly",
+      "silently cast unsupported input dtypes",
+      "fall back to CPU or NumPy execution",
+      "claim performance improvement from correctness evidence"
+    ]
+  },
+  "claim": {
+    "verified": false,
+    "generated_candidate": true,
+    "device_executed": false,
+    "performance_claimed": false,
+    "global_numpy_tril_compatibility_claimed": false,
+    "supported_scope_claim": "only the observed float32 [2048,2048] c_contiguous profile, after deterministic qualification"
+  }
+}

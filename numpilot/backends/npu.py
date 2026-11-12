@@ -1851,6 +1851,7 @@ class NpuBackend(ExecutionBackend):
         overlay_config=None,
         baseline_api_config=None,
         tensor_profile_extractor=None,
+        custom_admission=None,
     ):
         # Injection keeps capability tests independent of CANN/NPU availability.
         self._module = module
@@ -1870,6 +1871,78 @@ class NpuBackend(ExecutionBackend):
         ):
             raise TypeError("tensor_profile_extractor must be callable")
         self._tensor_profile_extractor = tensor_profile_extractor
+        self._custom_admission = None
+        if custom_admission is not None:
+            self.set_custom_admission(custom_admission)
+
+    def set_custom_admission(self, admission):
+        """Attach the run-scoped custom-operator admission.
+
+        ``None`` clears it.  Any other value must be a loaded
+        :class:`numpilot.custom_operator_admission.CustomOperatorAdmission`
+        (duck-typed here to keep this module free of the loader import).
+        """
+
+        if admission is None:
+            self._custom_admission = None
+            return
+        entries = getattr(admission, "entries", None)
+        admission_id = getattr(admission, "admission_id", None)
+        if not hasattr(entries, "items") or not isinstance(admission_id, str):
+            raise TypeError("custom operator admission is invalid")
+        for name, entry in entries.items():
+            for attribute in (
+                "adapter_manifest_sha256",
+                "adapter_build_receipt_sha256",
+                "wheel_sha256",
+            ):
+                value = getattr(entry, attribute, None)
+                if not isinstance(value, str) or not value:
+                    raise TypeError(
+                        "custom operator admission entry %s lacks %s"
+                        % (name, attribute)
+                    )
+        self._custom_admission = admission
+
+    def _with_custom_capabilities(self, manifest, requested):
+        """Replace admitted-name entries with their admission evidence."""
+
+        admission = self._custom_admission
+        if admission is None:
+            return manifest
+        wanted = {str(name) for name in requested}
+        updates = {}
+        for name, entry in admission.entries.items():
+            if name not in wanted:
+                continue
+            updates[name] = OperatorCapability(
+                name=name,
+                available=True,
+                provenance=ExecutionProvenance.CUSTOM_NPU,
+                evidence=(
+                    "custom-operator admission %s; adapter manifest "
+                    "sha256 %s; adapter build receipt sha256 %s; "
+                    "wheel sha256 %s; profile enforced by the adapter"
+                    % (
+                        admission.admission_id,
+                        entry.adapter_manifest_sha256,
+                        entry.adapter_build_receipt_sha256,
+                        entry.wheel_sha256,
+                    )
+                ),
+            )
+        if not updates:
+            return manifest
+        operators = dict(manifest.operators)
+        operators.update(updates)
+        return CapabilityManifest(
+            backend=manifest.backend,
+            backend_version=manifest.backend_version,
+            operators=operators,
+            environment=dict(manifest.environment),
+            schema_version=manifest.schema_version,
+            audit_id=manifest.audit_id,
+        )
 
     def _extract_tensor_profile(self, value):
         """Read only metadata from the audited AsNumpy ndarray class."""
@@ -2168,11 +2241,13 @@ class NpuBackend(ExecutionBackend):
         if self._overlay_config is None:
             requested = SUPPORTED_OPS if required_ops is None else required_ops
             if runtime_targets is None:
-                return self._raw_capability_manifest(requested)
-            return self._raw_capability_manifest(
-                requested,
-                runtime_targets=runtime_targets,
-            )
+                raw = self._raw_capability_manifest(requested)
+            else:
+                raw = self._raw_capability_manifest(
+                    requested,
+                    runtime_targets=runtime_targets,
+                )
+            return self._with_custom_capabilities(raw, requested)
 
         # Import lazily: qualification depends on the capability contracts, but
         # the backend must remain usable without the optional overlay path.
@@ -2281,6 +2356,7 @@ class NpuBackend(ExecutionBackend):
             schema_version=combined.schema_version,
             audit_id=combined.audit_id,
         )
+        result = self._with_custom_capabilities(result, requested)
         if runtime_targets is not None:
             # Evidence validation needs the complete overlay/certificate union,
             # but this execution may use only one of those APIs. Publish only

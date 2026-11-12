@@ -1,0 +1,26 @@
+{
+  "schema": "numpilot.operator_repair.v1",
+  "operator": "std",
+  "repairs": [
+    {
+      "id": "vecout-queue-sync",
+      "symptom": "aclrtSynchronizeStream returns 507035 whenever one AI core owns two or more rows (rows > 40, i.e. blockFactor >= 2)",
+      "root_cause": "FlushChunk synced V->MTE3 and MTE3->V with SetFlag/WaitFlag on EVENT_ID0, an event id also used by the input TQue",
+      "fix": "output tile promoted to TQue<QuePosition::VECOUT, 1>"
+    }
+  ],
+  "files": [
+    {
+      "path": "op_kernel/arch22/std.h",
+      "sha256_before": "ae60ddf49b4feb3b56584f5dece3443c59e2dd3a9ee9bb2d69b28960c84013f7",
+      "sha256_after": "a4b4bd15348ff1c12777522f24d3a1fd7bdeb7a0e1392fd65c1425734fd2d0de",
+      "edits": [
+        "output-queue-member",
+        "output-queue-init",
+        "flush-chunk-sync",
+        "process-alloc",
+        "process-realloc"
+      ]
+    }
+  ]
+}

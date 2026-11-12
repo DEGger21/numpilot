@@ -1,0 +1,25 @@
+{
+  "cann_version": "9.2.0-beta.2",
+  "native_core": "_core.cpython-312-aarch64-linux-gnu.so",
+  "native_core_sha256": "8ef465e4406ee04d01a4a431be50b3e43573411fe2db3d87eba5ba736f26aae6",
+  "operator": "pad",
+  "schema": "numpilot.adapter_build_receipt",
+  "schema_version": 1,
+  "status": "pass",
+  "target_soc": "Ascend910B3",
+  "tests": {
+    "command": "ASCEND_CUSTOM_OPP_PATH=<vendor> PYTHONPATH=<stage> python -m pytest tests/asnumpy_tests/custom_ops_tests/test_pad.py -q",
+    "failed": 0,
+    "log": "custom-v1/adapter-build-v1/tests.log",
+    "passed": 15,
+    "skipped": 0
+  },
+  "vendor": "custom-v1/deploy-v1/vendors/pad_custom",
+  "vendor_provenance": {
+    "path": "custom-v1/verify-v1/custom-opp-provenance.json",
+    "sha256": "7f08bcaa4bdf8fa11e5f8d731c589338aa19d8e07acdd0fae2701f601d330547"
+  },
+  "wheel": "asnumpy-0.3.1-cp312-cp312-linux_aarch64.whl",
+  "wheel_sha256": "1fe77d06ae39f5db9ba4ea2d2cbff2d08fb3287a1b039907c9609cd40f2309d4",
+  "wheel_size_bytes": 685985
+}

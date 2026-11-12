@@ -1,0 +1,45 @@
+{
+  "file": "std/source/std_contract.py",
+  "source_sha256": "b3526fd459981a66b39f98a77be9964fcd9372f332849b4872c080131c1baf94",
+  "net": "std_contract",
+  "t_cpu_ms": 15.955823473632336,
+  "timing": {
+    "clock": "time.perf_counter",
+    "warmup_iterations": 3,
+    "measurement_iterations": 10,
+    "samples_ms": [
+      16.03491324931383,
+      16.483795829117298,
+      15.861362218856812,
+      15.955823473632336,
+      15.938342548906803,
+      15.679972246289253,
+      16.05675369501114,
+      16.45220536738634,
+      15.819131396710873,
+      15.570230782032013
+    ],
+    "median_ms": 15.955823473632336
+  },
+  "n_elements": 2048,
+  "output_shape": [
+    2048
+  ],
+  "cpu_threads": 1,
+  "cpu_threads_requested": 1,
+  "blas": {
+    "source": "threadpoolctl",
+    "effective_threads": 1,
+    "pools": [
+      {
+        "internal_api": "openblas",
+        "num_threads": 1,
+        "prefix": "libscipy_openblas",
+        "version": "0.3.34.106.0",
+        "threading_layer": "pthreads",
+        "architecture": "tsv110"
+      }
+    ]
+  },
+  "dtype": "float32"
+}

@@ -1,0 +1,54 @@
+{
+  "api_name": "argpartition",
+  "asnumpy_api": "asnumpy.argpartition",
+  "callsites": [
+    {
+      "call_expr": "numpy.argpartition(<arg0>, <arg1>, axis=<redacted>)",
+      "col_offset": 8,
+      "lineno": 10,
+      "qualified_api": "numpy.argpartition",
+      "reason": "API 不在静态覆盖集"
+    }
+  ],
+  "cann_version": "9.2.0-beta.2",
+  "dtype_rules": [
+    "runtime_profile_required"
+  ],
+  "gap_id": "argpartition-7d840c819f30b573",
+  "qualified_api": "numpy.argpartition",
+  "reference_cases": [],
+  "route": "ascendc_registry_candidate",
+  "route_decisions": [
+    {
+      "reason": "requires a semantic composition resolver",
+      "route": "asnumpy_composite",
+      "status": "not_evaluated"
+    },
+    {
+      "reason": "check a pinned CANN operator catalog before new kernel work",
+      "route": "cann_existing",
+      "status": "review_required"
+    },
+    {
+      "reason": "explicit draft generation is allowed; execution remains gated",
+      "route": "ascendc_registry",
+      "status": "candidate_for_draft"
+    }
+  ],
+  "schema_version": 1,
+  "semantic_source": "numpy.argpartition",
+  "shape_rules": [
+    "runtime_profile_required"
+  ],
+  "signature_variants": [
+    {
+      "keyword_args": [
+        "axis"
+      ],
+      "positional_args": 2
+    }
+  ],
+  "source_path": "argpartition/source/argpartition_contract.py",
+  "source_sha256": "0ddb6a97b1dc177f4e1c36d445e0dfbde2311e23639acc347fa75204abc5400d",
+  "target_soc": "Ascend910B3"
+}

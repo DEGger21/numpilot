@@ -1,0 +1,18 @@
+{
+  "schema": "numpilot.operator_repair.v1",
+  "operator": "ediff1d",
+  "repairs": [
+    {
+      "id": "concrete-kernel-entry",
+      "symptom": "opbuild wrapper calls <op>_0_tilingkey; templated entry has no plain symbol",
+      "fix": "extern \"C\" entry instantiating the only admitted type/mode"
+    }
+  ],
+  "files": [
+    {
+      "path": "ediff1d/custom-v1/build-v1/project/op_kernel/ediff1d_arch22.cpp",
+      "sha256_before": "84b5ad4269352183b50440b8463dcb14e503704522ecec8422c7c3d5f0829dbe",
+      "sha256_after": "ebb6f6ae2d6f00353e7fa024d2cb540f412163992361bf63610d0c9e295758fa"
+    }
+  ]
+}

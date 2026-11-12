@@ -1,0 +1,17 @@
+{
+  "count": 2,
+  "attempts": [
+    {
+      "attempt": "1",
+      "bytes": 37842,
+      "mtime": "2026-11-12T20:40:29",
+      "sha256": "b95cdd39477ba51bdc9eab6f48a9ad65b1951bc4c7183e920cd5c7f41ccceef9"
+    },
+    {
+      "attempt": "2",
+      "bytes": 7452,
+      "mtime": "2026-11-12T20:41:06",
+      "sha256": "3611974386174c985ff4afc14ce5467849ebee299df0641f5f6687e7b5e28c04"
+    }
+  ]
+}

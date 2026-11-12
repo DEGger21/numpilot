@@ -163,8 +163,12 @@ class EquivalentLowering:
         }
 
 
-def lower_equivalents(source: str) -> EquivalentLowering:
+def lower_equivalents(source: str, preserve=()) -> EquivalentLowering:
     """Return a source with documented equivalent spellings lowered.
+
+    ``preserve`` names NumPy APIs that must keep their call form:
+    an admitted custom operator is executed directly instead of
+    being replaced by an equivalent composition.
 
     Syntax errors and programs without a top-level ``forward`` are returned
     unchanged; the ordinary analyzer/verifier remains responsible for
@@ -202,6 +206,7 @@ def lower_equivalents(source: str) -> EquivalentLowering:
             bindings,
             scope,
             grid_contracts=grid_contracts if function is forward else {},
+            preserve=preserve,
         )
         function.body = [lowerer.visit(statement) for statement in function.body]
         rewrites.extend(lowerer.rewrites)
@@ -247,10 +252,11 @@ def _reachable_functions(tree, functions, forward):
 class _FunctionLowerer(ast.NodeTransformer):
     """Lower one function body while tracking array/scalar names in program order."""
 
-    def __init__(self, bindings, scope, *, grid_contracts=None):
+    def __init__(self, bindings, scope, *, grid_contracts=None, preserve=()):
         self.bindings = dict(bindings)
         self.scope = dict(scope)
         self.grid_contracts = dict(grid_contracts or {})
+        self.preserve = frozenset(preserve)
         self.np_alias = next(
             (name for name, qualified in self.bindings.items() if qualified == "numpy"),
             None,
@@ -307,6 +313,10 @@ class _FunctionLowerer(ast.NodeTransformer):
         if resolved is None or self.np_alias is None:
             return node
         name, qualified = resolved
+        if qualified == "numpy." + name and name in self.preserve:
+            # A run-scoped admission binds this call to a verified custom
+            # operator; the equivalent composition must not replace it.
+            return node
         replacement = None
         kind = None
         if qualified == "numpy." + name and name in _ALIASES:

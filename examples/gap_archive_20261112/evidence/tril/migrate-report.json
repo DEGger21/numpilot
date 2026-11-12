@@ -1,0 +1,261 @@
+{
+  "status": "fail",
+  "route": "direct_migration",
+  "source_path": "tril/source/tril_contract.py",
+  "source_sha256": "d916e98aa99223f185b6c6f6a4c5f24a47cc9cd50d774904e08f9b5fe55a1636",
+  "analysis_source_sha256": "9feab1e53396d354f1b42b5234d00ffa26d37a0f26868be9c681de0f98c534db",
+  "preparation": {
+    "applied": true,
+    "analysis_source_changed": true,
+    "normalized": true,
+    "rewrites": [],
+    "notes": [
+      "analysis surface normalized to straight-line SSA temporaries"
+    ],
+    "oracle_policy": "original_source_remains_the_numerical_oracle"
+  },
+  "translation_taskbook": {
+    "taskbook_id": "translation-taskbook-2a34a9a52889149770701c77ff05b286517a05c076420e67e4e0ceaa016bb3c6",
+    "json": {
+      "path": "tril/custom-v1/migrate-npu-ast-v1/TRANSLATION_TASKBOOK.json",
+      "sha256": "6f51825295c6917550ed68bb5adad63284e976951db671cbb2a2c967949a534a"
+    },
+    "markdown": {
+      "path": "tril/custom-v1/migrate-npu-ast-v1/TRANSLATION_TASKBOOK.md",
+      "sha256": "ce612cb64cb9bac087fab2cbca77ce11040217f170e62e438d0ee28fca719c81"
+    }
+  },
+  "unsupported": [],
+  "engine": "ast",
+  "rewrites": {
+    "tril": 1
+  },
+  "expected_rewrites": {
+    "tril": 1
+  },
+  "rewrite_integrity": true,
+  "model_receipt": {},
+  "model_identity": {},
+  "total_rewrites": 1,
+  "numerically_consistent": false,
+  "max_rel_diff": 1.7976931348623157e+308,
+  "max_abs_diff": 1.7976931348623157e+308,
+  "tol": 0.0,
+  "atol": 0.0,
+  "rtol": 0.0,
+  "failure_path": null,
+  "failure_index": null,
+  "failure_reason": null,
+  "exception_phase": "migrated.capabilities",
+  "exception_type": "ValueError",
+  "exception_message": "runtime target snapshot is invalid",
+  "artifact_inputs_executed": false,
+  "input_consistent": null,
+  "kernel_consistent": null,
+  "artifact_consistent": null,
+  "comparisons": {},
+  "backend_provenance": {
+    "runtime_execution_ok": false,
+    "ok": false,
+    "strict_npu": false
+  },
+  "speedup": null,
+  "backend": "npu",
+  "backend_module": "<server-home>",
+  "backend_version": "0.3.1.dev70+g60d139c54.d20261108",
+  "cpu_threads": null,
+  "t_orig_ms": null,
+  "t_mig_ms": null,
+  "n_elements": null,
+  "strategy": "whole_forward_npu",
+  "program_ir": {
+    "n_nodes": 2,
+    "n_edges": 1,
+    "nodes": [
+      {
+        "id": "n1",
+        "kind": "input",
+        "label": "a",
+        "lineno": 7
+      },
+      {
+        "id": "n2",
+        "kind": "call",
+        "label": "np.tril",
+        "lineno": 8
+      }
+    ],
+    "edges": [
+      [
+        "n1",
+        "n2"
+      ]
+    ]
+  },
+  "gap_plan": {
+    "ready": true,
+    "n_tasks": 0,
+    "n_blocking": 0,
+    "tasks": []
+  },
+  "planning_requirements": [],
+  "gap_taskbook": null,
+  "diagnosis": {
+    "category": "capability_gate",
+    "stage": "validate",
+    "suggested_role": "gap_filler",
+    "summary": "算子未通过能力/来源门禁（migrated.capabilities）",
+    "failure_path": null,
+    "exception_phase": "migrated.capabilities",
+    "exception_type": "ValueError",
+    "exception_message": "runtime target snapshot is invalid",
+    "evidence": {
+      "phase": "migrated.capabilities",
+      "type": "ValueError"
+    }
+  },
+  "repair_attempts": 0,
+  "validation_evidence": {
+    "status": "fail",
+    "numerically_consistent": false,
+    "input_consistent": null,
+    "kernel_consistent": null,
+    "artifact_consistent": null,
+    "artifact_inputs_executed": false,
+    "backend": "npu",
+    "backend_version": "0.3.1.dev70+g60d139c54.d20261108",
+    "backend_provenance": {
+      "runtime_execution_ok": false,
+      "ok": false,
+      "strict_npu": false
+    },
+    "comparisons": {},
+    "source_sha256": "d916e98aa99223f185b6c6f6a4c5f24a47cc9cd50d774904e08f9b5fe55a1636",
+    "migrated_sha256": "cb485e3813e2fedbf0cfd2f17dbae47d2a1c729e4930bdff5c73b97b175491c6"
+  },
+  "roles": [
+    {
+      "role": "analyzer",
+      "name": "① 分析智能体 Analyzer",
+      "stage": "understand",
+      "status": "ok",
+      "summary": "IR 2 节点/1 边；1 个调用点，缺口 0 个",
+      "model": "规则(无模型)",
+      "evidence": {
+        "n_calls": 1,
+        "unsupported": [],
+        "program_ir": {
+          "n_nodes": 2,
+          "n_edges": 1,
+          "nodes": [
+            {
+              "id": "n1",
+              "kind": "input",
+              "label": "a",
+              "lineno": 7
+            },
+            {
+              "id": "n2",
+              "kind": "call",
+              "label": "np.tril",
+              "lineno": 8
+            }
+          ],
+          "edges": [
+            [
+              "n1",
+              "n2"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "role": "planner",
+      "name": "② 规划智能体 Planner",
+      "stage": "understand",
+      "status": "ok",
+      "summary": "直迁（Direct Migration）",
+      "model": "规则(无模型)",
+      "evidence": {
+        "route": "direct_migration",
+        "strategy": "whole_forward_npu",
+        "threshold_elements": 1000000,
+        "placement": {
+          "tril": "NPU"
+        },
+        "gap_tasks": [],
+        "planning_requirements": [],
+        "translation_tasks": [],
+        "translation_taskbook_id": "translation-taskbook-2a34a9a52889149770701c77ff05b286517a05c076420e67e4e0ceaa016bb3c6"
+      }
+    },
+    {
+      "role": "gap_filler",
+      "name": "③ 缺口智能体 API Gap Filler",
+      "stage": "migrate",
+      "status": "ok",
+      "summary": "0 个任务，无阻断",
+      "model": "规则(无模型)",
+      "evidence": {
+        "ready": true,
+        "n_tasks": 0,
+        "n_blocking": 0,
+        "tasks": []
+      }
+    },
+    {
+      "role": "code_migrator",
+      "name": "④ 迁移智能体 Code Migrator",
+      "stage": "migrate",
+      "status": "ok",
+      "summary": "1 处改写，完整性=通过",
+      "model": "AST 确定性改写(规则,无模型)",
+      "evidence": {
+        "engine": "ast",
+        "rewrites": {
+          "tril": 1
+        },
+        "expected_rewrites": {
+          "tril": 1
+        },
+        "rewrite_integrity": true,
+        "model_identity": {},
+        "repair_attempts": 0
+      }
+    },
+    {
+      "role": "diagnostics",
+      "name": "⑤ 诊断智能体 Diagnostics Agent",
+      "stage": "validate",
+      "status": "ok",
+      "summary": "算子未通过能力/来源门禁（migrated.capabilities）",
+      "model": "规则(无模型)",
+      "evidence": {
+        "category": "capability_gate",
+        "stage": "validate",
+        "suggested_role": "gap_filler",
+        "summary": "算子未通过能力/来源门禁（migrated.capabilities）",
+        "failure_path": null,
+        "exception_phase": "migrated.capabilities",
+        "exception_type": "ValueError",
+        "exception_message": "runtime target snapshot is invalid",
+        "evidence": {
+          "phase": "migrated.capabilities",
+          "type": "ValueError"
+        }
+      }
+    },
+    {
+      "role": "reporter",
+      "name": "⑥ 报告智能体 Migration Reporter",
+      "stage": "validate",
+      "status": "ok",
+      "summary": "已写出报告、验证证据与迁移产物",
+      "model": "规则(无模型)",
+      "evidence": {
+        "status": "fail"
+      }
+    }
+  ]
+}

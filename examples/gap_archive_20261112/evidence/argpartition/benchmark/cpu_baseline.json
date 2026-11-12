@@ -1,0 +1,46 @@
+{
+  "file": "argpartition/source/argpartition_contract.py",
+  "source_sha256": "0ddb6a97b1dc177f4e1c36d445e0dfbde2311e23639acc347fa75204abc5400d",
+  "net": "argpartition_contract",
+  "t_cpu_ms": 0.01049041748046875,
+  "timing": {
+    "clock": "time.perf_counter",
+    "warmup_iterations": 3,
+    "measurement_iterations": 10,
+    "samples_ms": [
+      0.013910233974456787,
+      0.012380070984363556,
+      0.011489726603031158,
+      0.010759569704532623,
+      0.01049041748046875,
+      0.010379590094089508,
+      0.009969808161258698,
+      0.010279938578605652,
+      0.009990297257900238,
+      0.010089948773384094
+    ],
+    "median_ms": 0.01049041748046875
+  },
+  "n_elements": 512,
+  "output_shape": [
+    32,
+    16
+  ],
+  "cpu_threads": 1,
+  "cpu_threads_requested": 1,
+  "blas": {
+    "source": "threadpoolctl",
+    "effective_threads": 1,
+    "pools": [
+      {
+        "internal_api": "openblas",
+        "num_threads": 1,
+        "prefix": "libscipy_openblas",
+        "version": "0.3.34.106.0",
+        "threading_layer": "pthreads",
+        "architecture": "tsv110"
+      }
+    ]
+  },
+  "dtype": "int64"
+}
