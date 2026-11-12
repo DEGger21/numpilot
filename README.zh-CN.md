@@ -8,6 +8,7 @@
   <a href="README.md">English</a> ·
   <a href="docs/installation.zh-CN.md">安装指南</a> ·
   <a href="docs/architecture.md">实现说明</a> ·
+  <a href="examples/scaled_benchmark_20261112/BENCHMARK_TABLE.md">性能报告</a> ·
   <a href="CONTRIBUTING.md">参与贡献</a> ·
   <a href="LICENSE">许可证</a>
 </p>
@@ -35,6 +36,29 @@ NumPilot 是面向 Ascend NPU 上 AsNumpy 的 NumPy 程序迁移框架，目标�
 模型用于理解、规划、代码迁移、缺口填补、诊断和报告。
 
 不支持或语义不明确的程序会以稳定的失败码停止，不会被静默改写或回退到 CPU。
+
+## 实测性能
+
+[**71 例 NumPy 程序大规模迁移性能报告（Ascend 910B3 实测）→**](examples/scaled_benchmark_20261112/BENCHMARK_TABLE.md)
+
+71 个无缺口归档样例全部完成规模化改写，并在真实昇腾 NPU 上执行。稳态计算加速比 = CPU 单核
+`forward()` 中位耗时 ÷ NPU 设备常驻 `forward()` 中位耗时（输入已预置；NPU 计时含结果回传，
+不含 H2D 与输入构造）。66 个计算样例实测：**1.34x–612.41x，中位 11.06x**。测试环境：
+CANN 9.2.0-beta.2、Ascend 910B3（64 GB HBM）、Kunpeng-920、
+AsNumpy 0.4.1.dev12+gc9115e8ce.d20261031。
+
+| 迁移的代码 | 功能解读（输入输出规模） | 迁移耗时 | CPU 耗时 | NPU 耗时 | 加速比 |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `A009_matrix_chain_2048` | 3 个 2048×2048 float32 矩阵，`(x·w)·v` 两次连乘，输出 2048×2048（34.4 GFLOP） | 2.07 s | 1225.11 ms | 2.00 ms | **612.41x** |
+| `A007_matrix_product_2048` | 2 个 2048×2048 float32 矩阵相乘，输出 2048×2048（17.2 GFLOP） | 1.69 s | 608.88 ms | 1.68 ms | **361.58x** |
+| `B015_fortran_matmul_2048` | 2 个 2048×2048 Fortran 序 float32 矩阵相乘，输出 2048×2048 矩阵及 2048 维行平方和 | 2.27 s | 634.30 ms | 1.79 ms | **355.01x** |
+| `H015_real_vecdot_16384x256` | 2 个 16,384×256 float32 矩阵，逐元素乘后沿两轴求 vecdot，输出 16,384 维及 256 维向量 | 2.51 s | 91.98 ms | 0.56 ms | **164.79x** |
+| `C013_markov_relaxation_4096x1024` | 1,024×1,024 转移矩阵作用于 4,096×1,024 状态，8 步 Markov 松弛，输出 4,096×1,024 及两个 4,096 维向量 | 13.29 s | 2846.40 ms | 22.55 ms | **126.22x** |
+
+迁移耗时来自归档时同一算子图的一次真实模型迁移；规模化改写只改变输入规模常量，未重复调用模型。
+严格数值容差（rtol=1e-4，atol=1e-5）下 60/71 一致，其余 11 例为已记录的 float32 累加顺序差异或
+已登记的 IEEE 边界情形（B011 NaN、B018 符号零）。完整 71 行表格、数值边界与复现方式见
+[性能报告](examples/scaled_benchmark_20261112/BENCHMARK_TABLE.md)。
 
 ## 生成任务与可见进度
 
@@ -264,6 +288,7 @@ tools/               仓库与发布工具
 - [模型配置与传输契约](docs/model-contract.md)
 - [数值验证](docs/script-verification.md)
 - [strict-NPU 性能测试](docs/script-benchmark.md)
+- [大规模迁移性能报告（71 例，Ascend 910B3 实测）](examples/scaled_benchmark_20261112/BENCHMARK_TABLE.md)
 - [Agent Skill 契约](skill/SKILL.md)
 - [变更记录](CHANGELOG.md)
 

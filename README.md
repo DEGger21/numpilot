@@ -8,6 +8,7 @@
   <a href="README.zh-CN.md">简体中文</a> ·
   <a href="docs/installation.md">Installation</a> ·
   <a href="docs/architecture.md">Implementation notes</a> ·
+  <a href="examples/scaled_benchmark_20261112/BENCHMARK_TABLE.md">Benchmark</a> ·
   <a href="CONTRIBUTING.md">Contributing</a> ·
   <a href="LICENSE">License</a>
 </p>
@@ -39,6 +40,30 @@ are used for understanding, planning, code migration, gap filling, diagnosis, an
 
 Unsupported or ambiguous programs stop with a stable failure code instead of being silently rewritten or
 routed to CPU.
+
+## Measured performance
+
+[**Large-scale migration benchmark — 71 NumPy programs on Ascend 910B3 →**](examples/scaled_benchmark_20261112/BENCHMARK_TABLE.md)
+
+All 71 archived no-gap cases were scaled up and run on a real Ascend NPU. Steady-state compute speedup is
+median single-core CPU `forward()` time ÷ median device-resident NPU `forward()` time (inputs preloaded;
+NPU timing includes result transfer and excludes H2D/input construction). Measured on 66 compute cases:
+**1.34x–612.41x, median 11.06x**. Environment: CANN 9.2.0-beta.2, Ascend 910B3 (64 GB HBM),
+Kunpeng-920, AsNumpy 0.4.1.dev12+gc9115e8ce.d20261031.
+
+| Migrated program | What it computes (input → output sizes) | Migration time | CPU time | NPU time | Speedup |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `A009_matrix_chain_2048` | 3 × 2048×2048 float32 matrices; `(x·w)·v` chained matmul, output 2048×2048 (34.4 GFLOP) | 2.07 s | 1225.11 ms | 2.00 ms | **612.41x** |
+| `A007_matrix_product_2048` | 2 × 2048×2048 float32 matrices; single matmul, output 2048×2048 (17.2 GFLOP) | 1.69 s | 608.88 ms | 1.68 ms | **361.58x** |
+| `B015_fortran_matmul_2048` | 2 × 2048×2048 Fortran-ordered float32 matrices; matmul, outputs 2048×2048 plus row-wise squared sums (2048) | 2.27 s | 634.30 ms | 1.79 ms | **355.01x** |
+| `H015_real_vecdot_16384x256` | 2 × 16,384×256 float32 matrices; elementwise product then vecdot along both axes, outputs 16,384 + 256 | 2.51 s | 91.98 ms | 0.56 ms | **164.79x** |
+| `C013_markov_relaxation_4096x1024` | 1,024×1,024 transition matrix over 4,096×1,024 state, 8 Markov relaxation steps; outputs 4,096×1,024 + two 4,096 vectors | 13.29 s | 2846.40 ms | 22.55 ms | **126.22x** |
+
+Migration time is the archived real-model migration of the same operator graph; scaling changed only
+input-size literals and did not re-call the model. Strict numeric tolerance (rtol=1e-4, atol=1e-5): 60/71;
+the remaining 11 are documented float32 accumulation-order or registered IEEE edge cases. The full
+71-row table, numeric boundaries, and reproduction steps are in the
+[benchmark report](examples/scaled_benchmark_20261112/BENCHMARK_TABLE.md).
 
 ## Visible progress and implementation requirements
 
