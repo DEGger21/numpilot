@@ -81,38 +81,86 @@ install -m 600 llm.example.json llm.json
 python -m numpilot configure-llm --check
 ~~~
 
-For the six-agent terminal workbench and the reproducible large-matrix demo, see [the demo](examples/demo/README.md). The complete release procedure is in [Installation](docs/installation.md).
+The complete release procedure is in [Installation](docs/installation.md).
+
+### Interactive workbench
+
+Start the product shell from the activated environment:
+
+~~~bash
+numpilot
+~~~
+
+The startup page shows the NumPilot logo, a model status bar, and five choices:
+new migration, load migration memory, check model, environment self-check, and
+exit. The status starts as `未检查`; run `/modelcheck` (or choose option 3) to
+send one real lightweight probe to `llm.json`, then the bar shows `模型可用` or
+`模型不可用`. Model checks are always explicit; startup does not call the model.
+
+| Command | Purpose |
+| --- | --- |
+| `/help` | Interaction help, status phases, and artifact layout |
+| `/new` | Prompt for an absolute NumPy path and create a fresh session |
+| `/resume` | Load a previous migration memory |
+| `/readreport` | Render the latest `migration-report.md` in the terminal |
+| `/modelcheck` | Manually probe the configured model |
+| `/doctor` | Check CANN, NPU, Python, and AsNumpy |
+| `/status` | Show the current model status |
+| `/migrate /abs/x.py` | Start migration with a known absolute path |
+| `/exit` | Leave NumPilot |
+
+Every migration creates `runs/demo-<timestamp>/` and writes the full session
+there: `source/<program>.py` (a copy of the user's source),
+`migration-plan.md/json` (Analyzer/Planner facts and the model plan),
+`migration-report.md/json`, and `workflow/` receipts and logs. A source without
+NumPy imports or calls is rejected before any model request. Agent status is
+monotonic: a completed role never jumps back to running, and Diagnostics and
+Reporter finish only after their model diagnosis/report step.
 
 ### Run the demo
 
-Run these commands from the repository root after activating the NumPilot environment. All source and output paths are relative to the checkout:
+Run from the repository root after activating the NumPilot environment. Configure
+`llm.json` first:
 
 ~~~bash
-# Use the managed environment created by install.sh, not bare Miniconda.
-. "$HOME/.local/share/numpilot/activate-numpilot.sh"
-command -v python
-python -c 'import numpy, numpilot; print("NumPilot Python ready")'
-~~~
-
-If the import check fails, the current python is not the NumPilot environment. Activate the managed virtual environment or set NUMPILOT_PYTHON to its interpreter before running the migration.
-
-
-~~~bash
-# Create your private model configuration from the tracked blank template.
 install -m 600 llm.example.json llm.json
-${EDITOR:-vi} llm.json
-# Fill base_url, auth_token, and model with your own service values.
+${EDITOR:-vi} llm.json   # base_url, auth_token, model
 python -m numpilot configure-llm --check
-# Optional: this is the first command that sends a real model request.
-python -m numpilot configure-llm --probe
-
-python -m numpilot bootstrap --verify --json
-python -m numpilot doctor --backend npu --json
-python -m numpilot interactive-migrate examples/demo/large_numpy_program.py   --backend npu --benchmark --out runs/demo-recording --yes --execute-source
 ~~~
 
-llm.example.json stays blank and llm.json is private and git-ignored. Every user must create and configure their own copy; do not reuse another user's token or endpoint.
+Then start the workbench:
 
+~~~bash
+numpilot
+~~~
+
+Inside the shell:
+
+~~~text
+/modelcheck
+/new
+/path/to/numpilot/examples/demo/large_numpy_program.py
+y
+/readreport
+/resume
+/exit
+~~~
+
+Use the absolute path to the checkout's `examples/demo/large_numpy_program.py`.
+`/new` creates a fresh `runs/demo-<timestamp>/`; `y` confirms migration;
+`/readreport` renders the final Markdown report; `/resume` lists the saved
+migration memory.
+
+For non-interactive automation, the same demo can be started directly:
+
+~~~bash
+python -m numpilot interactive-migrate "$PWD/examples/demo/large_numpy_program.py" \
+  --backend npu --benchmark --out "runs/demo-$(date +%Y%m%d-%H%M%S)" --yes --execute-source
+~~~
+
+`llm.example.json` stays blank; `llm.json` is private and git-ignored. Every user
+must create and configure their own copy; do not reuse another user's token or
+endpoint.
 
 ## Architecture
 

@@ -81,38 +81,81 @@ install -m 600 llm.example.json llm.json
 python -m numpilot configure-llm --check
 ~~~
 
-六智能体终端工作台和可复现大矩阵 demo 见[样例说明](examples/demo/README.md)，完整安装流程见[安装指南](docs/installation.zh-CN.md)。
+完整安装流程见[安装指南](docs/installation.zh-CN.md)。
+
+### 交互式工作台
+
+激活 NumPilot 环境后，从仓库根目录启动：
+
+~~~bash
+numpilot
+~~~
+
+启动页包含 NumPilot logo、模型状态栏和五个选项：新建迁移、加载迁移记忆、
+检查模型、环境自检、退出。模型状态初始为 `未检查`；输入 `/modelcheck`（或选择
+选项 3）会向 `llm.json` 配置的模型真实发送一次轻量探测，随后显示 `模型可用`
+或 `模型不可用`。模型检查始终由用户显式触发，启动页本身不会调用模型。
+
+| 命令 | 作用 |
+| --- | --- |
+| `/help` | 查看交互说明、状态规范和产物布局 |
+| `/new` | 输入 NumPy 程序绝对路径并创建全新会话 |
+| `/resume` | 加载历史迁移记忆 |
+| `/readreport` | 在终端渲染最近一次 `migration-report.md` |
+| `/modelcheck` | 手动检查配置模型 |
+| `/doctor` | 检查 CANN、NPU、Python 与 AsNumpy |
+| `/status` | 查看当前模型状态 |
+| `/migrate /abs/x.py` | 已知绝对路径时直接开始迁移 |
+| `/exit` | 退出 NumPilot |
+
+每次迁移都会创建 `runs/demo-<时间戳>/`，并落盘本次会话的全部内容：
+`source/<程序名>.py`（用户源码副本）、`migration-plan.md/json`（Analyzer/Planner
+事实与模型迁移计划）、`migration-report.md/json`，以及 `workflow/` 回执与日志。
+没有 NumPy 导入或调用的程序会在任何模型请求之前被拒绝。智能体状态是单调的：
+已完成的角色不会跳回执行中；Diagnostics 和 Reporter 在模型诊断/报告步骤完成后
+才显示完成。
 
 ### 运行 demo
 
-进入仓库根目录并激活 NumPilot 环境后执行。下面的源码和输出路径都相对于仓库根目录：
+激活 NumPilot 环境后，在仓库根目录执行。先配置 `llm.json`：
 
 ~~~bash
-# 使用 install.sh 创建的受管虚拟环境，不要直接使用裸 Miniconda。
-. "$HOME/.local/share/numpilot/activate-numpilot.sh"
-command -v python
-python -c 'import numpy, numpilot; print("NumPilot Python ready")'
-~~~
-
-如果导入检查失败，当前 python 不是 NumPilot 环境。请先激活受管虚拟环境，或把 NUMPILOT_PYTHON 设置为该环境的解释器，再运行迁移。
-
-
-~~~bash
-# 从仓库内的空白模板创建自己的私有模型配置。
 install -m 600 llm.example.json llm.json
-${EDITOR:-vi} llm.json
-# 填写自己的 base_url、auth_token 和 model。
+${EDITOR:-vi} llm.json   # 填写 base_url、auth_token、model
 python -m numpilot configure-llm --check
-# 可选：这一步才会真正发送模型请求。
-python -m numpilot configure-llm --probe
-
-python -m numpilot bootstrap --verify --json
-python -m numpilot doctor --backend npu --json
-python -m numpilot interactive-migrate examples/demo/large_numpy_program.py   --backend npu --benchmark --out runs/demo-recording --yes --execute-source
 ~~~
 
-llm.example.json 必须保持空白；llm.json 是被 .gitignore 忽略的私有文件。每位使用者都要创建并配置自己的副本，不要复用其他人的 token 或 endpoint。
+然后启动工作台：
 
+~~~bash
+numpilot
+~~~
+
+在交互界面中依次输入：
+
+~~~text
+/modelcheck
+/new
+/path/to/numpilot/examples/demo/large_numpy_program.py
+y
+/readreport
+/resume
+/exit
+~~~
+
+这里要填写仓库中 `examples/demo/large_numpy_program.py` 的绝对路径。
+`/new` 会创建全新的 `runs/demo-<时间戳>/`；`y` 确认开始迁移；`/readreport`
+在终端渲染最终 Markdown 报告；`/resume` 查看保存的迁移记忆。
+
+如需非交互自动化，也可以直接执行同一条 demo 流程：
+
+~~~bash
+python -m numpilot interactive-migrate "$PWD/examples/demo/large_numpy_program.py" \
+  --backend npu --benchmark --out "runs/demo-$(date +%Y%m%d-%H%M%S)" --yes --execute-source
+~~~
+
+`llm.example.json` 必须保持空白；`llm.json` 是被 git 忽略的私有文件。每位使用者
+都要创建并配置自己的副本，不要复用其他人的 token 或 endpoint。
 
 ## 系统架构
 
