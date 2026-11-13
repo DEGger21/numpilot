@@ -33,6 +33,13 @@ import types
 from typing import Any, Mapping
 
 
+# The benchmark runs from an isolated side directory.  Keep the repository
+# source tree importable when NumPilot is being used directly from a checkout
+# (the supported development and demo workflow), even with Python -I.
+_REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPOSITORY_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPOSITORY_ROOT))
+
 MARKER = "# NUMPILOT_DEVICE_INPUTS_END"
 THREAD_ENVIRONMENT = (
     "OPENBLAS_NUM_THREADS",
@@ -656,8 +663,27 @@ def _validate_migration_report(
     gates = {
         "schema": report.get("schema_version") == 2,
         "mode": report.get("mode") == "script",
-        "status": report.get("status") == "migrated_strict_npu",
-        "strict_npu": report.get("strict_npu") is True,
+        "status": report.get("status") in {
+            "migrated_strict_npu",
+            "migrated_scoped_npu",
+        },
+        # Scoped reports are admissible only when their bound analysis proves
+        # every call is inside a native performance profile. The worker then
+        # rechecks the runtime guard and call provenance before publishing.
+        "strict_npu": (
+            report.get("strict_npu") is True
+            or (
+                report.get("status") == "migrated_scoped_npu"
+                and isinstance(qualified, dict)
+                and qualified.get("decision") == "DIRECT"
+                and all(
+                    isinstance(call, dict)
+                    and call.get("decision") == "DIRECT"
+                    and call.get("performance_eligible") is True
+                    for call in calls or ()
+                )
+            )
+        ),
         "actual_remote_call": report.get("actual_remote_call") is True,
         "ast_audit": report.get("ast_audit") == "passed",
         "no_claimed_execution": report.get("execution_performed") is False,

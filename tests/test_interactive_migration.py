@@ -108,6 +108,14 @@ def test_glm_interpretation_prefers_visible_output_without_changing_other_provid
     }
 
 
+def test_read_source_snapshot_accepts_relative_path(monkeypatch, tmp_path):
+    source = tmp_path / "relative.py"
+    source.write_text("print(1)\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    snapshot = read_source_snapshot(Path("relative.py"))
+    assert Path(snapshot.path) == source
+
+
 def _config(tmp_path: Path) -> Path:
     return save_llm_config(
         "http://model.invalid/v1",
@@ -143,7 +151,7 @@ def _clear_llm_environment(monkeypatch):
         monkeypatch.delenv(name, raising=False)
 
 
-def test_read_source_snapshot_requires_absolute_regular_utf8_and_hashes(tmp_path):
+def test_read_source_snapshot_accepts_relative_regular_utf8_and_hashes(monkeypatch, tmp_path):
     source = tmp_path / "case.py"
     payload = "# demo\nresult = 1\n"
     source.write_text(payload, encoding="utf-8")
@@ -157,8 +165,9 @@ def test_read_source_snapshot_requires_absolute_regular_utf8_and_hashes(tmp_path
     assert snapshot.bytes == len(payload.encode())
     assert snapshot.lines == 2
 
-    with pytest.raises(InteractiveMigrationError, match="absolute"):
-        read_source_snapshot("case.py")
+    monkeypatch.chdir(tmp_path)
+    relative_snapshot = read_source_snapshot("case.py")
+    assert relative_snapshot.path == str(source)
 
     link = tmp_path / "link.py"
     link.symlink_to(source)

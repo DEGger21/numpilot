@@ -153,7 +153,17 @@ def _run_pipeline(source, path, engine_name, backend_name, out_dir):
         backend=select_backend(backend_name),
         engine=_make_engine(engine_name),
     )
-    with AgentProgress(stream=console.file) as progress:
+    with AgentProgress(
+        stream=console.file,
+        context={
+            "source": path,
+            "output": str(out_dir),
+            "backend": backend_name,
+            "engine": engine_name or "llm",
+            "benchmark": False,
+            "mode": "wizard",
+        },
+    ) as progress:
         result = orchestrator.run_source(
             source, path, out_dir, on_event=progress.on_event
         )

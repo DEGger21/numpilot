@@ -110,6 +110,14 @@ def _strict_report():
     }
 
 
+def test_scoped_report_gates_accept_profile_bound_calls():
+    report = _strict_report()
+    report["status"] = "migrated_scoped_npu"
+    report["strict_npu"] = False
+
+    assert all(_strict_report_gates(report).values())
+
+
 def test_strict_report_gates_require_real_model_and_performance_eligibility():
     assert all(_strict_report_gates(_strict_report()).values())
 

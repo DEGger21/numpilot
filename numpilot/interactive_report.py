@@ -31,6 +31,7 @@ configuration are intentionally never copied into this report.
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
+import ast
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -150,7 +151,143 @@ def inventory_generated_files(roots: Iterable[Path]) -> list[dict[str, Any]]:
     return files
 
 
-def _workflow_facts(workflow: Mapping[str, Any] | None) -> dict[str, Any]:
+
+def _ast_api_calls(path: Path | None, package: str) -> list[dict[str, Any]]:
+    """Extract framework-owned ``package`` calls without executing user code."""
+
+    if path is None or path.is_symlink() or not path.is_file():
+        return []
+    try:
+        source = path.read_text(encoding="utf-8")
+        if len(source.encode("utf-8")) > MAX_RECEIPT_BYTES:
+            return []
+        tree = ast.parse(source, filename=str(path))
+    except (OSError, UnicodeError, SyntaxError, ValueError, RecursionError):
+        return []
+    aliases: set[str] = set()
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            for item in node.names:
+                if item.name == package:
+                    aliases.add(item.asname or package.split(".")[-1])
+    calls: list[dict[str, Any]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            continue
+        owner = node.func.value
+        if not isinstance(owner, ast.Name) or owner.id not in aliases:
+            continue
+        calls.append({
+            "api": "%s.%s" % (package, node.func.attr),
+            "line": int(getattr(node, "lineno", 0) or 0),
+            "column": int(getattr(node, "col_offset", 0) or 0),
+            "positional_args": len(node.args),
+            "keyword_args": sorted(
+                item.arg for item in node.keywords if item.arg is not None
+            ),
+        })
+    return sorted(calls, key=lambda item: (item["line"], item["column"], item["api"]))
+
+
+def _api_rewrite_facts(source_path: Path | None, migrated_path: Path | None) -> list[dict[str, Any]]:
+    """Compare source/migrated AST call surfaces and report every API rewrite."""
+
+    source_calls = _ast_api_calls(source_path, "numpy")
+    migrated_calls = _ast_api_calls(migrated_path, "asnumpy")
+    source_by_name: dict[str, list[dict[str, Any]]] = {}
+    migrated_by_name: dict[str, list[dict[str, Any]]] = {}
+    for item in source_calls:
+        source_by_name.setdefault(item["api"].split(".", 1)[1], []).append(item)
+    for item in migrated_calls:
+        migrated_by_name.setdefault(item["api"].split(".", 1)[1], []).append(item)
+    names = sorted(set(source_by_name) | set(migrated_by_name))
+    result: list[dict[str, Any]] = []
+    for name in names:
+        source_items = source_by_name.get(name, [])
+        migrated_items = migrated_by_name.get(name, [])
+        result.append({
+            "source_api": "numpy.%s" % name,
+            "target_api": "asnumpy.%s" % name,
+            "source_call_count": len(source_items),
+            "target_call_count": len(migrated_items),
+            "source_lines": [item["line"] for item in source_items],
+            "target_lines": [item["line"] for item in migrated_items],
+            "status": (
+                "rewritten" if source_items and len(migrated_items) >= len(source_items)
+                else "introduced" if migrated_items and not source_items
+                else "not_rewritten"
+            ),
+        })
+    return result
+
+
+def _gap_completion_facts(raw_gap: Mapping[str, Any] | None) -> list[dict[str, Any]]:
+    """Expose explicit gap completions; a no-gap route is always an empty list."""
+
+    if not isinstance(raw_gap, Mapping):
+        return []
+    status = str(raw_gap.get("status", ""))
+    if status in {"", "not_requested", "no_gap"}:
+        return []
+    candidates = raw_gap.get("completions") or raw_gap.get("gap_specs") or raw_gap.get("gaps")
+    if not isinstance(candidates, list):
+        candidates = []
+    result: list[dict[str, Any]] = []
+    for item in candidates[:128]:
+        if not isinstance(item, Mapping):
+            continue
+        result.append({
+            key: item.get(key)
+            for key in (
+                "qualified_api", "asnumpy_api", "status", "route", "interface",
+                "provenance", "generated_file", "operator_spec", "report",
+                "actual_remote_call", "claim_boundary",
+            )
+            if key in item
+        })
+    if result:
+        return result
+    return [{
+        "status": _safe_text(status, limit=64),
+        "route": _safe_text(raw_gap.get("route", "unknown"), limit=128),
+        "actual_remote_call": raw_gap.get("actual_remote_call") is True,
+    }]
+
+
+def _session_elapsed_seconds(session_root: Path) -> float | None:
+    """Return explicit interactive session wall time when start/finish receipts exist."""
+
+    started = _read_json(session_root / "session-start.json")
+    finished = _read_json(session_root / "session-finish.json")
+    if not isinstance(started, Mapping) or not isinstance(finished, Mapping):
+        return None
+    try:
+        value = float(finished.get("epoch_seconds")) - float(started.get("epoch_seconds"))
+    except (TypeError, ValueError):
+        return None
+    return value if 0 <= value < 7 * 24 * 3600 else None
+
+
+def _workflow_timing_facts(workflow_report: Mapping[str, Any] | None, session_root: Path) -> dict[str, Any]:
+    """Normalize migration, benchmark and end-to-end timings with explicit nulls."""
+
+    stage_elapsed = workflow_report.get("timing", {}).get("stage_elapsed_seconds", {}) if isinstance(workflow_report, Mapping) else {}
+    performance = workflow_report.get("performance") if isinstance(workflow_report, Mapping) else None
+    if not isinstance(performance, Mapping):
+        performance = {}
+    valid = performance.get("performance_valid") is True
+    return {
+        "migration_elapsed_seconds": stage_elapsed.get("02-migrate") if isinstance(stage_elapsed, Mapping) else None,
+        "numpy_ms": performance.get("cpu_median_ms") if valid else None,
+        "asnumpy_ms": performance.get("npu_median_ms") if valid else None,
+        "e2e_seconds": _session_elapsed_seconds(session_root),
+        "speedup": performance.get("median_speedup") if valid else None,
+        "performance_valid": valid,
+        "status": "passed" if valid else "not_run",
+        "scope": "steady_device_resident_marker" if valid else None,
+    }
+
+def _workflow_facts(workflow: Mapping[str, Any] | None, source_path: Path | None = None) -> dict[str, Any]:
     facts: dict[str, Any] = {
         "status": "not_run",
         "report": None,
@@ -165,6 +302,17 @@ def _workflow_facts(workflow: Mapping[str, Any] | None) -> dict[str, Any]:
             "advantage_threshold": None,
             "threshold_status": "not_measured",
         },
+        "timing": {
+            "migration_elapsed_seconds": None,
+            "numpy_ms": None,
+            "asnumpy_ms": None,
+            "e2e_seconds": None,
+            "speedup": None,
+            "performance_valid": False,
+            "status": "not_run",
+            "scope": None,
+        },
+        "api_rewrites": [],
     }
     if not isinstance(workflow, Mapping):
         return facts
@@ -185,6 +333,9 @@ def _workflow_facts(workflow: Mapping[str, Any] | None) -> dict[str, Any]:
     if run_root is None:
         return facts
     migrated = run_root / "migration" / "migrated.py"
+    facts["api_rewrites"] = _api_rewrite_facts(source_path, migrated)
+    workflow_report_value = _read_json(report) if report is not None else None
+    facts["timing"] = _workflow_timing_facts(workflow_report_value, run_root.parent)
     if migrated.is_file() and not migrated.is_symlink():
         facts["migrated_code"] = str(migrated)
 
@@ -240,7 +391,8 @@ def build_session_report(
 ) -> dict[str, Any]:
     """Build a machine-readable summary without upgrading any stage claim."""
 
-    workflow_facts = _workflow_facts(workflow)
+    source_path = Path(source.get("path")) if isinstance(source, Mapping) and isinstance(source.get("path"), str) else None
+    workflow_facts = _workflow_facts(workflow, source_path)
     roots = [Path(session_root)]
     workflow_report = workflow_facts.get("report")
     if isinstance(workflow_report, str):
@@ -275,6 +427,16 @@ def build_session_report(
     boundary = raw_gap.get("claim_boundary")
     if not isinstance(boundary, Mapping):
         boundary = {}
+    runtime_matched = (
+        isinstance(api_analysis, Mapping)
+        and api_analysis.get("runtime_identity_status") == "matched"
+    )
+    interface_available = boundary.get("interface_available") is True
+    # A no-gap direct migration does not produce a gap claim boundary. When
+    # the analyzer has matched the AsNumpy runtime, expose direct API
+    # availability without claiming any generated operator.
+    if not interface_available and raw_gap.get("status") == "no_gap" and runtime_matched:
+        interface_available = True
     safe_gap["claim_boundary"] = {
         key: boundary.get(key) is True
         for key in (
@@ -286,10 +448,10 @@ def build_session_report(
             "qualified",
             "activated",
             "rescanned",
-            "interface_available",
         )
     }
-    safe_gap["interface_available"] = boundary.get("interface_available") is True
+    safe_gap["claim_boundary"]["interface_available"] = interface_available
+    safe_gap["interface_available"] = interface_available
     return {
         "schema_version": 1,
         "record_type": "numpilot_interactive_migration_report",
@@ -299,7 +461,15 @@ def build_session_report(
         "api_analysis": dict(api_analysis or {}),
         "interpretation": dict(interpretation or {}),
         "gap_recovery": safe_gap,
+        "gap_completions": _gap_completion_facts(raw_gap),
         "workflow": workflow_facts,
+        "migration": {
+            "source_path": source.get("path") if isinstance(source, Mapping) else None,
+            "migrated_path": workflow_facts.get("migrated_code"),
+            "api_rewrites": workflow_facts.get("api_rewrites", []),
+            "gap_completions": _gap_completion_facts(raw_gap),
+            "timing": workflow_facts.get("timing", {}),
+        },
         "generated_files": inventory_generated_files(roots),
         "claims_boundary": {
             "model_interpretation_is_advisory": True,
@@ -331,6 +501,33 @@ def render_session_markdown(report: Mapping[str, Any]) -> str:
         "- 迁移后代码：`%s`" % _safe_text(workflow.get("migrated_code") or "未生成"),
         "- 数值精度验证：`%s`" % _safe_text(numeric.get("status", "not_run"), limit=64),
     ]
+    migration = report.get("migration") if isinstance(report.get("migration"), Mapping) else {}
+    timing = migration.get("timing") if isinstance(migration.get("timing"), Mapping) else {}
+    lines.extend(("", "## 迁移摘要", "",
+        "- 迁移阶段耗时：`%s s`" % _safe_text(timing.get("migration_elapsed_seconds"), limit=64),
+        "- 全流程端到端耗时：`%s s`" % _safe_text(timing.get("e2e_seconds"), limit=64),
+        "- NumPy CPU：`%s ms`" % _safe_text(timing.get("numpy_ms"), limit=64),
+        "- AsNumpy/NPU：`%s ms`" % _safe_text(timing.get("asnumpy_ms"), limit=64),
+        "- 加速比：`%s x`" % _safe_text(timing.get("speedup"), limit=64),
+        "- 性能状态：`%s`" % _safe_text(timing.get("status", "not_run"), limit=64),
+        "", "### API 改写", ""))
+    rewrites = migration.get("api_rewrites")
+    if isinstance(rewrites, list) and rewrites:
+        for item in rewrites:
+            if isinstance(item, Mapping):
+                lines.append("- `%s → %s`：source=%s target=%s status=%s" % (
+                    _safe_text(item.get("source_api")), _safe_text(item.get("target_api")),
+                    item.get("source_call_count", 0), item.get("target_call_count", 0),
+                    _safe_text(item.get("status", "unknown"), limit=64)))
+    else:
+        lines.append("- 无 API 调用改写记录")
+    lines.extend(("", "### 缺口补全", "",))
+    completions = report.get("gap_completions")
+    if isinstance(completions, list) and completions:
+        for item in completions:
+            lines.append("- `%s`" % _safe_text(item))
+    else:
+        lines.append("- `[]`（本次没有缺口补全）")
     if performance.get("performance_valid") is True:
         lines.extend((
             "- 当前实测加速比：`%s x`" % _safe_text(performance.get("speedup"), limit=64),

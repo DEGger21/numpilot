@@ -12,10 +12,12 @@
 | version | 0.3.1.dev70+g60d139c54.d20261108 |
 | wheel | asnumpy-0.3.1.dev70+g60d139c54.d20261108-cp312-cp312-linux_aarch64.whl |
 | wheel SHA-256 | d3ea03b2fd8c6eace56f532e2b30a917d63a138abe654c0020c14499898ed682 |
-| build target | Linux AArch64 / CPython 3.12 / CANN 9.2.0-beta.2 |
+| build target | Linux AArch64 / CPython 3.12 / CANN 9.0+ (strict qualification receipt uses 9.2.0-beta.2) |
 | license | Apache-2.0 |
 
 AsNumpy 和 CANNBot 都通过 NumPilot 的静态锁定附件提供。运行时不从 Git 拉取、不解析 latest，也不自动升级；新版本由作者更新锁文件、附件、哈希和本文档后再发布。
+
+安装兼容性由 AsNumpy 组件定义：当前冻结 wheel 面向 CANN 9.0 或更高版本，安装器不会把审计机的 CANN 精确版本当作通用安装锁；不同于当前 strict 资格画像的运行时仍需单独审计。
 
 ## API 表面
 

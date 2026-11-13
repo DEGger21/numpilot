@@ -37,7 +37,7 @@ import unicodedata
 
 try:
     from rich import box
-    from rich.console import Console
+    from rich.console import Console, Group
     from rich.panel import Panel
     from rich.table import Table
     from rich.text import Text
@@ -48,7 +48,7 @@ except ModuleNotFoundError as exc:
     # text renderers owned by each command instead of aborting at import.
     if exc.name != "rich" and not (exc.name or "").startswith("rich."):
         raise
-    box = Console = Panel = Table = Text = None
+    box = Console = Group = Panel = Table = Text = None
     _RICH_AVAILABLE = False
 else:
     _RICH_AVAILABLE = True
@@ -521,7 +521,7 @@ class AgentProgress:
     an optimistic roster. Pending roles stay pending when work is blocked.
     """
 
-    def __init__(self, *, enabled=True, stream=None, dynamic=True):
+    def __init__(self, *, enabled=True, stream=None, dynamic=True, context=None):
         from numpilot.progress import ProgressEmitter
         from numpilot.roles import ROLE_DEFINITIONS
         self.stream = sys.stderr if stream is None else stream
@@ -535,6 +535,22 @@ class AgentProgress:
         self._live = None
         self._started = None
         self._visible = False
+        self.context = {}
+        self.events = []
+        self.title = "NumPilot · 迁移工作台"
+        self.set_context(context or {})
+
+    def set_context(self, context=None, **values):
+        """Set user-visible run metadata without changing workflow state."""
+        payload = dict(context or {})
+        payload.update(values)
+        allowed = {"source", "output", "backend", "engine", "benchmark", "mode", "apis", "gaps"}
+        for key, value in payload.items():
+            if key not in allowed or value is None:
+                continue
+            rendered = ("是" if value else "否") if isinstance(value, bool) else _progress_message(value)
+            self.context[key] = rendered
+        return self
 
     @staticmethod
     def _new_row():
@@ -590,6 +606,38 @@ class AgentProgress:
             row["started"] = None
         row.update(state=event.state, mode=event.execution_mode,
                    message=_progress_message(event.message), attempt=event.attempt)
+
+        # The ordinary workflow emits a parent ``workflow`` gate around child
+        # stages. Mirror those stage boundaries onto the user-facing agent row
+        # so a failed early migration or a long verification cannot look like
+        # an idle Migrator/Diagnostics agent. The original workflow row remains
+        # visible as an independent system gate.
+        workflow_role = None
+        if event.role is None and event.component == "workflow":
+            message = row["message"]
+            if "迁移子进程" in message:
+                workflow_role = "code_migrator"
+            elif "执行原程序" in message or "性能测量" in message:
+                workflow_role = "diagnostics"
+            elif "分析源码" in message:
+                workflow_role = "analyzer"
+        if event.role is None and event.component == "verification":
+            workflow_role = "diagnostics"
+        if workflow_role is not None:
+            agent_row = self.rows[workflow_role]
+            now = time.monotonic()
+            if event.state == "running" and agent_row["state"] != "running":
+                agent_row["started"] = now
+            if event.state != "running" and agent_row["started"] is not None:
+                agent_row["elapsed"] = max(0.0, now - agent_row["started"])
+                agent_row["started"] = None
+            agent_row.update(state=event.state, mode=event.execution_mode,
+                             message=row["message"], attempt=event.attempt)
+        label = event.role.value if event.role is not None else event.component
+        self.events.append("%s · %s · %s" % (
+            label or "流程", _PROGRESS_STATES[event.state][1], row["message"]
+        ))
+        self.events = self.events[-5:]
         if event.state == "failed":
             self.error()
         elif event.state == "blocked":
@@ -649,9 +697,48 @@ class AgentProgress:
         for key, row in list(self.steps.items()):
             add_row("验证步骤" if key == "verification" else "流水线", row, independent=True)
         total = max(0.0, time.monotonic() - self._started) if self._started is not None else 0.0
-        return Panel(table, title="NumPilot · 六角色协作", border_style={
-            "ok": "cyan", "warn": "yellow", "error": "red"}[self.value],
-            subtitle=Text("总耗时 %.1fs · 运行状态不替代验证回执" % total), box=box.ROUNDED)
+        context = Table.grid(expand=True, padding=(0, 1))
+        context.add_column(style="bold cyan", no_wrap=True)
+        context.add_column(ratio=1, overflow="ellipsis")
+        context.add_column(style="bold cyan", no_wrap=True)
+        context.add_column(ratio=1, overflow="ellipsis")
+        labels = (("source", "源码"), ("output", "运行目录"),
+                  ("backend", "后端"), ("engine", "迁移引擎"),
+                  ("benchmark", "性能门"), ("mode", "模式"),
+                  ("apis", "API 调用"), ("gaps", "缺口"))
+        for offset in range(0, len(labels), 2):
+            cells = []
+            for key, label in labels[offset:offset + 2]:
+                cells.extend((label, self.context.get(key, "—")))
+            while len(cells) < 4:
+                cells.extend(("", ""))
+            context.add_row(*[Text(_terminal_safe(cell), no_wrap=True) for cell in cells])
+        event_display = Text(style="dim")
+        if self.events:
+            for index, event in enumerate(self.events[-5:]):
+                if index:
+                    event_display.append("\n")
+                event_display.append(_terminal_safe(event))
+        else:
+            event_display.append("等待工作流事件…")
+        event_panel = Panel(event_display, title="最近事件", border_style="dim", padding=(0, 1))
+        role_panel = Panel(
+            table,
+            title="六角色协作",
+            border_style={"ok": "cyan", "warn": "yellow", "error": "red"}[self.value],
+            padding=(0, 1),
+        )
+        return Panel(
+            Group(
+                Panel(context, title="任务上下文", border_style="blue", padding=(0, 1)),
+                role_panel,
+                event_panel,
+            ),
+            title=self.title,
+            border_style={"ok": "cyan", "warn": "yellow", "error": "red"}[self.value],
+            subtitle=Text("总耗时 %.1fs · 运行状态不替代验证回执" % total),
+            box=box.ROUNDED,
+        )
 
     def __exit__(self, exc_type, exc, traceback):
         if exc_type is not None:

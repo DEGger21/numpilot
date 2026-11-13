@@ -21,7 +21,7 @@ NumPilot 当前把已接入 MatMul 的 AsNumpy 源码作为作者维护的基线
 - commit：`60d139c54d9e181b8ae101dcbd1479d6b2a86439`
 - tree：`f1c17d947a165c587a1b1d618d11d03fc5f5b183`
 - 源码文件：211 个，源码字节：1,803,983
-- 源码归档 SHA-256：`33ebd49da2aa23e906906cd3d57686012464c61ca819b2354eb6fdbe31ef6b62`
+- 源码归档 SHA-256：`f8b487cce5706b9c50e4e2492330cdf1e3a0857a4d2fc2e065f21c6bb207d9c1`
 - 构建环境基线：CPython 3.12.14、Linux AArch64、CANN 9.2.0-beta.2、GCC 11.4.0、C++17
 
 ## 作者补充一个缺口的固定流程

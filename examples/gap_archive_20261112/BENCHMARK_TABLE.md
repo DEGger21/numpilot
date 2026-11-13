@@ -1,9 +1,9 @@
-# 含真实缺口算子的完整程序迁移性能清单（6 例）
+# 含真实缺口算子的完整程序迁移性能清单（6 例；5 例完整迁移通过，1 例失败保留）
 
 本表覆盖 2026-11-12 批次中的 **6 个完整 NumPy 程序 → 6 个完整 AsNumpy 程序**：
 每个 `program.py` 都包含 `build_inputs()` 与 `forward()`，迁移后的 `migrated.py`
 保持同一程序结构与全部输入输出，只把 NumPy 调用替换为 AsNumpy 调用。
-六个程序各含 1 个真实缺口 API；缺口算子本身的生成与补全耗时单列在第二张表，
+六个程序各含 1 个真实缺口 API；其中 `tril` 的独立 benchmark 通过，但 NumPilot 完整迁移回执失败。缺口算子本身的生成与补全耗时单列在第二张表，
 主表的“完整端到端”列给出从模型生成开始到全程序基准完成的总时间。
 
 ```
@@ -47,6 +47,12 @@
 | 5 | `examples/gap_archive_20261112/cases/tril/program.py` | `examples/gap_archive_20261112/cases/tril/migrated.py` | 2048 × 2048 float32；4,194,304 元素；默认 k=0 下三角 | `np.tril` | 8 s | 38.4 min | 14.16 / 1.649 | **8.59x** |
 | 6 | `examples/gap_archive_20261112/cases/argpartition/program.py` | `examples/gap_archive_20261112/cases/argpartition/migrated.py` | 32 × 16 float32；512 元素；沿 axis=1、kth=3 分区 | `np.argpartition` | 7 s | 38.2 min | 0.01049 / 0.3489 | 0.03x |
 
+## `tril` 完整迁移回执边界
+
+`evidence/tril/migrate-report.json` 明确为 `status=fail`，异常为 `runtime target snapshot is invalid`；
+独立 `benchmark/npu_benchmark.json` 为 `status=pass`、`performance_valid=true`、8.59x。
+因此主表的 benchmark 数字不能被解释为 NumPilot 完整迁移已通过。
+
 ## 缺口算子生成/补全明细
 
 | 案例 | 缺口 API | 生成 | 补全（构建/部署/验证） | 生成+补全 | 适配层 | 构建次数 | 单测 |
@@ -65,7 +71,7 @@
 | 覆盖完整迁移程序 | 6 |
 | 含真实缺口算子的程序 | 6 |
 | 完整 `migrated.py` 生成 | 6 / 6 |
-| 全程序数值对拍通过 | 6 / 6（std 为 2.38e-7，其余最大绝对误差为 0） |
+| 全程序数值对拍通过 | 5 / 6；`tril` 完整迁移回执失败 |
 | 适配层单测 | 84 passed |
 | 生成耗时范围 | 14.5–16.9 min（均值 15.3 min） |
 | 生成+补全范围 | 32.1–57.2 min（均值 41.9 min） |

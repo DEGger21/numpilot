@@ -474,8 +474,8 @@ def _path_string(value: object) -> str:
         raise InteractiveMigrationError("source path is invalid")
     expanded = os.path.expanduser(raw)
     if not os.path.isabs(expanded):
-        raise InteractiveMigrationError("source path must be absolute")
-    return expanded
+        expanded = os.path.join(os.getcwd(), expanded)
+    return os.path.abspath(expanded)
 
 
 def _config_path_string(value: object) -> str:

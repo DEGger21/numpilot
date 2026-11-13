@@ -81,6 +81,14 @@ def _args(source, **overrides):
     return SimpleNamespace(**values)
 
 
+def test_interactive_session_output_accepts_relative_path(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    args = SimpleNamespace(out="runs/session")
+    target = cli._interactive_new_session_root(args)
+    assert target == (tmp_path / "runs/session").absolute()
+    assert target.is_dir()
+
+
 def _interpretation(source):
     snapshot = read_source_snapshot(source)
     text = "# 迁移前解读\n- 尚未验证"

@@ -183,6 +183,9 @@ _COMMAND_TIMEOUT = 120
 _BUILD_TIMEOUT = 30 * 60
 _CANN_VERSION_MAX_BYTES = 64 * 1024
 _CANN_VERSION_VALUE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+:-]{0,127}$")
+# The bundled AsNumpy wheel uses public ACLNN entry points available in CANN 9.x.
+# Exact CANN/SoC identity remains a separate strict qualification gate in NpuBackend.
+_MIN_COMPATIBLE_CANN_VERSION = (9, 0, 0)
 
 Runner = Callable[..., Any]
 Finder = Callable[[str], Optional[str]]
@@ -879,16 +882,23 @@ def _environment_issues(plan: Mapping[str, Any], require_venv: bool) -> list[str
                 issues.append(
                     "%s cannot use CANN metadata with conflicting versions" % constraint_label
                 )
-            elif observed_cann != expected_cann:
-                if observed_cann is None:
+            else:
+                # Installation compatibility is intentionally broader than
+                # strict runtime qualification.  The bundled AsNumpy wheel
+                # requires CANN 9.x ACLNN symbols; the exact audited CANN
+                # version is checked later by NpuBackend before any speedup
+                # or strict-NPU claim is admitted.
+                observed_tuple = _parse_version(observed_cann) if observed_cann else None
+                if observed_tuple is None:
+                    # Some vendor images expose a working toolkit without a
+                    # parseable version.info.  Installation must remain
+                    # usable in that case; the later runtime/qualification
+                    # gate still refuses an unproven strict-NPU claim.
+                    pass
+                elif observed_tuple < _MIN_COMPATIBLE_CANN_VERSION:
                     issues.append(
-                        "%s requires CANN %s, but the installed CANN version could not be determined"
-                        % (constraint_label, expected_cann)
-                    )
-                else:
-                    issues.append(
-                        "%s requires CANN %s (observed %s)"
-                        % (constraint_label, expected_cann, observed_cann)
+                        "%s requires CANN >= 9.0 (observed %s)"
+                        % (constraint_label, observed_cann)
                     )
     return issues
 

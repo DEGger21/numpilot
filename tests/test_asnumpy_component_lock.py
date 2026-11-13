@@ -34,7 +34,7 @@ from numpilot.asnumpy_component import (
     load_component_manifest,
     verify_component_attachments,
 )
-from numpilot.bootstrap import ASNUMPY_COMMIT, ASNUMPY_TREE, ASNUMPY_VERSION
+from numpilot.bootstrap import ASNUMPY_COMMIT, ASNUMPY_REPOSITORY, ASNUMPY_TREE, ASNUMPY_VERSION
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -69,6 +69,17 @@ def test_internal_asnumpy_lock_is_bound_to_the_bundled_component_manifest():
     assert manifest["sbom"]["sha256"] in text
     assert all(digest in text for digest in manifest["source_files_sha256"].values())
     assert hashlib.sha256(COMPONENT_MANIFEST.read_bytes()).hexdigest() in text
+
+
+def test_component_manifest_matches_bootstrap_runtime_constants():
+    """The runtime gate and bundled attachment must advertise one version."""
+
+    component = load_component_manifest(COMPONENT_MANIFEST)
+
+    assert component.repository == ASNUMPY_REPOSITORY
+    assert component.commit == ASNUMPY_COMMIT
+    assert component.tree == ASNUMPY_TREE
+    assert component.version == ASNUMPY_VERSION
 
 
 def test_internal_asnumpy_lock_omits_superseded_artifact_history():

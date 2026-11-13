@@ -378,8 +378,9 @@ if [ -z "$CANN_ENV_FILE" ]; then
 fi
 if [ -z "$CANN_ENV_FILE" ]; then
     for CANDIDATE in \
+        /usr/local/Ascend/cann-9.2.0-beta.2/set_env.sh \
         /usr/local/Ascend/ascend-toolkit/latest/set_env.sh \
-        /usr/local/Ascend/cann-9.0.0/set_env.sh; do
+        /usr/local/Ascend/cann-*/set_env.sh; do
         if [ -f "$CANDIDATE" ]; then
             CANN_ENV_FILE=$CANDIDATE
             break

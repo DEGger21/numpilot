@@ -27,7 +27,7 @@ NumPilot 将 NumPy 程序的静态分析、迁移候选生成、数值验证和 
 - [Benchmark 路由与回执](benchmark-routing.zh-CN.md)：150 例的预期路由、输入克隆、
   等价改写、逐用例 receipt 和当前全量结果；
 - [脚本性能评测](script-benchmark.md)：CPU/NPU 计时口径和 strict-NPU 约束；
-- [性能矩阵（Phase 9）](performance-matrix.zh-CN.md)：单核 CPU 对单卡 NPU 的
+- [历史性能矩阵（Phase 9）](performance-matrix.zh-CN.md)：单核 CPU 对单卡 NPU 的
   resident/warm/cold 实测、GEMM 数值 gate、交点与 strict-NPU 发布边界；
 - [Gap 恢复状态](gap-recovery-state.md)：授权 profile、状态机和 write-once 收据；
 - [产物存储策略](artifact-storage.md)：配置、缓存、运行目录和备份边界；
@@ -42,7 +42,7 @@ NumPilot 将 NumPy 程序的静态分析、迁移候选生成、数值验证和 
 - [AsNumpy 运行时契约审计](asnumpy-contract-audit.zh-CN.md)：固定版本边界语义探针和资格约束；
 - [固定 AsNumpy API 清单与 CANNBot 快照](asnumpy-api-support.zh-CN.md)：静态组件公开计算面、已验证 MatMul 准入、official ACLNN overlay 和快照身份；
 - [AsNumpy 接入说明](../integrations/asnumpy/README.md)；
-- [比赛交付与作者接管（Phase 10）](delivery.zh-CN.md)：交付物、五条演示路线、clean checkout/离线 replay 验收、发布边界和接管清单；
+- [历史比赛交付与作者接管（Phase 10）](delivery.zh-CN.md)：交付物、五条演示路线、clean checkout/离线 replay 验收、发布边界和接管清单；
 - [分支治理与发布约定](SUBMISSION.md)；
 - [贡献指南](../CONTRIBUTING.md)；
 - [安全策略](../SECURITY.md)；

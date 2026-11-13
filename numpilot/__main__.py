@@ -721,7 +721,17 @@ def _render_qualified_analysis(payload, output_path=None):
 
 
 def _cmd_analyze(args):
-    with AgentProgress(enabled=not args.json) as progress:
+    with AgentProgress(
+        enabled=not args.json,
+        context={
+            "source": getattr(args, "file", ""),
+            "output": "—",
+            "backend": "npu",
+            "engine": "static",
+            "benchmark": False,
+            "mode": "analyze",
+        },
+    ) as progress:
         code = _cmd_analyze_with_progress(args, progress)
         if code == 1:
             progress.warning()
@@ -1013,7 +1023,17 @@ def _cmd_run(args):
         return 2
 
     try:
-        with AgentProgress(enabled=not args.json) as progress:
+        with AgentProgress(
+            enabled=not args.json,
+            context={
+                "source": args.file,
+                "output": str(out_dir),
+                "backend": args.backend or "npu",
+                "engine": "llm",
+                "benchmark": bool(args.benchmark),
+                "mode": "run",
+            },
+        ) as progress:
             result = run_ordinary_workflow(
                 args.file,
                 out_dir,
@@ -2123,8 +2143,9 @@ def _interactive_new_session_root(args):
     if configured:
         target = Path(configured).expanduser()
         if not target.is_absolute():
-            raise ValueError("--out 必须是全新的绝对目录")
-        target = target.absolute()
+            target = Path(os.path.abspath(os.path.join(os.getcwd(), os.fspath(target))))
+        else:
+            target = target.absolute()
     else:
         target = (default_demo_dir() / ("interactive-" + uuid.uuid4().hex)).absolute()
     if os.path.lexists(target):
@@ -2134,6 +2155,10 @@ def _interactive_new_session_root(args):
         raise ValueError("会话输出目录的父目录不可用")
     target.mkdir(mode=0o700)
     os.chmod(target, 0o700)
+    _interactive_private_json(
+        target / "session-start.json",
+        {"epoch_seconds": time.time(), "status": "started"},
+    )
     return target
 
 
@@ -2164,6 +2189,17 @@ def _interactive_publish_reports(
 
     from numpilot.interactive_report import build_session_report, write_session_reports
 
+    # Capture the wall-clock boundary before report construction. The report
+    # keeps this as a measured session duration, distinct from resident NPU
+    # benchmark time and from the migration child stage.
+    try:
+        _interactive_private_json(
+            Path(session_root) / "session-finish.json",
+            {"epoch_seconds": time.time(), "status": "finished"},
+            replace=True,
+        )
+    except (OSError, TypeError, ValueError):
+        pass
     report = build_session_report(
         session_root=Path(session_root),
         source={
@@ -2961,7 +2997,21 @@ def _cmd_interactive_migrate(args):
             + (" → strict-NPU benchmark" if args.benchmark else ""),
             tone="phase",
         )
-        with AgentProgress() as progress:
+        with AgentProgress(
+            context={
+                "source": snapshot.path,
+                "output": str(workflow_out),
+                "backend": args.backend,
+                "engine": "llm",
+                "benchmark": bool(args.benchmark),
+                "mode": "interactive-migrate",
+                "apis": "%d 种 / %d 次" % (
+                    len(analysis_summary.get("qualified_apis", ())),
+                    analysis_summary.get("numpy_use_count", 0),
+                ),
+                "gaps": str(analysis_summary.get("gap_count", len(gaps))),
+            },
+        ) as progress:
             result = run_ordinary_workflow(
                 workflow_snapshot.path,
                 workflow_out,
@@ -5555,7 +5605,17 @@ def _cmd_validate_asnumpy_adapter_handoff(args):
     return 0
 
 def _cmd_generate_asnumpy_adapter(args):
-    with AgentProgress(enabled=not getattr(args, "json", False)) as progress:
+    with AgentProgress(
+        enabled=not getattr(args, "json", False),
+        context={
+            "source": getattr(args, "artifact", None) or getattr(args, "candidate", None) or "adapter input",
+            "output": getattr(args, "out", None) or "auto",
+            "backend": "npu",
+            "engine": "llm",
+            "benchmark": False,
+            "mode": "generate-asnumpy-adapter",
+        },
+    ) as progress:
         code = _cmd_generate_asnumpy_adapter_with_progress(args, progress)
         if code:
             progress.error()
@@ -6422,7 +6482,17 @@ def _preflight(backend_name, skip):
 
 
 def _cmd_migrate(args):
-    with AgentProgress(enabled=not getattr(args, "json", False)) as progress:
+    with AgentProgress(
+        enabled=not getattr(args, "json", False),
+        context={
+            "source": getattr(args, "file", ""),
+            "output": getattr(args, "out", None) or "auto",
+            "backend": getattr(args, "backend", None) or "npu",
+            "engine": getattr(args, "engine", None) or "llm",
+            "benchmark": False,
+            "mode": getattr(args, "mode", "script"),
+        },
+    ) as progress:
         code = _cmd_migrate_with_progress(args, progress)
         if code == 1:
             progress.warning()

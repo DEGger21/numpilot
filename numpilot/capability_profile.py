@@ -36,6 +36,18 @@ OVERLAY_ROUTE_ADMISSION_SCHEMA_VERSION = 1
 OPS_NN_MATMUL_ASNUMPY_AUDIT_ID = (
     "asnumpy-0.1.dev118-g48de2d208-opsnn-matmul-2d-f32-v1"
 )
+# The current release-adjacent component carries the same independently
+# verified FP32 ACLNN MatMul dispatch. Keep this identity separate from the
+# historical ops-nn wheel so a route is admitted only for the exact runtime
+# that supplied the evidence.
+ASNUMPY_INTERNAL_COMPONENT_MATMUL_AUDIT_ID = (
+    "asnumpy-0.3.1-dev70-g60d139c54-internal-component-"
+    "manifestff21a984-wheel-d3ea03b2-core44c5b349-v3"
+)
+_NATIVE_MATMUL_AUDIT_IDS = frozenset({
+    OPS_NN_MATMUL_ASNUMPY_AUDIT_ID,
+    ASNUMPY_INTERNAL_COMPONENT_MATMUL_AUDIT_ID,
+})
 _OFFICIAL_QUALIFICATION_ID = re.compile(r"^official-aclnn-[0-9a-f]{20}$")
 _HEX_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
@@ -282,7 +294,7 @@ def build_runtime_route_manifest(
     """
 
     pinned = build_pinned_route_manifest()
-    if audit_id != OPS_NN_MATMUL_ASNUMPY_AUDIT_ID:
+    if audit_id not in _NATIVE_MATMUL_AUDIT_IDS:
         return pinned
     entries = dict(pinned.entries)
     current = entries["matmul"]
@@ -292,8 +304,8 @@ def build_runtime_route_manifest(
         asnumpy_api=current.asnumpy_api,
         route=ComputationRoute.NATIVE_NPU,
         evidence=(
-            "hash-bound AsNumPy ops-nn integration delegates the qualified "
-            "2-D float32 path to aclnnMatmul with cubeMathType=KEEP_DTYPE"
+            "hash-bound AsNumpy runtime delegates the qualified 2-D float32 "
+            "path to aclnnMatmul with cubeMathType=KEEP_DTYPE"
         ),
     )
     return QualifiedRouteManifest(

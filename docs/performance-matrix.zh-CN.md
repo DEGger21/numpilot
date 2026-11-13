@@ -1,5 +1,7 @@
 # 性能矩阵（Phase 9）
 
+> **历史性能记录（2026-11-05）**：本页保留 Phase 9 的旧性能矩阵与测量口径，数据绑定文中记录的旧 AsNumpy 运行时，仅用于历史对照。当前统一基线请查看 `examples/demo/` 的最新回执。
+
 本页记录 Phase 9 的性能验收口径、实测数据、数值 gate 和证据边界。性能数据由
 `tools/performance_matrix.py` 在真实 Ascend 设备上生成，机器可读原件保存在仓库外的
 `runs/phase9-performance-20261105/matrix-02/perf-matrix.json`。

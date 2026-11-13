@@ -1,5 +1,7 @@
 # 无缺口迁移归档（2026-11-12）
 
+> **历史归档。** 本目录冻结的是 2026-11-12 的批次证据，保留原始 AsNumpy/CANN 运行时、哈希和计时口径，不随当前组件基线滚动更新。当前可复现 demo 请从仓库根目录的 `examples/demo/` 和 `components/asnumpy/` 开始；本页的旧版本号只用于复核该批次。
+
 本目录保存 71 个“仅使用 AsNumpy 已覆盖 API”的 NumPy 程序，以及 NumPilot
 通过真实配置模型（deepseek-flash）端到端迁移得到的 AsNumpy 程序。迁移批次
 使用 `migrate --mode contract` 并开启 strict input types，71 例全部通过框架的

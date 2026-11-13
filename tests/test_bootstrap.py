@@ -486,6 +486,43 @@ def test_audited_profile_requires_exact_runtime_versions(monkeypatch, tmp_path):
     )
 
 
+def test_install_compatibility_accepts_cann_9x_but_rejects_pre_9(monkeypatch, tmp_path):
+    wheel, digest = _wheel(tmp_path, tag="cp310-cp310-linux_aarch64")
+    profile = {
+        "profile_id": "fixture-cann-floor",
+        "version": bootstrap.ASNUMPY_VERSION,
+        "required_tag": "cp310-cp310-linux_aarch64",
+        "runtime_constraints": {
+            "python_implementation": bootstrap.platform.python_implementation(),
+            "python_major_minor": "%d.%d" % bootstrap.sys.version_info[:2],
+            "machine": bootstrap.platform.machine(),
+            "cann_version": "9.2.0-beta.2",
+            "packages": {"numpy": "2.1.0", "loguru": "0.7.3"},
+        },
+        "qualification_scope": "fixture-only",
+    }
+    monkeypatch.setitem(bootstrap._AUDITED_WHEEL_PROFILES, digest, profile)
+    plan = build_bootstrap_plan(
+        asnumpy_wheel=wheel,
+        expected_wheel_sha256=digest,
+        environment=_apply_environment(tmp_path),
+        runner=_successful_runner([]),
+        tool_finder=_tool_finder,
+        version_reader=_version_reader,
+    )
+
+    plan["cann"]["version_conflict"] = False
+    plan["cann"]["version"] = "9.0.0"
+    assert not any("CANN" in issue for issue in bootstrap._environment_issues(plan, require_venv=False))
+
+    plan["cann"]["version"] = None
+    assert not any("CANN" in issue for issue in bootstrap._environment_issues(plan, require_venv=False))
+
+    plan["cann"]["version"] = "8.5.0"
+    issues = bootstrap._environment_issues(plan, require_venv=False)
+    assert any("requires CANN >= 9.0" in issue for issue in issues)
+
+
 def test_apply_requires_active_venv_without_injected_runner(monkeypatch, tmp_path):
     wheel, digest = _wheel(tmp_path)
     monkeypatch.setattr(bootstrap.sys, "prefix", "/system")
