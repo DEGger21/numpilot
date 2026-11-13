@@ -88,13 +88,13 @@ from numpilot.asnumpy_skill import (                         # noqa: E402
     AsnumpyIntegrationSkillError,
     load_asnumpy_integration_skill,
 )
-from numpilot.bench import run_cpu_baseline, run_npu_compare  # noqa: E402
 from numpilot.capabilities import load_analysis_profile_set    # noqa: E402
 from numpilot.cli_ui import (                                 # noqa: E402
     AgentProgress,
     flow_print,
     render_doctor,
     render_home,
+    render_markdown_panel,
     render_paths,
     rich_available,
     terminal_status,
@@ -117,12 +117,15 @@ from numpilot.model_contract import (                          # noqa: E402
     require_model_status,
     validate_configured_model_receipt,
 )
-from numpilot.orchestrator import Orchestrator, _make_engine  # noqa: E402
 from numpilot.paths import (default_benchmark_dir,                    # noqa: E402
                             default_bootstrap_receipt, default_demo_dir,
                             default_gap_dir, path_summary)
 from numpilot.report import save_migration_report            # noqa: E402
-from numpilot.script_migration import ScriptMigrationError   # noqa: E402
+class _ScriptMigrationErrorPlaceholder(RuntimeError):
+    """Lazy placeholder so config-only commands do not import NumPy."""
+
+
+ScriptMigrationError = _ScriptMigrationErrorPlaceholder
 
 
 class RuntimeActivationConfigError(ValueError):
@@ -2162,6 +2165,279 @@ def _interactive_new_session_root(args):
     return target
 
 
+def _interactive_copy_source(session_root, snapshot):
+    """Copy the admitted source into the run folder and bind its hash."""
+
+    source_dir = Path(session_root) / "source"
+    source_dir.mkdir(mode=0o700)
+    name = Path(snapshot.path).name or "source.py"
+    target = source_dir / name
+    payload = snapshot.text.encode("utf-8")
+    if hashlib.sha256(payload).hexdigest() != snapshot.sha256:
+        raise ValueError("source changed before the session copy was written")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    for flag_name in ("O_CLOEXEC", "O_NOFOLLOW"):
+        flags |= getattr(os, flag_name, 0)
+    descriptor = os.open(target, flags, 0o600)
+    with os.fdopen(descriptor, "wb") as stream:
+        stream.write(payload)
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.chmod(target, 0o600)
+    _interactive_private_json(
+        Path(session_root) / "source-copy.json",
+        {
+            "status": "copied",
+            "original_path": snapshot.path,
+            "session_path": str(target),
+            "sha256": snapshot.sha256,
+            "bytes": len(payload),
+        },
+    )
+    return target
+
+
+def _interactive_plan_facts(snapshot, qualified_payload, analysis_summary, gaps, source_copy):
+    """Build the deterministic facts packet shown in the Planner plan."""
+
+    calls = [
+        item for item in (qualified_payload.get("calls", ()) or ())
+        if isinstance(item, Mapping)
+    ]
+    dtypes = sorted({
+        str(facts.get("dtype"))
+        for call in calls
+        for facts in (call.get("facts"),)
+        if isinstance(facts, Mapping) and facts.get("dtype")
+    })
+    shapes = []
+    shape_keys = set()
+    for call in calls:
+        facts = call.get("facts")
+        if not isinstance(facts, Mapping):
+            continue
+        shape = facts.get("shape")
+        if not isinstance(shape, list) or not shape:
+            continue
+        key = json.dumps(shape, separators=(",", ":"))
+        if key not in shape_keys:
+            shape_keys.add(key)
+            shapes.append(shape)
+    elements = None
+    if len(shapes) == 1 and all(
+        isinstance(value, int) and not isinstance(value, bool) and value >= 0
+        for value in shapes[0]
+    ):
+        product = 1
+        for value in shapes[0]:
+            product *= value
+        elements = product
+    coverage: dict[str, dict] = {}
+    for call in calls:
+        api = str(call.get("source_api") or call.get("canonical_key") or "numpy.unknown")
+        item = coverage.setdefault(api, {
+            "api": api,
+            "count": 0,
+            "decisions": [],
+            "routes": [],
+        })
+        item["count"] += 1
+        decision = call.get("decision")
+        route = call.get("effective_route") or call.get("route")
+        if decision and decision not in item["decisions"]:
+            item["decisions"].append(decision)
+        if route and route not in item["routes"]:
+            item["routes"].append(route)
+    lines = snapshot.text.splitlines()
+    gap_details = []
+    for gap in gaps:
+        if isinstance(gap, Mapping):
+            api = str(gap.get("source_api") or gap.get("qualified_api") or gap.get("name") or "numpy.unknown")
+            line = gap.get("line")
+            facts = gap.get("facts") if isinstance(gap.get("facts"), Mapping) else {}
+            reason = gap.get("reason_code") or gap.get("reason")
+        else:
+            api = str(getattr(gap, "qualified_api", None) or getattr(gap, "name", "numpy.unknown"))
+            callsites = tuple(getattr(gap, "callsites", ()) or ())
+            line = getattr(callsites[0], "lineno", None) if callsites else None
+            facts = {}
+            reason = getattr(gap, "reason_code", None)
+        snippet = ""
+        if isinstance(line, int) and 1 <= line <= len(lines):
+            snippet = lines[line - 1].strip()
+        gap_details.append({
+            "api": api,
+            "line": line,
+            "reason_code": reason,
+            "signature": {
+                "positional_args": facts.get("positional_args"),
+                "keyword_args": facts.get("keyword_args"),
+            },
+            "source_line": snippet,
+            "functionality": "由 Planner 模型根据源码与缺口事实解读",
+        })
+    return {
+        "source": {
+            "path": snapshot.path,
+            "session_copy": str(source_copy),
+            "sha256": snapshot.sha256,
+            "bytes": snapshot.bytes,
+            "lines": snapshot.lines,
+        },
+        "imports": list(qualified_payload.get("imports", ()) or ()),
+        "numpy_use_count": analysis_summary.get("numpy_use_count"),
+        "call_count": len(calls),
+        "dtypes": dtypes,
+        "shapes": shapes,
+        "elements": elements,
+        "api_coverage": sorted(coverage.values(), key=lambda item: item["api"]),
+        "all_apis_covered": int(analysis_summary.get("gap_count", len(gaps)) or 0) == 0,
+        "gap_count": analysis_summary.get("gap_count", len(gaps)),
+        "gap_apis": gap_details,
+    }
+
+
+def _plan_cell(value):
+    return _interactive_display_text(value).replace("|", "\\|")
+
+
+def _plan_model_body(text):
+    body = (text or "").strip()
+    if not body:
+        return "（模型未返回正文；使用确定性回退计划。）"
+    first, separator, rest = body.partition("\n")
+    if first.strip().lower() in {"# numpilot 迁移计划", "# 迁移计划"}:
+        body = rest.strip()
+    return body or "（模型未返回正文；使用确定性回退计划。）"
+
+
+def _interactive_write_plan(session_root, snapshot, plan_facts, planner_model):
+    """Write the Planner Markdown and JSON receipts into the session folder."""
+
+    root = Path(session_root)
+    markdown_path = root / "migration-plan.md"
+    json_path = root / "migration-plan.json"
+    lines = [
+        "# NumPilot 迁移计划",
+        "",
+        "> 计划事实由 NumPilot 静态分析与运行时资格回执生成；"
+        "“Planner 模型迁移计划”正文由配置模型生成，模型文字不改变事实。",
+        "",
+        "## 计划事实",
+        "",
+        "| 项目 | 内容 |",
+        "| --- | --- |",
+        "| 源程序 | `%s` |" % _plan_cell(snapshot.path),
+        "| 会话副本 | `%s` |" % _plan_cell(plan_facts["source"]["session_copy"]),
+        "| SHA-256 | `%s` |" % _plan_cell(snapshot.sha256),
+        "| NumPy 导入 | %s |" % _plan_cell(", ".join(plan_facts["imports"]) or "无"),
+        "| NumPy 调用 | %s 次 / %s 种 API |" % (
+            plan_facts["call_count"], len(plan_facts["api_coverage"])
+        ),
+        "| 数据类型 | %s |" % _plan_cell(", ".join(plan_facts["dtypes"]) or "未识别"),
+        "| 数据规模 | shape=%s · elements=%s |" % (
+            _plan_cell(plan_facts["shapes"]), _plan_cell(plan_facts["elements"])
+        ),
+        "| API 覆盖 | %s |" % (
+            "全部覆盖" if plan_facts["all_apis_covered"] else "存在缺口"
+        ),
+        "| 缺口数量 | %s |" % _plan_cell(plan_facts["gap_count"]),
+        "",
+        "### API 覆盖明细",
+        "",
+        "| API | 调用次数 | 判定 | 路由 |",
+        "| --- | ---: | --- | --- |",
+    ]
+    for item in plan_facts["api_coverage"]:
+        lines.append("| `%s` | %s | %s | %s |" % (
+            _plan_cell(item["api"]), item["count"],
+            _plan_cell(", ".join(item["decisions"]) or "—"),
+            _plan_cell(", ".join(item["routes"]) or "—"),
+        ))
+    lines.extend(("", "### 缺口 API", ""))
+    if plan_facts["gap_apis"]:
+        lines.extend((
+            "| API | 源码行 | 原因 | 签名 |",
+            "| --- | ---: | --- | --- |",
+        ))
+        for item in plan_facts["gap_apis"]:
+            lines.append("| `%s` | %s | %s | %s |" % (
+                _plan_cell(item["api"]), _plan_cell(item["line"]),
+                _plan_cell(item["reason_code"]), _plan_cell(item["source_line"]),
+            ))
+    else:
+        lines.append("- 无缺口 API；AsNumpy 已覆盖本次调用的全部 API。")
+    lines.extend((
+        "",
+        "## Planner 模型迁移计划",
+        "",
+        _plan_model_body(planner_model.text),
+        "",
+        "> 模型状态：`%s` · model=`%s` · actual_remote_call=`%s` · elapsed=`%sms`"
+        % (
+            planner_model.status,
+            planner_model.model or "—",
+            "true" if planner_model.actual_remote_call else "false",
+            planner_model.elapsed_ms,
+        ),
+        "",
+    ))
+    markdown = "\n".join(lines)
+    payload = {
+        "schema_version": 1,
+        "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "status": planner_model.status,
+        "model": planner_model.model,
+        "provider": planner_model.provider,
+        "protocol": planner_model.protocol,
+        "actual_remote_call": planner_model.actual_remote_call is True,
+        "elapsed_ms": planner_model.elapsed_ms,
+        "error": planner_model.error,
+        "facts": plan_facts,
+        "markdown_path": str(markdown_path),
+        "markdown_sha256": hashlib.sha256(markdown.encode("utf-8")).hexdigest(),
+    }
+    _interactive_private_text(markdown_path, markdown)
+    _interactive_private_json(json_path, payload)
+    flow_print("[迁移计划] Markdown：%s" % markdown_path, tone="artifact")
+    flow_print("[迁移计划] JSON：%s" % json_path, tone="artifact")
+    return markdown_path, json_path
+
+
+def _interactive_private_text(path, text):
+    """Write one private UTF-8 artifact, refusing overwrite or symlinks."""
+
+    target = Path(path)
+    if target.exists() or target.is_symlink():
+        raise ValueError("target already exists")
+    parent = target.parent
+    if parent.is_symlink() or not parent.is_dir():
+        raise ValueError("target parent is unavailable")
+    descriptor, temporary = tempfile.mkstemp(
+        prefix="." + target.name + ".", suffix=".tmp", dir=str(parent)
+    )
+    try:
+        os.fchmod(descriptor, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            descriptor = -1
+            stream.write(text)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.link(temporary, target)
+        os.unlink(temporary)
+        temporary = ""
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        if temporary:
+            try:
+                os.unlink(temporary)
+            except OSError:
+                pass
+    os.chmod(target, 0o600)
+    return target
+
+
 def _interactive_report_interpretation(interpretation):
     if interpretation is None:
         return {}
@@ -2184,10 +2460,24 @@ def _interactive_publish_reports(
     interpretation=None,
     gap_result=None,
     workflow=None,
+    role_models=None,
+    report_config_path=None,
+    progress=None,
+    announce=True,
 ):
-    """Publish the final JSON/Markdown navigation reports and show their paths."""
+    """Publish the final reports, using model-backed roles with fallbacks."""
 
-    from numpilot.interactive_report import build_session_report, write_session_reports
+    from numpilot.interactive_migration import (
+        RoleModelResult,
+        diagnose_run_with_configured_model,
+        generate_migration_report_with_configured_model,
+    )
+    from numpilot.interactive_report import (
+        build_session_report,
+        render_session_markdown,
+        report_model_facts,
+        write_session_reports,
+    )
 
     # Capture the wall-clock boundary before report construction. The report
     # keeps this as a measured session duration, distinct from resident NPU
@@ -2200,6 +2490,12 @@ def _interactive_publish_reports(
         )
     except (OSError, TypeError, ValueError):
         pass
+    models = dict(role_models or {})
+    model_reports = {
+        key: value.to_report()
+        for key, value in models.items()
+        if isinstance(value, RoleModelResult)
+    }
     report = build_session_report(
         session_root=Path(session_root),
         source={
@@ -2213,10 +2509,130 @@ def _interactive_publish_reports(
         interpretation=_interactive_report_interpretation(interpretation),
         gap_result=gap_result or {},
         workflow=workflow,
+        role_models=model_reports,
     )
-    json_path, markdown_path = write_session_reports(Path(session_root), report)
-    flow_print("[完整报告] Markdown：%s" % markdown_path, tone="artifact")
-    flow_print("[机器回执] JSON：%s" % json_path, tone="artifact")
+    migration_block = (
+        report.get("migration")
+        if isinstance(report.get("migration"), Mapping)
+        else {}
+    )
+    migration_model = (
+        migration_block.get("model")
+        if isinstance(migration_block.get("model"), Mapping)
+        else {}
+    )
+    if migration_model and "code_migrator" not in model_reports:
+        model_reports["code_migrator"] = {
+            "role": "code_migrator",
+            "status": (
+                "model_generated"
+                if migration_model.get("actual_remote_call") is True
+                else "unknown"
+            ),
+            "model": migration_model.get("model") or migration_model.get("configured_model"),
+            "provider": migration_model.get("provider"),
+            "protocol": migration_model.get("protocol"),
+            "response_model": migration_model.get("response_model"),
+            "actual_remote_call": migration_model.get("actual_remote_call") is True,
+            "elapsed_ms": None,
+            "error": None,
+            "text_sha256": None,
+            "text_chars": 0,
+            "receipt": {},
+        }
+    report["role_models"] = dict(model_reports)
+    narrative = None
+    narrative_status = "fallback"
+    if isinstance(workflow, Mapping) and workflow.get("workflow_report"):
+        workflow_facts = report.get("workflow") if isinstance(report.get("workflow"), Mapping) else {}
+        numeric = (
+            workflow_facts.get("numeric_verification")
+            if isinstance(workflow_facts.get("numeric_verification"), Mapping)
+            else {}
+        )
+        diagnostics_facts = {
+            "workflow_status": workflow_facts.get("status"),
+            "stages": workflow_facts.get("stages"),
+            "numeric_status": numeric.get("status"),
+            "comparisons": numeric.get("comparisons"),
+            "performance": workflow_facts.get("performance"),
+            "hardware": report.get("hardware"),
+            "migration_model": (
+                (report.get("migration") or {}).get("model")
+                if isinstance(report.get("migration"), Mapping)
+                else {}
+            ),
+        }
+        if progress is not None:
+            progress.set_phase(
+                "diagnostics", "响应中",
+                "等待配置模型返回验证与性能诊断",
+            )
+        diagnostics = diagnose_run_with_configured_model(
+            diagnostics_facts, config_path=report_config_path
+        )
+        if progress is not None:
+            progress.set_phase(
+                "diagnostics", "生成中",
+                "已收到响应，正在校验诊断文本",
+            )
+        models["diagnostics"] = diagnostics
+        model_reports["diagnostics"] = diagnostics.to_report()
+        report["role_models"] = dict(model_reports)
+        if progress is not None:
+            progress.finalize_role(
+                "diagnostics",
+                "模型诊断完成" if diagnostics.status == "model_generated"
+                else "模型诊断不可用，已回退确定性结论",
+                execution_mode="llm" if diagnostics.status == "model_generated" else "static",
+            )
+        if diagnostics.text:
+            flow_print(
+                "\n[Diagnostics · 模型诊断]\n%s" % diagnostics.text[:2000],
+                tone="model" if diagnostics.status == "model_generated" else "warning",
+            )
+        facts = report_model_facts(report)
+        if progress is not None:
+            progress.set_phase(
+                "reporter", "响应中",
+                "等待配置模型撰写迁移报告",
+            )
+        report_model = generate_migration_report_with_configured_model(
+            facts, config_path=report_config_path
+        )
+        if progress is not None:
+            progress.set_phase(
+                "reporter", "生成中",
+                "已收到响应，正在校验并落盘报告正文",
+            )
+        report["report_generation"] = report_model.to_report()
+        model_reports["reporter"] = report_model.to_report()
+        report["role_models"] = dict(model_reports)
+        if report_model.status == "model_generated":
+            narrative = report_model.text
+            narrative_status = "model_generated"
+            if progress is not None:
+                progress.finalize_role(
+                    "reporter",
+                    "模型迁移报告已生成",
+                    execution_mode="llm",
+                )
+        else:
+            if progress is not None:
+                progress.finalize_role(
+                    "reporter",
+                    "模型报告不可用，已回退确定性模板",
+                    execution_mode="static",
+                )
+    markdown = render_session_markdown(
+        report, narrative=narrative, narrative_status=narrative_status
+    )
+    json_path, markdown_path = write_session_reports(
+        Path(session_root), report, markdown=markdown
+    )
+    if announce:
+        flow_print("[完整报告] Markdown：%s" % markdown_path, tone="artifact")
+        flow_print("[机器回执] JSON：%s" % json_path, tone="artifact")
     return json_path, markdown_path
 
 
@@ -2571,10 +2987,17 @@ def _cmd_interactive_migrate(args):
     """Run the reusable terminal analysis→gap→migration→evidence workflow."""
 
     from numpilot.interactive_migration import (
+        FallbackInterpretation,
         InteractiveMigrationError,
+        RoleModelResult,
+        diagnose_run_with_configured_model,
         failure_report_payload,
+        generate_migration_report_with_configured_model,
         interpret_source_with_configured_model,
+        looks_like_numpy_program,
+        plan_migration_with_configured_model,
         read_source_snapshot,
+        review_gaps_with_configured_model,
         write_interpretation_report,
     )
     from numpilot.workflow import WorkflowError, run_ordinary_workflow
@@ -2589,6 +3012,33 @@ def _cmd_interactive_migrate(args):
 
     flow_print("\n── NumPilot 交互迁移入口 ──", tone="title")
     flow_print("[会话目录] %s" % session_root, tone="artifact")
+    try:
+        source_copy = _interactive_copy_source(session_root, snapshot)
+    except (OSError, ValueError, TypeError) as exc:
+        flow_print(
+            "[会话] 源程序落盘失败：%s" % type(exc).__name__,
+            stream=sys.stderr,
+            tone="error",
+        )
+        return 2
+    if not looks_like_numpy_program(snapshot.text):
+        flow_print(
+            "[拒绝] 目标程序不是 NumPy 程序：未检测到 `import numpy` 或 NumPy 调用。",
+            tone="error",
+        )
+        _interactive_private_json(
+            session_root / "rejection.json",
+            {
+                "status": "rejected_not_numpy",
+                "source_path": snapshot.path,
+                "source_sha256": snapshot.sha256,
+                "session_copy": str(source_copy),
+                "reason": "no numpy import or numpy API call detected",
+            },
+        )
+        flow_print("[会话回执] %s" % session_root, tone="artifact")
+        return 2
+    flow_print("[会话副本] %s" % source_copy, tone="artifact")
     flow_print(
         "[阶段 1/5] 已读取稳定源码；完整源文件只在本机静态分析/后续门禁中使用。",
         tone="phase",
@@ -2745,6 +3195,10 @@ def _cmd_interactive_migrate(args):
         )
         stop = threading.Event()
         heartbeat = _interactive_heartbeat(stop, "配置模型解读源码", interval=5.0)
+        flow_print(
+            "[① Analyzer] 响应中 · 正在请求配置模型解读源码",
+            tone="progress",
+        )
         try:
             interpretation = interpret_source_with_configured_model(
                 snapshot,
@@ -2755,6 +3209,10 @@ def _cmd_interactive_migrate(args):
         finally:
             stop.set()
             heartbeat.join(timeout=1.0)
+        flow_print(
+            "[① Analyzer] 生成中 · 已收到响应，正在校验并落盘解读",
+            tone="progress",
+        )
         interpretation_path = write_interpretation_report(
             session_root / "interpretation-report.json", interpretation
         )
@@ -2763,9 +3221,9 @@ def _cmd_interactive_migrate(args):
         })
     except InteractiveMigrationError as exc:
         flow_print(
-            "[模型解读] 失败：%s；未进入迁移/执行阶段。" % exc,
+            "[模型解读] 失败：%s；使用确定性回退继续（不阻断后续迁移）。" % exc,
             stream=sys.stderr,
-            tone="error",
+            tone="warning",
         )
         failure_path = None
         try:
@@ -2779,32 +3237,159 @@ def _cmd_interactive_migrate(args):
             "[模型回执] actual_remote_call=%s · failure_receipt=%s"
             % (exc.actual_remote_call, failure_path or "unavailable"),
             stream=sys.stderr,
-            tone="error",
+            tone="warning",
         )
-        try:
-            _interactive_publish_reports(
-                session_root=session_root,
-                snapshot=snapshot,
-                status="interpretation_failed",
-                api_analysis=analysis_summary,
-            )
-        except Exception:
-            pass
-        flow_print("[会话回执] %s" % session_root, stream=sys.stderr, tone="artifact")
-        return 4
-    flow_print(
-        "\n[模型解读 · 未验证建议] model=%s provider=%s elapsed=%sms" % (
-            interpretation.model, interpretation.provider, interpretation.elapsed_ms
+        interpretation = FallbackInterpretation(
+            actual_remote_call=bool(getattr(exc, "actual_remote_call", False)),
+            display_text=(
+                "模型源码解读不可用（%s）；已回退到确定性分析与回执。"
+                % type(exc).__name__
+            ),
+        )
+    if getattr(interpretation, "model", None):
+        flow_print(
+            "\n[模型解读 · 未验证建议] model=%s provider=%s elapsed=%sms" % (
+                interpretation.model, interpretation.provider, interpretation.elapsed_ms
+            ),
+            tone="warning",
+        )
+    else:
+        flow_print("\n[模型解读 · 回退]", tone="warning")
+    render_markdown_panel(
+        interpretation.display_text,
+        title="① Analyzer · 源码解读",
+        subtitle=(
+            "模型生成 · 未验证"
+            if getattr(interpretation, "model", None)
+            else "确定性回退"
         ),
-        tone="warning",
     )
-    print(interpretation.display_text)
     if interpretation.source_truncated_for_prompt:
         flow_print("[模型输入边界] 完整源码 hash 已绑定；模型提示仅发送了首尾片段。", tone="warning")
     flow_print(
         "[模型回执] actual_remote_call=%s · receipt metadata 已写入私有目录（正文不落盘）"
         % interpretation.actual_remote_call,
         tone="model",
+    )
+
+    def _gap_names(items):
+        names = []
+        for item in items:
+            if isinstance(item, Mapping):
+                names.append(str(
+                    item.get("source_api")
+                    or item.get("qualified_api")
+                    or item.get("name")
+                    or "unknown"
+                ))
+            else:
+                names.append(str(
+                    getattr(item, "qualified_api", None)
+                    or getattr(item, "name", "unknown")
+                ))
+        return names
+
+    plan_facts = _interactive_plan_facts(
+        snapshot, qualified_payload, analysis_summary, gaps, source_copy
+    )
+    planner_facts = dict(plan_facts)
+    planner_facts.update({
+        "source_path": snapshot.path,
+        "source_sha256": snapshot.sha256,
+        "decision": analysis_summary.get("decision"),
+        "runtime_identity_status": analysis_summary.get("runtime_identity_status"),
+        "qualified_apis": analysis_summary.get("qualified_apis"),
+        "numpy_use_count": analysis_summary.get("numpy_use_count"),
+        "gap_count": analysis_summary.get("gap_count", len(gaps)),
+        "backend": getattr(args, "backend", None),
+        "target_soc": getattr(args, "target_soc", None) or "unknown",
+        "cann_version": getattr(args, "cann_version", None) or "unknown",
+        "outputs": list(getattr(args, "outputs", None) or ("result",)),
+    })
+    gap_facts = {
+        "gap_count": analysis_summary.get("gap_count", len(gaps)),
+        "gap_apis": _gap_names(gaps),
+        "gap_details": plan_facts["gap_apis"],
+        "has_registered_add_one": any(
+            isinstance(item, Mapping)
+            and item.get("kind") == "registered_signature_gap"
+            for item in gaps
+        ),
+    }
+    role_models = {}
+    if isinstance(interpretation, FallbackInterpretation):
+        role_models["analyzer"] = RoleModelResult(
+            role="analyzer",
+            status="fallback",
+            text=interpretation.display_text,
+            actual_remote_call=interpretation.actual_remote_call,
+            error="interpretation_failed",
+        )
+    else:
+        role_models["analyzer"] = RoleModelResult(
+            role="analyzer",
+            status="model_generated",
+            text=interpretation.display_text,
+            model=interpretation.model,
+            provider=interpretation.provider,
+            actual_remote_call=interpretation.actual_remote_call,
+            elapsed_ms=interpretation.elapsed_ms,
+            receipt_metadata=dict(getattr(interpretation, "receipt_metadata", {}) or {}),
+        )
+    flow_print(
+        "[② Planner] 响应中 · 正在请求配置模型生成迁移计划",
+        tone="progress",
+    )
+    planner_model = plan_migration_with_configured_model(
+        planner_facts,
+        config_path=getattr(args, "llm_config", None) or os.getenv("NUMPILOT_LLM_CONFIG_FILE"),
+    )
+    flow_print(
+        "[② Planner] 生成中 · 已收到响应，正在解析并落盘迁移计划",
+        tone="progress",
+    )
+    role_models["planner"] = planner_model
+    try:
+        plan_markdown_path, plan_json_path = _interactive_write_plan(
+            session_root, snapshot, plan_facts, planner_model
+        )
+    except (OSError, ValueError, TypeError) as exc:
+        flow_print(
+            "[迁移计划] 落盘失败：%s" % type(exc).__name__,
+            stream=sys.stderr,
+            tone="error",
+        )
+        return 2
+    render_markdown_panel(
+        _plan_model_body(planner_model.text),
+        title=(
+            "② Planner · 迁移计划"
+            if planner_model.status == "model_generated"
+            else "② Planner · 迁移计划（确定性回退）"
+        ),
+        subtitle="已落盘 %s" % plan_markdown_path,
+    )
+    flow_print(
+        "[③ Gap Filler] 响应中 · 正在请求配置模型生成缺口处理计划",
+        tone="progress",
+    )
+    gap_model = review_gaps_with_configured_model(
+        gap_facts,
+        config_path=getattr(args, "llm_config", None) or os.getenv("NUMPILOT_LLM_CONFIG_FILE"),
+    )
+    flow_print(
+        "[③ Gap Filler] 生成中 · 已收到响应，正在解析缺口处理计划",
+        tone="progress",
+    )
+    role_models["gap_filler"] = gap_model
+    render_markdown_panel(
+        gap_model.text,
+        title=(
+            "③ Gap Filler · 缺口处理计划"
+            if gap_model.status == "model_generated"
+            else "③ Gap Filler · 缺口处理计划（确定性回退）"
+        ),
+        subtitle="缺口数量：%s" % (analysis_summary.get("gap_count", len(gaps))),
     )
 
     has_gap = bool(gaps)
@@ -2997,7 +3582,10 @@ def _cmd_interactive_migrate(args):
             + (" → strict-NPU benchmark" if args.benchmark else ""),
             tone="phase",
         )
+        report_paths = None
+        publish_error = None
         with AgentProgress(
+            defer_final_roles=True,
             context={
                 "source": snapshot.path,
                 "output": str(workflow_out),
@@ -3012,6 +3600,21 @@ def _cmd_interactive_migrate(args):
                 "gaps": str(analysis_summary.get("gap_count", len(gaps))),
             },
         ) as progress:
+            seed_messages = {
+                "analyzer": "模型已完成源码解读",
+                "planner": "模型已生成迁移计划",
+                "gap_filler": "模型已生成缺口处理计划",
+            }
+            for role in ("analyzer", "planner", "gap_filler"):
+                model = role_models.get(role)
+                if isinstance(model, RoleModelResult):
+                    progress.mark_model_role(
+                        role,
+                        seed_messages[role] if model.status == "model_generated"
+                        else "模型不可用，已回退确定性模板",
+                        elapsed_seconds=model.elapsed_ms / 1000.0,
+                        mode="llm" if model.status == "model_generated" else "static",
+                    )
             result = run_ordinary_workflow(
                 workflow_snapshot.path,
                 workflow_out,
@@ -3031,6 +3634,41 @@ def _cmd_interactive_migrate(args):
             )
             if result.get("status") != "passed":
                 progress.error()
+            role_messages = {
+                "analyzer": "模型已完成源码解读",
+                "planner": "模型已生成迁移计划",
+                "gap_filler": "模型已生成缺口处理计划",
+            }
+            for role in ("analyzer", "planner", "gap_filler"):
+                model = role_models.get(role)
+                if not isinstance(model, RoleModelResult):
+                    continue
+                generated = model.status == "model_generated"
+                progress.emit(
+                    role, "completed",
+                    role_messages[role] if generated
+                    else "模型不可用，已回退确定性模板",
+                    execution_mode="llm" if generated else "static",
+                )
+            try:
+                report_paths = _interactive_publish_reports(
+                    session_root=session_root,
+                    snapshot=snapshot,
+                    status=str(result.get("status", "unknown")),
+                    api_analysis=analysis_summary,
+                    interpretation=interpretation,
+                    gap_result=gap_result,
+                    workflow=result,
+                    role_models=role_models,
+                    report_config_path=(
+                        getattr(args, "llm_config", None)
+                        or os.getenv("NUMPILOT_LLM_CONFIG_FILE")
+                    ),
+                    progress=progress,
+                    announce=False,
+                )
+            except Exception as exc:
+                publish_error = exc
     except WorkflowError as exc:
         flow_print(
             "[迁移流水线] %s: %s" % (exc.code, exc),
@@ -3060,24 +3698,17 @@ def _cmd_interactive_migrate(args):
         )
     flow_print("\n[阶段 5/5] 读取真实回执并汇总（不根据模型口述编造结果）", tone="phase")
     _interactive_final_summary(result, session_root=session_root, interpretation=interpretation, gap_result=gap_result)
-    try:
-        _interactive_publish_reports(
-            session_root=session_root,
-            snapshot=snapshot,
-            status=str(result.get("status", "unknown")),
-            api_analysis=analysis_summary,
-            interpretation=interpretation,
-            gap_result=gap_result,
-            workflow=result,
-        )
-    except Exception as exc:
+    if publish_error is not None:
         flow_print(
-            "[完整报告] 发布失败：%s" % type(exc).__name__,
+            "[完整报告] 发布失败：%s" % type(publish_error).__name__,
             stream=sys.stderr,
             tone="error",
         )
         flow_print("[会话回执] %s" % session_root, stream=sys.stderr, tone="artifact")
         return 2
+    if report_paths is not None:
+        flow_print("[完整报告] Markdown：%s" % report_paths[1], tone="artifact")
+        flow_print("[机器回执] JSON：%s" % report_paths[0], tone="artifact")
     flow_print("[会话回执] %s" % session_root, tone="artifact")
     if result.get("status") == "passed":
         return 0
@@ -7027,6 +7658,8 @@ def _cmd_migrate_with_progress(args, progress):
         if _llm_proxy_for_remote_call("合同迁移门禁") is None:
             return 4
 
+    from numpilot.orchestrator import Orchestrator, _make_engine
+
     orch = Orchestrator(
         backend=backend,
         engine=_make_engine(contract_engine),
@@ -8655,6 +9288,14 @@ def main(argv=None):
         )
 
     args = parser.parse_args(arguments)
+    # Keep configuration/path inspection usable in a minimal interpreter. The
+    # full script migration module imports NumPy, so load its real exception
+    # type only for commands that can execute migration logic.
+    if getattr(args, "cmd", None) not in {"configure-llm", "check-llm", "paths"}:
+        from numpilot.script_migration import (
+            ScriptMigrationError as _ScriptMigrationError,
+        )
+        globals()["ScriptMigrationError"] = _ScriptMigrationError
     _llm_config_override = getattr(args, "llm_config", None)
     _llm_config_had_previous = "NUMPILOT_LLM_CONFIG_FILE" in os.environ
     _llm_config_previous = os.environ.get("NUMPILOT_LLM_CONFIG_FILE")
@@ -8742,6 +9383,7 @@ def main(argv=None):
         if args.cmd == "doctor":
             return _cmd_doctor(args)
         if args.cmd == "bench-cpu":
+            from numpilot.bench import run_cpu_baseline
             # Only boundary events: no live refresh thread during measurement.
             with AgentProgress(dynamic=False) as progress:
                 with progress.operation(None, "CPU 基线测量", component="verification") as operation:
@@ -8750,6 +9392,8 @@ def main(argv=None):
                                      "CPU 基线流程结束，请以性能回执为准")
                     return code
         if args.cmd == "bench-npu":
+            from numpilot.bench import run_npu_compare
+            from numpilot.orchestrator import _make_engine
             if args.engine == "llm":
                 if _load_llm_or_report() is None:
                     return 4

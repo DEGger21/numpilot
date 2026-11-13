@@ -88,6 +88,16 @@ For the six-agent terminal workbench and the reproducible large-matrix demo, see
 Run these commands from the repository root after activating the NumPilot environment. All source and output paths are relative to the checkout:
 
 ~~~bash
+# Use the managed environment created by install.sh, not bare Miniconda.
+. "$HOME/.local/share/numpilot/activate-numpilot.sh"
+command -v python
+python -c 'import numpy, numpilot; print("NumPilot Python ready")'
+~~~
+
+If the import check fails, the current python is not the NumPilot environment. Activate the managed virtual environment or set NUMPILOT_PYTHON to its interpreter before running the migration.
+
+
+~~~bash
 # Create your private model configuration from the tracked blank template.
 install -m 600 llm.example.json llm.json
 ${EDITOR:-vi} llm.json

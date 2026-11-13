@@ -13,9 +13,67 @@ Analyzer → Planner → Gap Filler → Code Migrator → Diagnostics → Report
 including the source path, run directory, backend, migration engine, performance
 switch, recent events, and final evidence paths.
 
+Every role makes a configured-model call and produces a template-shaped
+artifact: source interpretation (Analyzer), migration plan (Planner),
+gap-handling plan (Gap Filler), migrated code (Code Migrator), diagnostic
+conclusion (Diagnostics), and the Markdown report narrative (Reporter). If a
+role's model call fails, that role falls back to its deterministic template,
+the failure is marked in the workbench and JSON report, and the remaining
+stages continue. The final `migration-report.md` therefore has a deterministic
+key-facts table at the top (source/migrated paths, rewritten APIs, gap APIs,
+CPU model and core count, NPU model and card count, data scale, and speedup)
+followed by the model-generated interpretation.
+
+## Product shell and migration memory
+
+Start the interactive product shell from the activated environment:
+
+~~~bash
+numpilot
+~~~
+
+The startup page shows the NumPilot logo, a model status bar, and five options:
+new migration, load migration memory, check the model, environment self-check,
+and exit. The model status starts as `未检查`; run `/modelcheck` (or choose
+option 3) to send one real lightweight probe to the configured model. The bar
+then shows `模型可用` or `模型不可用`.
+
+Fixed commands are available with the familiar slash style:
+
+| Command | Action |
+| --- | --- |
+| `/help` | Show interaction help, status phases, and artifact layout |
+| `/new` | Prompt for an absolute NumPy path and start a fresh session |
+| `/resume` | List and load a previous migration memory |
+| `/readreport` | Render the latest (or selected) `migration-report.md` in the terminal |
+| `/modelcheck` | Manually probe `llm.json`; status bar updates |
+| `/doctor` | Check CANN, NPU, Python, and AsNumpy |
+| `/migrate /abs/x.py` | Start the same migration flow with a known path |
+| `/status` | Show the current model status |
+| `/exit` | Leave NumPilot |
+
+Every new migration creates `runs/demo-<timestamp>/` and writes the complete
+session there, including `source/<program>.py` (a copy of the user's source),
+`migration-plan.md/json` (Analyzer/Planner facts plus the model plan),
+`migration-report.md/json`, and `workflow/` receipts and logs. The session is
+rejected before any model request if the source has no NumPy import or call.
+
 ## Run the demo
 
-From the repository root on the Ascend host:
+From the repository root on the Ascend host. The demo server keeps the
+generated activation script and bootstrap receipt under the repository, so
+they survive restarts of `$HOME/.local`:
+
+~~~bash
+. ./activate-numpilot.sh
+command -v python
+python -c 'import numpy, numpilot; print("NumPilot Python ready")'
+~~~
+
+If `install.sh` created a persistent activation script at another path, source
+that path instead.
+
+
 
 ```bash
 V=${NUMPILOT_PYTHON:-python}

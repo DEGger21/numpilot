@@ -28,6 +28,7 @@ import json
 from numpilot.interactive_report import (
     build_session_report,
     render_session_markdown,
+    report_model_facts,
     write_session_reports,
 )
 
@@ -144,3 +145,72 @@ def test_report_drops_unvalidated_speedup_and_untrusted_gap_fields(tmp_path):
     assert report["workflow"]["performance"]["speedup"] is None
     assert "model_body" not in report["gap_recovery"]
     assert "999" not in render_session_markdown(report)
+
+
+def test_report_key_facts_and_model_narrative_are_prominent():
+    report = {
+        "status": "passed",
+        "source": {"path": "/src/program.py", "sha256": "a" * 64},
+        "gap_recovery": {"status": "no_gap", "interface_available": True},
+        "gap_completions": [],
+        "workflow": {
+            "status": "passed",
+            "numeric_verification": {"status": "passed", "comparisons": {}},
+            "performance": {
+                "performance_valid": True,
+                "speedup": 3.0,
+                "measured_scale": {
+                    "shape": [4],
+                    "dtype": "float32",
+                    "elements": 4,
+                    "data_bytes": 16,
+                },
+            },
+        },
+        "hardware": {
+            "cpu": {
+                "model": "Kunpeng-920",
+                "total_cores": 192,
+                "used_cores": 1,
+                "bound_core": 0,
+            },
+            "npu": {"model": "Ascend910B3", "cards_used": 1, "total_cards": 1},
+        },
+        "migration": {
+            "migrated_path": "/run/migrated.py",
+            "migrated_sha256": "b" * 64,
+            "api_rewrites": [{
+                "source_api": "numpy.add",
+                "target_api": "asnumpy.add",
+                "source_call_count": 1,
+                "target_call_count": 1,
+            }],
+            "model": {"model": "model-x", "actual_remote_call": True},
+            "timing": {"speedup": 3.0, "numpy_ms": 12.0, "asnumpy_ms": 4.0},
+        },
+        "report_generation": {
+            "status": "model_generated",
+            "model": "model-x",
+            "actual_remote_call": True,
+        },
+        "generated_files": [],
+    }
+    markdown = render_session_markdown(
+        report,
+        narrative="## 迁移解读\n模型生成的正文。",
+        narrative_status="model_generated",
+    )
+    assert "## 关键事实" in markdown
+    assert "迁移前代码" in markdown and "/src/program.py" in markdown
+    assert "迁移后代码" in markdown and "/run/migrated.py" in markdown
+    assert "numpy.add → asnumpy.add" in markdown
+    assert "缺口 API" in markdown and "无（本次没有缺口补全）" in markdown
+    assert "Kunpeng-920" in markdown and "1 核" in markdown
+    assert "Ascend910B3" in markdown and "1 张" in markdown
+    assert "shape=[4]" in markdown and "0.00 MiB" in markdown
+    assert "3.0 x" in markdown
+    assert "## 迁移解读" in markdown and "模型生成的正文" in markdown
+    facts = report_model_facts(report)
+    assert facts["source"]["path"] == "/src/program.py"
+    assert facts["hardware"]["npu"]["model"] == "Ascend910B3"
+    assert facts["performance"]["speedup"] == 3.0

@@ -24,15 +24,18 @@ def test_stages_cover_three_phases():
     }
 
 
-def test_only_code_migrator_claims_a_model(monkeypatch):
+def test_code_migrator_and_reporter_claim_a_model(monkeypatch):
     monkeypatch.setenv("NUMPILOT_LLM_MODEL", "model-x")
     ast_rows = role_roster("ast")
     llm_rows = role_roster("llm")
     assert len(ast_rows) == len(llm_rows) == 6
     ast_migrator = [m for n, _, m in ast_rows if "Code Migrator" in n][0]
     llm_migrator = [m for n, _, m in llm_rows if "Code Migrator" in n][0]
-    assert "无模型" in ast_migrator and "model-x" in llm_migrator
-    assert all("无模型" in m for n, _, m in ast_rows if "Code Migrator" not in n)
+    assert "规则引擎" in ast_migrator and "model-x" in llm_migrator
+    ast_reporter = [m for n, _, m in ast_rows if "Migration Reporter" in n][0]
+    llm_reporter = [m for n, _, m in llm_rows if "Migration Reporter" in n][0]
+    assert "确定性报告模板" in ast_reporter and "model-x" in llm_reporter
+    assert all("无模型" not in m for _, _, m in ast_rows)
 
 
 def test_records_serialise_in_canonical_order():
@@ -43,4 +46,4 @@ def test_records_serialise_in_canonical_order():
     serialised = records_to_dicts(records, "ast")
     assert [row["role"] for row in serialised] == ["analyzer", "reporter"]
     assert serialised[0]["stage"] == "understand"
-    assert serialised[0]["model"] == "规则(无模型)"
+    assert serialised[0]["model"] == "确定性规则引擎"

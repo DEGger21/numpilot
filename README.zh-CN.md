@@ -88,6 +88,16 @@ python -m numpilot configure-llm --check
 进入仓库根目录并激活 NumPilot 环境后执行。下面的源码和输出路径都相对于仓库根目录：
 
 ~~~bash
+# 使用 install.sh 创建的受管虚拟环境，不要直接使用裸 Miniconda。
+. "$HOME/.local/share/numpilot/activate-numpilot.sh"
+command -v python
+python -c 'import numpy, numpilot; print("NumPilot Python ready")'
+~~~
+
+如果导入检查失败，当前 python 不是 NumPilot 环境。请先激活受管虚拟环境，或把 NUMPILOT_PYTHON 设置为该环境的解释器，再运行迁移。
+
+
+~~~bash
 # 从仓库内的空白模板创建自己的私有模型配置。
 install -m 600 llm.example.json llm.json
 ${EDITOR:-vi} llm.json
