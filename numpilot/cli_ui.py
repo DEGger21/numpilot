@@ -37,7 +37,7 @@ import unicodedata
 
 try:
     from rich import box
-    from rich.console import Console
+    from rich.console import Console, Group
     from rich.panel import Panel
     from rich.table import Table
     from rich.text import Text
@@ -48,7 +48,7 @@ except ModuleNotFoundError as exc:
     # text renderers owned by each command instead of aborting at import.
     if exc.name != "rich" and not (exc.name or "").startswith("rich."):
         raise
-    box = Console = Panel = Table = Text = None
+    box = Console = Group = Panel = Table = Text = None
     _RICH_AVAILABLE = False
 else:
     _RICH_AVAILABLE = True
@@ -493,10 +493,25 @@ _PROGRESS_STATES = {
     "skipped": ("–", "未执行", "dim"),
 }
 _PROGRESS_MODES = {
-    "static": "规则处理 · 无模型",
+    "static": "规则引擎 · 确定性",
     "llm": "已配置模型 · 真实调用",
     "external": "外部代理 · 独立接入",
 }
+# User-visible activity phases for the per-agent status bar.  A terminal state
+# replaces the phase; a running row keeps the latest phase until it changes.
+PHASE_SPEC = (
+    "待命",
+    "分析中",
+    "响应中",
+    "生成中",
+    "校验中",
+    "落盘中",
+    "完成",
+    "回退",
+    "阻断",
+    "失败",
+    "未执行",
+)
 
 
 def _progress_message(value):
@@ -521,7 +536,8 @@ class AgentProgress:
     an optimistic roster. Pending roles stay pending when work is blocked.
     """
 
-    def __init__(self, *, enabled=True, stream=None, dynamic=True):
+    def __init__(self, *, enabled=True, stream=None, dynamic=True, context=None,
+                 defer_final_roles=False):
         from numpilot.progress import ProgressEmitter
         from numpilot.roles import ROLE_DEFINITIONS
         self.stream = sys.stderr if stream is None else stream
@@ -535,11 +551,62 @@ class AgentProgress:
         self._live = None
         self._started = None
         self._visible = False
+        self.context = {}
+        self.events = []
+        self.title = "NumPilot · 迁移工作台"
+        # Workflow stage events are emitted by the parent gate, not by the
+        # role child itself.  Remember which role a running stage belongs to
+        # so its generic completion event closes the same row instead of
+        # leaving Diagnostics stuck in ``running`` until __exit__ marks it
+        # blocked.
+        self._workflow_role = None
+        self._workflow_message = ""
+        # Roles that already completed a real configured-model step before the
+        # workflow table was created.  Later deterministic child events may
+        # update state/message, but must not downgrade the displayed lane.
+        self._model_roles = set()
+        # A completed role is final for this workbench session.  The workflow
+        # may re-enter a role internally, but the user-facing row must never
+        # jump back from 完成 to 执行中/未执行.
+        self._finalized_roles = set()
+        # Diagnostics and Reporter continue after the workflow child exits:
+        # their model diagnosis/report step is the real final phase.  Only the
+        # interactive workbench opts into this deferral.
+        self._deferred_roles = (
+            {"diagnostics", "reporter"} if defer_final_roles else set()
+        )
+        self.set_context(context or {})
+
+    def set_context(self, context=None, **values):
+        """Set user-visible run metadata without changing workflow state."""
+        payload = dict(context or {})
+        payload.update(values)
+        allowed = {"source", "output", "backend", "engine", "benchmark", "mode", "apis", "gaps"}
+        for key, value in payload.items():
+            if key not in allowed or value is None:
+                continue
+            rendered = ("是" if value else "否") if isinstance(value, bool) else _progress_message(value)
+            self.context[key] = rendered
+        return self
 
     @staticmethod
     def _new_row():
         return {"state": "pending", "mode": None, "message": "尚未执行", "attempt": 1,
-                "started": None, "elapsed": 0.0}
+                "started": None, "elapsed": 0.0, "phase": None}
+
+    @staticmethod
+    def _apply_state(row, *, state, mode, message, attempt, now, phase=None):
+        if state == "running" and row["state"] != "running":
+            row["started"] = now
+        if state != "running" and row["started"] is not None:
+            row["elapsed"] = max(0.0, now - row["started"])
+            row["started"] = None
+        if state == "running":
+            if phase:
+                row["phase"] = phase
+        else:
+            row["phase"] = None
+        row.update(state=state, mode=mode, message=message, attempt=attempt)
 
     def __enter__(self):
         self._started = time.monotonic()
@@ -559,6 +626,79 @@ class AgentProgress:
 
     def emit(self, *args, **kwargs):
         return self.emitter.emit(*args, **kwargs)
+
+    def mark_model_role(self, role, message, *, elapsed_seconds=0.0, state="completed", mode="llm"):
+        """Seed a role that already completed a configured-model step."""
+
+        row = self.rows[role]
+        now = time.monotonic()
+        self._apply_state(
+            row,
+            state=state,
+            mode=mode,
+            message=_progress_message(message),
+            attempt=1,
+            now=now,
+        )
+        try:
+            row["elapsed"] = max(0.0, float(elapsed_seconds))
+        except (TypeError, ValueError):
+            row["elapsed"] = 0.0
+        row["started"] = None
+        if mode == "llm":
+            self._model_roles.add(role)
+        if state == "completed":
+            self._finalized_roles.add(role)
+        if self._live is not None:
+            self._live.refresh()
+        return self
+
+    def finalize_role(self, role, message, *, execution_mode="llm", elapsed_seconds=None):
+        """Mark a role complete after its final model/fallback phase."""
+
+        row = self.rows[role]
+        now = time.monotonic()
+        self._apply_state(
+            row,
+            state="completed",
+            mode=execution_mode,
+            message=_progress_message(message),
+            attempt=1,
+            now=now,
+        )
+        if elapsed_seconds is not None:
+            try:
+                row["elapsed"] = max(0.0, float(elapsed_seconds))
+            except (TypeError, ValueError):
+                pass
+        row["started"] = None
+        if execution_mode == "llm":
+            self._model_roles.add(role)
+        self._finalized_roles.add(role)
+        if self._live is not None:
+            self._live.refresh()
+        return self
+
+    def set_phase(self, role, phase, message=None):
+        """Update one running role's status-bar phase without ending it."""
+
+        row = self.rows[role]
+        if role in self._finalized_roles:
+            if message is not None:
+                row["message"] = _progress_message(message)
+            if self._live is not None:
+                self._live.refresh()
+            return self
+        now = time.monotonic()
+        if row["state"] != "running":
+            row["started"] = now
+        row["state"] = "running"
+        row["phase"] = _progress_message(phase)
+        if message is not None:
+            row["message"] = _progress_message(message)
+        if self._live is not None:
+            self._live.refresh()
+        return self
 
     def operation(self, *args, **kwargs):
         return self.emitter.operation(*args, **kwargs)
@@ -580,19 +720,138 @@ class AgentProgress:
         else:
             forwarded = emit_child_event(event)
         key = event.role.value if event.role is not None else event.component
+        role_key = event.role.value if event.role is not None else None
+        if role_key in self._finalized_roles:
+            # The user-facing lifecycle is monotonic.  A workflow child may
+            # re-run its internal static pass, but a completed role must not
+            # jump back to 执行中/未执行 in the workbench.
+            return
         target = self.rows if event.role is not None else self.steps
         row = target.setdefault(key, self._new_row())
         now = time.monotonic()
-        if event.state == "running" and row["state"] != "running":
-            row["started"] = now
-        if event.state != "running" and row["started"] is not None:
-            row["elapsed"] = max(0.0, now - row["started"])
-            row["started"] = None
-        row.update(state=event.state, mode=event.execution_mode,
-                   message=_progress_message(event.message), attempt=event.attempt)
-        if event.state == "failed":
+        mode = event.execution_mode
+        if (
+            event.role is not None
+            and event.role.value in self._model_roles
+            and mode == "static"
+        ):
+            mode = "llm"
+        state = event.state
+        message = _progress_message(event.message)
+        phase = None
+        # Diagnostics/Reporter finish only after their model diagnosis/report
+        # step.  A workflow child completion is a phase transition, not the
+        # final user-facing completion.
+        if role_key in self._deferred_roles and state == "completed":
+            state = "running"
+            if role_key == "diagnostics":
+                phase = "校验中"
+                message = "回执已保存，准备模型诊断"
+            else:
+                phase = "汇总中"
+                message = "回执已汇总，准备模型报告"
+        self._apply_state(
+            row,
+            state=state,
+            mode=mode,
+            message=message,
+            attempt=event.attempt,
+            now=now,
+            phase=phase,
+        )
+
+        # The ordinary workflow emits a parent ``workflow`` gate around child
+        # stages. Mirror those stage boundaries onto the user-facing agent row
+        # so a failed early migration or a long verification cannot look like
+        # an idle Migrator/Diagnostics agent. Remember the running stage's role
+        # so its generic completion event closes the same row instead of
+        # leaving Diagnostics stuck until __exit__ marks it blocked.
+        workflow_role = None
+        workflow_message = row["message"]
+        if event.role is None and event.component == "workflow":
+            if event.state == "running":
+                if "迁移子进程" in row["message"]:
+                    workflow_role = "code_migrator"
+                elif "执行原程序" in row["message"] or "性能测量" in row["message"]:
+                    workflow_role = "diagnostics"
+                elif "分析源码" in row["message"]:
+                    workflow_role = "analyzer"
+                self._workflow_role = workflow_role
+                self._workflow_message = row["message"]
+            else:
+                workflow_role = self._workflow_role
+                self._workflow_role = None
+                if workflow_role == "diagnostics":
+                    prior = self._workflow_message
+                    if event.state == "completed":
+                        if "diagnostics" in self._deferred_roles:
+                            state = "running"
+                            phase = "校验中"
+                        if "性能测量" in prior:
+                            workflow_message = "性能测量完成，回执已保存，准备模型诊断"
+                        elif "执行原程序" in prior:
+                            workflow_message = "数值验证完成，回执已保存，准备模型诊断"
+                    elif event.state in {"blocked", "failed"}:
+                        workflow_message = "验证阶段未通过，请查看回执"
+                self._workflow_message = ""
+        if event.role is None and event.component == "verification":
+            workflow_role = "diagnostics"
+            if event.state == "running":
+                self._workflow_role = "diagnostics"
+                self._workflow_message = row["message"]
+            else:
+                self._workflow_role = None
+                if event.state == "completed" and "diagnostics" in self._deferred_roles:
+                    state = "running"
+                    phase = "校验中"
+                    workflow_message = "静态审计完成，等待运行验证"
+        if workflow_role is not None and workflow_role not in self._finalized_roles:
+            agent_row = self.rows[workflow_role]
+            if event.state == "completed" and workflow_role != "diagnostics":
+                workflow_message = agent_row["message"]
+            self._apply_state(
+                agent_row,
+                state=state,
+                mode=(
+                    "llm"
+                    if workflow_role in self._model_roles and mode == "static"
+                    else mode
+                ),
+                message=workflow_message,
+                attempt=event.attempt,
+                now=now,
+                phase=phase,
+            )
+            if (
+                state == "completed"
+                and workflow_role not in self._deferred_roles
+                and workflow_role != "diagnostics"
+            ):
+                self._finalized_roles.add(workflow_role)
+            if workflow_role == "diagnostics":
+                step_row = self.steps.setdefault("verification", self._new_row())
+                self._apply_state(
+                    step_row,
+                    state=event.state,
+                    mode=event.execution_mode,
+                    message=workflow_message,
+                    attempt=event.attempt,
+                    now=now,
+                )
+        if (
+            event.role is not None
+            and state == "completed"
+            and role_key not in self._deferred_roles
+        ):
+            self._finalized_roles.add(role_key)
+        label = event.role.value if event.role is not None else event.component
+        self.events.append("%s · %s · %s" % (
+            label or "流程", _PROGRESS_STATES[row["state"]][1], row["message"]
+        ))
+        self.events = self.events[-5:]
+        if row["state"] == "failed":
             self.error()
-        elif event.state == "blocked":
+        elif row["state"] == "blocked":
             self.warning()
         if not self.enabled or forwarded:
             return
@@ -603,11 +862,11 @@ class AgentProgress:
         from numpilot.roles import role_definition
         label = role_definition(event.role).display_name if event.role is not None else (
             "验证步骤" if event.component == "verification" else "流水线")
-        _mark, state, _style = _PROGRESS_STATES[event.state]
-        mode = (_PROGRESS_MODES[event.execution_mode] if event.role is not None else
+        _mark, state_label, _style = _PROGRESS_STATES[row["state"]]
+        mode = (_PROGRESS_MODES[mode] if event.role is not None else
                 "确定性验证" if event.component == "verification" else "独立流程")
         print("[%s] %s · %s · %s · %.1fs" % (
-            label, state, mode, row["message"], self._elapsed(row)),
+            label, state_label, mode, row["message"], self._elapsed(row)),
             file=self.stream, flush=True)
 
     def _elapsed(self, row):
@@ -632,6 +891,8 @@ class AgentProgress:
 
         def add_row(name, row, *, independent=False):
             marker, label, style = _PROGRESS_STATES[row["state"]]
+            if row["state"] == "running" and row.get("phase"):
+                label = row["phase"]
             mode = "独立步骤" if independent else _PROGRESS_MODES.get(row["mode"], "尚未执行")
             cells = [Text(name), Text(marker + " " + label, style=style)]
             if compact:
@@ -649,9 +910,48 @@ class AgentProgress:
         for key, row in list(self.steps.items()):
             add_row("验证步骤" if key == "verification" else "流水线", row, independent=True)
         total = max(0.0, time.monotonic() - self._started) if self._started is not None else 0.0
-        return Panel(table, title="NumPilot · 六角色协作", border_style={
-            "ok": "cyan", "warn": "yellow", "error": "red"}[self.value],
-            subtitle=Text("总耗时 %.1fs · 运行状态不替代验证回执" % total), box=box.ROUNDED)
+        context = Table.grid(expand=True, padding=(0, 1))
+        context.add_column(style="bold cyan", no_wrap=True)
+        context.add_column(ratio=1, overflow="ellipsis")
+        context.add_column(style="bold cyan", no_wrap=True)
+        context.add_column(ratio=1, overflow="ellipsis")
+        labels = (("source", "源码"), ("output", "运行目录"),
+                  ("backend", "后端"), ("engine", "迁移引擎"),
+                  ("benchmark", "性能门"), ("mode", "模式"),
+                  ("apis", "API 调用"), ("gaps", "缺口"))
+        for offset in range(0, len(labels), 2):
+            cells = []
+            for key, label in labels[offset:offset + 2]:
+                cells.extend((label, self.context.get(key, "—")))
+            while len(cells) < 4:
+                cells.extend(("", ""))
+            context.add_row(*[Text(_terminal_safe(cell), no_wrap=True) for cell in cells])
+        event_display = Text(style="dim")
+        if self.events:
+            for index, event in enumerate(self.events[-5:]):
+                if index:
+                    event_display.append("\n")
+                event_display.append(_terminal_safe(event))
+        else:
+            event_display.append("等待工作流事件…")
+        event_panel = Panel(event_display, title="最近事件", border_style="dim", padding=(0, 1))
+        role_panel = Panel(
+            table,
+            title="六角色协作",
+            border_style={"ok": "cyan", "warn": "yellow", "error": "red"}[self.value],
+            padding=(0, 1),
+        )
+        return Panel(
+            Group(
+                Panel(context, title="任务上下文", border_style="blue", padding=(0, 1)),
+                role_panel,
+                event_panel,
+            ),
+            title=self.title,
+            border_style={"ok": "cyan", "warn": "yellow", "error": "red"}[self.value],
+            subtitle=Text("总耗时 %.1fs · 运行状态不替代验证回执" % total),
+            box=box.ROUNDED,
+        )
 
     def __exit__(self, exc_type, exc, traceback):
         if exc_type is not None:
@@ -946,4 +1246,45 @@ def render_paths(paths, *, stream=None):
             Text(_terminal_safe(path or "—"), style="dim"),
         )
     console.print(table)
+    return True
+
+
+def render_markdown_panel(text, *, title, subtitle=None, stream=None):
+    """Render one model artifact as Markdown in the terminal workbench.
+
+    Falls back to plain text for redirected output, ``NO_COLOR`` or a Markdown
+    renderer failure.  This is presentation only; it never changes the receipt.
+    """
+
+    output = sys.stdout if stream is None else stream
+    body = (text or "").strip() if isinstance(text, str) else ""
+    if not body:
+        return False
+    if len(body) > 128 * 1024:
+        body = body[:128 * 1024] + "\n\n> [内容过长，已截断]"
+    if os.getenv("NO_COLOR") or not is_interactive(output):
+        print(body, file=output)
+        return True
+    try:
+        from rich import box as rich_box
+        from rich.console import Console
+        from rich.markdown import Markdown
+        from rich.panel import Panel
+
+        console = Console(
+            file=output,
+            highlight=False,
+            markup=False,
+            color_system="auto",
+        )
+        console.print(Panel(
+            Markdown(body),
+            title=title,
+            subtitle=subtitle,
+            border_style="cyan",
+            box=rich_box.ROUNDED,
+            padding=(1, 2),
+        ))
+    except Exception:
+        print(body, file=output)
     return True

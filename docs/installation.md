@@ -11,7 +11,7 @@ This guide separates three different outcomes. Do not treat one as proof of anot
 | Strict-NPU readiness | The complete runtime identity matches an audited profile for the requested calls | Yes, exact profile |
 
 > [!WARNING]
-> The current strict profile is bound to Linux/AArch64, Ascend 910B3, CANN 9.2.0-beta.2, CPython 3.12.14, and exact
+> The bundled component installer accepts CANN 9.0 or newer. The current strict profile is bound to Linux/AArch64, Ascend 910B3, CANN 9.2.0-beta.2, CPython 3.12.14, and exact
 > AsNumpy source/install/receipt hashes. The core package accepts Python 3.10+, but the bundled-component
 > installer requires CPython 3.12 on AArch64. A different SoC, CANN, Python ABI, wrapper, native library, or
 > receipt must return `CAPABILITY_AUDIT_REQUIRED` until it is independently qualified.
@@ -21,7 +21,7 @@ This guide separates three different outcomes. Do not treat one as proof of anot
 Use this path to inspect the project or contribute without an Ascend host:
 
 ```bash
-git clone --branch main --depth 1 https://gitcode.com/li-xingHIT/numpilot.git
+git clone --branch develop --depth 1 https://gitcode.com/li-xingHIT/numpilot.git
 cd numpilot
 
 python3 -m venv .venv
@@ -44,7 +44,7 @@ use the release Python environment. Do not treat an arbitrary Python 3.10+ host 
 
 For the frozen-component mode, prepare these outside NumPilot before running `install.sh`:
 
-- a compatible Ascend driver, firmware, CANN Toolkit, and OPP;
+- a compatible Ascend driver, firmware, CANN Toolkit 9.0 or newer, and OPP;
 - a visible NPU (`npu-smi info` must work);
 - CPython 3.12 with `venv`/`pip` for the bundled component;
 - user-owned space for the virtual environment, persistent state, and runtime receipts.
@@ -68,7 +68,7 @@ Check the fixed-component prerequisites before starting:
 uname -m
 python3 -c 'import platform; print(platform.python_implementation(), platform.python_version())'
 npu-smi info
-test -f /usr/local/Ascend/cann-9.2.0-beta.2/set_env.sh
+test -f /usr/local/Ascend/cann-9.2.0-beta.2/set_env.sh  # or another CANN 9.x set_env.sh
 ```
 
 For source-first mode, additionally check `git --version`, `g++ --version`, `cmake --version`, Python
@@ -110,11 +110,11 @@ Apache-2.0 LICENSE beside the component and include it in the SBOM/license inven
 [AsNumpy internal-component lock](ASNUMPY-INTERNAL-COMPONENT-LOCK.zh-CN.md) for the reference identity,
 artifact caveat and upgrade/rollback procedure.
 
-The current attachment targets Linux AArch64, CPython 3.12, and CANN 9.2.0-beta.2. It does not include the CANN
+The current attachment targets Linux AArch64 and CPython 3.12; installation accepts CANN 9.0 or newer. The recorded strict profile uses CANN 9.2.0-beta.2. It does not include the CANN
 driver, firmware, or OPP. You no longer need to fetch or compile AsNumpy on site, but the local wheel still
 has to be installed once into the target virtual environment after loading the matching CANN environment.
 
-The source-first flow below is retained only to build and audit a future component in an isolated
+The exact CANN version is a qualification input, not a general installation lock. The source-first flow below is retained only to build and audit a future component in an isolated
 development workspace. It may fetch the **pinned** source when explicitly authorized; that behavior is
 not the user-facing contract for a frozen release.
 
@@ -127,7 +127,7 @@ Choose two absolute directories owned exclusively by the current user. Keeping b
 source review, cleanup, and runtime evidence boundaries clearer.
 
 ```bash
-git clone --branch main --depth 1 https://gitcode.com/li-xingHIT/numpilot.git
+git clone --branch develop --depth 1 https://gitcode.com/li-xingHIT/numpilot.git
 cd numpilot
 
 ./install.sh --allow-network \
@@ -220,7 +220,7 @@ This proves only that the local AsNumpy/NPU path can execute the smoke operation
 ```bash
 python -m numpilot doctor --backend npu
 
-python -m numpilot analyze examples/poisson_source_smooth_l1_map.py \
+python -m numpilot analyze examples/demo/large_numpy_program.py \
   --require-direct --json
 ```
 
@@ -334,7 +334,7 @@ network transport begins.
 
 ## 8. First run
 
-Use the complete `analyze → migrate → verify-script` example in the [English README](../README.md#run-the-ordinary-flow)
+Use the complete `analyze → migrate → verify-script` example in the [English README](../README.md#quick-start)
 for your own trusted script. CodeArts/terminal/hybrid entry modes and model-source gates are documented in the
 [CodeArts integration guide](codearts-integration.md). `./run_demo.sh --quick` runs the repository's staged example and adds a scoped
 benchmark. If the model config lives in a separate runtime directory, pass

@@ -49,7 +49,7 @@ class RoleDefinition:
 
     @property
     def model_label(self) -> str:
-        return "规则(无模型)"
+        return "确定性规则引擎"
 
 
 ROLE_DEFINITIONS = (
@@ -89,6 +89,7 @@ ROLE_DEFINITIONS = (
         "⑥ 报告智能体 Migration Reporter",
         "汇总证据 · 写报告 · 引用回执而非替代回执",
         RoleStage.VALIDATE,
+        uses_configured_model=True,
     ),
 )
 
@@ -101,12 +102,12 @@ def role_definition(role) -> RoleDefinition:
 
 
 def model_label(role) -> str:
-    """Return the model commitment actually made by this role today.
+    """Return the execution lane this role can use in the current product.
 
-    Only the Code Migrator can run on a configured model, and only when the
-    caller selected the LLM engine.  The other five roles are deterministic
-    today; their roster rows say so instead of implying a model call that did
-    not happen.
+    The Code Migrator and Migration Reporter can run on the configured model
+    when the caller selects the LLM engine.  The remaining roles are
+    deterministic gates; their labels name that lane without advertising a
+    "no model" state in the user-facing roster.
     """
     definition = role_definition(role)
     return "大模型" if definition.uses_configured_model else definition.model_label
@@ -114,12 +115,14 @@ def model_label(role) -> str:
 
 def role_model_label(role, engine_name) -> str:
     definition = role_definition(role)
-    if definition.role is Role.CODE_MIGRATOR:
-        configured = os.getenv("NUMPILOT_LLM_MODEL", "已配置 LLM")
+    configured = os.getenv("NUMPILOT_LLM_MODEL", "已配置 LLM")
+    if definition.role in {Role.CODE_MIGRATOR, Role.REPORTER}:
+        if engine_name == "llm":
+            return f"{configured} 大模型"
         return (
-            f"{configured} 大模型"
-            if engine_name == "llm"
-            else "AST 确定性改写(规则,无模型)"
+            "AST 确定性改写（规则引擎）"
+            if definition.role is Role.CODE_MIGRATOR
+            else "确定性报告模板"
         )
     return definition.model_label
 

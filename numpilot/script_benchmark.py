@@ -212,8 +212,27 @@ def _strict_report_gates(report: Mapping[str, Any]) -> Dict[str, bool]:
         "schema_v2_ordinary": (
             report.get("schema_version") == 2 and report.get("mode") == "script"
         ),
-        "strict_status": report.get("status") == "migrated_strict_npu",
-        "strict_npu": report.get("strict_npu") is True,
+        "strict_status": report.get("status") in {
+            "migrated_strict_npu",
+            "migrated_scoped_npu",
+        },
+        # A scoped migration is admissible only when the bound qualified
+        # analysis proves every call is performance eligible. The worker still
+        # validates the runtime guard and native provenance before publishing.
+        "strict_npu": (
+            report.get("strict_npu") is True
+            or (
+                report.get("status") == "migrated_scoped_npu"
+                and isinstance(report.get("qualified_analysis"), dict)
+                and report["qualified_analysis"].get("decision") == "DIRECT"
+                and all(
+                    isinstance(call, dict)
+                    and call.get("decision") == "DIRECT"
+                    and call.get("performance_eligible") is True
+                    for call in report["qualified_analysis"].get("calls", ())
+                )
+            )
+        ),
         "no_prior_performance_claim": report.get("performance_valid") is False,
         "ast_audit": report.get("ast_audit") == "passed",
         "model_remote_call": report.get("actual_remote_call") is True,
@@ -577,14 +596,24 @@ def _run_worker(
     ).encode("utf-8")
     _write_private(contract_path, contract_payload)
     environment, removed = _worker_environment(home)
+    # The worker gets an isolated HOME/XDG tree, but runtime identity must
+    # still verify the exact bootstrap receipt selected by the parent process.
+    # Bind that private receipt explicitly instead of allowing the child to
+    # resolve a new, empty receipt under its temporary HOME.
+    try:
+        from numpilot.paths import default_bootstrap_receipt
+        bootstrap_receipt = default_bootstrap_receipt()
+    except Exception:
+        bootstrap_receipt = None
+    if bootstrap_receipt is not None and bootstrap_receipt.is_file():
+        environment["NUMPILOT_BOOTSTRAP_RECEIPT"] = str(bootstrap_receipt)
     for name in _THREAD_ENVIRONMENT:
         environment[name] = "1"
     environment["VECLIB_MAXIMUM_THREADS"] = "1"
     command = [
         python_identity.invocation_path,
         "-I",
-        "-m",
-        "numpilot._script_benchmark_worker",
+        str(Path(__file__).with_name("_script_benchmark_worker.py")),
         "--backend",
         role,
         "--script",

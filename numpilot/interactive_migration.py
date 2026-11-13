@@ -46,7 +46,8 @@ not create a background thread itself.
 from __future__ import annotations
 
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+import ast
 import hashlib
 import inspect
 import json
@@ -474,8 +475,8 @@ def _path_string(value: object) -> str:
         raise InteractiveMigrationError("source path is invalid")
     expanded = os.path.expanduser(raw)
     if not os.path.isabs(expanded):
-        raise InteractiveMigrationError("source path must be absolute")
-    return expanded
+        expanded = os.path.join(os.getcwd(), expanded)
+    return os.path.abspath(expanded)
 
 
 def _config_path_string(value: object) -> str:
@@ -524,6 +525,43 @@ def _has_symlink_component(path: str) -> bool:
             current = candidate
     except (OSError, RuntimeError, TypeError, ValueError):
         return True
+    return False
+
+
+def looks_like_numpy_program(text: str) -> bool:
+    """Return whether the source imports NumPy or uses a NumPy alias.
+
+    This is an early admission check, not a qualification decision.  A syntax
+    error, an empty file, or a program that neither imports NumPy nor calls a
+    NumPy alias is rejected before any model request is made.
+    """
+
+    if not isinstance(text, str) or not text.strip():
+        return False
+    try:
+        tree = ast.parse(text)
+    except (SyntaxError, ValueError, TypeError, RecursionError):
+        return False
+    aliases: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for item in node.names:
+                if item.name == "numpy" or item.name.startswith("numpy."):
+                    return True
+                if item.name and item.name.split(".", 1)[0] == "numpy":
+                    aliases.add(item.asname or item.name)
+        elif isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            if module == "numpy" or module.startswith("numpy."):
+                return True
+    if not aliases:
+        return False
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            continue
+        owner = node.func.value
+        if isinstance(owner, ast.Name) and owner.id in aliases:
+            return True
     return False
 
 
@@ -1132,6 +1170,420 @@ def write_interpretation_report(
     return _atomic_private_json(target, payload)
 
 
+@dataclass
+class FallbackInterpretation:
+    """Deterministic stand-in when the Analyzer model call is unavailable."""
+
+    status: str = "fallback"
+    display_text: str = "模型源码解读不可用；继续使用确定性分析与回执。"
+    report_path: Optional[str] = None
+    model: Optional[str] = None
+    provider: Optional[str] = None
+    actual_remote_call: bool = False
+    elapsed_ms: int = 0
+    source_truncated_for_prompt: bool = False
+
+
+ROLE_MODEL_MAX_TOKENS = 1200
+REPORT_MODEL_MAX_TOKENS = 6000
+ROLE_MODEL_RETRY_CAP = 16384
+
+
+@dataclass
+class RoleModelResult:
+    """One model-backed role step with an explicit deterministic fallback."""
+
+    role: str
+    status: str  # "model_generated" | "fallback"
+    text: str
+    model: Optional[str] = None
+    provider: Optional[str] = None
+    protocol: Optional[str] = None
+    response_model: Optional[str] = None
+    actual_remote_call: bool = False
+    elapsed_ms: int = 0
+    error: Optional[str] = None
+    receipt_metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def to_report(self) -> dict[str, Any]:
+        """Return metadata only; the generated prose lives in the Markdown."""
+
+        text = self.text if isinstance(self.text, str) else ""
+        return {
+            "role": self.role,
+            "status": self.status,
+            "model": self.model,
+            "provider": self.provider,
+            "protocol": self.protocol,
+            "response_model": self.response_model,
+            "actual_remote_call": self.actual_remote_call is True,
+            "elapsed_ms": self.elapsed_ms,
+            "error": self.error,
+            "text_sha256": (
+                hashlib.sha256(text.encode("utf-8")).hexdigest() if text else None
+            ),
+            "text_chars": len(text),
+            "receipt": dict(self.receipt_metadata),
+        }
+
+
+def _complete_text_with_configured_model(
+    system_prompt: str,
+    user_prompt: str,
+    *,
+    config_path: Optional[str | os.PathLike[str]] = None,
+    max_tokens: int = ROLE_MODEL_MAX_TOKENS,
+    chat: Optional[Callable[..., tuple[str, Mapping[str, Any]]]] = None,
+) -> tuple[str, object, Mapping[str, Any], dict[str, Any], int]:
+    """Run one configured-model completion with the standard receipt contract."""
+
+    from numpilot.engines.llm import (
+        LlmEngine,
+        LlmHttpError,
+        LlmResponseError,
+        LlmTransportError,
+        llm_proxy_route_status,
+    )
+    from numpilot.llm_config import load_llm_config
+    from numpilot.model_contract import (
+        ModelContractError,
+        require_model_status,
+        validate_configured_model_receipt,
+    )
+
+    budget = _validate_max_tokens(max_tokens)
+    started = time.monotonic()
+    with _llm_config_scope(config_path):
+        status = load_llm_config(
+            os.environ.get("NUMPILOT_LLM_CONFIG_FILE")
+            if config_path is not None
+            else None
+        )
+        if not status.configured:
+            raise InteractiveMigrationError(
+                "configured model is unavailable: " + ", ".join(status.missing)
+            )
+        try:
+            identity = require_model_status(status)
+        except ModelContractError as exc:
+            raise InteractiveMigrationError(
+                "configured model identity is invalid"
+            ) from exc
+        try:
+            proxy_status = llm_proxy_route_status()
+        except Exception as exc:
+            raise InteractiveMigrationError(
+                "LLM proxy configuration is invalid"
+            ) from exc
+        if chat is None:
+            try:
+                content, receipt = LlmEngine._chat_with_receipt(
+                    system_prompt,
+                    user_prompt,
+                    **_visible_completion_options(identity, budget, force_visible=True),
+                )
+            except (LlmHttpError, LlmResponseError, LlmTransportError) as exc:
+                partial = getattr(exc, "receipt", None)
+                raise InteractiveMigrationError(
+                    "configured model request failed: %s" % type(exc).__name__,
+                    receipt_metadata=(
+                        _receipt_metadata(partial)
+                        if isinstance(partial, Mapping)
+                        else {}
+                    ),
+                    actual_remote_call=True,
+                ) from exc
+        else:
+            content, receipt = _invoke_chat(chat, system_prompt, user_prompt, budget)
+        if not isinstance(receipt, Mapping):
+            raise InteractiveMigrationError(
+                "configured model returned no receipt",
+                actual_remote_call=True,
+            )
+        try:
+            validated = validate_configured_model_receipt(
+                receipt,
+                content,
+                expected_model=identity.model,
+                expected_provider=identity.provider,
+                expected_protocol=identity.protocol,
+                response_model_aliases=identity.response_model_aliases,
+            )
+        except ModelContractError as exc:
+            raise InteractiveMigrationError(
+                "configured model receipt failed validation",
+                receipt_metadata=_receipt_metadata(receipt),
+                actual_remote_call=True,
+            ) from exc
+        metadata = _receipt_metadata(validated)
+        metadata["proxy_policy"] = proxy_status.get("policy")
+        metadata["proxy_route"] = proxy_status.get("route")
+    if not isinstance(content, str) or not content.strip():
+        raise InteractiveMigrationError(
+            "configured model returned empty text",
+            receipt_metadata=metadata,
+            actual_remote_call=True,
+        )
+    return (
+        content,
+        identity,
+        validated,
+        metadata,
+        int((time.monotonic() - started) * 1000),
+    )
+
+
+def _model_role_result(
+    role: str,
+    system_prompt: str,
+    user_prompt: str,
+    fallback_text: str,
+    *,
+    config_path: Optional[str | os.PathLike[str]] = None,
+    max_tokens: int = ROLE_MODEL_MAX_TOKENS,
+    max_chars: int = 16 * 1024,
+    chat: Optional[Callable[..., tuple[str, Mapping[str, Any]]]] = None,
+) -> RoleModelResult:
+    """Run a role prompt, returning a labelled fallback on any model failure.
+
+    An empty visible completion is retried once with a larger budget.  Some
+    gateways spend a small completion budget on hidden reasoning and return an
+    empty ``content``; this is the same bounded recovery used by the Analyzer
+    interpretation call.  A malformed receipt or transport error is never
+    retried.
+    """
+
+    budget = max_tokens
+    last_error: Optional[InteractiveMigrationError] = None
+    for attempt in (1, 2):
+        try:
+            content, identity, validated, metadata, elapsed_ms = (
+                _complete_text_with_configured_model(
+                    system_prompt,
+                    user_prompt,
+                    config_path=config_path,
+                    max_tokens=budget,
+                    chat=chat,
+                )
+            )
+            text = sanitize_interpretation(
+                content, max_chars=max_chars, max_line_chars=4096
+            ).strip()
+            response_model = (
+                validated.get("response_model")
+                if isinstance(validated, Mapping)
+                and isinstance(validated.get("response_model"), str)
+                else None
+            )
+            return RoleModelResult(
+                role=role,
+                status="model_generated",
+                text=text,
+                model=getattr(identity, "model", None),
+                provider=getattr(identity, "provider", None),
+                protocol=getattr(identity, "protocol", None),
+                response_model=response_model,
+                actual_remote_call=True,
+                elapsed_ms=elapsed_ms,
+                receipt_metadata=metadata,
+            )
+        except InteractiveMigrationError as exc:
+            last_error = exc
+            if (
+                attempt == 1
+                and "empty text" in str(exc)
+                and budget < ROLE_MODEL_RETRY_CAP
+            ):
+                budget = min(max(budget * 2, 4096), ROLE_MODEL_RETRY_CAP)
+                continue
+            break
+        except Exception as exc:
+            return RoleModelResult(
+                role=role,
+                status="fallback",
+                text=fallback_text,
+                error=type(exc).__name__,
+            )
+    if last_error is None:
+        return RoleModelResult(
+            role=role,
+            status="fallback",
+            text=fallback_text,
+            error="InteractiveMigrationError: model call did not complete",
+        )
+    metadata = dict(getattr(last_error, "receipt_metadata", {}) or {})
+    return RoleModelResult(
+        role=role,
+        status="fallback",
+        text=fallback_text,
+        model=metadata.get("configured_model"),
+        provider=metadata.get("provider"),
+        protocol=metadata.get("protocol"),
+        response_model=(
+            metadata.get("response_model")
+            if isinstance(metadata.get("response_model"), str)
+            else None
+        ),
+        actual_remote_call=bool(getattr(last_error, "actual_remote_call", False)),
+        error="%s: %s" % (type(last_error).__name__, _safe_error_text(last_error)),
+        receipt_metadata=metadata,
+    )
+
+
+def _planner_fallback(facts: Mapping[str, Any]) -> str:
+    return "\n".join((
+        "## 迁移计划（确定性回退）",
+        "- 源程序：`%s`" % _safe_error_text(facts.get("source_path", "unknown")),
+        "- 分析判定：`%s` · runtime=`%s`" % (
+            _safe_error_text(facts.get("decision", "unknown")),
+            _safe_error_text(facts.get("runtime_identity_status", "unknown")),
+        ),
+        "- 已确认 API：%s" % _safe_error_text(facts.get("qualified_apis", "unknown")),
+        "- 数据类型：%s" % _safe_error_text(facts.get("dtypes", "未识别")),
+        "- 数据规模：shape=%s · elements=%s" % (
+            _safe_error_text(facts.get("shapes", "未识别")),
+            _safe_error_text(facts.get("elements", "未识别")),
+        ),
+        "- API 覆盖：%s" % (
+            "全部覆盖" if facts.get("all_apis_covered") is True else "存在缺口"
+        ),
+        "- 缺口数量：`%s`" % _safe_error_text(facts.get("gap_count", "unknown")),
+        "- 后端：`%s` · 目标 SoC：`%s`" % (
+            _safe_error_text(facts.get("backend", "unknown")),
+            _safe_error_text(facts.get("target_soc", "unknown")),
+        ),
+        "- 验收：分析 DIRECT、迁移回执、数值一致、benchmark performance_valid。",
+    ))
+
+
+def plan_migration_with_configured_model(
+    facts: Mapping[str, Any],
+    *,
+    config_path: Optional[str | os.PathLike[str]] = None,
+    max_tokens: int = 1800,
+    chat: Optional[Callable[..., tuple[str, Mapping[str, Any]]]] = None,
+) -> RoleModelResult:
+    """Model-backed Planner review; deterministic fallback on failure."""
+
+    system = (
+        "你是 NumPilot 的 Planner（规划智能体）。只依据给定事实，输出简洁中文 "
+        "Markdown 迁移计划，必须包含：1) 源码解读；2) 接受的数据类型与数据规模；"
+        "3) API 是否全部被 AsNumpy 覆盖；4) 缺口 API 清单及每个缺口的功能与签名；"
+        "5) 迁移步骤、主机/设备边界与回退策略；6) 验收条件。不得生成代码，不得"
+        "声称已经执行、验证、编译或取得加速；事实不足写“未提供”。"
+    )
+    user = "确定性分析事实（JSON）：\n" + json.dumps(
+        dict(facts), ensure_ascii=False, sort_keys=True, indent=2
+    )
+    return _model_role_result(
+        "planner", system, user, _planner_fallback(facts),
+        config_path=config_path, max_tokens=max_tokens, chat=chat,
+    )
+
+
+def _gap_fallback(facts: Mapping[str, Any]) -> str:
+    gaps = facts.get("gap_apis")
+    if isinstance(gaps, (list, tuple)) and gaps:
+        rendered = "、".join(str(item) for item in gaps[:32])
+    else:
+        rendered = "无"
+    return "\n".join((
+        "## 缺口处理计划（确定性回退）",
+        "- 缺口数量：`%s`" % _safe_error_text(facts.get("gap_count", "unknown")),
+        "- 缺口 API：%s" % _safe_error_text(rendered),
+        "- 无缺口时直接进入整程序迁移；有缺口时先完成构建、部署、数值验证与准入，"
+        "再允许整程序迁移。",
+    ))
+
+
+def review_gaps_with_configured_model(
+    facts: Mapping[str, Any],
+    *,
+    config_path: Optional[str | os.PathLike[str]] = None,
+    max_tokens: int = 1400,
+    chat: Optional[Callable[..., tuple[str, Mapping[str, Any]]]] = None,
+) -> RoleModelResult:
+    """Model-backed Gap Filler review; deterministic fallback on failure."""
+
+    system = (
+        "你是 NumPilot 的 API Gap Filler（缺口智能体）。只依据给定事实，输出简洁"
+        "中文 Markdown 缺口处理计划：列出缺口 API、建议路线、必须通过的构建/部署/"
+        "数值/准入门禁，以及无法补全时的停止条件。不得声称草稿等于已接入接口，"
+        "不得生成或伪造验证结论。"
+    )
+    user = "缺口事实（JSON）：\n" + json.dumps(
+        dict(facts), ensure_ascii=False, sort_keys=True, indent=2
+    )
+    return _model_role_result(
+        "gap_filler", system, user, _gap_fallback(facts),
+        config_path=config_path, max_tokens=max_tokens, chat=chat,
+    )
+
+
+def _diagnostics_fallback(facts: Mapping[str, Any]) -> str:
+    return "\n".join((
+        "## 诊断结论（确定性回退）",
+        "- workflow：`%s`" % _safe_error_text(facts.get("workflow_status", "unknown")),
+        "- 数值验证：`%s`" % _safe_error_text(facts.get("numeric_status", "unknown")),
+        "- 性能有效：`%s`" % _safe_error_text(facts.get("performance_valid", "unknown")),
+        "- 结论：%s" % (
+            "通过；以回执为准。" if facts.get("workflow_status") == "passed"
+            else "未通过；请查看阶段回执与失败定位。"
+        ),
+    ))
+
+
+def diagnose_run_with_configured_model(
+    facts: Mapping[str, Any],
+    *,
+    config_path: Optional[str | os.PathLike[str]] = None,
+    max_tokens: int = 1600,
+    chat: Optional[Callable[..., tuple[str, Mapping[str, Any]]]] = None,
+) -> RoleModelResult:
+    """Model-backed Diagnostics narrative; deterministic fallback on failure."""
+
+    system = (
+        "你是 NumPilot 的 Diagnostics Agent（诊断智能体）。只依据给定回执事实，"
+        "输出简洁中文 Markdown 诊断结论：哪些门禁通过、哪些未通过、证据是什么、"
+        "下一步应由哪个角色处理。不得把未通过的数值或性能说成通过，不得编造缺失字段。"
+    )
+    user = "运行回执事实（JSON）：\n" + json.dumps(
+        dict(facts), ensure_ascii=False, sort_keys=True, indent=2
+    )
+    return _model_role_result(
+        "diagnostics", system, user, _diagnostics_fallback(facts),
+        config_path=config_path, max_tokens=max_tokens, chat=chat,
+    )
+
+
+def generate_migration_report_with_configured_model(
+    facts: Mapping[str, Any],
+    *,
+    config_path: Optional[str | os.PathLike[str]] = None,
+    max_tokens: int = REPORT_MODEL_MAX_TOKENS,
+    chat: Optional[Callable[..., tuple[str, Mapping[str, Any]]]] = None,
+) -> RoleModelResult:
+    """Model-generated report narrative; caller falls back to the template."""
+
+    system = (
+        "你是 NumPilot 的 Migration Reporter（报告智能体）。只依据给定事实，输出"
+        "中文 Markdown 报告正文，从 `## 迁移解读` 开始，并包含 `## 结论与建议`。"
+        "正文控制在 1200-2000 个中文字以内，直接写结论，不要展开长篇推理。"
+        "必须明确写出：迁移前代码位置、迁移后代码位置、迁移了哪些 API、哪些 API "
+        "是缺口、源程序 CPU 核数与型号及耗时、目标 NPU 型号与卡数及耗时、数据规模、"
+        "加速比。数字必须与事实一致；缺失写“未提供”。不得编造路径、API、数字或"
+        "验证结论，不得输出代码块，不要重复完整文件清单。"
+    )
+    user = "报告事实（JSON）：\n" + json.dumps(
+        dict(facts), ensure_ascii=False, sort_keys=True, indent=2
+    )
+    return _model_role_result(
+        "reporter", system, user, "",
+        config_path=config_path, max_tokens=max_tokens,
+        max_chars=96 * 1024, chat=chat,
+    )
+
+
 # Short aliases keep the module pleasant to use from small CLI adapters while
 # retaining the explicit names above for documentation and type checkers.
 read_source = read_source_snapshot
@@ -1169,6 +1621,7 @@ def failure_report_payload(
 
 __all__ = [
     "DEFAULT_MAX_TOKENS",
+    "FallbackInterpretation",
     "INTERPRETATION_SYSTEM_PROMPT",
     "InteractiveMigrationError",
     "InterpretationResult",
@@ -1176,16 +1629,22 @@ __all__ = [
     "MAX_MODEL_SOURCE_BYTES",
     "MAX_SOURCE_BYTES",
     "ParsedInterpretation",
+    "RoleModelResult",
     "SourceSnapshot",
     "bounded_interpretation",
     "build_interpretation_prompt",
+    "diagnose_run_with_configured_model",
     "failure_report_payload",
+    "generate_migration_report_with_configured_model",
     "interpret_source_with_configured_model",
     "interpret_source",
     "interpretation_report_payload",
+    "looks_like_numpy_program",
     "parse_interpretation",
+    "plan_migration_with_configured_model",
     "read_source_snapshot",
     "read_source",
+    "review_gaps_with_configured_model",
     "sanitize_interpretation",
     "write_interpretation_report",
     "write_report",

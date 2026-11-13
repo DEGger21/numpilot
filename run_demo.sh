@@ -25,7 +25,7 @@
 # -> strict-NPU resident benchmark. The configured-model artifact is never AST-made.
 set -Eeuo pipefail
 
-FILE="examples/poisson_source_smooth_l1_map.py"
+FILE="examples/demo/large_numpy_program.py"
 FILE_EXPLICIT=0
 OUT_OVERRIDE="${NUMPILOT_DEMO_OUT:-}"
 OUT_EXPLICIT=0

@@ -11,8 +11,8 @@
 | strict-NPU 就绪 | 完整运行时身份与请求调用的已审计画像精确匹配 | 是，且画像必须精确 |
 
 > [!WARNING]
-> 当前 strict 画像绑定 Linux/AArch64、Ascend 910B3、CANN 9.2.0-beta.2、CPython 3.12.14，以及精确的
-> AsNumpy 源码、安装文件和回执哈希。核心包接受 Python 3.10+，但随仓组件安装器要求 AArch64 上的
+> 随仓组件安装器接受 CANN 9.0 或更高版本；当前 strict 画像绑定 Linux/AArch64、Ascend 910B3、CANN 9.2.0-beta.2、
+> CPython 3.12.14，以及精确的 AsNumpy 源码、安装文件和回执哈希。核心包接受 Python 3.10+，但随仓组件安装器要求 AArch64 上的
 > CPython 3.12；不同 SoC、CANN、Python ABI、wrapper、原生库或回执在独立资格化前必须返回
 > `CAPABILITY_AUDIT_REQUIRED`。
 
@@ -21,7 +21,7 @@
 没有 Ascend 主机时，可用以下路径了解项目或参与开发：
 
 ```bash
-git clone --branch main --depth 1 https://gitcode.com/li-xingHIT/numpilot.git
+git clone --branch develop --depth 1 https://gitcode.com/li-xingHIT/numpilot.git
 cd numpilot
 
 python3 -m venv .venv
@@ -68,7 +68,7 @@ sudo apt-get install -y \
 uname -m
 python3 -c 'import platform; print(platform.python_implementation(), platform.python_version())'
 npu-smi info
-test -f /usr/local/Ascend/cann-9.2.0-beta.2/set_env.sh
+test -f /usr/local/Ascend/cann-9.2.0-beta.2/set_env.sh  # 也可以使用其他 CANN 9.x set_env.sh
 ```
 
 源码优先模式再额外检查 `git --version`、`g++ --version`、`cmake --version` 和 Python
@@ -108,7 +108,7 @@ release manifest 还必须绑定 wheel 的 `METADATA`/`RECORD`、安装后的
 wheel 摘要和升级/回滚流程见
 [AsNumpy 内部组件锁定与发布合同](ASNUMPY-INTERNAL-COMPONENT-LOCK.zh-CN.md)。
 
-当前附件只适用于 Linux AArch64、CPython 3.12 和 CANN 9.2.0-beta.2；它不包含 CANN 驱动、固件或 OPP。
+当前附件适用于 Linux AArch64、CPython 3.12，并接受 CANN 9.0 或更高版本；记录中的 strict 画像使用 CANN 9.2.0-beta.2。它不包含 CANN 驱动、固件或 OPP。
 因此现场不再需要拉取/编译 AsNumpy 源码，但仍要在目标 venv 中执行一次本地 wheel 安装，并先
 加载匹配的 CANN `set_env.sh`。
 
@@ -124,7 +124,7 @@ wheel 摘要和升级/回滚流程见
 证据边界管理。
 
 ```bash
-git clone --branch main --depth 1 https://gitcode.com/li-xingHIT/numpilot.git
+git clone --branch develop --depth 1 https://gitcode.com/li-xingHIT/numpilot.git
 cd numpilot
 
 ./install.sh --allow-network \
@@ -213,7 +213,7 @@ PY
 ```bash
 python -m numpilot doctor --backend npu
 
-python -m numpilot analyze examples/poisson_source_smooth_l1_map.py \
+python -m numpilot analyze examples/demo/large_numpy_program.py \
   --require-direct --json
 ```
 
@@ -318,7 +318,7 @@ python -m numpilot configure-llm --probe
 
 ## 8. 首次运行
 
-针对自己的可信脚本，请使用[中文 README 的完整 `analyze → migrate → verify-script` 示例](../README.zh-CN.md#运行-ordinary-主链)。
+针对自己的可信脚本，请使用[中文 README 的完整 `analyze → migrate → verify-script` 示例](../README.zh-CN.md#快速安装与使用)。
 CodeArts/终端/hybrid 三种入口及模型来源硬门禁见[CodeArts 集成建议](codearts-integration.md)。
 `./run_demo.sh --quick` 运行仓库内置的分阶段示例，并额外执行范围绑定基准。若模型配置位于独立
 运行时目录，可显式传入 `--llm-config /absolute/persistent/numpilot-runtime/.numpilot-config/llm.json`；

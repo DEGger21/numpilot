@@ -1,5 +1,7 @@
 # 规模化性能基准（2026-11-12）
 
+> **历史归档。** 本目录对应 2026-11-12 的规模化计时批次，结果与运行环境按本页记录冻结，不能直接作为当前静态组件基线。当前版本的可复现路径是 `examples/demo/`、`examples/scientific/` 与 `components/asnumpy/`；本页保留旧批次数据用于审计和对比。
+
 本目录覆盖 `examples/no_gap_archive_20261112` 中全部 **71** 个无缺口迁移样例，用于衡量 NumPilot 迁移代码在真实昇腾 NPU 上的稳态计算性能。每个用例包含：
 
 - `program.py`：大规模数据版 NumPy 源程序（数值 oracle）

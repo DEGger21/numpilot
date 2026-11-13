@@ -39,6 +39,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import shlex
@@ -496,6 +497,103 @@ def _validate_timeout(value: object) -> float:
         raise WorkflowError("invalid_timeout", "workflow timeout must be 1..86400 seconds")
     return result
 
+
+
+def _workflow_timing_payload(stages: Sequence[WorkflowStage]) -> dict[str, Any] | None:
+    """Expose child-stage elapsed times without replacing stage receipts."""
+
+    elapsed: dict[str, float] = {}
+    for stage in stages:
+        value = stage.elapsed_seconds
+        if isinstance(value, bool):
+            continue
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(numeric) or numeric < 0:
+            continue
+        elapsed[stage.name] = numeric
+    if not elapsed:
+        return None
+    return {
+        "stage_elapsed_seconds": elapsed,
+        "total_stage_elapsed_seconds": sum(elapsed.values()),
+    }
+
+
+def _workflow_performance_payload(
+    benchmark: Mapping[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Copy only public benchmark summary fields into the workflow index."""
+
+    if not isinstance(benchmark, Mapping):
+        return None
+    value = benchmark.get("performance")
+    if not isinstance(value, Mapping):
+        return None
+    allowed = (
+        "performance_valid",
+        "issues",
+        "cpu_median_ms",
+        "npu_median_ms",
+        "diagnostic_cpu_over_npu",
+        "median_speedup",
+        "conservative_cpu_p10_over_npu_p90",
+        "median_speedup_bootstrap_95ci",
+        "warm_runtime_single_pass_component_sum",
+    )
+    payload: dict[str, Any] = {}
+    for key in allowed:
+        if key not in value:
+            continue
+        item = value[key]
+        if key == "issues":
+            if isinstance(item, list) and all(isinstance(entry, str) for entry in item):
+                payload[key] = list(item)
+            continue
+        if key == "warm_runtime_single_pass_component_sum":
+            if not isinstance(item, Mapping):
+                continue
+            component: dict[str, Any] = {}
+            for component_key in (
+                "directly_sampled_end_to_end",
+                "formula",
+                "cpu_ms",
+                "npu_ms",
+                "diagnostic_cpu_over_npu",
+            ):
+                component_value = item.get(component_key)
+                if component_key == "directly_sampled_end_to_end":
+                    if isinstance(component_value, bool):
+                        component[component_key] = component_value
+                elif component_key == "formula":
+                    if isinstance(component_value, str):
+                        component[component_key] = component_value
+                elif (
+                    isinstance(component_value, (int, float))
+                    and not isinstance(component_value, bool)
+                    and math.isfinite(float(component_value))
+                ):
+                    component[component_key] = component_value
+            if component:
+                payload[key] = component
+            continue
+        if key == "median_speedup_bootstrap_95ci":
+            if isinstance(item, list) and len(item) == 2 and all(
+                isinstance(entry, (int, float))
+                and not isinstance(entry, bool)
+                and math.isfinite(float(entry))
+                for entry in item
+            ):
+                payload[key] = list(item)
+            continue
+        if isinstance(item, bool):
+            if key == "performance_valid":
+                payload[key] = item
+        elif isinstance(item, (int, float)) and math.isfinite(float(item)):
+            payload[key] = item
+    return payload or None
 
 def _validate_bounded_text(
     value: object,
@@ -1004,6 +1102,12 @@ def run_ordinary_workflow(
             "strict_npu_performance_verified": False,
         },
     }
+    timing_payload = _workflow_timing_payload(stages)
+    if timing_payload is not None:
+        report["timing"] = timing_payload
+    performance_payload = _workflow_performance_payload(benchmark_value)
+    if performance_payload is not None:
+        report["performance"] = performance_payload
     # Derive claims only from child receipts; the coordinator itself never
     # upgrades a status.  This keeps a shim/diagnostic run from being marketed
     # as an NPU result.

@@ -32,37 +32,135 @@ NPUs, developed by the AISS team at Harbin Institute of Technology led by Prof. 
 
 ## Quick start
 
-**Requirements:** Python with NumPy and AsNumpy installed. CANN and an Ascend NPU are required for
-device execution; analysis and shim verification work without a device.
+NumPilot has two supported installation lanes. Use the frozen component lane on an Ascend host when you want to reproduce the published demo. Use the CPU/shim lane for source development without CANN.
 
-```bash
-git clone --branch main --depth 1 https://gitcode.com/li-xingHIT/numpilot.git
+**Frozen Ascend lane requirements:** Linux AArch64, CPython 3.12, an Ascend device, CANN 9.0 or newer, and a user-owned virtual-environment directory. The recorded demo result below uses the audited CANN 9.2.0-beta.2 profile.
+
+~~~bash
+git clone --branch develop --depth 1 https://gitcode.com/li-xingHIT/numpilot.git
 cd numpilot
-python3 -m venv .venv && . .venv/bin/activate
-python -m pip install .
-python -m numpilot doctor --backend npu
-```
+mkdir -p "$HOME/.local/venvs"
+./install.sh --allow-network \
+  --python "$(command -v python3.12)" \
+  --asnumpy-component "$PWD/components/asnumpy" \
+  --cann-env /usr/local/Ascend/cann-9.2.0-beta.2/set_env.sh \
+  --venv "$HOME/.local/venvs/numpilot" \
+  --persistent-root "$HOME/.local/share/numpilot"
+. "$HOME/.local/share/numpilot/activate-numpilot.sh"
+python -m numpilot bootstrap --verify --json
+python -m numpilot doctor --backend npu --json
+~~~
+
+The installer installs the exact wheel shipped in components/asnumpy, writes a hash-bound bootstrap receipt, and checks the CANN/NPU runtime. It never downloads a floating AsNumpy version. Do not copy an existing virtual environment between machines.
+
+**CPU/shim lane:**
+
+~~~bash
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -e '.[dev]'
+python -m numpilot doctor --backend shim
+python -m pytest -q -p no:cacheprovider tests/test_install_script.py tests/test_bootstrap.py
+~~~
 
 Migrate and verify a complete program:
 
-```bash
+~~~bash
 numpilot analyze program.py
 numpilot migrate program.py --out runs/demo
 numpilot verify program.py \
   --migration-report runs/demo/migration/script-migration-report.json \
   --output result --out runs/demo/verification.json
-```
+~~~
 
-For configured-model gap completion, copy the blank template and fill in your own endpoint:
+For configured-model gap completion, copy the blank template and fill in your own endpoint. A model call is only made by the configured-model lane; the ordinary analyzer, verifier, benchmark, and reporter use deterministic gates and receipts:
 
-```bash
+~~~bash
 install -m 600 llm.example.json llm.json
 # edit llm.json: base_url, auth_token, model
 python -m numpilot configure-llm --check
-```
+~~~
 
-The CLI is the canonical execution contract. See [Installation](docs/installation.md) for
-air-gapped and hash-bound deployments.
+The complete release procedure is in [Installation](docs/installation.md).
+
+### Interactive workbench
+
+Start the product shell from the activated environment:
+
+~~~bash
+numpilot
+~~~
+
+The startup page shows the NumPilot logo, a model status bar, and five choices:
+new migration, load migration memory, check model, environment self-check, and
+exit. The status starts as `未检查`; run `/modelcheck` (or choose option 3) to
+send one real lightweight probe to `llm.json`, then the bar shows `模型可用` or
+`模型不可用`. Model checks are always explicit; startup does not call the model.
+
+| Command | Purpose |
+| --- | --- |
+| `/help` | Interaction help, status phases, and artifact layout |
+| `/new` | Prompt for an absolute NumPy path and create a fresh session |
+| `/resume` | Load a previous migration memory |
+| `/readreport` | Render the latest `migration-report.md` in the terminal |
+| `/modelcheck` | Manually probe the configured model |
+| `/doctor` | Check CANN, NPU, Python, and AsNumpy |
+| `/status` | Show the current model status |
+| `/migrate /abs/x.py` | Start migration with a known absolute path |
+| `/exit` | Leave NumPilot |
+
+Every migration creates `runs/demo-<timestamp>/` and writes the full session
+there: `source/<program>.py` (a copy of the user's source),
+`migration-plan.md/json` (Analyzer/Planner facts and the model plan),
+`migration-report.md/json`, and `workflow/` receipts and logs. A source without
+NumPy imports or calls is rejected before any model request. Agent status is
+monotonic: a completed role never jumps back to running, and Diagnostics and
+Reporter finish only after their model diagnosis/report step.
+
+### Run the demo
+
+Run from the repository root after activating the NumPilot environment. Configure
+`llm.json` first:
+
+~~~bash
+install -m 600 llm.example.json llm.json
+${EDITOR:-vi} llm.json   # base_url, auth_token, model
+python -m numpilot configure-llm --check
+~~~
+
+Then start the workbench:
+
+~~~bash
+numpilot
+~~~
+
+Inside the shell:
+
+~~~text
+/modelcheck
+/new
+/path/to/numpilot/examples/demo/large_numpy_program.py
+y
+/readreport
+/resume
+/exit
+~~~
+
+Use the absolute path to the checkout's `examples/demo/large_numpy_program.py`.
+`/new` creates a fresh `runs/demo-<timestamp>/`; `y` confirms migration;
+`/readreport` renders the final Markdown report; `/resume` lists the saved
+migration memory.
+
+For non-interactive automation, the same demo can be started directly:
+
+~~~bash
+python -m numpilot interactive-migrate "$PWD/examples/demo/large_numpy_program.py" \
+  --backend npu --benchmark --out "runs/demo-$(date +%Y%m%d-%H%M%S)" --yes --execute-source
+~~~
+
+`llm.example.json` stays blank; `llm.json` is private and git-ignored. Every user
+must create and configure their own copy; do not reuse another user's token or
+endpoint.
 
 ## Architecture
 
@@ -93,6 +191,10 @@ NumPilot's audit runtime (`model_called=false`), not a model-generated operator.
 
 Details: [Vitamin C example](examples/scientific/gpu4pyscf_vitamin_c/README.md).
 
+For a terminal recording of the framework-level six-agent workbench, see [the large NumPy demo](examples/demo/README.md). It shows the live agent panel, model migration receipt, numerical verification, and the strict boundary around NPU performance claims.
+
+The demo is pinned to the release-adjacent AsNumpy component in [components/asnumpy/](components/asnumpy/); its wheel, source snapshot, manifest, and SBOM are the reproducibility lock.
+
 ### 2. 71 programs without API gaps
 
 71 complete NumPy programs using only APIs already covered by AsNumpy; 66 have CPU/NPU
@@ -106,6 +208,8 @@ measurements, with a median speedup of 11.06x. The four fastest by speedup:
 | `H015_real_vecdot_16384x256` | 16,384 × 256 float32; vecdot over both axes | 91.98 / 0.56 | **164.79x** |
 
 Full table: [71-case migration benchmark](examples/scaled_benchmark_20261112/BENCHMARK_TABLE.md).
+
+> **Historical evidence note.** The 2026-11-12 71-case archive is retained as immutable evidence with the runtime recorded in its own README. Its AsNumpy/CANN versions are not the current component baseline. Reproduce the current release-adjacent path with `examples/demo/`, `examples/scientific/`, and `components/asnumpy/`.
 
 ### 3. Programs with real API gaps
 
@@ -124,8 +228,10 @@ End-to-end time starts at the real operator-generation call and includes build, 
 numerical validation, adapter build and tests, complete-program migration, and the CPU/NPU
 benchmark. The migration command itself takes 6–8 s.
 
-All 6/6 programs pass whole-program numerical comparison; 84 adapter tests pass. The full table
-also records `flip` (0.0042x, CPU view baseline) and `argpartition` (0.03x, 512-element
+Five of the six complete-program migrations pass whole-program numerical comparison. The `tril`
+NumPilot migration receipt is retained as a failure (`runtime target snapshot is invalid`); its
+independent strict-NPU benchmark passed at 8.59x, but that benchmark does not certify a complete
+NumPilot migration. All 84 adapter tests pass. The full table also records `flip` (0.0042x, CPU view baseline) and `argpartition` (0.03x, 512-element
 launch-bound) as correctness cases.
 
 Full table: [gap-operator migration archive](examples/gap_archive_20261112/BENCHMARK_TABLE.md).

@@ -40,11 +40,17 @@ import pytest
 from numpilot.interactive_migration import (
     InteractiveMigrationError,
     MAX_MODEL_SOURCE_BYTES,
+    RoleModelResult,
     SourceSnapshot,
     _visible_completion_options,
     build_interpretation_prompt,
+    diagnose_run_with_configured_model,
     failure_report_payload,
+    generate_migration_report_with_configured_model,
     interpret_source_with_configured_model,
+    looks_like_numpy_program,
+    plan_migration_with_configured_model,
+    review_gaps_with_configured_model,
     parse_interpretation,
     read_source_snapshot,
     sanitize_interpretation,
@@ -108,6 +114,14 @@ def test_glm_interpretation_prefers_visible_output_without_changing_other_provid
     }
 
 
+def test_read_source_snapshot_accepts_relative_path(monkeypatch, tmp_path):
+    source = tmp_path / "relative.py"
+    source.write_text("print(1)\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    snapshot = read_source_snapshot(Path("relative.py"))
+    assert Path(snapshot.path) == source
+
+
 def _config(tmp_path: Path) -> Path:
     return save_llm_config(
         "http://model.invalid/v1",
@@ -143,7 +157,7 @@ def _clear_llm_environment(monkeypatch):
         monkeypatch.delenv(name, raising=False)
 
 
-def test_read_source_snapshot_requires_absolute_regular_utf8_and_hashes(tmp_path):
+def test_read_source_snapshot_accepts_relative_regular_utf8_and_hashes(monkeypatch, tmp_path):
     source = tmp_path / "case.py"
     payload = "# demo\nresult = 1\n"
     source.write_text(payload, encoding="utf-8")
@@ -157,8 +171,9 @@ def test_read_source_snapshot_requires_absolute_regular_utf8_and_hashes(tmp_path
     assert snapshot.bytes == len(payload.encode())
     assert snapshot.lines == 2
 
-    with pytest.raises(InteractiveMigrationError, match="absolute"):
-        read_source_snapshot("case.py")
+    monkeypatch.chdir(tmp_path)
+    relative_snapshot = read_source_snapshot("case.py")
+    assert relative_snapshot.path == str(source)
 
     link = tmp_path / "link.py"
     link.symlink_to(source)
@@ -379,3 +394,48 @@ def test_failure_report_is_bounded_and_redacts_error_text(tmp_path, monkeypatch)
     assert payload["elapsed_ms"] == 12
     assert "interactive-secret-token" not in json.dumps(payload)
     assert "Bearer [redacted]" in payload["error_detail"]
+
+
+def test_model_backed_roles_accept_validated_receipt_and_fallback(tmp_path, monkeypatch):
+    _clear_llm_environment(monkeypatch)
+    config = _config(tmp_path)
+    calls = []
+
+    def chat(system, user, max_tokens=0):
+        content = "## 模型输出\n- 模板化结论"
+        calls.append((system, user, max_tokens))
+        return content, _receipt(content)
+
+    role_calls = (
+        (plan_migration_with_configured_model, {"source_path": "/tmp/a.py", "gap_count": 0}),
+        (review_gaps_with_configured_model, {"gap_count": 0, "gap_apis": []}),
+        (diagnose_run_with_configured_model, {"workflow_status": "passed"}),
+        (generate_migration_report_with_configured_model, {"source": {"path": "/tmp/a.py"}}),
+    )
+    for function, facts in role_calls:
+        result = function(facts, config_path=config, chat=chat)
+        assert isinstance(result, RoleModelResult)
+        assert result.status == "model_generated"
+        assert result.actual_remote_call is True
+        assert result.model == "glm-test"
+        assert "模型输出" in result.text
+
+    def fail(*_args, **_kwargs):
+        raise RuntimeError("transport down")
+
+    fallback = plan_migration_with_configured_model(
+        {"source_path": "/tmp/a.py"}, config_path=config, chat=fail
+    )
+    assert fallback.status == "fallback"
+    assert fallback.actual_remote_call is False
+    assert "确定性回退" in fallback.text
+    assert "RuntimeError" in (fallback.error or "")
+
+
+def test_numpy_source_admission_rejects_non_numpy_and_syntax_errors():
+    assert looks_like_numpy_program("import numpy as np\nx = np.ones(4)\n")
+    assert looks_like_numpy_program("from numpy import ones\nx = ones(4)\n")
+    assert looks_like_numpy_program("import numpy\nx = numpy.zeros(4)\n")
+    assert not looks_like_numpy_program("result = 1\n")
+    assert not looks_like_numpy_program("def broken(:\n")
+    assert not looks_like_numpy_program("")

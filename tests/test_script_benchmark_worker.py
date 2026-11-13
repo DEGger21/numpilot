@@ -290,6 +290,20 @@ def test_validate_migration_report_returns_all_true_gates():
     assert all(gates.values())
 
 
+def test_validate_migration_report_accepts_scoped_profile_bound_artifact():
+    report = _report()
+    report["status"] = "migrated_scoped_npu"
+    report["strict_npu"] = False
+
+    gates = worker._validate_migration_report(
+        report,
+        source_sha256=SHA_B,
+        script_sha256=SHA_A,
+        runtime_identity_sha256=SHA_C,
+    )
+    assert all(gates.values())
+
+
 def test_validate_migration_report_rejects_scoped_or_non_llm_artifact():
     report = _report()
     report["status"] = "migrated_scoped_npu"

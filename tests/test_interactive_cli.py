@@ -35,6 +35,7 @@ import numpilot.__main__ as cli
 from numpilot.interactive_migration import (
     InteractiveMigrationError,
     InterpretationResult,
+    RoleModelResult,
     read_source_snapshot,
 )
 from numpilot.qualified_analysis import analyze_qualified_script
@@ -79,6 +80,14 @@ def _args(source, **overrides):
     )
     values.update(overrides)
     return SimpleNamespace(**values)
+
+
+def test_interactive_session_output_accepts_relative_path(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    args = SimpleNamespace(out="runs/session")
+    target = cli._interactive_new_session_root(args)
+    assert target == (tmp_path / "runs/session").absolute()
+    assert target.is_dir()
 
 
 def _interpretation(source):
@@ -235,7 +244,7 @@ def test_final_summary_ignores_malformed_worker_shape_without_crashing(tmp_path,
 
 def test_interactive_command_decline_never_calls_workflow(monkeypatch, tmp_path, capsys):
     source = tmp_path / "case.py"
-    source.write_text("result = 1\n", encoding="utf-8")
+    source.write_text("import numpy as np\nresult = np.ones(4)\n", encoding="utf-8")
     args = _args(source)
     monkeypatch.setattr(cli.sys, "stdin", _TtyInput("n\n"))
     snapshot = read_source_snapshot(source)
@@ -270,11 +279,11 @@ def test_interactive_command_decline_never_calls_workflow(monkeypatch, tmp_path,
     assert "未开始迁移" in capsys.readouterr().out
 
 
-def test_interactive_command_interpretation_failure_stops_before_confirmation(
+def test_interactive_command_interpretation_failure_falls_back_and_continues(
     monkeypatch, tmp_path, capsys
 ):
     source = tmp_path / "case.py"
-    source.write_text("result = 1\n", encoding="utf-8")
+    source.write_text("import numpy as np\nresult = np.ones(4)\n", encoding="utf-8")
     args = _args(source)
     snapshot = read_source_snapshot(source)
     monkeypatch.setattr(cli.sys, "stdin", _TtyInput("y\n"))
@@ -293,13 +302,32 @@ def test_interactive_command_interpretation_failure_stops_before_confirmation(
         "interpret_source_with_configured_model",
         lambda *args, **kwargs: (_ for _ in ()).throw(InteractiveMigrationError("model failed")),
     )
+    monkeypatch.setattr(
+        interactive_module,
+        "plan_migration_with_configured_model",
+        lambda *args, **kwargs: RoleModelResult(
+            role="planner", status="fallback", text="确定性计划"
+        ),
+    )
+    monkeypatch.setattr(
+        interactive_module,
+        "review_gaps_with_configured_model",
+        lambda *args, **kwargs: RoleModelResult(
+            role="gap_filler", status="fallback", text="确定性缺口计划"
+        ),
+    )
     monkeypatch.setattr(cli, "_interactive_private_json", lambda *args, **kwargs: Path(args[0]))
-    monkeypatch.setattr(cli, "run_ordinary_workflow", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("workflow must not run")), raising=False)
     import numpilot.workflow as workflow_module
-    monkeypatch.setattr(workflow_module, "run_ordinary_workflow", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("workflow must not run")))
 
-    assert cli._cmd_interactive_migrate(args) == 4
-    assert "未进入迁移/执行阶段" in capsys.readouterr().err
+    def stop_after_confirmation(*_args, **_kwargs):
+        raise workflow_module.WorkflowError("sentinel", "stop after fallback")
+
+    monkeypatch.setattr(workflow_module, "run_ordinary_workflow", stop_after_confirmation)
+
+    assert cli._cmd_interactive_migrate(args) == 2
+    stderr = capsys.readouterr().err
+    assert "使用确定性回退继续" in stderr
+    assert "sentinel" in stderr
 
 
 def test_noninteractive_without_yes_stops_before_model_call(
@@ -308,7 +336,7 @@ def test_noninteractive_without_yes_stops_before_model_call(
     """A redirected CLI must fail closed before touching configured LLM state."""
 
     source = tmp_path / "case.py"
-    source.write_text("result = 1\n", encoding="utf-8")
+    source.write_text("import numpy as np\nresult = np.ones(4)\n", encoding="utf-8")
     args = _args(source, non_interactive=True, yes=False)
     monkeypatch.setattr(cli.sys, "stdin", io.StringIO())
     snapshot = read_source_snapshot(source)
@@ -423,7 +451,7 @@ def test_add_one_draft_launches_installed_package_helper(monkeypatch, tmp_path):
 
 def test_generic_unintegrated_gap_stops_before_workflow(monkeypatch, tmp_path):
     source = tmp_path / "case.py"
-    source.write_text("result = 1\n", encoding="utf-8")
+    source.write_text("import numpy as np\nresult = np.ones(4)\n", encoding="utf-8")
     args = _args(
         source,
         out=str(tmp_path / "session"),

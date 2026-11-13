@@ -41,7 +41,7 @@ def test_plain_events_are_immediate_ordered_and_keep_six_canonical_roles():
         assert view.rows['code_migrator']['state'] == 'pending'
     output = stream.getvalue()
     assert output.index('解析代码') < output.index('解析完成') < output.index('数值验证失败')
-    assert '[验证步骤]' in output and '规则处理 · 无模型' in output
+    assert '[验证步骤]' in output and '规则引擎 · 确定性' in output
     assert '真实调用' not in output and '\x1b' not in output
     assert view.value == 'error'
 
@@ -54,11 +54,45 @@ def test_execution_modes_follow_events_not_engine_assumptions():
         view.emit('code_migrator', 'completed', '已取得迁移代码', execution_mode='llm')
         view.emit('gap_filler', 'blocked', '等待外部 Codex 接管', execution_mode='external')
     lines = stream.getvalue().splitlines()
-    assert '无模型' in lines[0] and '真实调用' not in lines[0]
+    assert '无模型' not in lines[0] and '规则引擎 · 确定性' in lines[0]
     assert '真实调用' in lines[1]
     assert '外部代理' in lines[-1] and '已阻断' in lines[-1]
     assert view.rows['diagnostics']['state'] == 'pending'
     assert view.value == 'warn'
+
+
+def test_workflow_verification_completion_closes_diagnostics_and_step():
+    stream = io.StringIO()
+    with cli_ui.AgentProgress(stream=stream) as view:
+        view.emit('analyzer', 'completed', '分析完成')
+        view.emit('planner', 'completed', '规划完成')
+        view.emit('gap_filler', 'skipped', '无缺口')
+        view.emit('code_migrator', 'completed', '迁移完成', execution_mode='llm')
+        view.emit(None, 'running', '执行原程序与迁移程序的独立数值验证', component='workflow')
+        view.emit(None, 'completed', '阶段结束，回执与日志已保存', component='workflow')
+        view.emit(None, 'running', '执行独立性能测量', component='workflow')
+        view.emit(None, 'completed', '阶段结束，回执与日志已保存', component='workflow')
+        view.emit('reporter', 'completed', '报告完成')
+    assert view.rows['diagnostics']['state'] == 'completed'
+    assert '性能测量完成' in view.rows['diagnostics']['message']
+    assert view.steps['verification']['state'] == 'completed'
+    assert '性能测量完成' in view.steps['verification']['message']
+    assert '已阻断' not in stream.getvalue()
+
+
+def test_model_role_seed_survives_later_static_child_events():
+    stream = io.StringIO()
+    with cli_ui.AgentProgress(stream=stream) as view:
+        view.mark_model_role('analyzer', '模型解读完成', elapsed_seconds=1.25)
+        view.emit('analyzer', 'completed', '静态分析完成')
+        view.emit('planner', 'completed', '规则规划完成')
+        view.mark_model_role('gap_filler', '模型不可用，已回退', mode='static')
+    assert view.rows['analyzer']['mode'] == 'llm'
+    assert view.rows['analyzer']['message'] == '模型解读完成'
+    assert view.rows['analyzer']['state'] == 'completed'
+    assert view.rows['analyzer']['elapsed'] >= 1.25
+    assert view.rows['planner']['mode'] == 'static'
+    assert view.rows['gap_filler']['mode'] == 'static'
 
 
 def test_elapsed_uses_monotonic_clock_and_freezes_terminal_state(monkeypatch):
@@ -215,7 +249,7 @@ def test_contract_cli_ast_shim_emits_real_role_events_without_model(tmp_path):
     assert result.returncode == 0, result.stderr + result.stdout
     assert 'Analyzer' in result.stderr and 'Reporter' in result.stderr
     assert '执行中' in result.stderr and '验证步骤' in result.stderr
-    assert '规则处理 · 无模型' in result.stderr and '真实调用' not in result.stderr
+    assert '规则引擎 · 确定性' in result.stderr and '真实调用' not in result.stderr
     assert '[报告]' in result.stdout and '\x1b' not in result.stderr
 
 
@@ -385,7 +419,8 @@ def test_bench_cpu_boundary_events_do_not_start_background_live_refresh(tmp_path
         assert views[0].dynamic is False and views[0]._live is None
         calls.append((file, out, threads))
         return 0
-    monkeypatch.setattr(cli, 'run_cpu_baseline', baseline)
+    import numpilot.bench as bench
+    monkeypatch.setattr(bench, 'run_cpu_baseline', baseline)
     source, out = tmp_path / 'source.py', tmp_path / 'baseline'
     assert cli.main(['bench-cpu', str(source), '--out', str(out), '--cpu-threads', '1']) == 0
     assert calls == [(str(source), str(out), cli.parse_cpu_threads('1'))]
@@ -404,7 +439,9 @@ def test_bench_npu_wrapper_preserves_return_code_arguments_and_only_system_event
                         SimpleNamespace(emit_child_event=lambda event: received.append(event) or True))
     monkeypatch.setattr(cli, '_qualified_runtime_inputs', lambda args, name: (backend, profiles))
     monkeypatch.setattr(cli, '_preflight', lambda name, skip: None)
-    monkeypatch.setattr(cli, '_make_engine', lambda name: engine)
+    import numpilot.bench as bench
+    import numpilot.orchestrator as orchestrator
+    monkeypatch.setattr(orchestrator, '_make_engine', lambda name: engine)
     def benchmark(file, out, **kwargs):
         assert len(received) == 1 and received[0].state == 'running'
         assert kwargs == {'engine': engine, 'threshold': 123, 'allow_cpu_fallback': False,
@@ -412,7 +449,7 @@ def test_bench_npu_wrapper_preserves_return_code_arguments_and_only_system_event
                           'custom_contracts': None}
         calls.append((file, out))
         return code
-    monkeypatch.setattr(cli, 'run_npu_compare', benchmark)
+    monkeypatch.setattr(bench, 'run_npu_compare', benchmark)
     source, out = tmp_path / 'source.py', tmp_path / 'benchmark'
     assert cli.main(['bench-npu', str(source), '--out', str(out), '--engine', 'ast',
                      '--threshold', '123', '--skip-env-check']) == code
@@ -420,3 +457,44 @@ def test_bench_npu_wrapper_preserves_return_code_arguments_and_only_system_event
     assert [(event.role, event.component, event.state) for event in received] == [
         (None, 'workflow', 'running'), (None, 'workflow', state)]
     assert '严格 NPU 性能' in received[0].message
+
+
+def test_agent_phase_status_bar_transitions():
+    stream = io.StringIO()
+    with cli_ui.AgentProgress(stream=stream) as view:
+        view.set_phase('planner', '响应中', '等待配置模型返回')
+        assert view.rows['planner']['state'] == 'running'
+        assert view.rows['planner']['phase'] == '响应中'
+        assert view.rows['planner']['message'] == '等待配置模型返回'
+        view.set_phase('planner', '生成中', '已收到响应，正在校验')
+        assert view.rows['planner']['phase'] == '生成中'
+        view.emit('planner', 'completed', '模型计划已生成', execution_mode='llm')
+    assert view.rows['planner']['phase'] is None
+    assert view.rows['planner']['state'] == 'completed'
+
+
+def test_deferred_roles_never_regress_and_finalize_after_model_step():
+    stream = io.StringIO()
+    with cli_ui.AgentProgress(
+        stream=stream, defer_final_roles=True
+    ) as view:
+        view.mark_model_role('analyzer', '模型解读完成', elapsed_seconds=1.0)
+        view.emit('analyzer', 'running', '静态重跑')
+        view.emit('analyzer', 'completed', '静态分析完成')
+        assert view.rows['analyzer']['state'] == 'completed'
+        assert view.rows['analyzer']['message'] == '模型解读完成'
+
+        view.emit('reporter', 'completed', '报告子步骤完成')
+        assert view.rows['reporter']['state'] == 'running'
+        assert view.rows['reporter']['phase'] == '汇总中'
+
+        view.emit(None, 'running', '执行原程序与迁移程序的独立数值验证', component='workflow')
+        view.emit(None, 'completed', '阶段结束，回执与日志已保存', component='workflow')
+        assert view.rows['diagnostics']['state'] == 'running'
+        assert view.rows['diagnostics']['phase'] == '校验中'
+
+        view.finalize_role('diagnostics', '模型诊断完成')
+        view.finalize_role('reporter', '模型迁移报告已生成')
+        assert view.rows['diagnostics']['state'] == 'completed'
+        assert view.rows['reporter']['state'] == 'completed'
+        assert view.rows['analyzer']['state'] == 'completed'

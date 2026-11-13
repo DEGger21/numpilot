@@ -32,37 +32,130 @@ NumPilot 是一个把完整 NumPy 程序端到端迁移为昇腾 NPU 上可执�
 
 ## 快速安装与使用
 
-**环境要求：** 已安装 Python、NumPy 与 AsNumpy。端侧执行需要 CANN 和昇腾 NPU；分析与
-shim 验证不需要设备。
+NumPilot 提供两条安装路径。要复现比赛展示样例，请在昇腾服务器上使用静态组件路径；没有 CANN 的开发机使用 CPU/shim 路径。
 
-```bash
-git clone --branch main --depth 1 https://gitcode.com/li-xingHIT/numpilot.git
+**昇腾静态组件路径要求：** Linux AArch64、CPython 3.12、昇腾设备、CANN 9.0 或更高版本，以及当前用户拥有的虚拟环境目录。下方记录的 demo 结果使用经过审计的 CANN 9.2.0-beta.2 profile。
+
+~~~bash
+git clone --branch develop --depth 1 https://gitcode.com/li-xingHIT/numpilot.git
 cd numpilot
-python3 -m venv .venv && . .venv/bin/activate
-python -m pip install .
-python -m numpilot doctor --backend npu
-```
+mkdir -p "$HOME/.local/venvs"
+./install.sh --allow-network \
+  --python "$(command -v python3.12)" \
+  --asnumpy-component "$PWD/components/asnumpy" \
+  --cann-env /usr/local/Ascend/cann-9.2.0-beta.2/set_env.sh \
+  --venv "$HOME/.local/venvs/numpilot" \
+  --persistent-root "$HOME/.local/share/numpilot"
+. "$HOME/.local/share/numpilot/activate-numpilot.sh"
+python -m numpilot bootstrap --verify --json
+python -m numpilot doctor --backend npu --json
+~~~
 
-迁移并验证一个完整程序：
+安装脚本会安装 components/asnumpy 中随仓库提供的精确 wheel，写入带哈希绑定的 bootstrap receipt，并检查 CANN/NPU 运行时；不会从网络下载浮动版本的 AsNumpy。不要在不同机器之间复制虚拟环境。
 
-```bash
+**CPU/shim 开发路径：**
+
+~~~bash
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -e '.[dev]'
+python -m numpilot doctor --backend shim
+python -m pytest -q -p no:cacheprovider tests/test_install_script.py tests/test_bootstrap.py
+~~~
+
+迁移并验证完整程序：
+
+~~~bash
 numpilot analyze program.py
 numpilot migrate program.py --out runs/demo
 numpilot verify program.py \
   --migration-report runs/demo/migration/script-migration-report.json \
   --output result --out runs/demo/verification.json
-```
+~~~
 
-如需使用配置模型补全缺口算子，复制空白模板并填入自己的服务信息：
+如需使用配置模型补全缺口算子，复制模板并填入自己的服务信息。只有配置模型路径会发起模型请求；普通分析、验证、benchmark 和报告阶段使用确定性门禁与回执：
 
-```bash
+~~~bash
 install -m 600 llm.example.json llm.json
 # 编辑 llm.json：base_url、auth_token、model
 python -m numpilot configure-llm --check
-```
+~~~
 
-CLI 是唯一的正式执行契约。离线安装与哈希绑定部署见
-[安装指南](docs/installation.zh-CN.md)。
+完整安装流程见[安装指南](docs/installation.zh-CN.md)。
+
+### 交互式工作台
+
+激活 NumPilot 环境后，从仓库根目录启动：
+
+~~~bash
+numpilot
+~~~
+
+启动页包含 NumPilot logo、模型状态栏和五个选项：新建迁移、加载迁移记忆、
+检查模型、环境自检、退出。模型状态初始为 `未检查`；输入 `/modelcheck`（或选择
+选项 3）会向 `llm.json` 配置的模型真实发送一次轻量探测，随后显示 `模型可用`
+或 `模型不可用`。模型检查始终由用户显式触发，启动页本身不会调用模型。
+
+| 命令 | 作用 |
+| --- | --- |
+| `/help` | 查看交互说明、状态规范和产物布局 |
+| `/new` | 输入 NumPy 程序绝对路径并创建全新会话 |
+| `/resume` | 加载历史迁移记忆 |
+| `/readreport` | 在终端渲染最近一次 `migration-report.md` |
+| `/modelcheck` | 手动检查配置模型 |
+| `/doctor` | 检查 CANN、NPU、Python 与 AsNumpy |
+| `/status` | 查看当前模型状态 |
+| `/migrate /abs/x.py` | 已知绝对路径时直接开始迁移 |
+| `/exit` | 退出 NumPilot |
+
+每次迁移都会创建 `runs/demo-<时间戳>/`，并落盘本次会话的全部内容：
+`source/<程序名>.py`（用户源码副本）、`migration-plan.md/json`（Analyzer/Planner
+事实与模型迁移计划）、`migration-report.md/json`，以及 `workflow/` 回执与日志。
+没有 NumPy 导入或调用的程序会在任何模型请求之前被拒绝。智能体状态是单调的：
+已完成的角色不会跳回执行中；Diagnostics 和 Reporter 在模型诊断/报告步骤完成后
+才显示完成。
+
+### 运行 demo
+
+激活 NumPilot 环境后，在仓库根目录执行。先配置 `llm.json`：
+
+~~~bash
+install -m 600 llm.example.json llm.json
+${EDITOR:-vi} llm.json   # 填写 base_url、auth_token、model
+python -m numpilot configure-llm --check
+~~~
+
+然后启动工作台：
+
+~~~bash
+numpilot
+~~~
+
+在交互界面中依次输入：
+
+~~~text
+/modelcheck
+/new
+/path/to/numpilot/examples/demo/large_numpy_program.py
+y
+/readreport
+/resume
+/exit
+~~~
+
+这里要填写仓库中 `examples/demo/large_numpy_program.py` 的绝对路径。
+`/new` 会创建全新的 `runs/demo-<时间戳>/`；`y` 确认开始迁移；`/readreport`
+在终端渲染最终 Markdown 报告；`/resume` 查看保存的迁移记忆。
+
+如需非交互自动化，也可以直接执行同一条 demo 流程：
+
+~~~bash
+python -m numpilot interactive-migrate "$PWD/examples/demo/large_numpy_program.py" \
+  --backend npu --benchmark --out "runs/demo-$(date +%Y%m%d-%H%M%S)" --yes --execute-source
+~~~
+
+`llm.example.json` 必须保持空白；`llm.json` 是被 git 忽略的私有文件。每位使用者
+都要创建并配置自己的副本，不要复用其他人的 token 或 endpoint。
 
 ## 系统架构
 
@@ -92,6 +185,10 @@ SCF（约 294.7 s）仍在 CPU 上执行；加速比只覆盖格点密度子阶�
 
 详见：[维生素 C 案例](examples/scientific/gpu4pyscf_vitamin_c/README.md)。
 
+终端录制和框架级六智能体工作台见：[大规模 NumPy 演示](examples/demo/README.md)。其中展示实时智能体面板、模型迁移回执、数值验证，以及严格 NPU 性能口径。
+
+该演示统一使用 [components/asnumpy/](components/asnumpy/) 中的静态 AsNumpy 组件；wheel、源码快照、manifest 和 SBOM 共同构成可复现锁。
+
 ### 2. 71 个不含缺口 API 的程序
 
 71 个只使用 AsNumpy 已覆盖 API 的完整 NumPy 程序；其中 66 个有 CPU/NPU 实测数据，
@@ -105,6 +202,8 @@ SCF（约 294.7 s）仍在 CPU 上执行；加速比只覆盖格点密度子阶�
 | `H015_real_vecdot_16384x256` | 16,384 × 256 float32；沿两个轴做 vecdot | 91.98 / 0.56 | **164.79x** |
 
 完整清单：[71 例迁移性能表](examples/scaled_benchmark_20261112/BENCHMARK_TABLE.md)。
+
+> **历史证据说明。** 2026-11-12 的 71 例归档作为不可变证据保留，运行环境以归档自身 README 的记录为准；其中的 AsNumpy/CANN 版本不是当前组件基线。当前版本请使用 `examples/demo/`、`examples/scientific/` 与 `components/asnumpy/` 复现。
 
 ### 3. 含真实缺口 API 的程序
 
@@ -122,7 +221,8 @@ SCF（约 294.7 s）仍在 CPU 上执行；加速比只覆盖格点密度子阶�
 完整端到端从真实算子生成调用开始，包含构建/修复/部署/数值验证、适配层构建与单测、
 完整程序迁移以及 CPU/NPU 基准；迁移命令本身为 6–8 s。
 
-6/6 个程序通过全程序数值对拍，适配层单测 84 项全部通过。完整表同时保留 `flip`
+5/6 个程序通过全程序数值对拍；`tril` 的 NumPilot 完整迁移回执保留为失败（`runtime target snapshot is invalid`），
+但其独立 strict-NPU benchmark 以 8.59x 通过，不能因此视为完整迁移成功。适配层单测 84 项全部通过。完整表同时保留 `flip`
 （0.0042x，CPU view 基线）与 `argpartition`（0.03x，512 元素受 launch 限制）作为
 正确性案例。
 
