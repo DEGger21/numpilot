@@ -406,8 +406,19 @@ def _audit_suffix(
     for node in ast.walk(tree):
         if isinstance(node, (ast.AugAssign, ast.NamedExpr)):
             raise _WorkerFailure("forbidden_suffix_statement", "script_audit")
-        if isinstance(node, (ast.BinOp, ast.UnaryOp, ast.BoolOp, ast.Compare)):
+        if isinstance(node, (ast.BinOp, ast.BoolOp, ast.Compare)):
             raise _WorkerFailure("untraced_suffix_operation", "script_audit")
+        if isinstance(node, ast.UnaryOp):
+            # A literal sign in a keyword argument (for example
+            # ``neginf=-4.0``) is constant folding, not an untraced array
+            # operation.  Array unary operations remain rejected.
+            if not (
+                isinstance(node.op, (ast.UAdd, ast.USub))
+                and isinstance(node.operand, ast.Constant)
+                and isinstance(node.operand.value, (int, float))
+                and not isinstance(node.operand.value, bool)
+            ):
+                raise _WorkerFailure("untraced_suffix_operation", "script_audit")
         if isinstance(node, ast.Call):
             path = _attribute_path(node.func)
             if path and path[-1] in _FORBIDDEN_SUFFIX_CALLS:

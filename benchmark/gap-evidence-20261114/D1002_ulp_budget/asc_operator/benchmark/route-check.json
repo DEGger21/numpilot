@@ -1,0 +1,28 @@
+{
+  "comparisons": {
+    "absolute": {
+      "consistent": true,
+      "dtype": "float32",
+      "max_abs_diff": 0.0,
+      "shape": [
+        1024,
+        1024
+      ]
+    },
+    "relative": {
+      "consistent": true,
+      "dtype": "float32",
+      "max_abs_diff": 2.2737367544323206e-13,
+      "shape": [
+        1024,
+        1024
+      ]
+    }
+  },
+  "is_numpy_alias": false,
+  "ok": true,
+  "op": "spacing",
+  "public_module": "asnumpy.custom_ops",
+  "public_name": "spacing",
+  "schema": "numpilot.generated-case-route.v1"
+}

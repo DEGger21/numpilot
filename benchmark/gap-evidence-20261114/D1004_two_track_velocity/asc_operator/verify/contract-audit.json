@@ -1,0 +1,30 @@
+{
+  "schema": "numpilot.generated-asc-contract-audit.v1",
+  "draft": "benchmark/cases/D1_partial_low_kernel/D1004_two_track_velocity/numpilot-work/asc_operator/custom-v2/gaps/diff-5c181afd5736f1ee/draft",
+  "structs": {
+    "DiffTilingData": [
+      [
+        "totalNum",
+        "blockFactor",
+        "ubFactor",
+        "rows",
+        "cols",
+        "outCols",
+        "axis",
+        "reserved"
+      ]
+    ]
+  },
+  "kernel_entries": [
+    [
+      "op_kernel/diff_arch22.cpp",
+      "diff"
+    ]
+  ],
+  "tiling_key_params": [
+    "D_T_X"
+  ],
+  "errors": [],
+  "warnings": [],
+  "ok": true
+}

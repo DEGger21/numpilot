@@ -22,9 +22,12 @@ _ARRAY_ONLY_BINARY_OPS = frozenset({
 _SCALAR_SECOND_BINARY_OPS = frozenset({
     "equal", "greater", "greater_equal", "less", "less_equal", "not_equal",
 })
+# ``*_like`` creators inherit dtype from their prototype.  Their AsNumpy
+# signatures are ``(prototype, ..., dtype=None)``, so a dtype-less call is a
+# valid contract and must not be rejected as a missing argument.  Constructors
+# that allocate from an explicit shape still require a static dtype below.
 _EXPLICIT_DTYPE_CREATION_OPS = frozenset({
-    "empty", "empty_like", "eye", "full", "full_like", "identity", "ones",
-    "ones_like", "zeros", "zeros_like",
+    "empty", "eye", "full", "identity", "ones", "zeros",
 })
 _EXPLICIT_DTYPE_POSITION = {
     "empty": 1,
@@ -128,7 +131,7 @@ def _build_asnumpy_call_contracts():
         "empty_like",
         2,
         ("prototype", "dtype"),
-        ("prototype", "dtype"),
+        ("prototype",),
         ("prototype", "dtype"),
     )
     # NumPy's second positional eye argument is M, while AsNumpy's is dtype.
@@ -141,7 +144,7 @@ def _build_asnumpy_call_contracts():
         ("shape", None, "dtype"),
     )
     add(
-        "full_like", 3, ("dtype",), (None, None, "dtype"),
+        "full_like", 3, ("dtype",), (None, None),
         (None, None, "dtype")
     )
     add(
@@ -166,7 +169,7 @@ def _build_asnumpy_call_contracts():
         "ones_like zeros_like",
         2,
         ("dtype",),
-        required=(None, "dtype"),
+        required=(None,),
         positional_names=(None, "dtype"),
     )
 

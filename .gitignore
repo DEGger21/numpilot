@@ -29,3 +29,6 @@ evidence/**/llm.json
 # llm.json 永不提交；llm.example.json 是仓库内的空白模板。
 llm.json
 .llm-*.tmp
+
+# Benchmark experiment artifacts stay on the server; reports are sanitized into docs.
+numpilot-work/

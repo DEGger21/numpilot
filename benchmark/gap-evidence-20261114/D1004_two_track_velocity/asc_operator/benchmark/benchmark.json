@@ -1,0 +1,90 @@
+{
+  "schema": "numpilot.benchmark-case-perf",
+  "version": 1,
+  "original": "benchmark/cases/D1_partial_low_kernel/D1004_two_track_velocity/numpilot-work/asc_operator/numpy_source.py",
+  "migrated": "benchmark/cases/D1_partial_low_kernel/D1004_two_track_velocity/numpilot-work/asc_operator/custom-v2/bench-v1/migrated.py",
+  "core": 0,
+  "warmup": 3,
+  "samples": 20,
+  "cpu": {
+    "samples_ns": [
+      29675611,
+      27663876,
+      27890847,
+      24384759,
+      34233589,
+      26746805,
+      34141629,
+      26296984,
+      30807693,
+      27015565,
+      26093983,
+      29147979,
+      26568704,
+      31183753,
+      26002273,
+      30710482,
+      26483254,
+      26516194,
+      29362439,
+      24948471
+    ],
+    "median_ms": 27.3397205,
+    "p10_ms": 24.948471,
+    "p90_ms": 34.141629
+  },
+  "npu": {
+    "samples_ns": [
+      8100016,
+      7756666,
+      8089877,
+      7603286,
+      8119127,
+      8358688,
+      8175057,
+      7731225,
+      8217597,
+      8146916,
+      8290897,
+      7834106,
+      8360557,
+      7916817,
+      8371587,
+      7895136,
+      8866098,
+      8096467,
+      8372467,
+      8200347
+    ],
+    "median_ms": 8.1330215,
+    "p10_ms": 7.731225,
+    "p90_ms": 8.372467
+  },
+  "comparison": {
+    "consistent": true,
+    "comparisons": {
+      "residual": {
+        "shape_equal": true,
+        "dtype_equal": true,
+        "max_abs_diff": 0.0,
+        "consistent": true,
+        "n_elements": 1047552
+      },
+      "bounded": {
+        "shape_equal": true,
+        "dtype_equal": true,
+        "max_abs_diff": 0.0,
+        "consistent": true,
+        "n_elements": 1047552
+      },
+      "rmse": {
+        "shape_equal": true,
+        "dtype_equal": true,
+        "max_abs_diff": 5.960464477539063e-08,
+        "consistent": true,
+        "n_elements": 1024
+      }
+    }
+  },
+  "speedup": 3.361569928224092
+}

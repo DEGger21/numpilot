@@ -1,0 +1,590 @@
+{
+  "schema": "numpilot.asnumpy-adapter",
+  "schema_version": 1,
+  "gap_id": "roll-18cf7f900d51d230",
+  "status": "unverified_candidate",
+  "claim_level": "unverified_candidate_only",
+  "qualified": false,
+  "api_name": "roll",
+  "stem": "roll",
+  "op_type": "Roll",
+  "numpy_api": "numpy.roll",
+  "qualified_api": "numpy.roll",
+  "asnumpy_api": "asnumpy.roll",
+  "target_soc": "Ascend910B3",
+  "cann_version": "9.2.0-beta.2",
+  "source": {
+    "source_path": "benchmark/cases/D1_partial_low_kernel/D1009_periodic_transport/numpilot-work/asc_operator/numpy_source.py",
+    "source_sha256": "60df6d65adc2b7b6326fe4f40abee1261edf9eea18ee7ef53597ad233a9cdb64",
+    "callsite_line": 9,
+    "callsite_col": 15
+  },
+  "signature": {
+    "parameter_order": [
+      "input",
+      "shift",
+      "axis"
+    ],
+    "positional_args": 2,
+    "positional": [
+      "input",
+      "shift"
+    ],
+    "keyword_args": [
+      "axis"
+    ],
+    "keyword_only": [
+      "axis"
+    ],
+    "required": [
+      "input",
+      "shift",
+      "axis"
+    ],
+    "allow_third_positional": false,
+    "allow_keyword_input": false,
+    "allow_keyword_shift": false,
+    "allow_axis_omitted": false,
+    "accepted_call_form": "asnumpy.roll(input, shift, axis=1)",
+    "canonical_call_form": "asnumpy.roll(input, 1, axis=1)",
+    "signature_variants": [
+      {
+        "positional_args": 2,
+        "keyword_args": [
+          "axis"
+        ]
+      }
+    ]
+  },
+  "name_mapping": {
+    "public_python": "asnumpy.roll",
+    "public_module": "asnumpy",
+    "public_symbol": "roll",
+    "python_wrapper_module": "asnumpy_adapter.roll",
+    "python_wrapper_symbol": "roll",
+    "python_wrapper_qualified": "asnumpy_adapter.roll.roll",
+    "pybind_module": "asnumpy_adapter._C",
+    "pybind_symbol": "roll",
+    "pybind_qualified": "asnumpy_adapter._C.roll",
+    "native_entry": "roll",
+    "native_op_type": "Roll",
+    "kernel_entry": "roll",
+    "acl_l0": {
+      "header": "roll.h",
+      "source": "roll.cpp",
+      "get_workspace_size": null,
+      "execute": "roll",
+      "execute_kind": "internal_l0_launcher"
+    },
+    "acl_l2": {
+      "header": "aclnn_roll.h",
+      "source": "aclnn_roll.cpp",
+      "get_workspace_size": "aclnnRollGetWorkspaceSize",
+      "execute": "aclnnRoll"
+    }
+  },
+  "public_binding": {
+    "module": "asnumpy",
+    "symbol": "roll",
+    "delegates_to": "asnumpy_adapter.roll.roll",
+    "tests_must_call": "asnumpy.roll",
+    "private_only_call_is_insufficient": true
+  },
+  "runtime_contract": {
+    "tensor_inputs": [
+      {
+        "name": "input",
+        "order": 0,
+        "dtype": "float32",
+        "shape": [
+          1024,
+          1024
+        ],
+        "rank": 2,
+        "layout": "c_contiguous",
+        "strides": [
+          1024,
+          1
+        ],
+        "broadcast": false
+      }
+    ],
+    "scalar_inputs": [
+      {
+        "name": "shift",
+        "order": 1,
+        "kind": "integer",
+        "acl_type": "int64_t",
+        "value": 1
+      },
+      {
+        "name": "axis",
+        "order": 2,
+        "kind": "integer",
+        "acl_type": "int64_t",
+        "value": 1
+      }
+    ],
+    "tensor_outputs": [
+      {
+        "name": "output",
+        "order": 0,
+        "dtype": "float32",
+        "shape": [
+          1024,
+          1024
+        ],
+        "rank": 2,
+        "layout": "c_contiguous",
+        "strides": [
+          1024,
+          1
+        ],
+        "return_structure": "single_tensor"
+      }
+    ],
+    "tensor_input_count": 1,
+    "tensor_output_count": 1,
+    "scalar_attribute_count": 2,
+    "broadcast": "none",
+    "input_mutation": "forbidden",
+    "output_alias_of_input": false,
+    "acl_l2_get_workspace_size_parameter_order": [
+      "input",
+      "shift",
+      "axis",
+      "output",
+      "workspaceSize",
+      "executor"
+    ],
+    "acl_l2_execute_parameter_order": [
+      "workspace",
+      "workspaceSize",
+      "executor",
+      "stream"
+    ],
+    "acl_l0_execute_parameter_order": [
+      "input",
+      "shift",
+      "axis",
+      "output",
+      "executor"
+    ],
+    "kernel_parameter_order": [
+      "input",
+      "output",
+      "workspace",
+      "tiling"
+    ],
+    "kernel_stages": [
+      "Init",
+      "CopyIn",
+      "Compute",
+      "CopyOut"
+    ],
+    "synchronization": {
+      "required": true,
+      "operation": "aclrtSynchronizeStream",
+      "point": "after aclnnRoll execute",
+      "check_return_code": true
+    },
+    "error_handling": {
+      "check_acl_create_and_executor": true,
+      "check_acl_tensor_conversion": true,
+      "check_get_workspace_size_status": true,
+      "check_execute_status": true,
+      "check_stream_synchronize_status": true,
+      "raise_on_error": true
+    },
+    "fallback": "forbidden",
+    "implicit_dtype_cast": "forbidden",
+    "host_numpy_fallback": "forbidden"
+  },
+  "infer_shape": {
+    "output_count": 1,
+    "output_shape": "same_as_input",
+    "output_dtype": "same_as_input",
+    "broadcast": false,
+    "layout": "c_contiguous",
+    "return_structure": "single_tensor"
+  },
+  "declared_gap_spec_rules": {
+    "dtype_rules": [
+      "runtime_profile_required"
+    ],
+    "shape_rules": [
+      "runtime_profile_required"
+    ],
+    "unresolved_markers_are_not_dtypes": true,
+    "runtime_profiles_remain_authoritative": true
+  },
+  "supported_profiles": [
+    {
+      "id": "observed_roll_float32_1024x1024_axis1_shift1",
+      "source": "observed_cpu_execution",
+      "admitted": true,
+      "input_dtype": "float32",
+      "input_shape": [
+        1024,
+        1024
+      ],
+      "input_rank": 2,
+      "input_layout": "c_contiguous",
+      "input_strides": [
+        1024,
+        1
+      ],
+      "output_dtype": "float32",
+      "output_shape": [
+        1024,
+        1024
+      ],
+      "output_rank": 2,
+      "output_layout": "c_contiguous",
+      "output_strides": [
+        1024,
+        1
+      ],
+      "return_structure": "single_tensor",
+      "shift": 1,
+      "axis": 1,
+      "axis_source": "static_literal",
+      "axis_runtime_observed": false,
+      "broadcast": "none_observed",
+      "dtype_cast": "none",
+      "cpu_fallback": false,
+      "requires_same_npu_device": true
+    }
+  ],
+  "bounded_scope": {
+    "qualified_input_dtype": "float32",
+    "qualified_input_shape": [
+      1024,
+      1024
+    ],
+    "qualified_input_rank": 2,
+    "qualified_layout": "c_contiguous",
+    "qualified_shift": 1,
+    "qualified_axis": 1,
+    "qualified_output_dtype": "float32",
+    "qualified_output_shape": [
+      1024,
+      1024
+    ],
+    "qualified_return_structure": "single_tensor",
+    "other_dtype_policy": "reject_without_cast",
+    "other_shape_policy": "reject_without_claim",
+    "other_layout_policy": "reject",
+    "other_signature_policy": "reject_without_host_fallback",
+    "generalization_claimed": false,
+    "bool_comparison_results_preserved": true
+  },
+  "rejection_policy": {
+    "mode": "explicit_rejection_before_dispatch",
+    "cpu_or_numpy_fallback_allowed": false,
+    "implicit_dtype_conversion_allowed": false,
+    "silent_keyword_drop_allowed": false,
+    "reject_unsupported_dtypes": true,
+    "reject_other_shapes": true,
+    "reject_other_ranks": true,
+    "reject_non_c_contiguous_inputs": true,
+    "reject_other_shift_values": true,
+    "reject_other_axis_values": true,
+    "reject_axis_omitted": true,
+    "reject_third_positional_argument": true,
+    "reject_broadcast_inputs": true,
+    "reject_empty_inputs": true,
+    "reject_multiple_outputs": true,
+    "unsupported_dtypes": [
+      "float16",
+      "bfloat16",
+      "float64",
+      "int8",
+      "uint8",
+      "int16",
+      "uint16",
+      "int32",
+      "uint32",
+      "int64",
+      "uint64",
+      "bool",
+      "complex64",
+      "complex128"
+    ],
+    "unsupported_keywords": [
+      "out",
+      "where",
+      "dtype",
+      "casting",
+      "order",
+      "subok"
+    ],
+    "exception_mapping": {
+      "unsupported_dtype": "TypeError",
+      "unsupported_shape": "ValueError",
+      "unsupported_rank": "ValueError",
+      "unsupported_layout": "ValueError",
+      "unsupported_shift": "ValueError",
+      "unsupported_axis": "ValueError",
+      "axis_omitted": "TypeError",
+      "third_positional": "TypeError",
+      "unsupported_keyword": "TypeError",
+      "broadcast_input": "ValueError",
+      "empty_input": "ValueError"
+    }
+  },
+  "numerical_policy": {
+    "oracle": "numpy.roll(input, shift, axis=axis)",
+    "oracle_parameter_order": [
+      "input",
+      "shift",
+      "axis"
+    ],
+    "comparison": {
+      "float32": {
+        "rtol": 0.0,
+        "atol": 0.0,
+        "bitwise_exact": true,
+        "equal_nan": true,
+        "nan_payload": "preserve",
+        "positive_infinity": "exact",
+        "negative_infinity": "exact",
+        "positive_zero": "preserve_signbit",
+        "negative_zero": "preserve_signbit",
+        "subnormal": "exact"
+      },
+      "bool": {
+        "exact": true,
+        "cast_to_float": false
+      }
+    },
+    "shape_and_dtype_comparison": "exact",
+    "output_count_comparison": "exact",
+    "require_saved_original_inputs": true,
+    "require_saved_expected_outputs": true,
+    "require_saved_actual_outputs": true,
+    "special_values": [
+      "NaN",
+      "positive_infinity",
+      "negative_infinity",
+      "positive_zero",
+      "negative_zero",
+      "float32_subnormal"
+    ],
+    "note": "Roll is a reindexing operation for the admitted profile, so the float32 tensor result is compared exactly rather than with a reduced tolerance."
+  },
+  "adapter_behavior": {
+    "python_wrapper": "asnumpy_adapter.roll.roll",
+    "pybind_call": "asnumpy_adapter._C.roll",
+    "native_entry": "roll",
+    "aclnn_two_stage": [
+      "aclnnRollGetWorkspaceSize",
+      "aclnnRoll"
+    ],
+    "dispatch_sequence": [
+      "validate Python signature: exactly two positional arguments and axis keyword",
+      "validate input is a tensor-like object with dtype float32",
+      "validate shape [1024, 1024], rank 2, C-contiguous layout",
+      "validate shift equals integer 1 and is not bool",
+      "validate axis equals integer 1 and is not bool",
+      "call pybind roll with input, shift, axis",
+      "call aclnnRollGetWorkspaceSize",
+      "call aclnnRoll with checked workspace and executor",
+      "synchronize stream and check status",
+      "return the single output tensor"
+    ],
+    "return": {
+      "kind": "tensor",
+      "dtype": "float32",
+      "shape": [
+        1024,
+        1024
+      ],
+      "layout": "c_contiguous",
+      "single_tensor": true
+    },
+    "comparison_return_type": "bool",
+    "comparison_result_cast_to_float": false,
+    "error_propagation": "raise before or after native dispatch; never silently fall back"
+  },
+  "test_adapter": {
+    "public_entrypoint": "asnumpy.roll",
+    "manifest_path": "asnumpy_adapter/roll.json",
+    "must_exercise_public_api": true,
+    "private_pybind_only_test_is_insufficient": true,
+    "positive_cases": [
+      {
+        "id": "observed_float32_shift1_axis1",
+        "call": "asnumpy.roll(input, 1, axis=1)",
+        "oracle": "numpy.roll(input, 1, axis=1)",
+        "input_dtype": "float32",
+        "input_shape": [
+          1024,
+          1024
+        ],
+        "shift": 1,
+        "axis": 1,
+        "comparison": "float32_bitwise_exact"
+      },
+      {
+        "id": "special_values_shift1_axis1",
+        "call": "asnumpy.roll(input_with_special_values, 1, axis=1)",
+        "oracle": "numpy.roll(input_with_special_values, 1, axis=1)",
+        "input_dtype": "float32",
+        "input_shape": [
+          1024,
+          1024
+        ],
+        "shift": 1,
+        "axis": 1,
+        "special_values": [
+          "NaN",
+          "positive_infinity",
+          "negative_infinity",
+          "positive_zero",
+          "negative_zero"
+        ],
+        "comparison": "float32_bitwise_exact"
+      },
+      {
+        "id": "repeat_lifecycle_no_mutation",
+        "call": "asnumpy.roll(input, 1, axis=1) twice with the same input",
+        "oracle": "numpy.roll(input, 1, axis=1)",
+        "input_dtype": "float32",
+        "input_shape": [
+          1024,
+          1024
+        ],
+        "shift": 1,
+        "axis": 1,
+        "assert_input_unchanged": true,
+        "assert_outputs_distinct": true,
+        "comparison": "float32_bitwise_exact"
+      }
+    ],
+    "negative_cases": [
+      {
+        "id": "reject_float64",
+        "call": "asnumpy.roll(input_float64, 1, axis=1)",
+        "expected_exception": "TypeError"
+      },
+      {
+        "id": "reject_int32",
+        "call": "asnumpy.roll(input_int32, 1, axis=1)",
+        "expected_exception": "TypeError"
+      },
+      {
+        "id": "reject_bool_tensor",
+        "call": "asnumpy.roll(input_bool, 1, axis=1)",
+        "expected_exception": "TypeError"
+      },
+      {
+        "id": "reject_other_shape",
+        "call": "asnumpy.roll(input_512x1024_float32, 1, axis=1)",
+        "expected_exception": "ValueError"
+      },
+      {
+        "id": "reject_other_rank",
+        "call": "asnumpy.roll(input_rank3_float32, 1, axis=1)",
+        "expected_exception": "ValueError"
+      },
+      {
+        "id": "reject_non_contiguous",
+        "call": "asnumpy.roll(non_contiguous_float32, 1, axis=1)",
+        "expected_exception": "ValueError"
+      },
+      {
+        "id": "reject_shift_other_than_one",
+        "call": "asnumpy.roll(input, 2, axis=1)",
+        "expected_exception": "ValueError"
+      },
+      {
+        "id": "reject_shift_zero",
+        "call": "asnumpy.roll(input, 0, axis=1)",
+        "expected_exception": "ValueError"
+      },
+      {
+        "id": "reject_axis_zero",
+        "call": "asnumpy.roll(input, 1, axis=0)",
+        "expected_exception": "ValueError"
+      },
+      {
+        "id": "reject_axis_two",
+        "call": "asnumpy.roll(input, 1, axis=2)",
+        "expected_exception": "ValueError"
+      },
+      {
+        "id": "reject_axis_omitted",
+        "call": "asnumpy.roll(input, 1)",
+        "expected_exception": "TypeError"
+      },
+      {
+        "id": "reject_third_positional",
+        "call": "asnumpy.roll(input, 1, 1)",
+        "expected_exception": "TypeError"
+      },
+      {
+        "id": "reject_unsupported_keyword",
+        "call": "asnumpy.roll(input, 1, axis=1, out=output)",
+        "expected_exception": "TypeError"
+      },
+      {
+        "id": "reject_implicit_numpy_fallback",
+        "call": "force native dispatch failure and verify no NumPy result is returned",
+        "expected_exception": "RuntimeError",
+        "forbid_host_fallback": true
+      }
+    ],
+    "device_execution_required": true,
+    "cpu_mock_is_not_qualification": true,
+    "real_npu_profiler_required": true
+  },
+  "qualification": {
+    "status": "pending",
+    "generated_code_is_unverified": true,
+    "verified_profiles": [],
+    "activation_status": "not_activated",
+    "gates": [
+      {
+        "id": "build",
+        "status": "pending"
+      },
+      {
+        "id": "unit_and_boundary",
+        "status": "pending"
+      },
+      {
+        "id": "numerical",
+        "status": "pending"
+      },
+      {
+        "id": "native_execution",
+        "status": "pending"
+      },
+      {
+        "id": "whole_program",
+        "status": "pending"
+      },
+      {
+        "id": "performance",
+        "status": "pending"
+      },
+      {
+        "id": "activation",
+        "status": "pending"
+      }
+    ],
+    "notes": [
+      "The axis value comes from the static call literal; it is not a runtime-observed tensor fact.",
+      "Only the observed float32 [1024,1024] C-contiguous profile with shift 1 and axis 1 is admitted by this manifest.",
+      "No qualification or performance claim is made until the deterministic validator records passing evidence."
+    ]
+  },
+  "unresolved": [
+    "runtime axis observation beyond the static literal",
+    "device numerical qualification evidence",
+    "numerical tolerances except the exact roll policy declared here",
+    "whole-program callsite execution evidence",
+    "performance evidence"
+  ]
+}

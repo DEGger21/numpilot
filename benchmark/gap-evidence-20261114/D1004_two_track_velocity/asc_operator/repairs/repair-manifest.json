@@ -1,0 +1,35 @@
+{
+  "case": "D1004_two_track_velocity",
+  "changed": {
+    "op_host/CMakeLists.txt": [
+      "413290f53bd9418cd02a8e9a4152db2966315e24fbcdf713da22935163cd0b1d",
+      "6214a28812db517b57c31a8f0175fd0cab710433a183dcbf4dcfe1ed8ec68625"
+    ],
+    "op_host/arch22/diff_tiling.cpp": [
+      "f202df3f17f90051a9487c0c3f536a568c8420f23a39ca57167deb32506ab50f",
+      "da75848b97f57dd0c35eafc89f4f76a7dd0160da900026c4a06de311bc39f99b"
+    ],
+    "op_host/diff_def.cpp": [
+      "30be5b4b04c4918b239d7cc6277e1b8025fec9a42034f68ad84c3f6ca999c78a",
+      "f4bb884da9c6bf65c22a4b7c45a53c8705d410e8b31ed834a6ddecd18eb6b030"
+    ],
+    "op_kernel/arch22/diff_tiling_data.h": [
+      "fd22ea18fd8cca4e3dc297b69f3121661842da83bccfec8a5a62ab833958c22b",
+      "2f2ca14341ae694410773cf6b1d764500d3786d4cecade4acc529f85d65c0786"
+    ],
+    "op_kernel/diff_arch22.cpp": [
+      "7caecdf31aa3d44b5b5c84c703203b2a844205c71ecc87d02e61808985a44e6c",
+      "8ac58fb0d7db6d9f52cdc6ddd768fda84a23df9b6f2d0e1b1b658ec4b140f2e2"
+    ]
+  },
+  "claim_boundary": "repairs are deterministic engineering changes, not model output",
+  "notes": [
+    "opapi-link: link CANN libopapi into cust_opapi",
+    "tiling-schema: host uses the rows/cols/outCols fields read by the kernel",
+    "storage-shape: TilingContext returns gert::StorageShape*",
+    "axis-attr: register the integer axis attribute with .Int(-1)",
+    "kernel-template: kernel entry matches the single D_T_X tiling-key parameter"
+  ],
+  "reason": "deterministic compile/deploy/semantic repair after real model generation",
+  "schema": "numpilot.generated-asc-repair.v1"
+}

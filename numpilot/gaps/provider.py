@@ -4429,6 +4429,15 @@ def _stage_invariants(spec: GapSpec, path: str) -> str:
         "- Preserve the NumPy oracle parameter order. Host definition, infer-shape, "
         "tiling, kernel entry, L0/L2 ACLNN declarations/definitions, tests, and adapter "
         "must agree on input/output count, order, names, dtypes, and shapes.",
+        "- TilingData and the kernel entry must each have one authoritative definition. "
+        "Host tiling must include the kernel-facing tiling_data header and assign only "
+        "fields declared there; do not invent a second field schema or a duplicate kernel class.",
+        "- In a `gert::TilingContext`, `GetInputShape`/`GetOutputShape` return "
+        "`const gert::StorageShape*`; call `GetStorageShape()` before reading dimensions.",
+        "- Kernel entry template parameters must exactly match `ASCENDC_TPL_ARGS_DECL`; "
+        "never add an undeclared template parameter such as a second BUFFER_MODE.",
+        "- If an L0 op_api source references `l0op::` symbols, link CANN's `opapi` "
+        "library into `cust_opapi` in `op_host/CMakeLists.txt`.",
     ]
     if path.startswith("tests/"):
         rules.extend((

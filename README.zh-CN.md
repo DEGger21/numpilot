@@ -185,6 +185,8 @@ SCF（约 294.7 s）仍在 CPU 上执行；加速比只覆盖格点密度子阶�
 
 详见：[维生素 C 案例](examples/scientific/gpu4pyscf_vitamin_c/README.md)。
 
+证据目录：[维生素 C 迁移证据](examples/scientific/gpu4pyscf_vitamin_c/evidence/README.md)。
+
 终端录制和框架级六智能体工作台见：[大规模 NumPy 演示](examples/demo/README.md)。其中展示实时智能体面板、模型迁移回执、数值验证，以及严格 NPU 性能口径。
 
 该演示统一使用 [components/asnumpy/](components/asnumpy/) 中的静态 AsNumpy 组件；wheel、源码快照、manifest 和 SBOM 共同构成可复现锁。
@@ -203,13 +205,15 @@ SCF（约 294.7 s）仍在 CPU 上执行；加速比只覆盖格点密度子阶�
 
 完整清单：[71 例迁移性能表](examples/scaled_benchmark_20261112/BENCHMARK_TABLE.md)。
 
+150 例 benchmark 的当前 API 表面分类记录在 `benchmark/classification.json`：71 例全覆盖、79 例缺口/契约差异；`benchmark/covered/` 与 `benchmark/gap/` 是只读镜像视图，原始程序仍在 `benchmark/cases/`。
+
 > **历史证据说明。** 2026-11-12 的 71 例归档作为不可变证据保留，运行环境以归档自身 README 的记录为准；其中的 AsNumpy/CANN 版本不是当前组件基线。当前版本请使用 `examples/demo/`、`examples/scientific/` 与 `components/asnumpy/` 复现。
 
 ### 3. 含真实缺口 API 的程序
 
-6 个完整程序，其 NumPy 调用是真实的 API 缺口。每个算子先由配置模型（`llm.json`）生成，
-再经过构建、部署、数值验证与准入，然后通过 NumPilot 六智能体链路迁移整个程序。正加速比
-的四个：
+2026-11-12 批次的 6 个完整程序，其 NumPy 调用是真实的 API 缺口。每个算子先由配置模型
+（`llm.json`）生成，再经过构建、部署、数值验证与准入，然后通过 NumPilot 六智能体链路迁移
+整个程序。该批次四个正加速比，加上 2026-11-14 的真实 Ascend C 算子批次，如下：
 
 | 程序 | 缺口 API | 数据规模 | 完整端到端耗时 | CPU / NPU (ms) | 加速比 |
 | --- | --- | --- | ---: | ---: | ---: |
@@ -217,16 +221,27 @@ SCF（约 294.7 s）仍在 CPU 上执行；加速比只覆盖格点密度子阶�
 | `tril` | `np.tril` | 2048 × 2048 float32；默认 k=0 下三角 | 38.4 min | 14.16 / 1.649 | **8.59x** |
 | `ediff1d` | `np.ediff1d` | 2048 × 2048 float32 展平；4,194,303 个相邻差分 | 60.7 min | 4.48 / 1.664 | **2.69x** |
 | `pad` | `np.pad` | 2048 × 2048 float32；constant 填充 | 47.0 min | 4.117 / 1.724 | **2.39x** |
+| `D1002_ulp_budget` | `np.spacing` | 1024 × 1024 float32；逐元素 ULP 预算 | 36.2 min | 34.860681 / 4.032468 | **8.65x** |
+| `D1004_two_track_velocity` | `np.diff` | 1024 × 1024 float32；一阶差分，输出 1024 × 1023 | 51.7 min | 27.339721 / 8.133022 | **3.36x** |
+| `D1009_periodic_transport` | `np.roll` | 1024 × 1024 float32；沿 axis=1 周期搬移 | 51.9 min | 26.669054 / 7.455630 | **3.58x** |
 
 完整端到端从真实算子生成调用开始，包含构建/修复/部署/数值验证、适配层构建与单测、
 完整程序迁移以及 CPU/NPU 基准；迁移命令本身为 6–8 s。
 
-5/6 个程序通过全程序数值对拍；`tril` 的 NumPilot 完整迁移回执保留为失败（`runtime target snapshot is invalid`），
-但其独立 strict-NPU benchmark 以 8.59x 通过，不能因此视为完整迁移成功。适配层单测 84 项全部通过。完整表同时保留 `flip`
-（0.0042x，CPU view 基线）与 `argpartition`（0.03x，512 元素受 launch 限制）作为
-正确性案例。
+2026-11-12 批次的 5/6 个程序通过全程序数值对拍；`tril` 的 NumPilot 完整迁移回执保留为失败
+（`runtime target snapshot is invalid`），但其独立 strict-NPU benchmark 以 8.59x 通过，不能因此
+视为完整迁移成功。该批次适配层单测 84 项全部通过。完整表同时保留 `flip`（0.0042x，CPU view
+基线）与 `argpartition`（0.03x，512 元素受 launch 限制）作为正确性案例。
 
 完整清单：[缺口算子迁移归档](examples/gap_archive_20261112/BENCHMARK_TABLE.md)。
+
+2026-11-14 的部分缺口批次新增 5 个签名缺口程序（`F001`、`F004`、`F005`、`F008`、`F010`），均使用 1024×1024（1,048,576 元素）输入并通过交互式六智能体工作台迁移。每个证据目录包含 `numpy_source.py`、`model_adapted_source.py`、`asnumpy_migrated.py` 和 `reports/`（计划、报告、验证、benchmark、token 指标）：[benchmark 缺口证据](benchmark/gap-evidence-20261114/README.md)。F001/F008/F010 实测 17.51x/31.20x/58.53x；F004/F005 输出为 1024 元素归约结果，实测 0.96x/0.92x，仅作为正确性证据，不作为性能宣传。
+
+表格第 5–7 行是 **2026-11-14 真实 Ascend C 算子批次**（`np.spacing`、`np.diff`、`np.roll`）。
+每个算子由模型生成 17 个草稿文件，生成耗时 641–955 s，合计 2,127,600 生成 tokens；随后完成
+编译、私有 OPP 部署、NPU 数值对拍、case-local 的确定性 AsNumpy 适配层和完整程序
+CPU/NPU benchmark。状态为 `case_local_adapter_benchmarked_not_activated`：没有写入共享
+AsNumpy 或系统 CANN。证据：[Ascend C 构建与 benchmark 记录](benchmark/gap-evidence-20261114/ASC_OPERATORS.md)。
 
 ## 贡献与许可证
 

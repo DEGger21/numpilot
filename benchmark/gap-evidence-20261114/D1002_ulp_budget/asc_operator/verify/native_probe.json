@@ -1,0 +1,21 @@
+{
+  "axis": null,
+  "elapsed_seconds": 0.9029313679784536,
+  "exact_equal": true,
+  "max_abs_diff": 0.0,
+  "mismatch_count": 0,
+  "mismatch_samples": [],
+  "numpy_oracle": "numpy.spacing",
+  "output_shape": [
+    1024,
+    1024
+  ],
+  "profile": "spacing",
+  "shape": [
+    1024,
+    1024
+  ],
+  "shift": null,
+  "status": "pass",
+  "workspace_bytes": 512
+}
