@@ -1,0 +1,83 @@
+{
+  "schema": "numpilot.benchmark-case-perf",
+  "version": 1,
+  "original": "benchmark/cases/D1_partial_low_kernel/D1007_repeat_samples/numpilot-work/asc_operator/custom-v2/bench-v1/numpy_source.py",
+  "migrated": "benchmark/cases/D1_partial_low_kernel/D1007_repeat_samples/numpilot-work/asc_operator/custom-v2/bench-v1/migrated.py",
+  "core": 0,
+  "warmup": 3,
+  "samples": 20,
+  "cpu": {
+    "samples_ns": [
+      58792460,
+      47654728,
+      42902478,
+      53251659,
+      43195579,
+      53414840,
+      51129455,
+      45171633,
+      51273255,
+      45089992,
+      43235969,
+      53321910,
+      43156648,
+      53201079,
+      43143119,
+      53211549,
+      51139015,
+      45093392,
+      51281785,
+      45182203
+    ],
+    "median_ms": 49.3920915,
+    "p10_ms": 43.143119,
+    "p90_ms": 53.41484
+  },
+  "npu": {
+    "samples_ns": [
+      27637277,
+      27586556,
+      27645987,
+      38430609,
+      27590547,
+      27633647,
+      27624187,
+      27666687,
+      27566106,
+      27566847,
+      27605197,
+      27668597,
+      27619527,
+      27643487,
+      27551067,
+      27564237,
+      27653017,
+      27706527,
+      27658607,
+      27613246
+    ],
+    "median_ms": 27.628917,
+    "p10_ms": 27.564237,
+    "p90_ms": 27.706527
+  },
+  "comparison": {
+    "consistent": true,
+    "comparisons": {
+      "out": {
+        "shape_equal": true,
+        "dtype_equal": true,
+        "max_abs_diff": 1.1920928955078125e-07,
+        "consistent": true,
+        "n_elements": 3145728
+      },
+      "energy": {
+        "shape_equal": true,
+        "dtype_equal": true,
+        "max_abs_diff": 4.470348358154297e-08,
+        "consistent": true,
+        "n_elements": 1024
+      }
+    }
+  },
+  "speedup": 1.7876955329085102
+}

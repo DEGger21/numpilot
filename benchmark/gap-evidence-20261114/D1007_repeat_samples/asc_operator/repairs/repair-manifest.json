@@ -1,0 +1,38 @@
+{
+  "case": "D1007_repeat_samples",
+  "changed": {
+    "op_host/CMakeLists.txt": [
+      "f2b39839b35247d9c419c422dd34555c7215b8833229f9863580802851a0a181",
+      "7cc05cda68d09a0e8eac33c7f72012199295a2e06f39496b0e56df28c9c0d7ab"
+    ],
+    "op_host/arch22/repeat_tiling.cpp": [
+      "0be933647297407e0568bd17a73fc2b39ada05cdd9c7c1c0e1e26a578f67ac3d",
+      "abe77ec6c52f05f8b7691c04b122699b416f6f83fdc8d0f389ecbdf8548b959b"
+    ],
+    "op_host/repeat_def.cpp": [
+      "a45097790c914a1a4a16e4a4a14bd23c0311e8bbc525c498ef144b81915982c0",
+      "482ed9221fa86552447f7ea8201529ec3f62b048cef3d6eb3219aa24ca385883"
+    ],
+    "op_host/repeat_infershape.cpp": [
+      "377fc5fd4ec02e3a5a3110eb5e3016b3de20a2ece55fc395b53592561ea14e2d",
+      "944d6a9c2e4c95459cd5a28ec6b463c6c985543b319eaf86c631d7a4572f3055"
+    ],
+    "op_kernel/arch22/repeat.h": [
+      "cad9cc8e9ce4836cf7301ae95fc74d4252fd7e4548646cf6f27f17450202717e",
+      "9e2a3aae459ff94f55af0ea9bb37294610271724c82ecd2dc21db3c54ef38379"
+    ],
+    "op_kernel/repeat_arch22.cpp": [
+      "a907b031f22f5f9701e4e347e9d2c7b1a9f413552eb86a9b14e028b19ca75e3c",
+      "6088d8b90177ddb31b50efd98293734d94f475ddc1f810409d082626323377bb"
+    ]
+  },
+  "claim_boundary": "repairs are deterministic engineering changes, not model output",
+  "notes": [
+    "tiling-schema: axisSize field read by kernel",
+    "kernel-fields: outerSize/axisSize/innerSize contract",
+    "kernel-template: defaults match tiling key",
+    "opapi-link: link CANN opapi"
+  ],
+  "reason": "deterministic compile/deploy/semantic repair after real model generation",
+  "schema": "numpilot.generated-asc-repair.v1"
+}

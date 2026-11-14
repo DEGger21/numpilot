@@ -20,6 +20,7 @@ import acl
 import numpy as np
 
 ACL_FLOAT = 0
+ACL_INT64 = 9
 ACL_FORMAT_ND = 2
 ACL_MEMCPY_HOST_TO_DEVICE = 1
 ACL_MEMCPY_DEVICE_TO_HOST = 2
@@ -66,8 +67,9 @@ def _make_tensor(lib, array: np.ndarray, *, upload: bool):
                              ACL_MEMCPY_HOST_TO_DEVICE), "aclrtMemcpy H2D")
     shape = (ctypes.c_int64 * array.ndim)(*array.shape)
     strides = (ctypes.c_int64 * array.ndim)(*_strides(array.shape))
+    dtype = ACL_INT64 if array.dtype == np.int64 else ACL_FLOAT
     tensor = lib.aclCreateTensor(
-        shape, array.ndim, ACL_FLOAT, strides, 0, ACL_FORMAT_ND,
+        shape, array.ndim, dtype, strides, 0, ACL_FORMAT_ND,
         shape, array.ndim, ctypes.c_void_p(dev),
     )
     if not tensor:
@@ -80,7 +82,7 @@ def _download(array: np.ndarray, dev):
                          ACL_MEMCPY_DEVICE_TO_HOST), "aclrtMemcpy D2H")
 
 
-def _call(lib, op_name, x_tensor, scalars, out_tensor, stream):
+def _call(lib, op_name, x_tensor, scalars, out_tensor, stream, second_tensor=None):
     get_ws = getattr(lib, "aclnn%sGetWorkspaceSize" % op_name)
     run = getattr(lib, "aclnn%s" % op_name)
     get_ws.restype = ctypes.c_int
@@ -91,16 +93,28 @@ def _call(lib, op_name, x_tensor, scalars, out_tensor, stream):
     if op_name == "Spacing":
         get_ws.argtypes = [ctypes.c_void_p, ctypes.c_void_p,
                            ctypes.POINTER(ctypes.c_uint64), ctypes.POINTER(ctypes.c_void_p)]
+    elif op_name == "Nextafter":
+        get_ws.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p,
+                           ctypes.POINTER(ctypes.c_uint64), ctypes.POINTER(ctypes.c_void_p)]
     elif op_name == "Diff":
         get_ws.argtypes = [ctypes.c_void_p, ctypes.c_int64, ctypes.c_void_p,
                            ctypes.POINTER(ctypes.c_uint64), ctypes.POINTER(ctypes.c_void_p)]
     elif op_name == "Roll":
         get_ws.argtypes = [ctypes.c_void_p, ctypes.c_int64, ctypes.c_int64, ctypes.c_void_p,
                            ctypes.POINTER(ctypes.c_uint64), ctypes.POINTER(ctypes.c_void_p)]
+    elif op_name == "Repeat":
+        get_ws.argtypes = [ctypes.c_void_p, ctypes.c_int64, ctypes.c_int64, ctypes.c_void_p,
+                           ctypes.POINTER(ctypes.c_uint64), ctypes.POINTER(ctypes.c_void_p)]
+    elif op_name == "Argmax":
+        get_ws.argtypes = [ctypes.c_void_p, ctypes.c_int64, ctypes.c_void_p,
+                           ctypes.POINTER(ctypes.c_uint64), ctypes.POINTER(ctypes.c_void_p)]
     run.argtypes = [ctypes.c_void_p, ctypes.c_uint64, ctypes.c_void_p, ctypes.c_void_p]
     workspace = ctypes.c_uint64(0)
     executor = ctypes.c_void_p()
-    rc = get_ws(x_tensor, *scalars, out_tensor, ctypes.byref(workspace), ctypes.byref(executor))
+    if op_name == "Nextafter":
+        rc = get_ws(x_tensor, second_tensor, out_tensor, ctypes.byref(workspace), ctypes.byref(executor))
+    else:
+        rc = get_ws(x_tensor, *scalars, out_tensor, ctypes.byref(workspace), ctypes.byref(executor))
     if rc != 0:
         raise RuntimeError("aclnn%sGetWorkspaceSize failed rc=%d" % (op_name, rc))
     workspace_ptr = ctypes.c_void_p(0)
@@ -114,9 +128,15 @@ def _call(lib, op_name, x_tensor, scalars, out_tensor, stream):
     return workspace.value
 
 
-def _oracle(profile, x, axis, shift):
+def _oracle(profile, x, axis, shift, target=None):
     if profile == "spacing":
         return np.spacing(x)
+    if profile == "nextafter":
+        return np.nextafter(x, target)
+    if profile == "repeat":
+        return np.repeat(x, 3, axis=1)
+    if profile == "argmax":
+        return np.argmax(x, axis=1)
     if profile == "diff":
         return np.diff(x, axis=axis)
     if profile == "roll":
@@ -126,7 +146,7 @@ def _oracle(profile, x, axis, shift):
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--profile", choices=("spacing", "diff", "roll"), required=True)
+    parser.add_argument("--profile", choices=("spacing", "diff", "roll", "nextafter", "repeat", "argmax"), required=True)
     parser.add_argument("--vendor", required=True)
     parser.add_argument("--out", required=True)
     parser.add_argument("--axis", type=int, default=1)
@@ -134,9 +154,14 @@ def main(argv=None) -> int:
     parser.add_argument("--shape", default="1024x1024")
     args = parser.parse_args(argv)
     shape = tuple(int(part) for part in args.shape.lower().split("x"))
-    x = np.random.default_rng(20261114).standard_normal(shape, dtype=np.float32)
+    rng = np.random.default_rng(20261114)
+    x = rng.standard_normal(shape, dtype=np.float32)
     x.reshape(-1)[:6] = np.array([0.0, -0.0, np.inf, -np.inf, np.nan, 1.0], dtype=np.float32)
-    expected = _oracle(args.profile, x, args.axis, args.shift)
+    target = None
+    if args.profile == "nextafter":
+        target = rng.standard_normal(shape, dtype=np.float32)
+        target.reshape(-1)[:6] = np.array([1.0, -1.0, 0.0, -0.0, np.inf, -np.inf], dtype=np.float32)
+    expected = _oracle(args.profile, x, args.axis, args.shift, target)
     vendor = Path(args.vendor).resolve()
     lib, tensor_lib = _load_libs(vendor)
     _check(acl.init(), "aclInit")
@@ -147,27 +172,33 @@ def main(argv=None) -> int:
     stream, rc = acl.rt.create_stream()
     _check(rc, "aclrtCreateStream")
 
-    x_tensor = out_tensor = None
-    x_dev = out_dev = 0
-    out = np.empty(expected.shape, dtype=np.float32)
+    x_tensor = out_tensor = target_tensor = None
+    x_dev = out_dev = target_dev = 0
+    out = np.empty(expected.shape, dtype=expected.dtype)
     try:
         x_tensor, x_dev, _ = _make_tensor(tensor_lib, x, upload=True)
         out_tensor, out_dev, _ = _make_tensor(tensor_lib, out, upload=False)
-        if args.profile == "spacing":
+        if target is not None:
+            target_tensor, target_dev, _ = _make_tensor(tensor_lib, target, upload=True)
+        if args.profile == "spacing" or args.profile == "nextafter":
             scalars = ()
         elif args.profile == "diff":
             scalars = (ctypes.c_int64(args.axis),)
+        elif args.profile == "repeat":
+            scalars = (ctypes.c_int64(3), ctypes.c_int64(1))
+        elif args.profile == "argmax":
+            scalars = (ctypes.c_int64(1),)
         else:
             scalars = (ctypes.c_int64(args.shift), ctypes.c_int64(args.axis))
         started = time.perf_counter()
-        workspace_bytes = _call(lib, args.profile.capitalize(), x_tensor, scalars, out_tensor, stream)
+        workspace_bytes = _call(lib, args.profile.capitalize(), x_tensor, scalars, out_tensor, stream, target_tensor)
         elapsed = time.perf_counter() - started
         _download(out, out_dev)
     finally:
-        for tensor in (x_tensor, out_tensor):
+        for tensor in (x_tensor, out_tensor, target_tensor):
             if tensor:
                 tensor_lib.aclDestroyTensor(tensor)
-        for ptr in (x_dev, out_dev):
+        for ptr in (x_dev, out_dev, target_dev):
             if ptr:
                 acl.rt.free(ptr)
         acl.rt.destroy_stream(stream)
@@ -175,25 +206,32 @@ def main(argv=None) -> int:
         acl.rt.reset_device(0)
         acl.finalize()
 
-    actual_bits = np.ascontiguousarray(out).view(np.uint32)
-    expected_bits = np.ascontiguousarray(expected).view(np.uint32)
+    if expected.dtype == np.float32:
+        actual_bits = np.ascontiguousarray(out).view(np.uint32)
+        expected_bits = np.ascontiguousarray(expected).view(np.uint32)
+    else:
+        actual_bits = np.ascontiguousarray(out)
+        expected_bits = np.ascontiguousarray(expected)
     exact = bool(np.array_equal(actual_bits, expected_bits))
-    expected_nan = np.isnan(expected)
-    actual_nan = np.isnan(out)
-    nan_positions_equal = bool(np.array_equal(expected_nan, actual_nan))
-    non_nan = ~expected_nan
-    non_nan_bits_equal = bool(np.array_equal(actual_bits[non_nan], expected_bits[non_nan]))
+    if np.issubdtype(expected.dtype, np.floating):
+        expected_nan = np.isnan(expected)
+        actual_nan = np.isnan(out)
+        nan_positions_equal = bool(np.array_equal(expected_nan, actual_nan))
+        non_nan = ~expected_nan
+        non_nan_bits_equal = bool(np.array_equal(actual_bits[non_nan], expected_bits[non_nan]))
+    else:
+        expected_nan = np.zeros(expected.shape, dtype=bool)
+        actual_nan = np.zeros(out.shape, dtype=bool)
+        nan_positions_equal = True
+        non_nan_bits_equal = exact
     semantic_equal = bool(nan_positions_equal and non_nan_bits_equal)
     mismatch = actual_bits != expected_bits
     mismatch_count = int(mismatch.sum())
     samples = []
-    for flat_index in np.flatnonzero(mismatch.reshape(-1))[:8]:
+    for flat_index in np.flatnonzero(np.asarray(mismatch).reshape(-1))[:8]:
         samples.append({
-            "x": repr(float(x.reshape(-1)[flat_index])),
-            "expected": repr(float(expected.reshape(-1)[flat_index])),
-            "actual": repr(float(out.reshape(-1)[flat_index])),
-            "expected_bits": int(expected_bits.reshape(-1)[flat_index]),
-            "actual_bits": int(actual_bits.reshape(-1)[flat_index]),
+            "expected": repr(expected.reshape(-1)[flat_index].item()),
+            "actual": repr(out.reshape(-1)[flat_index].item()),
         })
     diff = np.abs(out.astype(np.float64) - expected.astype(np.float64))
     finite = np.isfinite(diff)

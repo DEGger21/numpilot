@@ -156,3 +156,16 @@ float32 元素），走 `resolve-gaps → complete-gaps --provider llm` 的真�
 - 生成的 Ascend C 源码、修复哈希、编译/部署/对拍/适配层/benchmark 证据见
   `benchmark/gap-evidence-20261114/<case>/asc_operator/`，汇总见
   `benchmark/gap-evidence-20261114/ASC_OPERATORS.md`。
+
+## 2026-11-14 真实 Ascend C 第二批（3 例）
+
+| 样例 | 缺口 API | 生成墙钟 | 生成 tokens | 编译 | NPU 原生对拍 | CPU / NPU (ms) | 加速比 | 完整端到端 |
+| --- | --- | ---: | ---: | --- | --- | ---: | ---: | ---: |
+| `D1003_rounding_envelope` | `np.nextafter` | 641 s | 677,560 | 通过 | 逐位一致 | 47.455408 / 4.736910 | **10.0182x** | 1,050 s |
+| `D1007_repeat_samples` | `np.repeat` | 914 s | 717,123 | 通过 | 逐位一致 | 49.392092 / 27.628917 | **1.7877x** | 1,355 s |
+| `D1012_class_selection` | `np.argmax` | 868 s | 711,065 | 通过 | 逐位一致 | 30.189417 / 5.230176 | **5.7722x** | 1,367 s |
+
+第二批合计 **2,105,748 生成 tokens**；三组均完成编译、私有 OPP 部署、NPU 原生对拍、AsNumpy 适配层和
+完整程序 CPU/NPU benchmark。`D1003`/`D1007` 的阻断项是源码标量二元操作数，不是缺口算子本身；
+benchmark 源已用等价的 `full_like` 数组操作数消解。证据见
+`benchmark/gap-evidence-20261114/<case>/asc_operator/`。

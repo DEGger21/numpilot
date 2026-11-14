@@ -1,0 +1,53 @@
+{
+  "schema": "numpilot.generated-asc-contract-audit.v1",
+  "draft": "benchmark/cases/D1_partial_low_kernel/D1007_repeat_samples/numpilot-work/asc_operator/custom-v2/gaps/repeat-4a6698cb1fd7b3bb/draft",
+  "structs": {
+    "RepeatTilingData": [
+      [
+        "rows",
+        "inner",
+        "repeats",
+        "blockFactor",
+        "ubFactor",
+        "REPEAT_ALIGN_BYTES",
+        "REPEAT_SYNC_EVENT_ID",
+        "rowStart_",
+        "rowCount_",
+        "inner_",
+        "repeats_",
+        "outInner_",
+        "chunkIn_",
+        "chunkOut_"
+      ],
+      [
+        "totalNum",
+        "blockFactor",
+        "ubFactor",
+        "outerSize",
+        "axisSize",
+        "innerSize",
+        "repeats"
+      ]
+    ]
+  },
+  "kernel_entries": [
+    [
+      "op_kernel/repeat_arch22.cpp",
+      "repeat"
+    ]
+  ],
+  "tiling_key_params": [
+    "D_T_X",
+    "BUFFER_MODE"
+  ],
+  "errors": [
+    "TilingData `RepeatTilingData` has conflicting definitions: [{\"path\": \"op_kernel/arch22/repeat.h\", \"fields\": [\"rows\", \"inner\", \"repeats\", \"blockFactor\", \"ubFactor\", \"REPEAT_ALIGN_BYTES\", \"REPEAT_SYNC_EVENT_ID\", \"rowStart_\", \"rowCount_\", \"inner_\", \"repeats_\", \"outInner_\", \"chunkIn_\", \"chunkOut_\"]}, {\"path\": \"op_kernel/arch22/repeat_tiling_data.h\", \"fields\": [\"totalNum\", \"blockFactor\", \"ubFactor\", \"outerSize\", \"axisSize\", \"innerSize\", \"repeats\"]}]",
+    "host `op_host/arch22/repeat_tiling.cpp` assigns undeclared tiling field `axisLen`",
+    "host `op_host/arch22/repeat_tiling.cpp` assigns undeclared tiling field `innerSize`",
+    "host `op_host/arch22/repeat_tiling.cpp` assigns undeclared tiling field `outerSize`",
+    "host `op_host/arch22/repeat_tiling.cpp` assigns undeclared tiling field `totalNum`",
+    "op_api uses l0op:: symbols but cust_opapi does not link opapi"
+  ],
+  "warnings": [],
+  "ok": false
+}

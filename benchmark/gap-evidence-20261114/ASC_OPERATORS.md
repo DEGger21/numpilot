@@ -64,3 +64,18 @@ benchmark**。三组最终均为 `case_local_adapter_benchmarked_not_activated`�
 - 三组均未调用模型做最终“成功”结论，也没有把人工修复描述成模型生成。
 - 适配层与 OPP 仅存在于用例私有目录；没有写入共享 AsNumpy / 系统 CANN，也没有全局激活。
 - `diff` 的 NaN payload 与 CPU 不同，但 NaN 位置和非 NaN 位一致，按语义等价记录。
+
+## 2026-11-14 第二批（3 例）
+
+| 样例 | 缺口 API | 生成墙钟 | 生成 tokens | 编译 | NPU 原生对拍 | CPU / NPU | 加速比 | 完整端到端 |
+| --- | --- | ---: | ---: | --- | --- | ---: | ---: | ---: |
+| `D1003_rounding_envelope` | `np.nextafter` | 641 s | 677,560 | 通过 | 逐位一致 | 47.455408 / 4.736910 ms | **10.0182x** | 1,050 s |
+| `D1007_repeat_samples` | `np.repeat` | 914 s | 717,123 | 通过 | 逐位一致 | 49.392092 / 27.628917 ms | **1.7877x** | 1,355 s |
+| `D1012_class_selection` | `np.argmax` | 868 s | 711,065 | 通过 | 逐位一致 | 30.189417 / 5.230176 ms | **5.7722x** | 1,367 s |
+
+第二批合计 **2,105,748 tokens**；三组均完成编译、私有 OPP 部署、NPU 原生对拍、AsNumpy 适配层和完整程序 CPU/NPU benchmark。
+`D1003`/`D1007` 的 `complete-gaps` 报告为 `generated_unverified_partially_blocked`，阻断项是源码里
+标量二元操作数（`np.add`/`np.maximum`/`np.minimum`/`np.multiply`），不是缺口算子本身；
+benchmark 源已改为等价的 `full_like` 数组操作数。`D1012` 报告为 `generated_unverified`、`blocked=[]`。
+
+两批六组合计 **4,233,348 生成 tokens**；适配层均为确定性集成，不调用模型。

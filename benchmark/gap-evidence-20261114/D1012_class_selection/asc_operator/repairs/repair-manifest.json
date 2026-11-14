@@ -1,0 +1,40 @@
+{
+  "case": "D1012_class_selection",
+  "changed": {
+    "op_api/argmax.cpp": [
+      "dcf2bec6ea00adc148975144fe27c6117aa38f31bc59396cb69e3723ec16a05b",
+      "60e770a35f9449eac10e6326beec14a19622114e08c6984c00689eb5d54ad954"
+    ],
+    "op_host/CMakeLists.txt": [
+      "0217abb15436b25de869ca6a5f05de271a4915cdf32ec7513678257645b2ee26",
+      "aff705f4be0ed671a74965fc964550b53edc23566da48b8bea228f5048ee8bc2"
+    ],
+    "op_host/arch22/argmax_tiling.cpp": [
+      "5ef73a4a85dba899837c53ed2c6a99068e786fe2d8eb447b5b728164e0be1b39",
+      "4e60c3b78baeab1ee0ffb709978ff3b24a92631f1170047cc95e899756761791"
+    ],
+    "op_host/argmax_def.cpp": [
+      "4cc29ade2b336d6bf4407e39005c8cd3003fae0f204177d70475696582e45ba0",
+      "26b20d39aa23bccf94861c37660c5a662b8b0e295fee68154d3a94050912d551"
+    ],
+    "op_kernel/arch22/argmax.h": [
+      "272b011a42bc76bd4927a10d0c9d16b4886aee5c6b7207153139ba13732324f1",
+      "038bba7d5d092d5c2fd294db8d73bccc92765245cf9be2fa3334dfdd5e83315a"
+    ],
+    "op_kernel/argmax_arch22.cpp": [
+      "65c5f1c7dbb118b0b675387d824f7723435cdbeae5f9d26ee925e883645eefac",
+      "0a92b754f8d2cbf9074d068c6bb05e9f348feae039ada252c8cfbdaaab3ba214"
+    ]
+  },
+  "claim_boundary": "repairs are deterministic engineering changes, not model output",
+  "notes": [
+    "tiling-schema: host fills rank/axis/outerSize/reduceSize/innerSize/totalOut/blockFactor/ubFactor/usedCoreNum",
+    "kernel-fields: kernel reads same header names",
+    "kernel-template: defaults match tiling key",
+    "opapi-link: link CANN opapi",
+    "op-def: remove unsupported ExtendCfgInfo",
+    "op-api: replace unavailable OP_CHECK_NULL macro"
+  ],
+  "reason": "deterministic compile/deploy/semantic repair after real model generation",
+  "schema": "numpilot.generated-asc-repair.v1"
+}

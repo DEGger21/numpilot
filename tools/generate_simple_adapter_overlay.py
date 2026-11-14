@@ -40,6 +40,33 @@ SPECS = {
         "validate": "rank 2, float32, non-empty, shift=1, axis=1",
         "call": "_native_roll(a, shift, axis)",
     },
+    "nextafter": {
+        "class": "Nextafter",
+        "params": ", const NPUArray& b",
+        "args": ", b",
+        "py_def": "def nextafter(a, b):",
+        "py_doc": "NumPy-compatible nextafter on the NPU (float32, rank 2).",
+        "validate": "rank 2, float32, same shape",
+        "call": "_native_nextafter(a, b)",
+    },
+    "repeat": {
+        "class": "Repeat",
+        "params": ", int64_t repeats, int64_t axis = 1",
+        "args": ", repeats, axis",
+        "py_def": "def repeat(a, repeats, axis=1):",
+        "py_doc": "NumPy-compatible repeat on the NPU (float32, rank 2, repeats=3, axis=1).",
+        "validate": "rank 2, float32, repeats=3, axis=1",
+        "call": "_native_repeat(a, repeats, axis)",
+    },
+    "argmax": {
+        "class": "Argmax",
+        "params": ", int64_t axis = 1",
+        "args": ", axis",
+        "py_def": "def argmax(a, axis=1):",
+        "py_doc": "NumPy-compatible argmax on the NPU (float32, rank 2, axis=1, int64 output).",
+        "validate": "rank 2, float32, axis=1, int64 output",
+        "call": "_native_argmax(a, axis)",
+    },
 }
 
 
@@ -51,6 +78,7 @@ def _write(path: Path, text: str) -> None:
 def _cpp(op: str, spec) -> str:
     cls = spec["class"]
     params = spec["params"]
+    result_dtype = "a.dtype"
     if op == "spacing":
         call = "getWorkspaceSize(a.tensorPtr, result.tensorPtr, &workspaceSize, &executor);"
         header = "aclnn_spacing.h"
@@ -75,6 +103,56 @@ def _cpp(op: str, spec) -> str:
         validate_signature = "const NPUArray& a, int64_t normalizedAxis"
         validate_call = f"Validate{cls}Profile(a, normalizedAxis);"
         axis_init = "    int64_t normalizedAxis = axis < 0 ? axis + static_cast<int64_t>(a.shape.size()) : axis;\n"
+    elif op == "nextafter":
+        call = "getWorkspaceSize(a.tensorPtr, b.tensorPtr, result.tensorPtr, &workspaceSize, &executor);"
+        header = "aclnn_nextafter.h"
+        validate = """    if (b.tensorPtr == nullptr) {
+        throw std::invalid_argument("asnumpy.nextafter received a null target tensor");
+    }
+    if (b.aclDtype != ACL_FLOAT) {
+        throw std::invalid_argument("asnumpy.nextafter supports float32 target only");
+    }
+    if (a.shape != b.shape) {
+        throw std::invalid_argument("asnumpy.nextafter requires identical input shapes");
+    }
+    if (a.shape.size() != 2 || a.shape[0] <= 0 || a.shape[1] <= 0) {
+        throw std::invalid_argument("asnumpy.nextafter admits non-empty rank 2 input only");
+    }"""
+        out_shape = "    const std::vector<int64_t> outShape = a.shape;"
+        validate_signature = "const NPUArray& a, const NPUArray& b"
+        validate_call = f"Validate{cls}Profile(a, b);"
+        axis_init = ""
+    elif op == "repeat":
+        call = "getWorkspaceSize(a.tensorPtr, repeats, normalizedAxis, result.tensorPtr, &workspaceSize, &executor);"
+        header = "aclnn_repeat.h"
+        validate = """    if (normalizedAxis != 1) {
+        throw std::invalid_argument("asnumpy.repeat admits only axis=1 or axis=-1");
+    }
+    if (repeats != 3) {
+        throw std::invalid_argument("asnumpy.repeat candidate admits only repeats=3");
+    }
+    if (a.shape.size() != 2 || a.shape[0] <= 0 || a.shape[1] <= 0) {
+        throw std::invalid_argument("asnumpy.repeat admits non-empty rank 2 input only");
+    }"""
+        out_shape = """    std::vector<int64_t> outShape = a.shape;
+    outShape[1] *= repeats;"""
+        validate_signature = "const NPUArray& a, int64_t repeats, int64_t normalizedAxis"
+        validate_call = f"Validate{cls}Profile(a, repeats, normalizedAxis);"
+        axis_init = "    int64_t normalizedAxis = axis < 0 ? axis + static_cast<int64_t>(a.shape.size()) : axis;\n"
+    elif op == "argmax":
+        call = "getWorkspaceSize(a.tensorPtr, normalizedAxis, result.tensorPtr, &workspaceSize, &executor);"
+        header = "aclnn_argmax.h"
+        validate = """    if (normalizedAxis != 1) {
+        throw std::invalid_argument("asnumpy.argmax admits only axis=1 or axis=-1");
+    }
+    if (a.shape.size() != 2 || a.shape[0] <= 0 || a.shape[1] <= 0) {
+        throw std::invalid_argument("asnumpy.argmax admits non-empty rank 2 input only");
+    }"""
+        out_shape = "    const std::vector<int64_t> outShape{a.shape[0]};"
+        validate_signature = "const NPUArray& a, int64_t normalizedAxis"
+        validate_call = f"Validate{cls}Profile(a, normalizedAxis);"
+        axis_init = "    int64_t normalizedAxis = axis < 0 ? axis + static_cast<int64_t>(a.shape.size()) : axis;\n"
+        result_dtype = "ACL_INT64"
     else:
         call = "getWorkspaceSize(a.tensorPtr, shift, normalizedAxis, result.tensorPtr, &workspaceSize, &executor);"
         header = "aclnn_roll.h"
@@ -127,7 +205,7 @@ NPUArray Numpy{cls}(const NPUArray& a{definition_params}) {{
 {axis_init}{out_shape}
     {validate_call}
 
-    NPUArray result(outShape, a.dtype);
+    NPUArray result(outShape, {result_dtype});
     using GetWorkspaceSizeFn = decltype(&aclnn{cls}GetWorkspaceSize);
     using ExecuteFn = decltype(&aclnn{cls});
     const auto getWorkspaceSize = custom_opp::LoadSymbol<GetWorkspaceSizeFn>("aclnn{cls}GetWorkspaceSize");
@@ -179,6 +257,49 @@ def _py(op: str, spec) -> str:
     if normalized != 1:
         raise ValueError("asnumpy.diff candidate admits only axis=1 or axis=-1")
     return ndarray(_native_diff(a, normalized))'''
+    elif op == "nextafter":
+        body = '''    if not isinstance(a, ndarray):
+        raise TypeError("asnumpy.nextafter expects AsNumpy float32 tensor inputs")
+    if not isinstance(b, ndarray):
+        raise TypeError("asnumpy.nextafter expects AsNumpy float32 tensor inputs")
+    if np.dtype(a.dtype) != np.dtype(np.float32) or np.dtype(b.dtype) != np.dtype(np.float32):
+        raise TypeError("asnumpy.nextafter supports float32 inputs only; implicit casting is not allowed")
+    if tuple(int(dim) for dim in a.shape) != tuple(int(dim) for dim in b.shape):
+        raise ValueError("asnumpy.nextafter requires identical input shapes")
+    shape = tuple(int(dim) for dim in a.shape)
+    if len(shape) != 2 or shape[0] <= 0 or shape[1] <= 0:
+        raise ValueError("asnumpy.nextafter candidate admits non-empty rank 2 float32 input only")
+    return ndarray(_native_nextafter(a, b))'''
+    elif op == "repeat":
+        body = '''    if not isinstance(a, ndarray):
+        raise TypeError("asnumpy.repeat expects a single AsNumpy float32 tensor input")
+    if np.dtype(a.dtype) != np.dtype(np.float32):
+        raise TypeError("asnumpy.repeat supports float32 input only; implicit casting is not allowed")
+    if isinstance(repeats, (bool, np.bool_)) or not isinstance(repeats, (int, np.integer)) or int(repeats) != 3:
+        raise ValueError("asnumpy.repeat candidate admits only repeats=3")
+    if isinstance(axis, (bool, np.bool_)) or not isinstance(axis, (int, np.integer)):
+        raise ValueError("asnumpy.repeat axis must be an integer")
+    shape = tuple(int(dim) for dim in a.shape)
+    if len(shape) != 2 or shape[0] <= 0 or shape[1] <= 0:
+        raise ValueError("asnumpy.repeat candidate admits non-empty rank 2 float32 input only")
+    normalized = int(axis) + 2 if int(axis) < 0 else int(axis)
+    if normalized != 1:
+        raise ValueError("asnumpy.repeat admits only axis=1 or axis=-1")
+    return ndarray(_native_repeat(a, 3, 1))'''
+    elif op == "argmax":
+        body = '''    if not isinstance(a, ndarray):
+        raise TypeError("asnumpy.argmax expects a single AsNumpy float32 tensor input")
+    if np.dtype(a.dtype) != np.dtype(np.float32):
+        raise TypeError("asnumpy.argmax supports float32 input only; implicit casting is not allowed")
+    if isinstance(axis, (bool, np.bool_)) or not isinstance(axis, (int, np.integer)):
+        raise ValueError("asnumpy.argmax axis must be an integer")
+    shape = tuple(int(dim) for dim in a.shape)
+    if len(shape) != 2 or shape[0] <= 0 or shape[1] <= 0:
+        raise ValueError("asnumpy.argmax candidate admits non-empty rank 2 float32 input only")
+    normalized = int(axis) + 2 if int(axis) < 0 else int(axis)
+    if normalized != 1:
+        raise ValueError("asnumpy.argmax admits only axis=1 or axis=-1")
+    return ndarray(_native_argmax(a, 1))'''
     else:
         body = '''    if not isinstance(a, ndarray):
         raise TypeError("asnumpy.roll expects a single AsNumpy float32 tensor input")
@@ -213,11 +334,18 @@ __all__ = ["{op}"]
 
 
 def _binding(op: str, spec) -> str:
+    params = spec["params"]
     call_args = ""
     if op == "diff":
         call_args = ", py::arg(\"axis\") = 1"
     elif op == "roll":
         call_args = ", py::arg(\"shift\"), py::arg(\"axis\") = 1"
+    elif op == "nextafter":
+        call_args = ", py::arg(\"b\").noconvert()"
+    elif op == "repeat":
+        call_args = ", py::arg(\"repeats\"), py::arg(\"axis\") = 1"
+    elif op == "argmax":
+        call_args = ", py::arg(\"axis\") = 1"
     definition_params = params.replace(" = 1", "")
     return f'''#include <asnumpy/custom_ops/{op}.hpp>
 

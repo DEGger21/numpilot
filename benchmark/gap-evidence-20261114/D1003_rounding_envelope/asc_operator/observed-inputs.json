@@ -1,0 +1,95 @@
+{
+  "callsites": [
+    {
+      "col_offset": null,
+      "inputs": [
+        {
+          "c_contiguous": true,
+          "dtype": "float32",
+          "name": "arg[0]",
+          "rank": 2,
+          "shape": [
+            1024,
+            1024
+          ]
+        },
+        {
+          "c_contiguous": true,
+          "dtype": "float32",
+          "name": "arg[1]",
+          "rank": 2,
+          "shape": [
+            1024,
+            1024
+          ]
+        }
+      ],
+      "keyword_args": [],
+      "lineno": 26,
+      "output": {
+        "c_contiguous": true,
+        "dtype": "float32",
+        "rank": 2,
+        "shape": [
+          1024,
+          1024
+        ]
+      },
+      "positional_args": 2,
+      "qualified_api": "numpy.nextafter",
+      "unprofiled_operands": []
+    },
+    {
+      "col_offset": null,
+      "inputs": [
+        {
+          "c_contiguous": true,
+          "dtype": "float32",
+          "name": "arg[0]",
+          "rank": 2,
+          "shape": [
+            1024,
+            1024
+          ]
+        },
+        {
+          "c_contiguous": true,
+          "dtype": "float32",
+          "name": "arg[1]",
+          "rank": 2,
+          "shape": [
+            1024,
+            1024
+          ]
+        }
+      ],
+      "keyword_args": [],
+      "lineno": 27,
+      "output": {
+        "c_contiguous": true,
+        "dtype": "float32",
+        "rank": 2,
+        "shape": [
+          1024,
+          1024
+        ]
+      },
+      "positional_args": 2,
+      "qualified_api": "numpy.nextafter",
+      "unprofiled_operands": []
+    }
+  ],
+  "deterministic": true,
+  "executed": true,
+  "mode": "contract",
+  "notes": [
+    "two CPU executions agreed on every observed tensor profile"
+  ],
+  "schema": "numpilot.input-observation",
+  "schema_version": 1,
+  "source": {
+    "path": "benchmark/cases/D1_partial_low_kernel/D1003_rounding_envelope/numpilot-work/asc_operator/numpy_source.py",
+    "sha256": "f368908dcae7797eb1955aa79e706f3ee47091a3e901a8ff4fe509228965b724"
+  },
+  "status": "observed"
+}

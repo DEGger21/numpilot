@@ -33,3 +33,14 @@ NPU 原生对拍 → AsNumpy 适配层 → 完整程序 CPU/NPU benchmark：
 三组合计 **2,127,600 生成 tokens**；适配层为确定性集成，不调用模型，tokens 为 0。三组均为
 `case_local_adapter_benchmarked_not_activated`；证据在各自 `asc_operator/` 下，汇总见
 [ASC_OPERATORS.md](ASC_OPERATORS.md)。
+
+## 真实 Ascend C 算子批次二（3 例）
+
+| 样例 | 缺口 | CPU / NPU (ms) | 加速比 | 生成 tokens | 完整端到端 |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `D1003_rounding_envelope` | `nextafter` | 47.455408 / 4.736910 | 10.0182x | 677560 | 1,050 s |
+| `D1007_repeat_samples` | `repeat` | 49.392092 / 27.628917 | 1.7877x | 717123 | 1,355 s |
+| `D1012_class_selection` | `argmax` | 30.189417 / 5.230176 | 5.7722x | 711065 | 1,367 s |
+
+第二批合计 **2,105,748 tokens**；三组均为 `case_local_adapter_benchmarked_not_activated`，证据在各自
+`asc_operator/` 下，汇总见 [ASC_OPERATORS.md](ASC_OPERATORS.md)。

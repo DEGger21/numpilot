@@ -1,0 +1,39 @@
+{
+  "schema": "numpilot.generated-asc-contract-audit.v1",
+  "draft": "benchmark/cases/D1_partial_low_kernel/D1012_class_selection/numpilot-work/asc_operator/custom-v2/gaps/argmax-553e4dccb8be6a27/draft",
+  "structs": {
+    "ArgmaxTilingData": [
+      [
+        "rank",
+        "axis",
+        "outerSize",
+        "reduceSize",
+        "innerSize",
+        "totalOut",
+        "blockFactor",
+        "ubFactor",
+        "usedCoreNum"
+      ]
+    ]
+  },
+  "kernel_entries": [
+    [
+      "op_kernel/argmax_arch22.cpp",
+      "argmax"
+    ]
+  ],
+  "tiling_key_params": [
+    "D_T_X",
+    "BUFFER_MODE"
+  ],
+  "errors": [
+    "host `op_host/arch22/argmax_tiling.cpp` assigns undeclared tiling field `colsPerTile`",
+    "host `op_host/arch22/argmax_tiling.cpp` assigns undeclared tiling field `rowsPerCore`",
+    "host `op_host/arch22/argmax_tiling.cpp` assigns undeclared tiling field `totalCols`",
+    "host `op_host/arch22/argmax_tiling.cpp` assigns undeclared tiling field `totalRows`",
+    "kernel entry `op_kernel/argmax_arch22.cpp` template params ['D_T_X'] != ASCENDC_TPL_ARGS_DECL ['D_T_X', 'BUFFER_MODE']",
+    "op_api uses l0op:: symbols but cust_opapi does not link opapi"
+  ],
+  "warnings": [],
+  "ok": false
+}

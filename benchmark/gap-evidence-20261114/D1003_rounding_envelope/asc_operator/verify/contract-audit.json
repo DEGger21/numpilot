@@ -1,0 +1,26 @@
+{
+  "schema": "numpilot.generated-asc-contract-audit.v1",
+  "draft": "benchmark/cases/D1_partial_low_kernel/D1003_rounding_envelope/numpilot-work/asc_operator/custom-v2/gaps/nextafter-28a589e4ee5b1a6d/draft",
+  "structs": {
+    "NextafterTilingData": [
+      [
+        "totalNum",
+        "blockFactor",
+        "ubFactor"
+      ]
+    ]
+  },
+  "kernel_entries": [
+    [
+      "op_kernel/nextafter_arch22.cpp",
+      "nextafter"
+    ]
+  ],
+  "tiling_key_params": [
+    "D_T_X",
+    "BUFFER_MODE"
+  ],
+  "errors": [],
+  "warnings": [],
+  "ok": true
+}

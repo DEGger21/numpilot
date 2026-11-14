@@ -52,7 +52,7 @@ def main(argv=None) -> int:
         for source in draft.rglob("*"):
             if source.is_file():
                 copy_text(source, dest / "draft" / source.relative_to(draft))
-    for name in ("gap-report.json", "generation-preflight.json", "observed-inputs.json", "skill-bundle.json"):
+    for name in ("gap-report.json", "generation-preflight.json", "observed-inputs.json", "skill-bundle.json", "metrics.json"):
         copy_text(stage / name, dest / name)
     repairs = stage / "repairs"
     if repairs.is_dir():
@@ -100,7 +100,7 @@ def main(argv=None) -> int:
                 copy_text(source, dest / "adapter/source" / rel)
     bench = stage / "bench-v1"
     if bench.is_dir():
-        for name in ("benchmark.json", "route-check.json", "migrated.py"):
+        for name in ("benchmark.json", "route-check.json", "migrated.py", "numpy_source.py", "source-adaptation.json"):
             copy_text(bench / name, dest / "benchmark" / name)
     print(dest)
     return 0

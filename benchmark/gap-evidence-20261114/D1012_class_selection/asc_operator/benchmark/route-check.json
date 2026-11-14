@@ -1,0 +1,44 @@
+{
+  "comparisons": {
+    "confidence": {
+      "consistent": true,
+      "dtype": "float32",
+      "max_abs_diff": 7.450580596923828e-09,
+      "shape": [
+        1024
+      ]
+    },
+    "log_probabilities": {
+      "consistent": true,
+      "dtype": "float32",
+      "max_abs_diff": 9.5367431640625e-07,
+      "shape": [
+        1024,
+        1024
+      ]
+    },
+    "probabilities": {
+      "consistent": true,
+      "dtype": "float32",
+      "max_abs_diff": 7.450580596923828e-09,
+      "shape": [
+        1024,
+        1024
+      ]
+    },
+    "winner": {
+      "consistent": true,
+      "dtype": "int64",
+      "max_abs_diff": 0.0,
+      "shape": [
+        1024
+      ]
+    }
+  },
+  "is_numpy_alias": false,
+  "ok": true,
+  "op": "argmax",
+  "public_module": "asnumpy.custom_ops",
+  "public_name": "argmax",
+  "schema": "numpilot.generated-case-route.v1"
+}
