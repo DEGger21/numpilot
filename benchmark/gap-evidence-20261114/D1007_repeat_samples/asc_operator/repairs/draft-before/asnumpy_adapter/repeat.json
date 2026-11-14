@@ -1,0 +1,379 @@
+{
+  "schema": "numpilot.asnumpy_adapter",
+  "schema_version": 1,
+  "stage": "test_adapter_02",
+  "adapter_id": "repeat",
+  "gap_id": "repeat-4a6698cb1fd7b3bb",
+  "status": "unverified_candidate",
+  "verification_status": "pending",
+  "claim": "unverified_candidate_only",
+  "target": {
+    "soc": "Ascend910B3",
+    "cann_version": "9.2.0-beta.2"
+  },
+  "source": {
+    "qualified_api": "numpy.repeat",
+    "semantic_source": "numpy.repeat",
+    "source_sha256": "f32dbf87fe0e8744c98169d41a7e04974f90e14995b929ca5f359360706a135d",
+    "call_signature": {
+      "positional": [
+        "input",
+        "repeats"
+      ],
+      "positional_count": 2,
+      "keyword_args": [
+        "axis"
+      ],
+      "keyword_defaults": {
+        "axis": null
+      },
+      "parameter_order": [
+        "input",
+        "repeats",
+        "axis"
+      ],
+      "numpy_parameter_order": [
+        "a",
+        "repeats",
+        "axis"
+      ],
+      "return_structure": "single_tensor"
+    }
+  },
+  "api_name": "repeat",
+  "op_type": "Repeat",
+  "public_api": "asnumpy.repeat",
+  "python_wrapper": "asnumpy_adapter.repeat.repeat",
+  "pybind_symbol": "asnumpy._C.repeat",
+  "native_op": "Repeat",
+  "kernel_entry": "repeat",
+  "aclnn_get_workspace_size": "aclnnRepeatGetWorkspaceSize",
+  "aclnn_execute": "aclnnRepeat",
+  "name_mapping": {
+    "public_api": "asnumpy.repeat",
+    "python_wrapper_module": "asnumpy_adapter.repeat",
+    "python_wrapper_symbol": "repeat",
+    "pybind_module": "asnumpy._C",
+    "pybind_symbol": "repeat",
+    "native_op_type": "Repeat",
+    "native_file_stem": "repeat",
+    "kernel_entry": "repeat",
+    "kernel_class": "RepeatKernel",
+    "host_schema": "Repeat",
+    "host_schema_file": "repeat_def.cpp",
+    "shape_inference_file": "repeat_infershape.cpp",
+    "tiling_file": "repeat_tiling.cpp",
+    "tiling_data_header": "repeat_tiling_data.h",
+    "l0_namespace": "l0op",
+    "l0_symbol": "Repeat",
+    "l0_header": "repeat.h",
+    "l0_source": "repeat.cpp",
+    "l2_get_workspace_size": "aclnnRepeatGetWorkspaceSize",
+    "l2_execute": "aclnnRepeat",
+    "l2_header": "aclnn_repeat.h",
+    "l2_source": "aclnn_repeat.cpp",
+    "launcher_entry": "repeat"
+  },
+  "native_contract": {
+    "inputs": [
+      {
+        "index": 0,
+        "public_name": "input",
+        "python_name": "input",
+        "op_name": "x",
+        "l0_name": "x",
+        "l2_name": "self",
+        "kind": "tensor",
+        "dtype": "float32",
+        "rank": 2,
+        "shape": [
+          1024,
+          1024
+        ],
+        "layout": "ND",
+        "c_contiguous": true,
+        "shape_binding": "observed_profile_exact"
+      }
+    ],
+    "outputs": [
+      {
+        "index": 0,
+        "public_name": "output",
+        "python_name": "output",
+        "op_name": "y",
+        "l0_name": "y",
+        "l2_name": "out",
+        "kind": "tensor",
+        "dtype": "float32",
+        "rank": 2,
+        "shape": [
+          1024,
+          3072
+        ],
+        "layout": "ND",
+        "c_contiguous": true,
+        "return_structure": "single_tensor"
+      }
+    ],
+    "attributes": [
+      {
+        "index": 0,
+        "public_name": "repeats",
+        "python_name": "repeats",
+        "op_name": "repeats",
+        "l2_name": "repeats",
+        "host_type": "Int",
+        "c_type": "int64_t",
+        "kind": "scalar_int",
+        "required": true,
+        "observed_value": 3,
+        "admitted_values": [
+          3
+        ],
+        "array_valued_repeats_supported": false
+      },
+      {
+        "index": 1,
+        "public_name": "axis",
+        "python_name": "axis",
+        "op_name": "axis",
+        "l2_name": "axis",
+        "host_type": "Int",
+        "c_type": "int64_t",
+        "kind": "scalar_int",
+        "required_for_admitted_profile": true,
+        "default": null,
+        "observed_value": 1,
+        "admitted_values": [
+          1
+        ],
+        "none_axis_supported": false,
+        "normalization": "For the admitted rank-2 profile, axis 1 remains 1. Missing axis, axis=None, negative axes, and any normalized axis other than 1 are rejected by the adapter."
+      }
+    ]
+  },
+  "aclnn": {
+    "header": "aclnn_repeat.h",
+    "source": "aclnn_repeat.cpp",
+    "get_workspace_size": {
+      "symbol": "aclnnRepeatGetWorkspaceSize",
+      "prototype": "aclnnStatus aclnnRepeatGetWorkspaceSize(const aclTensor *self, int64_t repeats, int64_t axis, aclTensor *out, uint64_t *workspaceSize, aclOpExecutor **executor)",
+      "tensor_arguments": [
+        "self",
+        "out"
+      ],
+      "scalar_arguments": [
+        "repeats",
+        "axis"
+      ],
+      "workspace_query": "workspaceSize is written only after the call reports success; the adapter must check the returned aclnnStatus before allocating workspace or launching execution."
+    },
+    "execute": {
+      "symbol": "aclnnRepeat",
+      "prototype": "aclnnStatus aclnnRepeat(void *workspace, uint64_t workspaceSize, aclOpExecutor *executor, aclrtStream stream)",
+      "stream": "caller supplied",
+      "synchronization": "The adapter must check every ACLNN and ACL runtime status and synchronize the caller's stream before host-side result consumption. No CPU or NumPy fallback is permitted."
+    },
+    "two_stage": true,
+    "workspace_zero_rule": "When workspaceSize is zero, workspace may be null. Otherwise workspace must refer to an NPU allocation of at least workspaceSize bytes.",
+    "executor_rule": "executor is produced by aclnnRepeatGetWorkspaceSize and consumed exactly once by aclnnRepeat for that invocation."
+  },
+  "shape_and_semantics": {
+    "numpy_rule": "numpy.repeat(input, repeats, axis=axis) repeats each position along the selected axis, with repeated copies adjacent in the output.",
+    "admitted_rule": "input [1024,1024], repeats 3, axis 1 produces output [1024,3072], where output[:, 3*j + k] equals input[:, j] for k in {0,1,2}.",
+    "axis_none_rule": "NumPy axis=None flattening is not admitted by this candidate and must be rejected explicitly.",
+    "dtype_conversion": "none",
+    "cpu_fallback": "forbidden",
+    "layout": "C-contiguous ND",
+    "empty_input": "not admitted by this candidate",
+    "zero_repeats": "not admitted by this candidate"
+  },
+  "support_scope": {
+    "status": "targeted_unverified_candidate",
+    "qualification_scope": "only the observed float32 rank-2 profile below",
+    "admitted_profiles": [
+      {
+        "id": "repeat_f32_1024x1024_axis1_repeats3",
+        "input": {
+          "dtype": "float32",
+          "shape": [
+            1024,
+            1024
+          ],
+          "rank": 2,
+          "c_contiguous": true
+        },
+        "repeats": 3,
+        "axis": 1,
+        "output": {
+          "dtype": "float32",
+          "shape": [
+            1024,
+            3072
+          ],
+          "rank": 2,
+          "c_contiguous": true
+        }
+      }
+    ],
+    "dtype_rules": {
+      "input": "float32 only",
+      "output": "float32, determined by the NumPy oracle",
+      "other_input_dtypes": "reject before ACLNN; never cast",
+      "bool_outputs": []
+    },
+    "shape_rules": {
+      "admitted_input_rank": 2,
+      "admitted_input_shape": [
+        1024,
+        1024
+      ],
+      "admitted_output_shape": [
+        1024,
+        3072
+      ],
+      "other_shapes": "reject at the public adapter boundary",
+      "other_ranks": "reject at the public adapter boundary",
+      "non_contiguous_input": "reject at the public adapter boundary"
+    },
+    "signature_rules": {
+      "positional_count": 2,
+      "keyword_args": [
+        "axis"
+      ],
+      "extra_positional_args": "reject",
+      "extra_keyword_args": "reject",
+      "out_where_casting_dtype": "reject"
+    }
+  },
+  "rejection_policy": {
+    "mode": "explicit_fail_fast",
+    "before_device_work": true,
+    "no_implicit_cast": true,
+    "no_cpu_numpy_fallback": true,
+    "no_silent_axis_default": true,
+    "cases": [
+      {
+        "code": "ASNUMPY_REPEAT_UNSUPPORTED_DTYPE",
+        "condition": "input.dtype is not float32",
+        "action": "raise TypeError before ACLNN allocation"
+      },
+      {
+        "code": "ASNUMPY_REPEAT_UNSUPPORTED_RANK",
+        "condition": "input.rank is not 2",
+        "action": "raise ValueError before ACLNN allocation"
+      },
+      {
+        "code": "ASNUMPY_REPEAT_UNSUPPORTED_SHAPE",
+        "condition": "input.shape is not [1024,1024]",
+        "action": "raise ValueError before ACLNN allocation"
+      },
+      {
+        "code": "ASNUMPY_REPEAT_UNSUPPORTED_LAYOUT",
+        "condition": "input is not C-contiguous",
+        "action": "raise ValueError instead of silently copying or transposing"
+      },
+      {
+        "code": "ASNUMPY_REPEAT_UNSUPPORTED_REPEATS",
+        "condition": "repeats is not the integer 3, including integer arrays and zero or negative values",
+        "action": "raise ValueError or TypeError before ACLNN allocation"
+      },
+      {
+        "code": "ASNUMPY_REPEAT_UNSUPPORTED_AXIS",
+        "condition": "axis is omitted, None, or does not normalize to 1",
+        "action": "raise ValueError before ACLNN allocation"
+      },
+      {
+        "code": "ASNUMPY_REPEAT_UNSUPPORTED_KWARG",
+        "condition": "out, where, dtype, casting, or any keyword other than axis is supplied",
+        "action": "raise TypeError"
+      },
+      {
+        "code": "ASNUMPY_REPEAT_ACLNN_FAILURE",
+        "condition": "any ACLNN or ACL runtime call returns a failure status",
+        "action": "raise RuntimeError with the failing symbol and status; never retry with CPU"
+      }
+    ]
+  },
+  "test_adapter": {
+    "required_public_entrypoint": "asnumpy.repeat",
+    "private_pybind_only_tests_allowed": false,
+    "oracle": "numpy.repeat",
+    "oracle_invocation": "numpy.repeat(input, repeats, axis=axis)",
+    "observed_positive_case": {
+      "input": {
+        "dtype": "float32",
+        "shape": [
+          1024,
+          1024
+        ],
+        "c_contiguous": true
+      },
+      "repeats": 3,
+      "axis": 1,
+      "expected_output": {
+        "dtype": "float32",
+        "shape": [
+          1024,
+          3072
+        ],
+        "c_contiguous": true
+      }
+    },
+    "negative_cases": [
+      "input dtype float16",
+      "input dtype int32",
+      "input rank 1",
+      "input rank 3",
+      "input shape [512,1024]",
+      "non-contiguous float32 input",
+      "repeats as a tensor or list",
+      "repeats 0",
+      "repeats 1",
+      "axis=0",
+      "axis=None",
+      "axis omitted",
+      "unexpected out keyword",
+      "unexpected dtype keyword"
+    ],
+    "tolerances": {
+      "float32": {
+        "rtol": 0.0,
+        "atol": 0.0,
+        "equal_nan": true,
+        "preserve_signed_zero": true,
+        "bitwise_copy_expected": true,
+        "status": "proposed_before_numerical_qualification"
+      }
+    },
+    "special_values": [
+      "NaN",
+      "+Inf",
+      "-Inf",
+      "+0.0",
+      "-0.0",
+      "subnormal"
+    ],
+    "checks": [
+      "Call asnumpy.repeat, not only asnumpy._C.repeat.",
+      "Compare output shape and dtype exactly against the NumPy oracle.",
+      "Compare float32 values at the recorded tolerance and confirm signed-zero and NaN handling.",
+      "Confirm every rejected profile fails before ACLNN allocation.",
+      "Confirm repeated calls do not reuse a stale executor or output tensor.",
+      "Confirm no host fallback occurs during native execution."
+    ]
+  },
+  "qualification": {
+    "status": "pending",
+    "gates": {
+      "build": "pending",
+      "unit_and_boundary": "pending",
+      "numerical": "pending",
+      "native_execution": "pending",
+      "whole_program": "pending",
+      "performance": "pending",
+      "activation": "pending"
+    },
+    "notes": "This manifest describes an unverified targeted candidate. Correctness, device execution, whole-program behavior, performance, and activation remain unqualified until deterministic validation records the required evidence."
+  }
+}

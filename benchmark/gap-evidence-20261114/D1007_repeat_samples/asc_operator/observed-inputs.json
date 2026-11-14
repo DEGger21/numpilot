@@ -1,0 +1,48 @@
+{
+  "callsites": [
+    {
+      "col_offset": null,
+      "inputs": [
+        {
+          "c_contiguous": true,
+          "dtype": "float32",
+          "name": "arg[0]",
+          "rank": 2,
+          "shape": [
+            1024,
+            1024
+          ]
+        }
+      ],
+      "keyword_args": [
+        "axis"
+      ],
+      "lineno": 24,
+      "output": {
+        "c_contiguous": true,
+        "dtype": "float32",
+        "rank": 2,
+        "shape": [
+          1024,
+          3072
+        ]
+      },
+      "positional_args": 2,
+      "qualified_api": "numpy.repeat",
+      "unprofiled_operands": []
+    }
+  ],
+  "deterministic": true,
+  "executed": true,
+  "mode": "contract",
+  "notes": [
+    "two CPU executions agreed on every observed tensor profile"
+  ],
+  "schema": "numpilot.input-observation",
+  "schema_version": 1,
+  "source": {
+    "path": "benchmark/cases/D1_partial_low_kernel/D1007_repeat_samples/numpilot-work/asc_operator/numpy_source.py",
+    "sha256": "f32dbf87fe0e8744c98169d41a7e04974f90e14995b929ca5f359360706a135d"
+  },
+  "status": "observed"
+}

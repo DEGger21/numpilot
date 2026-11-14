@@ -1,0 +1,77 @@
+{
+  "client_timeout_seconds": 600.0,
+  "gates": {
+    "cannbot_skill_readiness": {
+      "bundle_sha256": "da0ee3d6a12561da0d630125d7f4ae8602848dbd4c6f1b3f7150b26a57ead79f",
+      "commit": "39919e2c995e1cd9e193f11ac2e3fcb3cbd1d26c",
+      "content_embedded_for_remote_model": true,
+      "gate": "cannbot_skill_readiness",
+      "primary_file": "ops/ascendc-registry-invoke-template/SKILL.md",
+      "primary_file_sha256": "76ca7150751aab12a02e70f07c92e87985fa25ecbb9444971c45355c9da2bf94",
+      "prompt_context_sha256": "b71e40968c385f37d01aa0a1f6aa679060cab09fcb3604128ddbfd9774881daa",
+      "repository": "https://gitcode.com/cann/cannbot-skills.git",
+      "required_skill_files": [
+        "ops/ascendc-registry-invoke-template/SKILL.md",
+        "plugins-official/ops-registry-invoke/workflow/SKILL.md",
+        "plugins-official/ops-registry-invoke/agents/ascendc-ops-developer.md",
+        "plugins-official/ops-registry-invoke/agents/ascendc-ops-tester.md"
+      ],
+      "required_skill_files_sha256": {
+        "ops/ascendc-registry-invoke-template/SKILL.md": "76ca7150751aab12a02e70f07c92e87985fa25ecbb9444971c45355c9da2bf94",
+        "plugins-official/ops-registry-invoke/agents/ascendc-ops-developer.md": "86131c6babd712396b149d9e0fab28dc62dfeb077c1c71f1d200da24ba76f28b",
+        "plugins-official/ops-registry-invoke/agents/ascendc-ops-tester.md": "9ae72792b5fa588d26d51ad426aacc7513dd0af0ac3b1ce40e0b8ac46c3005b9",
+        "plugins-official/ops-registry-invoke/workflow/SKILL.md": "59ff17f86224cbea67f09005bf4db30d70c816747a972af2a32432323e4f4753"
+      },
+      "schema_version": 1,
+      "skill_name": "ascendc-registry-invoke-template",
+      "status": "pass",
+      "verified_file_count": 36
+    },
+    "llm_readiness": {
+      "actual_remote_call": true,
+      "answer_marker": "NUMPILOT_LLM_READY",
+      "answer_marker_present": true,
+      "gate": "llm_readiness",
+      "question_sha256": "e26ce7cf09949e8140e49b557faa5317ace1c5c22ade1708f4d56ae86d642326",
+      "receipt": {
+        "configured_model": "deepseek-flash",
+        "content_sha256": "a177ace27eae214d652edff937884a8f3068bc17f344f6753cac1631569b0aac",
+        "http_status": 200,
+        "model_identity_sha256": "794a984cd0081f7681a1d6d5f5ac93ffc312402ca823cdcfa0a7bb0cd42b0cc0",
+        "protocol": "openai-chat-completions",
+        "provider": "openai-compatible",
+        "request_body_sha256": "342925dd4c4adeb939b09783f4a7e4995974d43aeb3b3e264514ecde820d3956",
+        "request_id": null,
+        "requested_model": "deepseek-flash",
+        "response_body_sha256": "983dbeacc7aee436e530359a7f009be99a26a6a42eb61dbac3923de08d19707e",
+        "response_created": 1794642133,
+        "response_id": "ed5bb096-fc0c-49d9-8a4d-056d64a9f904",
+        "response_model": "deepseek-flash",
+        "response_model_aliases": [],
+        "response_model_identity": "exact",
+        "schema_version": 2,
+        "tls_verification": "enabled",
+        "usage": {
+          "completion_tokens": 11,
+          "prompt_cache_hit_tokens": 0,
+          "prompt_cache_miss_tokens": 73,
+          "prompt_tokens": 73,
+          "total_tokens": 84
+        },
+        "utc_end": "2026-11-14T07:42:14.187815Z",
+        "utc_start": "2026-11-14T07:42:13.571510Z"
+      },
+      "schema_version": 2,
+      "status": "pass"
+    }
+  },
+  "operator_goal": "accuracy",
+  "performance_optimization": "skipped_accuracy_first",
+  "producer": "numpilot-generation-preflight-v1",
+  "required_order": [
+    "llm_readiness",
+    "cannbot_skill_readiness"
+  ],
+  "schema_version": 1,
+  "status": "pass"
+}

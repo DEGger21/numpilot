@@ -1,0 +1,39 @@
+{
+  "axis": 1,
+  "elapsed_seconds": 0.8888913290575147,
+  "exact_equal": false,
+  "max_abs_diff": 0.0,
+  "mismatch_count": 2,
+  "mismatch_samples": [
+    {
+      "actual": "nan",
+      "actual_bits": 2147483647,
+      "expected": "nan",
+      "expected_bits": 2143289344,
+      "x": "-inf"
+    },
+    {
+      "actual": "nan",
+      "actual_bits": 2147483647,
+      "expected": "nan",
+      "expected_bits": 2143289344,
+      "x": "nan"
+    }
+  ],
+  "nan_positions_equal": true,
+  "non_nan_bits_equal": true,
+  "numpy_oracle": "numpy.diff",
+  "output_shape": [
+    1024,
+    1023
+  ],
+  "profile": "diff",
+  "semantic_equal": true,
+  "shape": [
+    1024,
+    1024
+  ],
+  "shift": null,
+  "status": "pass",
+  "workspace_bytes": 512
+}

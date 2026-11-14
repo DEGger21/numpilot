@@ -1,0 +1,59 @@
+{
+  "api_name": "spacing",
+  "asnumpy_api": "asnumpy.spacing",
+  "callsites": [
+    {
+      "call_expr": "numpy.spacing(<arg0>)",
+      "col_offset": 15,
+      "lineno": 15,
+      "qualified_api": "numpy.spacing",
+      "reason": "API 不在静态覆盖集"
+    },
+    {
+      "call_expr": "numpy.spacing(<arg0>)",
+      "col_offset": 16,
+      "lineno": 16,
+      "qualified_api": "numpy.spacing",
+      "reason": "API 不在静态覆盖集"
+    }
+  ],
+  "cann_version": "9.2.0-beta.2",
+  "dtype_rules": [
+    "runtime_profile_required"
+  ],
+  "gap_id": "spacing-f596b58e7bfad43e",
+  "qualified_api": "numpy.spacing",
+  "reference_cases": [],
+  "route": "ascendc_registry_candidate",
+  "route_decisions": [
+    {
+      "reason": "requires a semantic composition resolver",
+      "route": "asnumpy_composite",
+      "status": "not_evaluated"
+    },
+    {
+      "reason": "check a pinned CANN operator catalog before new kernel work",
+      "route": "cann_existing",
+      "status": "review_required"
+    },
+    {
+      "reason": "explicit draft generation is allowed; execution remains gated",
+      "route": "ascendc_registry",
+      "status": "candidate_for_draft"
+    }
+  ],
+  "schema_version": 1,
+  "semantic_source": "numpy.spacing",
+  "shape_rules": [
+    "runtime_profile_required"
+  ],
+  "signature_variants": [
+    {
+      "keyword_args": [],
+      "positional_args": 1
+    }
+  ],
+  "source_path": "benchmark/cases/D1_partial_low_kernel/D1002_ulp_budget/numpilot-work/asc_operator/numpy_source.py",
+  "source_sha256": "e5cfef1887ff4d44447eb3746e495f1c20903f888407afb6b818f0518267dc60",
+  "target_soc": "Ascend910B3"
+}

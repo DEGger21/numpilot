@@ -1,0 +1,45 @@
+{
+  "adapter": {
+    "build_seconds": 147,
+    "is_numpy_alias": false,
+    "public_module": "asnumpy.custom_ops",
+    "route_ok": true
+  },
+  "api": "numpy.argmax",
+  "benchmark": {
+    "consistent": true,
+    "cpu_ms": 30.189417,
+    "npu_ms": 5.2301755,
+    "samples": 20,
+    "speedup": 5.772161373934775
+  },
+  "benchmark_finished_at": "2026-11-14T16:04:57.879892+08:00",
+  "case": "D1012_class_selection",
+  "claim_level": "case_local_adapter_benchmarked_not_activated",
+  "compile_repairs": {
+    "build_dirs_tried": 3,
+    "successful_build_seconds": 20
+  },
+  "deploy": {
+    "seconds": 1
+  },
+  "end_to_end_seconds": 1367,
+  "generation": {
+    "blocked_calls": 0,
+    "finished_at": "2026-11-14T15:56:39.210873+08:00",
+    "model_attempts": 17,
+    "report_status": "generated_unverified",
+    "seconds": 868,
+    "started_at": "2026-11-14T15:42:11.001088+08:00",
+    "tokens": 711065
+  },
+  "native_validation": {
+    "elapsed_seconds": 0.8885831842198968,
+    "exact_equal": true,
+    "mismatch_count": 0,
+    "semantic_equal": true,
+    "workspace_bytes": 512
+  },
+  "post_generation_seconds": 499,
+  "schema": "numpilot.generated-asc-case-metrics.v1"
+}

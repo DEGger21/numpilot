@@ -1,0 +1,3785 @@
+{
+  "schema": "numpilot.benchmark-classification",
+  "version": 1,
+  "created": "2026-11-14",
+  "asnumpy_version": "0.3.1.dev70+g60d139c54.d20261108",
+  "asnumpy_exports": 187,
+  "rule": "all np.* attributes in forward/helpers must exist in AsNumpy exports or documented alias map; F signature keywords count as gaps. np.abs is treated as asnumpy.absolute. J cases remain refusal-only even when APIs are covered.",
+  "counts": {
+    "total": 150,
+    "full_coverage": 71,
+    "has_gap": 79,
+    "out_of_scope": 15
+  },
+  "cases": [
+    {
+      "group": "A_direct_simple",
+      "case": "A001_add_sqrt",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "add",
+        "sqrt",
+        "square"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/A_direct_simple/A001_add_sqrt/program.py"
+    },
+    {
+      "group": "A_direct_simple",
+      "case": "A002_bounded_product",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "clip",
+        "multiply"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/A_direct_simple/A002_bounded_product/program.py"
+    },
+    {
+      "group": "A_direct_simple",
+      "case": "A003_trig_pair",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "cos",
+        "sin"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/A_direct_simple/A003_trig_pair/program.py"
+    },
+    {
+      "group": "A_direct_simple",
+      "case": "A004_row_sum",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "sum"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {
+        "sum": [
+          "axis"
+        ]
+      },
+      "program": "benchmark/cases/A_direct_simple/A004_row_sum/program.py"
+    },
+    {
+      "group": "A_direct_simple",
+      "case": "A005_column_mean",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "mean"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {
+        "mean": [
+          "axis"
+        ]
+      },
+      "program": "benchmark/cases/A_direct_simple/A005_column_mean/program.py"
+    },
+    {
+      "group": "A_direct_simple",
+      "case": "A006_row_max",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "max"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {
+        "max": [
+          "axis"
+        ]
+      },
+      "program": "benchmark/cases/A_direct_simple/A006_row_max/program.py"
+    },
+    {
+      "group": "A_direct_simple",
+      "case": "A007_matrix_product",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "matmul"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/A_direct_simple/A007_matrix_product/program.py"
+    },
+    {
+      "group": "A_direct_simple",
+      "case": "A008_matrix_activation",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "matmul",
+        "tanh"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/A_direct_simple/A008_matrix_activation/program.py"
+    },
+    {
+      "group": "A_direct_simple",
+      "case": "A009_matrix_chain",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "matmul"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/A_direct_simple/A009_matrix_chain/program.py"
+    },
+    {
+      "group": "A_direct_simple",
+      "case": "A010_boolean_logic",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "logical_and",
+        "logical_or"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/A_direct_simple/A010_boolean_logic/program.py"
+    },
+    {
+      "group": "A_direct_simple",
+      "case": "A011_integer_modulo",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "remainder"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/A_direct_simple/A011_integer_modulo/program.py"
+    },
+    {
+      "group": "A_direct_simple",
+      "case": "A012_half_rounding",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "floor",
+        "rint"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/A_direct_simple/A012_half_rounding/program.py"
+    },
+    {
+      "group": "A_direct_simple",
+      "case": "A013_exponential_decay",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "exp",
+        "negative",
+        "square"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/A_direct_simple/A013_exponential_decay/program.py"
+    },
+    {
+      "group": "A_direct_simple",
+      "case": "A014_prefix_sum",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "cumsum"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {
+        "cumsum": [
+          "axis"
+        ]
+      },
+      "program": "benchmark/cases/A_direct_simple/A014_prefix_sum/program.py"
+    },
+    {
+      "group": "A_direct_simple",
+      "case": "A015_row_product",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "prod"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {
+        "prod": [
+          "axis"
+        ]
+      },
+      "program": "benchmark/cases/A_direct_simple/A015_row_product/program.py"
+    },
+    {
+      "group": "B_direct_semantics",
+      "case": "B001_out_buffer",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "add"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [
+        "add uses keyword(s) out"
+      ],
+      "keywords": {
+        "add": [
+          "out"
+        ]
+      },
+      "program": "benchmark/cases/B_direct_semantics/B001_out_buffer/program.py"
+    },
+    {
+      "group": "B_direct_semantics",
+      "case": "B002_where_preserves",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "multiply"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [
+        "multiply uses keyword(s) out,where"
+      ],
+      "keywords": {
+        "multiply": [
+          "out",
+          "where"
+        ]
+      },
+      "program": "benchmark/cases/B_direct_semantics/B002_where_preserves/program.py"
+    },
+    {
+      "group": "B_direct_semantics",
+      "case": "B003_unsafe_cast",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "add"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [
+        "add uses keyword(s) casting,out"
+      ],
+      "keywords": {
+        "add": [
+          "casting",
+          "out"
+        ]
+      },
+      "program": "benchmark/cases/B_direct_semantics/B003_unsafe_cast/program.py"
+    },
+    {
+      "group": "B_direct_semantics",
+      "case": "B004_mixed_int_float",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "add"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/B_direct_semantics/B004_mixed_int_float/program.py"
+    },
+    {
+      "group": "B_direct_semantics",
+      "case": "B005_mixed_float_precision",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "add",
+        "subtract"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/B_direct_semantics/B005_mixed_float_precision/program.py"
+    },
+    {
+      "group": "B_direct_semantics",
+      "case": "B006_transposed_input",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "multiply"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/B_direct_semantics/B006_transposed_input/program.py"
+    },
+    {
+      "group": "B_direct_semantics",
+      "case": "B007_strided_input",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "square"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/B_direct_semantics/B007_strided_input/program.py"
+    },
+    {
+      "group": "B_direct_semantics",
+      "case": "B008_negative_axis",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "sum"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {
+        "sum": [
+          "axis"
+        ]
+      },
+      "program": "benchmark/cases/B_direct_semantics/B008_negative_axis/program.py"
+    },
+    {
+      "group": "B_direct_semantics",
+      "case": "B009_keepdims",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "mean",
+        "subtract"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {
+        "mean": [
+          "axis",
+          "keepdims"
+        ]
+      },
+      "program": "benchmark/cases/B_direct_semantics/B009_keepdims/program.py"
+    },
+    {
+      "group": "B_direct_semantics",
+      "case": "B010_empty_sum",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "prod",
+        "sum"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {
+        "prod": [
+          "axis"
+        ],
+        "sum": [
+          "axis"
+        ]
+      },
+      "program": "benchmark/cases/B_direct_semantics/B010_empty_sum/program.py"
+    },
+    {
+      "group": "B_direct_semantics",
+      "case": "B011_nan_inf_extrema",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "fmax",
+        "maximum"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/B_direct_semantics/B011_nan_inf_extrema/program.py"
+    },
+    {
+      "group": "B_direct_semantics",
+      "case": "B012_zero_dimensional",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "add",
+        "asarray"
+      ],
+      "missing_apis": [
+        "asarray"
+      ],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/B_direct_semantics/B012_zero_dimensional/program.py"
+    },
+    {
+      "group": "B_direct_semantics",
+      "case": "B013_three_axis_broadcast",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "subtract"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/B_direct_semantics/B013_three_axis_broadcast/program.py"
+    },
+    {
+      "group": "B_direct_semantics",
+      "case": "B014_overlapping_alias",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/B_direct_semantics/B014_overlapping_alias/program.py"
+    },
+    {
+      "group": "B_direct_semantics",
+      "case": "B015_fortran_matmul",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "matmul",
+        "square",
+        "sum"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {
+        "sum": [
+          "axis"
+        ]
+      },
+      "program": "benchmark/cases/B_direct_semantics/B015_fortran_matmul/program.py"
+    },
+    {
+      "group": "B_direct_semantics",
+      "case": "B016_reverse_strides",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "signbit",
+        "sin"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/B_direct_semantics/B016_reverse_strides/program.py"
+    },
+    {
+      "group": "B_direct_semantics",
+      "case": "B017_empty_product",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "int64",
+        "prod"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {
+        "prod": [
+          "axis",
+          "dtype"
+        ]
+      },
+      "program": "benchmark/cases/B_direct_semantics/B017_empty_product/program.py"
+    },
+    {
+      "group": "B_direct_semantics",
+      "case": "B018_signed_zero",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "copysign",
+        "signbit"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/B_direct_semantics/B018_signed_zero/program.py"
+    },
+    {
+      "group": "B_direct_semantics",
+      "case": "B019_boolean_keepdims",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "all",
+        "any"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {
+        "all": [
+          "axis",
+          "keepdims"
+        ],
+        "any": [
+          "axis",
+          "keepdims"
+        ]
+      },
+      "program": "benchmark/cases/B_direct_semantics/B019_boolean_keepdims/program.py"
+    },
+    {
+      "group": "B_direct_semantics",
+      "case": "B020_nan_reductions",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "nancumsum",
+        "nansum"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {
+        "nancumsum": [
+          "axis"
+        ],
+        "nansum": [
+          "axis"
+        ]
+      },
+      "program": "benchmark/cases/B_direct_semantics/B020_nan_reductions/program.py"
+    },
+    {
+      "group": "C_direct_structure",
+      "case": "C001_heat_diffusion",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "add",
+        "maximum",
+        "multiply",
+        "square",
+        "subtract",
+        "sum"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {
+        "sum": [
+          "axis"
+        ]
+      },
+      "program": "benchmark/cases/C_direct_structure/C001_heat_diffusion/program.py"
+    },
+    {
+      "group": "C_direct_structure",
+      "case": "C002_mlp_inference",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "add",
+        "divide",
+        "exp",
+        "matmul",
+        "max",
+        "maximum",
+        "minimum",
+        "subtract",
+        "sum"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {
+        "max": [
+          "axis",
+          "keepdims"
+        ],
+        "sum": [
+          "axis",
+          "keepdims"
+        ]
+      },
+      "program": "benchmark/cases/C_direct_structure/C002_mlp_inference/program.py"
+    },
+    {
+      "group": "C_direct_structure",
+      "case": "C003_layer_normalization",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "add",
+        "clip",
+        "divide",
+        "mean",
+        "multiply",
+        "sqrt",
+        "square",
+        "subtract",
+        "tanh"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {
+        "mean": [
+          "axis",
+          "keepdims"
+        ]
+      },
+      "program": "benchmark/cases/C_direct_structure/C003_layer_normalization/program.py"
+    },
+    {
+      "group": "C_direct_structure",
+      "case": "C004_cosine_rows",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "clip",
+        "divide",
+        "maximum",
+        "multiply",
+        "sqrt",
+        "square",
+        "subtract",
+        "sum"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {
+        "sum": [
+          "axis"
+        ]
+      },
+      "program": "benchmark/cases/C_direct_structure/C004_cosine_rows/program.py"
+    },
+    {
+      "group": "C_direct_structure",
+      "case": "C005_distance_refinement",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "multiply",
+        "sqrt",
+        "square",
+        "subtract",
+        "sum"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {
+        "sum": [
+          "axis"
+        ]
+      },
+      "program": "benchmark/cases/C_direct_structure/C005_distance_refinement/program.py"
+    },
+    {
+      "group": "C_direct_structure",
+      "case": "C006_softplus_network",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "absolute",
+        "add",
+        "clip",
+        "exp",
+        "log1p",
+        "max",
+        "maximum",
+        "mean",
+        "multiply",
+        "negative",
+        "reciprocal",
+        "tanh"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {
+        "max": [
+          "axis"
+        ],
+        "mean": [
+          "axis"
+        ]
+      },
+      "program": "benchmark/cases/C_direct_structure/C006_softplus_network/program.py"
+    },
+    {
+      "group": "C_direct_structure",
+      "case": "C007_least_squares_steps",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "add",
+        "clip",
+        "mean",
+        "multiply",
+        "subtract"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {
+        "mean": [
+          "axis"
+        ]
+      },
+      "program": "benchmark/cases/C_direct_structure/C007_least_squares_steps/program.py"
+    },
+    {
+      "group": "C_direct_structure",
+      "case": "C008_portfolio_repricing",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "add",
+        "divide",
+        "exp",
+        "log",
+        "maximum",
+        "multiply",
+        "negative",
+        "sqrt",
+        "square",
+        "subtract",
+        "tanh"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/C_direct_structure/C008_portfolio_repricing/program.py"
+    },
+    {
+      "group": "C_direct_structure",
+      "case": "C009_poisson_robust_map",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "absolute",
+        "add",
+        "clip",
+        "minimum",
+        "multiply",
+        "sin",
+        "square",
+        "subtract",
+        "tanh"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/C_direct_structure/C009_poisson_robust_map/program.py"
+    },
+    {
+      "group": "C_direct_structure",
+      "case": "C010_energy_feedback",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "add",
+        "mean",
+        "multiply",
+        "sqrt",
+        "square",
+        "subtract",
+        "tanh"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {
+        "mean": [
+          "axis"
+        ]
+      },
+      "program": "benchmark/cases/C_direct_structure/C010_energy_feedback/program.py"
+    },
+    {
+      "group": "C_direct_structure",
+      "case": "C011_residual_gemm",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "add",
+        "matmul",
+        "maximum",
+        "mean",
+        "multiply",
+        "sqrt",
+        "square",
+        "sum",
+        "tanh"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {
+        "mean": [
+          "axis"
+        ],
+        "sum": [
+          "axis"
+        ]
+      },
+      "program": "benchmark/cases/C_direct_structure/C011_residual_gemm/program.py"
+    },
+    {
+      "group": "C_direct_structure",
+      "case": "C012_calibrated_projection",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "clip",
+        "divide",
+        "exp",
+        "matmul",
+        "max",
+        "multiply",
+        "subtract",
+        "sum"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {
+        "max": [
+          "axis",
+          "keepdims"
+        ],
+        "sum": [
+          "axis",
+          "keepdims"
+        ]
+      },
+      "program": "benchmark/cases/C_direct_structure/C012_calibrated_projection/program.py"
+    },
+    {
+      "group": "C_direct_structure",
+      "case": "C013_markov_relaxation",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "absolute",
+        "add",
+        "divide",
+        "matmul",
+        "maximum",
+        "multiply",
+        "subtract",
+        "sum"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {
+        "sum": [
+          "axis",
+          "keepdims"
+        ]
+      },
+      "program": "benchmark/cases/C_direct_structure/C013_markov_relaxation/program.py"
+    },
+    {
+      "group": "C_direct_structure",
+      "case": "C014_logistic_training",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "add",
+        "clip",
+        "divide",
+        "exp",
+        "log",
+        "log1p",
+        "matmul",
+        "multiply",
+        "negative",
+        "reciprocal",
+        "subtract"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/C_direct_structure/C014_logistic_training/program.py"
+    },
+    {
+      "group": "C_direct_structure",
+      "case": "C015_tensor_moments",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "add",
+        "clip",
+        "divide",
+        "mean",
+        "multiply",
+        "sqrt",
+        "square",
+        "subtract",
+        "tanh"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {
+        "mean": [
+          "axis",
+          "keepdims"
+        ]
+      },
+      "program": "benchmark/cases/C_direct_structure/C015_tensor_moments/program.py"
+    },
+    {
+      "group": "D1_partial_low_kernel",
+      "case": "D1001_signed_compression",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "absolute",
+        "add",
+        "cbrt",
+        "divide",
+        "maximum",
+        "mean",
+        "square",
+        "subtract",
+        "tanh"
+      ],
+      "missing_apis": [
+        "cbrt"
+      ],
+      "gap_reasons": [],
+      "keywords": {
+        "mean": [
+          "axis",
+          "keepdims"
+        ]
+      },
+      "program": "benchmark/cases/D1_partial_low_kernel/D1001_signed_compression/program.py"
+    },
+    {
+      "group": "D1_partial_low_kernel",
+      "case": "D1002_ulp_budget",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "absolute",
+        "add",
+        "divide",
+        "maximum",
+        "multiply",
+        "spacing"
+      ],
+      "missing_apis": [
+        "spacing"
+      ],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/D1_partial_low_kernel/D1002_ulp_budget/program.py"
+    },
+    {
+      "group": "D1_partial_low_kernel",
+      "case": "D1003_rounding_envelope",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "absolute",
+        "add",
+        "clip",
+        "divide",
+        "maximum",
+        "negative",
+        "nextafter",
+        "sqrt",
+        "square",
+        "subtract"
+      ],
+      "missing_apis": [
+        "nextafter"
+      ],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/D1_partial_low_kernel/D1003_rounding_envelope/program.py"
+    },
+    {
+      "group": "D1_partial_low_kernel",
+      "case": "D1004_two_track_velocity",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "add",
+        "clip",
+        "diff",
+        "mean",
+        "multiply",
+        "sqrt",
+        "square",
+        "subtract"
+      ],
+      "missing_apis": [
+        "diff"
+      ],
+      "gap_reasons": [],
+      "keywords": {
+        "diff": [
+          "axis"
+        ],
+        "mean": [
+          "axis"
+        ]
+      },
+      "program": "benchmark/cases/D1_partial_low_kernel/D1004_two_track_velocity/program.py"
+    },
+    {
+      "group": "D1_partial_low_kernel",
+      "case": "D1005_feature_join",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "absolute",
+        "add",
+        "concatenate",
+        "divide",
+        "maximum",
+        "mean",
+        "minimum",
+        "multiply",
+        "square",
+        "tanh"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {
+        "concatenate": [
+          "axis"
+        ],
+        "mean": [
+          "axis"
+        ]
+      },
+      "program": "benchmark/cases/D1_partial_low_kernel/D1005_feature_join/program.py"
+    },
+    {
+      "group": "D1_partial_low_kernel",
+      "case": "D1006_reflect_halo",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "add",
+        "clip",
+        "divide",
+        "mean",
+        "multiply",
+        "pad",
+        "sqrt",
+        "square",
+        "subtract"
+      ],
+      "missing_apis": [
+        "pad"
+      ],
+      "gap_reasons": [],
+      "keywords": {
+        "mean": [
+          "axis",
+          "keepdims"
+        ],
+        "pad": [
+          "mode"
+        ]
+      },
+      "program": "benchmark/cases/D1_partial_low_kernel/D1006_reflect_halo/program.py"
+    },
+    {
+      "group": "D1_partial_low_kernel",
+      "case": "D1007_repeat_samples",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "add",
+        "maximum",
+        "mean",
+        "minimum",
+        "multiply",
+        "repeat",
+        "square",
+        "subtract",
+        "tanh"
+      ],
+      "missing_apis": [
+        "repeat"
+      ],
+      "gap_reasons": [],
+      "keywords": {
+        "mean": [
+          "axis",
+          "keepdims"
+        ],
+        "repeat": [
+          "axis"
+        ]
+      },
+      "program": "benchmark/cases/D1_partial_low_kernel/D1007_repeat_samples/program.py"
+    },
+    {
+      "group": "D1_partial_low_kernel",
+      "case": "D1008_tile_calibration",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "absolute",
+        "add",
+        "divide",
+        "mean",
+        "multiply",
+        "square",
+        "subtract",
+        "sum",
+        "tanh",
+        "tile"
+      ],
+      "missing_apis": [
+        "tile"
+      ],
+      "gap_reasons": [],
+      "keywords": {
+        "mean": [
+          "axis",
+          "keepdims"
+        ],
+        "sum": [
+          "axis"
+        ]
+      },
+      "program": "benchmark/cases/D1_partial_low_kernel/D1008_tile_calibration/program.py"
+    },
+    {
+      "group": "D1_partial_low_kernel",
+      "case": "D1009_periodic_transport",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "absolute",
+        "clip",
+        "multiply",
+        "roll",
+        "square",
+        "subtract",
+        "sum"
+      ],
+      "missing_apis": [
+        "roll"
+      ],
+      "gap_reasons": [],
+      "keywords": {
+        "roll": [
+          "axis"
+        ],
+        "sum": [
+          "axis"
+        ]
+      },
+      "program": "benchmark/cases/D1_partial_low_kernel/D1009_periodic_transport/program.py"
+    },
+    {
+      "group": "D1_partial_low_kernel",
+      "case": "D1010_median_center",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "add",
+        "clip",
+        "divide",
+        "mean",
+        "median",
+        "sqrt",
+        "square",
+        "subtract",
+        "tanh"
+      ],
+      "missing_apis": [
+        "median"
+      ],
+      "gap_reasons": [],
+      "keywords": {
+        "mean": [
+          "axis",
+          "keepdims"
+        ],
+        "median": [
+          "axis",
+          "keepdims"
+        ]
+      },
+      "program": "benchmark/cases/D1_partial_low_kernel/D1010_median_center/program.py"
+    },
+    {
+      "group": "D1_partial_low_kernel",
+      "case": "D1011_quantile_gate",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "divide",
+        "greater",
+        "maximum",
+        "minimum",
+        "quantile",
+        "square",
+        "sum"
+      ],
+      "missing_apis": [
+        "quantile"
+      ],
+      "gap_reasons": [],
+      "keywords": {
+        "quantile": [
+          "axis",
+          "keepdims"
+        ],
+        "sum": [
+          "axis",
+          "keepdims"
+        ]
+      },
+      "program": "benchmark/cases/D1_partial_low_kernel/D1011_quantile_gate/program.py"
+    },
+    {
+      "group": "D1_partial_low_kernel",
+      "case": "D1012_class_selection",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "argmax",
+        "divide",
+        "exp",
+        "log",
+        "max",
+        "subtract",
+        "sum"
+      ],
+      "missing_apis": [
+        "argmax"
+      ],
+      "gap_reasons": [],
+      "keywords": {
+        "argmax": [
+          "axis"
+        ],
+        "max": [
+          "axis",
+          "keepdims"
+        ],
+        "sum": [
+          "axis",
+          "keepdims"
+        ]
+      },
+      "program": "benchmark/cases/D1_partial_low_kernel/D1012_class_selection/program.py"
+    },
+    {
+      "group": "D1_partial_low_kernel",
+      "case": "D1013_gather_channels",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "add",
+        "divide",
+        "mean",
+        "sqrt",
+        "square",
+        "subtract",
+        "take",
+        "tanh"
+      ],
+      "missing_apis": [
+        "take"
+      ],
+      "gap_reasons": [],
+      "keywords": {
+        "mean": [
+          "axis",
+          "keepdims"
+        ],
+        "take": [
+          "axis"
+        ]
+      },
+      "program": "benchmark/cases/D1_partial_low_kernel/D1013_gather_channels/program.py"
+    },
+    {
+      "group": "D1_partial_low_kernel",
+      "case": "D1014_fir_envelope",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "add",
+        "clip",
+        "convolve",
+        "divide",
+        "log1p",
+        "sqrt",
+        "square",
+        "subtract"
+      ],
+      "missing_apis": [
+        "convolve"
+      ],
+      "gap_reasons": [],
+      "keywords": {
+        "convolve": [
+          "mode"
+        ]
+      },
+      "program": "benchmark/cases/D1_partial_low_kernel/D1014_fir_envelope/program.py"
+    },
+    {
+      "group": "D1_partial_low_kernel",
+      "case": "D1015_sorted_bin_indices",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "absolute",
+        "add",
+        "clip",
+        "exp",
+        "multiply",
+        "negative",
+        "searchsorted"
+      ],
+      "missing_apis": [
+        "searchsorted"
+      ],
+      "gap_reasons": [],
+      "keywords": {
+        "searchsorted": [
+          "side"
+        ]
+      },
+      "program": "benchmark/cases/D1_partial_low_kernel/D1015_sorted_bin_indices/program.py"
+    },
+    {
+      "group": "D2_partial_low_official",
+      "case": "D2001_absolute_alias",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "abs",
+        "add",
+        "clip",
+        "mean",
+        "minimum",
+        "multiply",
+        "square",
+        "subtract"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {
+        "mean": [
+          "axis"
+        ]
+      },
+      "program": "benchmark/cases/D2_partial_low_official/D2001_absolute_alias/program.py"
+    },
+    {
+      "group": "D2_partial_low_official",
+      "case": "D2002_round_alias",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "add",
+        "divide",
+        "mean",
+        "round",
+        "sqrt",
+        "square",
+        "subtract"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {
+        "mean": [
+          "axis",
+          "keepdims"
+        ],
+        "round": [
+          "decimals"
+        ]
+      },
+      "program": "benchmark/cases/D2_partial_low_official/D2002_round_alias/program.py"
+    },
+    {
+      "group": "D2_partial_low_official",
+      "case": "D2003_acos_alias",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "acos",
+        "clip",
+        "divide",
+        "maximum",
+        "multiply",
+        "sqrt",
+        "square",
+        "sum"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {
+        "sum": [
+          "axis"
+        ]
+      },
+      "program": "benchmark/cases/D2_partial_low_official/D2003_acos_alias/program.py"
+    },
+    {
+      "group": "D2_partial_low_official",
+      "case": "D2004_variance_composition",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "add",
+        "divide",
+        "mean",
+        "sqrt",
+        "subtract",
+        "tanh",
+        "var"
+      ],
+      "missing_apis": [
+        "var"
+      ],
+      "gap_reasons": [],
+      "keywords": {
+        "mean": [
+          "axis",
+          "keepdims"
+        ],
+        "var": [
+          "axis",
+          "keepdims"
+        ]
+      },
+      "program": "benchmark/cases/D2_partial_low_official/D2004_variance_composition/program.py"
+    },
+    {
+      "group": "D2_partial_low_official",
+      "case": "D2005_range_composition",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "clip",
+        "divide",
+        "maximum",
+        "min",
+        "ptp",
+        "subtract"
+      ],
+      "missing_apis": [
+        "ptp"
+      ],
+      "gap_reasons": [],
+      "keywords": {
+        "min": [
+          "axis",
+          "keepdims"
+        ],
+        "ptp": [
+          "axis",
+          "keepdims"
+        ]
+      },
+      "program": "benchmark/cases/D2_partial_low_official/D2005_range_composition/program.py"
+    },
+    {
+      "group": "E_partial_high",
+      "case": "E001_spectral_peaks",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "absolute",
+        "angle",
+        "argsort",
+        "fft",
+        "fft.rfft",
+        "fft.rfftfreq",
+        "hanning",
+        "multiply",
+        "take",
+        "unwrap"
+      ],
+      "missing_apis": [
+        "angle",
+        "argsort",
+        "fft",
+        "fft.rfft",
+        "fft.rfftfreq",
+        "hanning",
+        "take",
+        "unwrap"
+      ],
+      "gap_reasons": [],
+      "keywords": {
+        "fft.rfftfreq": [
+          "d"
+        ]
+      },
+      "program": "benchmark/cases/E_partial_high/E001_spectral_peaks/program.py"
+    },
+    {
+      "group": "E_partial_high",
+      "case": "E002_autocorrelation",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "arange",
+        "argpartition",
+        "conjugate",
+        "diff",
+        "fft",
+        "fft.fft",
+        "fft.ifft",
+        "flatnonzero",
+        "mean",
+        "pad",
+        "quantile",
+        "sort",
+        "subtract",
+        "take"
+      ],
+      "missing_apis": [
+        "arange",
+        "argpartition",
+        "conjugate",
+        "diff",
+        "fft",
+        "fft.fft",
+        "fft.ifft",
+        "flatnonzero",
+        "pad",
+        "quantile",
+        "take"
+      ],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/E_partial_high/E002_autocorrelation/program.py"
+    },
+    {
+      "group": "E_partial_high",
+      "case": "E003_phase_velocity",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "absolute",
+        "angle",
+        "argsort",
+        "diff",
+        "fft",
+        "fft.fft",
+        "fft.fftshift",
+        "flatnonzero",
+        "gradient",
+        "percentile",
+        "quantile",
+        "take",
+        "unwrap"
+      ],
+      "missing_apis": [
+        "angle",
+        "argsort",
+        "diff",
+        "fft",
+        "fft.fft",
+        "fft.fftshift",
+        "flatnonzero",
+        "gradient",
+        "percentile",
+        "quantile",
+        "take",
+        "unwrap"
+      ],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/E_partial_high/E003_phase_velocity/program.py"
+    },
+    {
+      "group": "E_partial_high",
+      "case": "E004_fft_convolution",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "absolute",
+        "argpartition",
+        "convolve",
+        "fft",
+        "fft.irfft",
+        "fft.rfft",
+        "hamming",
+        "pad",
+        "quantile",
+        "sum",
+        "take"
+      ],
+      "missing_apis": [
+        "argpartition",
+        "convolve",
+        "fft",
+        "fft.irfft",
+        "fft.rfft",
+        "hamming",
+        "pad",
+        "quantile",
+        "take"
+      ],
+      "gap_reasons": [],
+      "keywords": {
+        "convolve": [
+          "mode"
+        ],
+        "fft.irfft": [
+          "n"
+        ]
+      },
+      "program": "benchmark/cases/E_partial_high/E004_fft_convolution/program.py"
+    },
+    {
+      "group": "E_partial_high",
+      "case": "E005_short_time_spectrum",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "absolute",
+        "argmax",
+        "diff",
+        "fft",
+        "fft.rfft",
+        "flatnonzero",
+        "hanning",
+        "lib",
+        "lib.stride_tricks",
+        "lib.stride_tricks.sliding_window_view",
+        "multiply",
+        "quantile",
+        "take_along_axis",
+        "unique"
+      ],
+      "missing_apis": [
+        "argmax",
+        "diff",
+        "fft",
+        "fft.rfft",
+        "flatnonzero",
+        "hanning",
+        "lib",
+        "lib.stride_tricks",
+        "lib.stride_tricks.sliding_window_view",
+        "quantile",
+        "take_along_axis",
+        "unique"
+      ],
+      "gap_reasons": [],
+      "keywords": {
+        "argmax": [
+          "axis"
+        ],
+        "fft.rfft": [
+          "axis"
+        ],
+        "quantile": [
+          "axis"
+        ],
+        "take_along_axis": [
+          "axis"
+        ]
+      },
+      "program": "benchmark/cases/E_partial_high/E005_short_time_spectrum/program.py"
+    },
+    {
+      "group": "E_partial_high",
+      "case": "E006_histogram_cdf",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "asarray",
+        "bincount",
+        "clip",
+        "convolve",
+        "cumsum",
+        "diff",
+        "digitize",
+        "histogram",
+        "interp",
+        "quantile"
+      ],
+      "missing_apis": [
+        "asarray",
+        "bincount",
+        "convolve",
+        "diff",
+        "digitize",
+        "histogram",
+        "interp",
+        "quantile"
+      ],
+      "gap_reasons": [],
+      "keywords": {
+        "bincount": [
+          "minlength"
+        ],
+        "convolve": [
+          "mode"
+        ],
+        "histogram": [
+          "bins",
+          "range"
+        ]
+      },
+      "program": "benchmark/cases/E_partial_high/E006_histogram_cdf/program.py"
+    },
+    {
+      "group": "E_partial_high",
+      "case": "E007_grouped_samples",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "argpartition",
+        "argsort",
+        "array",
+        "bincount",
+        "cumsum",
+        "int32",
+        "median",
+        "rint",
+        "split",
+        "take",
+        "unique"
+      ],
+      "missing_apis": [
+        "argpartition",
+        "argsort",
+        "array",
+        "bincount",
+        "median",
+        "split",
+        "take",
+        "unique"
+      ],
+      "gap_reasons": [
+        "argsort uses keyword(s) kind"
+      ],
+      "keywords": {
+        "argsort": [
+          "kind"
+        ],
+        "bincount": [
+          "weights"
+        ],
+        "unique": [
+          "return_counts",
+          "return_inverse"
+        ]
+      },
+      "program": "benchmark/cases/E_partial_high/E007_grouped_samples/program.py"
+    },
+    {
+      "group": "E_partial_high",
+      "case": "E008_robust_order_stats",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "absolute",
+        "argsort",
+        "argwhere",
+        "asarray",
+        "clip",
+        "median",
+        "partition",
+        "percentile",
+        "take",
+        "unique"
+      ],
+      "missing_apis": [
+        "argsort",
+        "argwhere",
+        "asarray",
+        "median",
+        "partition",
+        "percentile",
+        "take",
+        "unique"
+      ],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/E_partial_high/E008_robust_order_stats/program.py"
+    },
+    {
+      "group": "E_partial_high",
+      "case": "E009_resampled_curve",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "asarray",
+        "diff",
+        "flatnonzero",
+        "gradient",
+        "interp",
+        "linspace",
+        "signbit",
+        "sort",
+        "tanh",
+        "trapezoid",
+        "unique"
+      ],
+      "missing_apis": [
+        "asarray",
+        "diff",
+        "flatnonzero",
+        "gradient",
+        "interp",
+        "trapezoid",
+        "unique"
+      ],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/E_partial_high/E009_resampled_curve/program.py"
+    },
+    {
+      "group": "E_partial_high",
+      "case": "E010_binary_runs",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "argsort",
+        "bincount",
+        "diff",
+        "flatnonzero",
+        "greater",
+        "int32",
+        "packbits",
+        "pad",
+        "unpackbits"
+      ],
+      "missing_apis": [
+        "argsort",
+        "bincount",
+        "diff",
+        "flatnonzero",
+        "packbits",
+        "pad",
+        "unpackbits"
+      ],
+      "gap_reasons": [],
+      "keywords": {
+        "packbits": [
+          "bitorder"
+        ],
+        "unpackbits": [
+          "bitorder",
+          "count"
+        ]
+      },
+      "program": "benchmark/cases/E_partial_high/E010_binary_runs/program.py"
+    },
+    {
+      "group": "E_partial_high",
+      "case": "E011_regularized_solve",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "add",
+        "argsort",
+        "asarray",
+        "diag",
+        "linalg",
+        "linalg.cholesky",
+        "linalg.cond",
+        "linalg.eigvalsh",
+        "linalg.solve",
+        "take"
+      ],
+      "missing_apis": [
+        "argsort",
+        "asarray",
+        "diag",
+        "linalg.cholesky",
+        "linalg.cond",
+        "linalg.eigvalsh",
+        "linalg.solve",
+        "take"
+      ],
+      "gap_reasons": [],
+      "keywords": {
+        "argsort": [
+          "axis"
+        ]
+      },
+      "program": "benchmark/cases/E_partial_high/E011_regularized_solve/program.py"
+    },
+    {
+      "group": "E_partial_high",
+      "case": "E012_svd_low_rank",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "asarray",
+        "diag",
+        "diff",
+        "linalg",
+        "linalg.matrix_rank",
+        "linalg.svd",
+        "quantile",
+        "subtract",
+        "take"
+      ],
+      "missing_apis": [
+        "asarray",
+        "diag",
+        "diff",
+        "linalg.matrix_rank",
+        "linalg.svd",
+        "quantile",
+        "take"
+      ],
+      "gap_reasons": [],
+      "keywords": {
+        "linalg.svd": [
+          "full_matrices"
+        ],
+        "take": [
+          "axis"
+        ]
+      },
+      "program": "benchmark/cases/E_partial_high/E012_svd_low_rank/program.py"
+    },
+    {
+      "group": "E_partial_high",
+      "case": "E013_least_squares",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "argsort",
+        "asarray",
+        "linalg",
+        "linalg.cond",
+        "linalg.lstsq",
+        "linalg.pinv",
+        "subtract",
+        "take"
+      ],
+      "missing_apis": [
+        "argsort",
+        "asarray",
+        "linalg.cond",
+        "linalg.lstsq",
+        "linalg.pinv",
+        "take"
+      ],
+      "gap_reasons": [],
+      "keywords": {
+        "argsort": [
+          "axis"
+        ],
+        "linalg.lstsq": [
+          "rcond"
+        ]
+      },
+      "program": "benchmark/cases/E_partial_high/E013_least_squares/program.py"
+    },
+    {
+      "group": "E_partial_high",
+      "case": "E014_spectral_whitening",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "asarray",
+        "diag",
+        "diagonal",
+        "diff",
+        "linalg",
+        "linalg.cond",
+        "linalg.eigh",
+        "linalg.matrix_rank",
+        "maximum",
+        "transpose"
+      ],
+      "missing_apis": [
+        "asarray",
+        "diag",
+        "diagonal",
+        "diff",
+        "linalg.cond",
+        "linalg.eigh",
+        "linalg.matrix_rank",
+        "transpose"
+      ],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/E_partial_high/E014_spectral_whitening/program.py"
+    },
+    {
+      "group": "E_partial_high",
+      "case": "E015_triangular_system",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "argsort",
+        "asarray",
+        "diagonal",
+        "linalg",
+        "linalg.cholesky",
+        "linalg.cond",
+        "linalg.solve",
+        "subtract",
+        "transpose",
+        "tril",
+        "triu"
+      ],
+      "missing_apis": [
+        "argsort",
+        "asarray",
+        "diagonal",
+        "linalg.cholesky",
+        "linalg.cond",
+        "linalg.solve",
+        "transpose",
+        "tril",
+        "triu"
+      ],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/E_partial_high/E015_triangular_system/program.py"
+    },
+    {
+      "group": "F_partial_consent",
+      "case": "F001_add_out",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "add",
+        "square"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [
+        "add uses keyword(s) out"
+      ],
+      "keywords": {
+        "add": [
+          "out"
+        ]
+      },
+      "program": "benchmark/cases/F_partial_consent/F001_add_out/program.py"
+    },
+    {
+      "group": "F_partial_consent",
+      "case": "F002_multiply_where",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "absolute",
+        "multiply"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [
+        "multiply uses keyword(s) out,where"
+      ],
+      "keywords": {
+        "multiply": [
+          "out",
+          "where"
+        ]
+      },
+      "program": "benchmark/cases/F_partial_consent/F002_multiply_where/program.py"
+    },
+    {
+      "group": "F_partial_consent",
+      "case": "F003_subtract_casting",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "add",
+        "subtract"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [
+        "subtract uses keyword(s) casting,out"
+      ],
+      "keywords": {
+        "subtract": [
+          "casting",
+          "out"
+        ]
+      },
+      "program": "benchmark/cases/F_partial_consent/F003_subtract_casting/program.py"
+    },
+    {
+      "group": "F_partial_consent",
+      "case": "F004_sum_initial",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "square",
+        "sum"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [
+        "sum uses keyword(s) initial"
+      ],
+      "keywords": {
+        "sum": [
+          "axis",
+          "initial"
+        ]
+      },
+      "program": "benchmark/cases/F_partial_consent/F004_sum_initial/program.py"
+    },
+    {
+      "group": "F_partial_consent",
+      "case": "F005_max_initial",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "add",
+        "max"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [
+        "max uses keyword(s) initial"
+      ],
+      "keywords": {
+        "max": [
+          "axis",
+          "initial"
+        ]
+      },
+      "program": "benchmark/cases/F_partial_consent/F005_max_initial/program.py"
+    },
+    {
+      "group": "F_partial_consent",
+      "case": "F006_mean_where",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "mean",
+        "sqrt"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [
+        "mean uses keyword(s) where"
+      ],
+      "keywords": {
+        "mean": [
+          "axis",
+          "where"
+        ]
+      },
+      "program": "benchmark/cases/F_partial_consent/F006_mean_where/program.py"
+    },
+    {
+      "group": "F_partial_consent",
+      "case": "F007_sort_kind",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "cumsum",
+        "sort"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [
+        "sort uses keyword(s) kind"
+      ],
+      "keywords": {
+        "cumsum": [
+          "axis"
+        ],
+        "sort": [
+          "axis",
+          "kind"
+        ]
+      },
+      "program": "benchmark/cases/F_partial_consent/F007_sort_kind/program.py"
+    },
+    {
+      "group": "F_partial_consent",
+      "case": "F008_linspace_endpoint",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "add",
+        "float32",
+        "linspace"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [
+        "linspace uses endpoint=",
+        "linspace uses keyword(s) endpoint"
+      ],
+      "keywords": {
+        "linspace": [
+          "dtype",
+          "endpoint"
+        ]
+      },
+      "program": "benchmark/cases/F_partial_consent/F008_linspace_endpoint/program.py"
+    },
+    {
+      "group": "F_partial_consent",
+      "case": "F009_eye_rectangular",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "eye",
+        "float32",
+        "multiply"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {
+        "eye": [
+          "M",
+          "dtype",
+          "k"
+        ]
+      },
+      "program": "benchmark/cases/F_partial_consent/F009_eye_rectangular/program.py"
+    },
+    {
+      "group": "F_partial_consent",
+      "case": "F010_nan_to_num_inplace",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "nan_to_num",
+        "square"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [
+        "nan_to_num uses keyword(s) copy"
+      ],
+      "keywords": {
+        "nan_to_num": [
+          "copy",
+          "nan",
+          "neginf",
+          "posinf"
+        ]
+      },
+      "program": "benchmark/cases/F_partial_consent/F010_nan_to_num_inplace/program.py"
+    },
+    {
+      "group": "G_partial_dedup",
+      "case": "G001_concat_three_views",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "absolute",
+        "add",
+        "concatenate",
+        "mean",
+        "square",
+        "tanh"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {
+        "concatenate": [
+          "axis"
+        ],
+        "mean": [
+          "axis"
+        ]
+      },
+      "program": "benchmark/cases/G_partial_dedup/G001_concat_three_views/program.py"
+    },
+    {
+      "group": "G_partial_dedup",
+      "case": "G002_diff_three_tracks",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "add",
+        "diff",
+        "sqrt",
+        "square",
+        "subtract",
+        "sum"
+      ],
+      "missing_apis": [
+        "diff"
+      ],
+      "gap_reasons": [],
+      "keywords": {
+        "diff": [
+          "axis",
+          "n"
+        ],
+        "sum": [
+          "axis"
+        ]
+      },
+      "program": "benchmark/cases/G_partial_dedup/G002_diff_three_tracks/program.py"
+    },
+    {
+      "group": "G_partial_dedup",
+      "case": "G003_roll_three_fields",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "add",
+        "multiply",
+        "roll",
+        "square",
+        "subtract",
+        "sum"
+      ],
+      "missing_apis": [
+        "roll"
+      ],
+      "gap_reasons": [],
+      "keywords": {
+        "roll": [
+          "axis",
+          "shift"
+        ],
+        "sum": [
+          "axis"
+        ]
+      },
+      "program": "benchmark/cases/G_partial_dedup/G003_roll_three_fields/program.py"
+    },
+    {
+      "group": "G_partial_dedup",
+      "case": "G004_cbrt_three_channels",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "add",
+        "cbrt",
+        "multiply",
+        "tanh"
+      ],
+      "missing_apis": [
+        "cbrt"
+      ],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/G_partial_dedup/G004_cbrt_three_channels/program.py"
+    },
+    {
+      "group": "G_partial_dedup",
+      "case": "G005_median_three_sources",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "add",
+        "mean",
+        "median",
+        "square",
+        "subtract"
+      ],
+      "missing_apis": [
+        "median"
+      ],
+      "gap_reasons": [],
+      "keywords": {
+        "mean": [
+          "axis"
+        ],
+        "median": [
+          "axis",
+          "keepdims"
+        ]
+      },
+      "program": "benchmark/cases/G_partial_dedup/G005_median_three_sources/program.py"
+    },
+    {
+      "group": "H_gap_official",
+      "case": "H001_abs_alias",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "abs"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/H_gap_official/H001_abs_alias/program.py"
+    },
+    {
+      "group": "H_gap_official",
+      "case": "H002_round_alias",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "round"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {
+        "round": [
+          "decimals"
+        ]
+      },
+      "program": "benchmark/cases/H_gap_official/H002_round_alias/program.py"
+    },
+    {
+      "group": "H_gap_official",
+      "case": "H003_acos_alias",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "acos"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/H_gap_official/H003_acos_alias/program.py"
+    },
+    {
+      "group": "H_gap_official",
+      "case": "H004_asin_alias",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "asin"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/H_gap_official/H004_asin_alias/program.py"
+    },
+    {
+      "group": "H_gap_official",
+      "case": "H005_atan_alias",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "atan"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/H_gap_official/H005_atan_alias/program.py"
+    },
+    {
+      "group": "H_gap_official",
+      "case": "H006_acosh_alias",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "acosh"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/H_gap_official/H006_acosh_alias/program.py"
+    },
+    {
+      "group": "H_gap_official",
+      "case": "H007_asinh_alias",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "asinh"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/H_gap_official/H007_asinh_alias/program.py"
+    },
+    {
+      "group": "H_gap_official",
+      "case": "H008_atanh_alias",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "atanh"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/H_gap_official/H008_atanh_alias/program.py"
+    },
+    {
+      "group": "H_gap_official",
+      "case": "H009_variance",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "var"
+      ],
+      "missing_apis": [
+        "var"
+      ],
+      "gap_reasons": [],
+      "keywords": {
+        "var": [
+          "axis",
+          "keepdims"
+        ]
+      },
+      "program": "benchmark/cases/H_gap_official/H009_variance/program.py"
+    },
+    {
+      "group": "H_gap_official",
+      "case": "H010_standard_deviation",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "std"
+      ],
+      "missing_apis": [
+        "std"
+      ],
+      "gap_reasons": [],
+      "keywords": {
+        "std": [
+          "axis"
+        ]
+      },
+      "program": "benchmark/cases/H_gap_official/H010_standard_deviation/program.py"
+    },
+    {
+      "group": "H_gap_official",
+      "case": "H011_peak_to_peak",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "ptp"
+      ],
+      "missing_apis": [
+        "ptp"
+      ],
+      "gap_reasons": [],
+      "keywords": {
+        "ptp": [
+          "axis"
+        ]
+      },
+      "program": "benchmark/cases/H_gap_official/H011_peak_to_peak/program.py"
+    },
+    {
+      "group": "H_gap_official",
+      "case": "H012_logarithmic_grid",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "logspace"
+      ],
+      "missing_apis": [
+        "logspace"
+      ],
+      "gap_reasons": [],
+      "keywords": {
+        "logspace": [
+          "base"
+        ]
+      },
+      "program": "benchmark/cases/H_gap_official/H012_logarithmic_grid/program.py"
+    },
+    {
+      "group": "H_gap_official",
+      "case": "H013_geometric_grid",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "geomspace"
+      ],
+      "missing_apis": [
+        "geomspace"
+      ],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/H_gap_official/H013_geometric_grid/program.py"
+    },
+    {
+      "group": "H_gap_official",
+      "case": "H014_nan_minimum",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "nanmin"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {
+        "nanmin": [
+          "axis"
+        ]
+      },
+      "program": "benchmark/cases/H_gap_official/H014_nan_minimum/program.py"
+    },
+    {
+      "group": "H_gap_official",
+      "case": "H015_real_vecdot",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "linalg",
+        "linalg.vecdot"
+      ],
+      "missing_apis": [
+        "linalg.vecdot"
+      ],
+      "gap_reasons": [],
+      "keywords": {
+        "linalg.vecdot": [
+          "axis"
+        ]
+      },
+      "program": "benchmark/cases/H_gap_official/H015_real_vecdot/program.py"
+    },
+    {
+      "group": "I_gap_model",
+      "case": "I001_cube_root",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "cbrt"
+      ],
+      "missing_apis": [
+        "cbrt"
+      ],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/I_gap_model/I001_cube_root/program.py"
+    },
+    {
+      "group": "I_gap_model",
+      "case": "I002_float_spacing",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "spacing"
+      ],
+      "missing_apis": [
+        "spacing"
+      ],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/I_gap_model/I002_float_spacing/program.py"
+    },
+    {
+      "group": "I_gap_model",
+      "case": "I003_nan_classification",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "isnan"
+      ],
+      "missing_apis": [
+        "isnan"
+      ],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/I_gap_model/I003_nan_classification/program.py"
+    },
+    {
+      "group": "I_gap_model",
+      "case": "I004_integer_invert",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "invert"
+      ],
+      "missing_apis": [
+        "invert"
+      ],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/I_gap_model/I004_integer_invert/program.py"
+    },
+    {
+      "group": "I_gap_model",
+      "case": "I005_population_count",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "bitwise_count"
+      ],
+      "missing_apis": [
+        "bitwise_count"
+      ],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/I_gap_model/I005_population_count/program.py"
+    },
+    {
+      "group": "I_gap_model",
+      "case": "I006_concatenate_axis",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "concatenate"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {
+        "concatenate": [
+          "axis"
+        ]
+      },
+      "program": "benchmark/cases/I_gap_model/I006_concatenate_axis/program.py"
+    },
+    {
+      "group": "I_gap_model",
+      "case": "I007_stack_axis",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": false,
+      "used_apis": [
+        "stack"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {
+        "stack": [
+          "axis"
+        ]
+      },
+      "program": "benchmark/cases/I_gap_model/I007_stack_axis/program.py"
+    },
+    {
+      "group": "I_gap_model",
+      "case": "I008_take_along_axis",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "take_along_axis"
+      ],
+      "missing_apis": [
+        "take_along_axis"
+      ],
+      "gap_reasons": [],
+      "keywords": {
+        "take_along_axis": [
+          "axis"
+        ]
+      },
+      "program": "benchmark/cases/I_gap_model/I008_take_along_axis/program.py"
+    },
+    {
+      "group": "I_gap_model",
+      "case": "I009_weighted_histogram",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "histogram2d"
+      ],
+      "missing_apis": [
+        "histogram2d"
+      ],
+      "gap_reasons": [],
+      "keywords": {
+        "histogram2d": [
+          "bins",
+          "range",
+          "weights"
+        ]
+      },
+      "program": "benchmark/cases/I_gap_model/I009_weighted_histogram/program.py"
+    },
+    {
+      "group": "I_gap_model",
+      "case": "I010_quantile_axis",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "quantile"
+      ],
+      "missing_apis": [
+        "quantile"
+      ],
+      "gap_reasons": [],
+      "keywords": {
+        "quantile": [
+          "axis",
+          "keepdims"
+        ]
+      },
+      "program": "benchmark/cases/I_gap_model/I010_quantile_axis/program.py"
+    },
+    {
+      "group": "I_gap_model",
+      "case": "I011_nextafter_promotion",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "nextafter"
+      ],
+      "missing_apis": [
+        "nextafter"
+      ],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/I_gap_model/I011_nextafter_promotion/program.py"
+    },
+    {
+      "group": "I_gap_model",
+      "case": "I012_pack_boolean_tail",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "packbits"
+      ],
+      "missing_apis": [
+        "packbits"
+      ],
+      "gap_reasons": [],
+      "keywords": {
+        "packbits": [
+          "axis",
+          "bitorder"
+        ]
+      },
+      "program": "benchmark/cases/I_gap_model/I012_pack_boolean_tail/program.py"
+    },
+    {
+      "group": "I_gap_model",
+      "case": "I013_unpack_with_padding",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "unpackbits"
+      ],
+      "missing_apis": [
+        "unpackbits"
+      ],
+      "gap_reasons": [],
+      "keywords": {
+        "unpackbits": [
+          "axis",
+          "bitorder",
+          "count"
+        ]
+      },
+      "program": "benchmark/cases/I_gap_model/I013_unpack_with_padding/program.py"
+    },
+    {
+      "group": "I_gap_model",
+      "case": "I014_weighted_bincount",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "bincount"
+      ],
+      "missing_apis": [
+        "bincount"
+      ],
+      "gap_reasons": [],
+      "keywords": {
+        "bincount": [
+          "minlength",
+          "weights"
+        ]
+      },
+      "program": "benchmark/cases/I_gap_model/I014_weighted_bincount/program.py"
+    },
+    {
+      "group": "I_gap_model",
+      "case": "I015_partition_boundaries",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "partition"
+      ],
+      "missing_apis": [
+        "partition"
+      ],
+      "gap_reasons": [],
+      "keywords": {
+        "partition": [
+          "axis",
+          "kth"
+        ]
+      },
+      "program": "benchmark/cases/I_gap_model/I015_partition_boundaries/program.py"
+    },
+    {
+      "group": "J_out_of_subset",
+      "case": "J001_dynamic_dispatch",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": true,
+      "used_apis": [],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/J_out_of_subset/J001_dynamic_dispatch/program.py"
+    },
+    {
+      "group": "J_out_of_subset",
+      "case": "J002_dynamic_execution",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": true,
+      "used_apis": [],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/J_out_of_subset/J002_dynamic_execution/program.py"
+    },
+    {
+      "group": "J_out_of_subset",
+      "case": "J003_file_io",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": true,
+      "used_apis": [
+        "load",
+        "save"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {
+        "load": [
+          "allow_pickle"
+        ]
+      },
+      "program": "benchmark/cases/J_out_of_subset/J003_file_io/program.py"
+    },
+    {
+      "group": "J_out_of_subset",
+      "case": "J004_network_io",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": true,
+      "used_apis": [
+        "float64",
+        "fromstring"
+      ],
+      "missing_apis": [
+        "fromstring"
+      ],
+      "gap_reasons": [],
+      "keywords": {
+        "fromstring": [
+          "dtype",
+          "sep"
+        ]
+      },
+      "program": "benchmark/cases/J_out_of_subset/J004_network_io/program.py"
+    },
+    {
+      "group": "J_out_of_subset",
+      "case": "J005_object_dtype",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": true,
+      "used_apis": [
+        "multiply"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/J_out_of_subset/J005_object_dtype/program.py"
+    },
+    {
+      "group": "J_out_of_subset",
+      "case": "J006_unseeded_random",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": true,
+      "used_apis": [
+        "add",
+        "random",
+        "random.rand"
+      ],
+      "missing_apis": [
+        "random.rand"
+      ],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/J_out_of_subset/J006_unseeded_random/program.py"
+    },
+    {
+      "group": "J_out_of_subset",
+      "case": "J007_threaded_compute",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": true,
+      "used_apis": [
+        "square",
+        "stack"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/J_out_of_subset/J007_threaded_compute/program.py"
+    },
+    {
+      "group": "J_out_of_subset",
+      "case": "J008_external_c",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": true,
+      "used_apis": [
+        "array"
+      ],
+      "missing_apis": [
+        "array"
+      ],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/J_out_of_subset/J008_external_c/program.py"
+    },
+    {
+      "group": "J_out_of_subset",
+      "case": "J009_vectorize_callback",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": true,
+      "used_apis": [
+        "float64",
+        "vectorize"
+      ],
+      "missing_apis": [
+        "vectorize"
+      ],
+      "gap_reasons": [],
+      "keywords": {
+        "vectorize": [
+          "otypes"
+        ]
+      },
+      "program": "benchmark/cases/J_out_of_subset/J009_vectorize_callback/program.py"
+    },
+    {
+      "group": "J_out_of_subset",
+      "case": "J010_axis_callback",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": true,
+      "used_apis": [
+        "apply_along_axis",
+        "median"
+      ],
+      "missing_apis": [
+        "apply_along_axis",
+        "median"
+      ],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/J_out_of_subset/J010_axis_callback/program.py"
+    },
+    {
+      "group": "J_out_of_subset",
+      "case": "J011_datetime_arithmetic",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": true,
+      "used_apis": [
+        "add",
+        "subtract"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/J_out_of_subset/J011_datetime_arithmetic/program.py"
+    },
+    {
+      "group": "J_out_of_subset",
+      "case": "J012_structured_records",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": true,
+      "used_apis": [
+        "square"
+      ],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/J_out_of_subset/J012_structured_records/program.py"
+    },
+    {
+      "group": "J_out_of_subset",
+      "case": "J013_array_protocol",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": true,
+      "used_apis": [
+        "asarray",
+        "sum"
+      ],
+      "missing_apis": [
+        "asarray"
+      ],
+      "gap_reasons": [],
+      "keywords": {
+        "sum": [
+          "axis"
+        ]
+      },
+      "program": "benchmark/cases/J_out_of_subset/J013_array_protocol/program.py"
+    },
+    {
+      "group": "J_out_of_subset",
+      "case": "J014_dynamic_import",
+      "group_label": "full_coverage",
+      "api_covered": true,
+      "out_of_scope": true,
+      "used_apis": [],
+      "missing_apis": [],
+      "gap_reasons": [],
+      "keywords": {},
+      "program": "benchmark/cases/J_out_of_subset/J014_dynamic_import/program.py"
+    },
+    {
+      "group": "J_out_of_subset",
+      "case": "J015_memory_mapping",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": true,
+      "used_apis": [
+        "memmap",
+        "square"
+      ],
+      "missing_apis": [
+        "memmap"
+      ],
+      "gap_reasons": [],
+      "keywords": {
+        "memmap": [
+          "dtype",
+          "mode",
+          "shape"
+        ]
+      },
+      "program": "benchmark/cases/J_out_of_subset/J015_memory_mapping/program.py"
+    },
+    {
+      "group": "K_gap_all",
+      "case": "K001_signal_workbench",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "angle",
+        "arange",
+        "argpartition",
+        "argsort",
+        "asarray",
+        "bincount",
+        "concatenate",
+        "convolve",
+        "correlate",
+        "diff",
+        "digitize",
+        "fft",
+        "fft.rfft",
+        "gradient",
+        "hanning",
+        "histogram",
+        "interp",
+        "median",
+        "pad",
+        "quantile",
+        "roll",
+        "searchsorted",
+        "stack",
+        "take",
+        "trapezoid",
+        "unique",
+        "unwrap"
+      ],
+      "missing_apis": [
+        "angle",
+        "arange",
+        "argpartition",
+        "argsort",
+        "asarray",
+        "bincount",
+        "convolve",
+        "correlate",
+        "diff",
+        "digitize",
+        "fft",
+        "fft.rfft",
+        "gradient",
+        "hanning",
+        "histogram",
+        "interp",
+        "median",
+        "pad",
+        "quantile",
+        "roll",
+        "searchsorted",
+        "take",
+        "trapezoid",
+        "unique",
+        "unwrap"
+      ],
+      "gap_reasons": [],
+      "keywords": {
+        "bincount": [
+          "minlength",
+          "weights"
+        ],
+        "convolve": [
+          "mode"
+        ],
+        "correlate": [
+          "mode"
+        ],
+        "histogram": [
+          "bins"
+        ],
+        "median": [
+          "axis"
+        ],
+        "pad": [
+          "mode"
+        ],
+        "searchsorted": [
+          "side"
+        ]
+      },
+      "program": "benchmark/cases/K_gap_all/K001_signal_workbench/program.py"
+    },
+    {
+      "group": "K_gap_all",
+      "case": "K002_image_patch_pipeline",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "arange",
+        "argwhere",
+        "bincount",
+        "block",
+        "concatenate",
+        "diff",
+        "digitize",
+        "flip",
+        "gradient",
+        "lib",
+        "lib.stride_tricks",
+        "lib.stride_tricks.sliding_window_view",
+        "median",
+        "packbits",
+        "pad",
+        "partition",
+        "percentile",
+        "quantile",
+        "ravel_multi_index",
+        "repeat",
+        "rot90",
+        "split",
+        "stack",
+        "take",
+        "tile",
+        "unpackbits"
+      ],
+      "missing_apis": [
+        "arange",
+        "argwhere",
+        "bincount",
+        "block",
+        "diff",
+        "digitize",
+        "flip",
+        "gradient",
+        "lib",
+        "lib.stride_tricks",
+        "lib.stride_tricks.sliding_window_view",
+        "median",
+        "packbits",
+        "pad",
+        "partition",
+        "percentile",
+        "quantile",
+        "ravel_multi_index",
+        "repeat",
+        "rot90",
+        "split",
+        "take",
+        "tile",
+        "unpackbits"
+      ],
+      "gap_reasons": [],
+      "keywords": {
+        "bincount": [
+          "minlength"
+        ],
+        "concatenate": [
+          "axis"
+        ],
+        "diff": [
+          "axis"
+        ],
+        "flip": [
+          "axis"
+        ],
+        "median": [
+          "axis"
+        ],
+        "packbits": [
+          "axis",
+          "bitorder"
+        ],
+        "pad": [
+          "mode"
+        ],
+        "partition": [
+          "axis"
+        ],
+        "percentile": [
+          "axis"
+        ],
+        "repeat": [
+          "axis"
+        ],
+        "rot90": [
+          "k"
+        ],
+        "split": [
+          "axis"
+        ],
+        "stack": [
+          "axis"
+        ],
+        "take": [
+          "axis"
+        ],
+        "unpackbits": [
+          "axis",
+          "bitorder",
+          "count"
+        ]
+      },
+      "program": "benchmark/cases/K_gap_all/K002_image_patch_pipeline/program.py"
+    },
+    {
+      "group": "K_gap_all",
+      "case": "K003_grouped_analytics",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "arange",
+        "argpartition",
+        "argsort",
+        "asarray",
+        "bincount",
+        "concatenate",
+        "digitize",
+        "gradient",
+        "histogram",
+        "interp",
+        "intersect1d",
+        "lexsort",
+        "median",
+        "packbits",
+        "partition",
+        "percentile",
+        "quantile",
+        "searchsorted",
+        "setdiff1d",
+        "take",
+        "trapezoid",
+        "union1d",
+        "unique"
+      ],
+      "missing_apis": [
+        "arange",
+        "argpartition",
+        "argsort",
+        "asarray",
+        "bincount",
+        "digitize",
+        "gradient",
+        "histogram",
+        "interp",
+        "intersect1d",
+        "lexsort",
+        "median",
+        "packbits",
+        "partition",
+        "percentile",
+        "quantile",
+        "searchsorted",
+        "setdiff1d",
+        "take",
+        "trapezoid",
+        "union1d",
+        "unique"
+      ],
+      "gap_reasons": [
+        "argsort uses keyword(s) kind"
+      ],
+      "keywords": {
+        "argsort": [
+          "kind"
+        ],
+        "bincount": [
+          "minlength",
+          "weights"
+        ],
+        "histogram": [
+          "bins"
+        ],
+        "packbits": [
+          "bitorder"
+        ],
+        "searchsorted": [
+          "side"
+        ],
+        "unique": [
+          "return_counts",
+          "return_inverse"
+        ]
+      },
+      "program": "benchmark/cases/K_gap_all/K003_grouped_analytics/program.py"
+    },
+    {
+      "group": "K_gap_all",
+      "case": "K004_matrix_diagnostics",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "asarray",
+        "block",
+        "diag",
+        "diagonal",
+        "linalg",
+        "linalg.cholesky",
+        "linalg.cond",
+        "linalg.eigh",
+        "linalg.lstsq",
+        "linalg.matrix_rank",
+        "linalg.pinv",
+        "linalg.solve",
+        "linalg.svd",
+        "median",
+        "quantile",
+        "ravel",
+        "repeat",
+        "reshape",
+        "take",
+        "tile",
+        "transpose",
+        "tril",
+        "triu"
+      ],
+      "missing_apis": [
+        "asarray",
+        "block",
+        "diag",
+        "diagonal",
+        "linalg.cholesky",
+        "linalg.cond",
+        "linalg.eigh",
+        "linalg.lstsq",
+        "linalg.matrix_rank",
+        "linalg.pinv",
+        "linalg.solve",
+        "linalg.svd",
+        "median",
+        "quantile",
+        "ravel",
+        "repeat",
+        "reshape",
+        "take",
+        "tile",
+        "transpose",
+        "tril",
+        "triu"
+      ],
+      "gap_reasons": [],
+      "keywords": {
+        "linalg.lstsq": [
+          "rcond"
+        ],
+        "linalg.svd": [
+          "full_matrices"
+        ],
+        "median": [
+          "axis"
+        ],
+        "repeat": [
+          "axis"
+        ],
+        "take": [
+          "axis"
+        ],
+        "tril": [
+          "k"
+        ],
+        "triu": [
+          "k"
+        ]
+      },
+      "program": "benchmark/cases/K_gap_all/K004_matrix_diagnostics/program.py"
+    },
+    {
+      "group": "K_gap_all",
+      "case": "K005_binary_index_pipeline",
+      "group_label": "has_gap",
+      "api_covered": false,
+      "out_of_scope": false,
+      "used_apis": [
+        "arange",
+        "argpartition",
+        "argwhere",
+        "bincount",
+        "bitwise_and",
+        "bitwise_count",
+        "bitwise_or",
+        "bitwise_xor",
+        "diff",
+        "flatnonzero",
+        "flip",
+        "int32",
+        "intersect1d",
+        "invert",
+        "left_shift",
+        "median",
+        "packbits",
+        "pad",
+        "partition",
+        "quantile",
+        "ravel",
+        "repeat",
+        "right_shift",
+        "rot90",
+        "searchsorted",
+        "setdiff1d",
+        "stack",
+        "take",
+        "take_along_axis",
+        "tile",
+        "unique",
+        "unpackbits",
+        "unravel_index"
+      ],
+      "missing_apis": [
+        "arange",
+        "argpartition",
+        "argwhere",
+        "bincount",
+        "bitwise_and",
+        "bitwise_count",
+        "bitwise_or",
+        "bitwise_xor",
+        "diff",
+        "flatnonzero",
+        "flip",
+        "intersect1d",
+        "invert",
+        "left_shift",
+        "median",
+        "packbits",
+        "pad",
+        "partition",
+        "quantile",
+        "ravel",
+        "repeat",
+        "right_shift",
+        "rot90",
+        "searchsorted",
+        "setdiff1d",
+        "take",
+        "take_along_axis",
+        "tile",
+        "unique",
+        "unpackbits",
+        "unravel_index"
+      ],
+      "gap_reasons": [],
+      "keywords": {
+        "argpartition": [
+          "axis"
+        ],
+        "bincount": [
+          "minlength"
+        ],
+        "diff": [
+          "axis"
+        ],
+        "flip": [
+          "axis"
+        ],
+        "median": [
+          "axis"
+        ],
+        "packbits": [
+          "axis",
+          "bitorder"
+        ],
+        "partition": [
+          "axis"
+        ],
+        "quantile": [
+          "axis"
+        ],
+        "repeat": [
+          "axis"
+        ],
+        "rot90": [
+          "k"
+        ],
+        "stack": [
+          "axis"
+        ],
+        "take": [
+          "axis"
+        ],
+        "take_along_axis": [
+          "axis"
+        ],
+        "unique": [
+          "return_counts",
+          "return_inverse"
+        ],
+        "unpackbits": [
+          "axis",
+          "bitorder",
+          "count"
+        ]
+      },
+      "program": "benchmark/cases/K_gap_all/K005_binary_index_pipeline/program.py"
+    }
+  ]
+}

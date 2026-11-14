@@ -1,0 +1,1602 @@
+{
+  "schema": "numpilot.asnumpy_adapter.test_adapter",
+  "schema_version": 1,
+  "artifact": {
+    "path": "asnumpy_adapter/argmax.json",
+    "stage_index": 17,
+    "stage_count": 17,
+    "stage_name": "test_adapter_02",
+    "status": "generated_unverified",
+    "claim_level": "unverified_candidate_only"
+  },
+  "identity": {
+    "gap_id": "argmax-553e4dccb8be6a27",
+    "taskbook_id": "gap-taskbook-29cd02969152d0c65b53a6e34e8bbac4fa9a423f0b0675c02ebd4694b265f63d",
+    "gap_spec_sha256": "cda2b480274ab13301895c1de93d5258a2a35f6d36c0fcbd6ced434d1cde23b9",
+    "source_sha256": "a227e5ae12f92e2980622b64fccd3c6fd8c0fdd534cf95512c6baf59a922f361",
+    "source_path": "benchmark/cases/D1_partial_low_kernel/D1012_class_selection/numpilot-work/asc_operator/numpy_source.py",
+    "semantic_source": "numpy.argmax",
+    "target_soc": "Ascend910B3",
+    "cann_version": "9.2.0-beta.2"
+  },
+  "api": {
+    "numpy_api": "numpy.argmax",
+    "public_api": "asnumpy.argmax",
+    "op_type": "Argmax",
+    "file_stem": "argmax",
+    "kernel_entry": "argmax",
+    "return_structure": "single_tensor"
+  },
+  "signature": {
+    "call_forms": [
+      {
+        "form": "asnumpy.argmax(a, axis=<int64>)",
+        "positional_count": 1,
+        "keyword_args": [
+          "axis"
+        ],
+        "required_keywords": [
+          "axis"
+        ]
+      }
+    ],
+    "positional": [
+      {
+        "name": "a",
+        "kind": "tensor",
+        "required": true
+      }
+    ],
+    "keywords": [
+      {
+        "name": "axis",
+        "kind": "int64",
+        "required": true,
+        "default": null,
+        "range": "[-rank, rank-1]"
+      }
+    ],
+    "axis_keyword_only": true,
+    "second_positional_axis": "reject",
+    "accepted_keyword_count": 1
+  },
+  "observed_profile": {
+    "source": "gap-taskbook observed_profiles[0]",
+    "input": {
+      "name": "arg[0]",
+      "dtype": "float32",
+      "shape": [
+        1024,
+        1024
+      ],
+      "rank": 2,
+      "c_contiguous": true
+    },
+    "axis": 1,
+    "output": {
+      "dtype": "int64",
+      "shape": [
+        1024
+      ],
+      "rank": 1,
+      "c_contiguous": true
+    },
+    "return_structure": "single_tensor"
+  },
+  "binding_map": {
+    "public_python": "asnumpy.argmax",
+    "python_wrapper": {
+      "module": "asnumpy_adapter.argmax",
+      "symbol": "argmax",
+      "call": "argmax(a, axis=axis)"
+    },
+    "pybind": {
+      "module": "asnumpy._C",
+      "symbol": "argmax",
+      "qualified": "asnumpy._C.argmax",
+      "signature": "Tensor argmax(const Tensor& a, int64_t axis)"
+    },
+    "native": {
+      "namespace": "asnumpy::native",
+      "symbol": "argmax",
+      "signature": "Tensor argmax(const Tensor& a, int64_t axis)"
+    },
+    "l0": {
+      "namespace": "l0op",
+      "symbol": "Argmax",
+      "signature": "Tensor Argmax(const Tensor& a, int64_t axis)"
+    },
+    "l2": {
+      "get_workspace_size": "aclnnArgmaxGetWorkspaceSize",
+      "execute": "aclnnArgmax",
+      "header": "aclnn_argmax.h"
+    },
+    "kernel": {
+      "entry": "argmax",
+      "source": "op_kernel/argmax.cpp"
+    },
+    "tiling": {
+      "struct": "ArgmaxTilingData",
+      "header": "op_host/arch22/argmax_tiling_data.h",
+      "host_source": "op_host/arch22/argmax_tiling.cpp"
+    }
+  },
+  "authoritative_definitions": {
+    "tiling_data": {
+      "path": "op_host/arch22/argmax_tiling_data.h",
+      "struct": "ArgmaxTilingData",
+      "single_authoritative_definition": true,
+      "kernel_facing_header": true
+    },
+    "kernel_entry": {
+      "path": "op_kernel/argmax.cpp",
+      "symbol": "argmax",
+      "single_authoritative_definition": true,
+      "argument_order": [
+        "input",
+        "output",
+        "workspace",
+        "tiling"
+      ]
+    },
+    "host_tiling": {
+      "path": "op_host/arch22/argmax_tiling.cpp",
+      "includes_kernel_facing_tiling_data_header": true,
+      "assigns_only_declared_fields": true
+    }
+  },
+  "io_contract": {
+    "input": {
+      "count": 1,
+      "name": "a",
+      "dtype": "float32",
+      "dtype_policy": "exact_float32_only_no_implicit_cast",
+      "layout": "c_contiguous",
+      "rank": {
+        "min": 1,
+        "max": 8
+      },
+      "shape_rules": "runtime_profile_required; checked at runtime against declared bounds",
+      "element_count": {
+        "min": 1,
+        "max": 2147483647
+      },
+      "device": "npu"
+    },
+    "attributes": {
+      "axis": {
+        "type": "int64",
+        "required": true,
+        "range": "[-rank, rank-1]",
+        "negative_normalization": true,
+        "none_supported": false
+      }
+    },
+    "output": {
+      "count": 1,
+      "name": "out",
+      "dtype": "int64",
+      "shape_rule": "input shape with normalized axis dimension removed",
+      "layout": "c_contiguous",
+      "rank": {
+        "min": 0,
+        "max": 7
+      },
+      "single_tensor": true
+    }
+  },
+  "support_scope": {
+    "qualification_scope": "unverified; only profiles that pass every gate are qualified",
+    "admitted": {
+      "dtype": [
+        "float32"
+      ],
+      "layout": [
+        "c_contiguous"
+      ],
+      "rank": {
+        "min": 1,
+        "max": 8
+      },
+      "axis": "int64 in [-rank, rank-1]",
+      "empty": "reject",
+      "shape": "all dimensions > 0 and 1 <= element_count <= 2147483647"
+    },
+    "deferred": [
+      "float16",
+      "bfloat16",
+      "float64",
+      "integer input dtypes",
+      "bool input dtype",
+      "non-contiguous input",
+      "rank 0",
+      "rank greater than 8",
+      "axis=None",
+      "out keyword",
+      "keepdims keyword",
+      "dtype keyword",
+      "where keyword"
+    ],
+    "no_implicit_cast": true,
+    "no_host_fallback": true
+  },
+  "rejection_contract": [
+    {
+      "id": "reject_float16",
+      "condition": "input dtype is float16",
+      "error_type": "TypeError",
+      "error_code": "ARGMAX_UNSUPPORTED_DTYPE",
+      "silent_cast": false
+    },
+    {
+      "id": "reject_float64",
+      "condition": "input dtype is float64",
+      "error_type": "TypeError",
+      "error_code": "ARGMAX_UNSUPPORTED_DTYPE",
+      "silent_cast": false
+    },
+    {
+      "id": "reject_int32",
+      "condition": "input dtype is int32",
+      "error_type": "TypeError",
+      "error_code": "ARGMAX_UNSUPPORTED_DTYPE",
+      "silent_cast": false
+    },
+    {
+      "id": "reject_bool",
+      "condition": "input dtype is bool",
+      "error_type": "TypeError",
+      "error_code": "ARGMAX_UNSUPPORTED_DTYPE",
+      "silent_cast": false
+    },
+    {
+      "id": "reject_non_contiguous",
+      "condition": "input is not C-contiguous",
+      "error_type": "ValueError",
+      "error_code": "ARGMAX_NON_CONTIGUOUS_INPUT",
+      "silent_copy": false
+    },
+    {
+      "id": "reject_rank_zero",
+      "condition": "input rank is 0",
+      "error_type": "ValueError",
+      "error_code": "ARGMAX_UNSUPPORTED_RANK"
+    },
+    {
+      "id": "reject_rank_nine",
+      "condition": "input rank is greater than 8",
+      "error_type": "ValueError",
+      "error_code": "ARGMAX_UNSUPPORTED_RANK"
+    },
+    {
+      "id": "reject_empty_input",
+      "condition": "input element count is 0",
+      "error_type": "ValueError",
+      "error_code": "ARGMAX_EMPTY_INPUT"
+    },
+    {
+      "id": "reject_empty_reduction_axis",
+      "condition": "reduction axis length is 0",
+      "error_type": "ValueError",
+      "error_code": "ARGMAX_EMPTY_INPUT"
+    },
+    {
+      "id": "reject_axis_too_large",
+      "condition": "axis is outside [-rank, rank-1]",
+      "error_type": "ValueError",
+      "error_code": "ARGMAX_AXIS_OUT_OF_RANGE"
+    },
+    {
+      "id": "reject_axis_too_small",
+      "condition": "axis is outside [-rank, rank-1]",
+      "error_type": "ValueError",
+      "error_code": "ARGMAX_AXIS_OUT_OF_RANGE"
+    },
+    {
+      "id": "reject_axis_float",
+      "condition": "axis is not an integer",
+      "error_type": "TypeError",
+      "error_code": "ARGMAX_INVALID_AXIS_TYPE"
+    },
+    {
+      "id": "reject_axis_string",
+      "condition": "axis is not an integer",
+      "error_type": "TypeError",
+      "error_code": "ARGMAX_INVALID_AXIS_TYPE"
+    },
+    {
+      "id": "reject_axis_none",
+      "condition": "axis is None; flattening is outside the observed bounded scope",
+      "error_type": "TypeError",
+      "error_code": "ARGMAX_AXIS_NONE_UNSUPPORTED"
+    },
+    {
+      "id": "reject_missing_axis",
+      "condition": "axis keyword is absent",
+      "error_type": "TypeError",
+      "error_code": "ARGMAX_MISSING_AXIS"
+    },
+    {
+      "id": "reject_second_positional",
+      "condition": "axis is supplied as a second positional argument",
+      "error_type": "TypeError",
+      "error_code": "ARGMAX_POSITIONAL_AXIS_UNSUPPORTED"
+    },
+    {
+      "id": "reject_out_keyword",
+      "condition": "out keyword is supplied",
+      "error_type": "TypeError",
+      "error_code": "ARGMAX_UNSUPPORTED_KEYWORD"
+    },
+    {
+      "id": "reject_keepdims_keyword",
+      "condition": "keepdims keyword is supplied",
+      "error_type": "TypeError",
+      "error_code": "ARGMAX_UNSUPPORTED_KEYWORD"
+    },
+    {
+      "id": "reject_dtype_keyword",
+      "condition": "dtype keyword is supplied",
+      "error_type": "TypeError",
+      "error_code": "ARGMAX_UNSUPPORTED_KEYWORD"
+    },
+    {
+      "id": "reject_where_keyword",
+      "condition": "where keyword is supplied",
+      "error_type": "TypeError",
+      "error_code": "ARGMAX_UNSUPPORTED_KEYWORD"
+    },
+    {
+      "id": "reject_shape_too_large",
+      "condition": "element count exceeds 2147483647",
+      "error_type": "ValueError",
+      "error_code": "ARGMAX_SHAPE_TOO_LARGE"
+    }
+  ],
+  "test_adapter": {
+    "consumer": "deterministic_validator",
+    "oracle_module": "numpy",
+    "oracle_callable": "numpy.argmax",
+    "public_module": "asnumpy",
+    "public_callable": "asnumpy.argmax",
+    "public_api_only": true,
+    "private_pybind_allowed_only_for_smoke": true,
+    "device": "npu",
+    "synchronize_before_compare": true,
+    "repetitions": 3,
+    "dtype_assertion": "exact",
+    "shape_assertion": "exact",
+    "layout_assertion": "c_contiguous",
+    "no_host_fallback": true,
+    "special_tokens": {
+      "NaN": "IEEE-754 quiet NaN",
+      "POS_INF": "positive infinity",
+      "NEG_INF": "negative infinity",
+      "POS_ZERO": "positive zero",
+      "NEG_ZERO": "negative zero"
+    }
+  },
+  "cases": {
+    "positive": [
+      {
+        "id": "positive_axis1_first_occurrence",
+        "input": {
+          "dtype": "float32",
+          "shape": [
+            2,
+            3
+          ],
+          "layout": "c_contiguous",
+          "data": [
+            [
+              1.0,
+              3.0,
+              3.0
+            ],
+            [
+              4.0,
+              2.0,
+              4.0
+            ]
+          ]
+        },
+        "axis": 1,
+        "expected": {
+          "dtype": "int64",
+          "shape": [
+            2
+          ],
+          "data": [
+            1,
+            0
+          ]
+        },
+        "assertions": [
+          "exact_dtype",
+          "exact_shape",
+          "exact_values",
+          "first_occurrence_tie_break"
+        ]
+      },
+      {
+        "id": "positive_axis0_first_occurrence",
+        "input": {
+          "dtype": "float32",
+          "shape": [
+            2,
+            3
+          ],
+          "layout": "c_contiguous",
+          "data": [
+            [
+              1.0,
+              3.0,
+              3.0
+            ],
+            [
+              4.0,
+              2.0,
+              4.0
+            ]
+          ]
+        },
+        "axis": 0,
+        "expected": {
+          "dtype": "int64",
+          "shape": [
+            3
+          ],
+          "data": [
+            1,
+            0,
+            1
+          ]
+        },
+        "assertions": [
+          "exact_dtype",
+          "exact_shape",
+          "exact_values"
+        ]
+      },
+      {
+        "id": "positive_negative_axis_minus_one",
+        "input": {
+          "dtype": "float32",
+          "shape": [
+            2,
+            3
+          ],
+          "layout": "c_contiguous",
+          "data": [
+            [
+              1.0,
+              3.0,
+              3.0
+            ],
+            [
+              4.0,
+              2.0,
+              4.0
+            ]
+          ]
+        },
+        "axis": -1,
+        "expected": {
+          "dtype": "int64",
+          "shape": [
+            2
+          ],
+          "data": [
+            1,
+            0
+          ]
+        },
+        "assertions": [
+          "negative_axis_normalization",
+          "exact_values"
+        ]
+      },
+      {
+        "id": "positive_negative_axis_minus_two",
+        "input": {
+          "dtype": "float32",
+          "shape": [
+            2,
+            3
+          ],
+          "layout": "c_contiguous",
+          "data": [
+            [
+              1.0,
+              3.0,
+              3.0
+            ],
+            [
+              4.0,
+              2.0,
+              4.0
+            ]
+          ]
+        },
+        "axis": -2,
+        "expected": {
+          "dtype": "int64",
+          "shape": [
+            3
+          ],
+          "data": [
+            1,
+            0,
+            1
+          ]
+        },
+        "assertions": [
+          "negative_axis_normalization",
+          "exact_values"
+        ]
+      },
+      {
+        "id": "positive_rank_one_scalar_output",
+        "input": {
+          "dtype": "float32",
+          "shape": [
+            4
+          ],
+          "layout": "c_contiguous",
+          "data": [
+            5.0,
+            7.0,
+            7.0,
+            2.0
+          ]
+        },
+        "axis": 0,
+        "expected": {
+          "dtype": "int64",
+          "shape": [],
+          "data": 1
+        },
+        "assertions": [
+          "rank_zero_output_tensor",
+          "exact_values",
+          "first_occurrence_tie_break"
+        ]
+      },
+      {
+        "id": "positive_rank_three_axis_two",
+        "input": {
+          "dtype": "float32",
+          "shape": [
+            2,
+            2,
+            2
+          ],
+          "layout": "c_contiguous",
+          "data": [
+            [
+              [
+                1.0,
+                4.0
+              ],
+              [
+                2.0,
+                3.0
+              ]
+            ],
+            [
+              [
+                5.0,
+                0.0
+              ],
+              [
+                6.0,
+                7.0
+              ]
+            ]
+          ]
+        },
+        "axis": 2,
+        "expected": {
+          "dtype": "int64",
+          "shape": [
+            2,
+            2
+          ],
+          "data": [
+            [
+              1,
+              1
+            ],
+            [
+              0,
+              1
+            ]
+          ]
+        },
+        "assertions": [
+          "exact_dtype",
+          "exact_shape",
+          "exact_values"
+        ]
+      },
+      {
+        "id": "positive_rank_three_axis_zero",
+        "input": {
+          "dtype": "float32",
+          "shape": [
+            2,
+            2,
+            2
+          ],
+          "layout": "c_contiguous",
+          "data": [
+            [
+              [
+                1.0,
+                4.0
+              ],
+              [
+                2.0,
+                3.0
+              ]
+            ],
+            [
+              [
+                5.0,
+                0.0
+              ],
+              [
+                6.0,
+                7.0
+              ]
+            ]
+          ]
+        },
+        "axis": 0,
+        "expected": {
+          "dtype": "int64",
+          "shape": [
+            2,
+            2
+          ],
+          "data": [
+            [
+              1,
+              0
+            ],
+            [
+              1,
+              1
+            ]
+          ]
+        },
+        "assertions": [
+          "exact_dtype",
+          "exact_shape",
+          "exact_values"
+        ]
+      },
+      {
+        "id": "positive_rank_three_axis_one",
+        "input": {
+          "dtype": "float32",
+          "shape": [
+            2,
+            2,
+            2
+          ],
+          "layout": "c_contiguous",
+          "data": [
+            [
+              [
+                1.0,
+                4.0
+              ],
+              [
+                2.0,
+                3.0
+              ]
+            ],
+            [
+              [
+                5.0,
+                0.0
+              ],
+              [
+                6.0,
+                7.0
+              ]
+            ]
+          ]
+        },
+        "axis": 1,
+        "expected": {
+          "dtype": "int64",
+          "shape": [
+            2,
+            2
+          ],
+          "data": [
+            [
+              1,
+              0
+            ],
+            [
+              1,
+              1
+            ]
+          ]
+        },
+        "assertions": [
+          "exact_dtype",
+          "exact_shape",
+          "exact_values"
+        ]
+      },
+      {
+        "id": "positive_nan_first_nan_wins",
+        "input": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            3
+          ],
+          "layout": "c_contiguous",
+          "data": [
+            [
+              1.0,
+              "NaN",
+              2.0
+            ]
+          ]
+        },
+        "axis": 1,
+        "expected": {
+          "dtype": "int64",
+          "shape": [
+            1
+          ],
+          "data": [
+            1
+          ]
+        },
+        "assertions": [
+          "nan_is_maximum",
+          "first_nan_index"
+        ]
+      },
+      {
+        "id": "positive_all_nan_first_index",
+        "input": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            2
+          ],
+          "layout": "c_contiguous",
+          "data": [
+            [
+              "NaN",
+              "NaN"
+            ]
+          ]
+        },
+        "axis": 1,
+        "expected": {
+          "dtype": "int64",
+          "shape": [
+            1
+          ],
+          "data": [
+            0
+          ]
+        },
+        "assertions": [
+          "nan_is_maximum",
+          "first_nan_index"
+        ]
+      },
+      {
+        "id": "positive_positive_infinity_wins",
+        "input": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            3
+          ],
+          "layout": "c_contiguous",
+          "data": [
+            [
+              "NEG_INF",
+              "POS_INF",
+              "POS_INF"
+            ]
+          ]
+        },
+        "axis": 1,
+        "expected": {
+          "dtype": "int64",
+          "shape": [
+            1
+          ],
+          "data": [
+            1
+          ]
+        },
+        "assertions": [
+          "positive_infinity_is_maximum",
+          "first_occurrence_tie_break"
+        ]
+      },
+      {
+        "id": "positive_all_negative_infinity_first_index",
+        "input": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            2
+          ],
+          "layout": "c_contiguous",
+          "data": [
+            [
+              "NEG_INF",
+              "NEG_INF"
+            ]
+          ]
+        },
+        "axis": 1,
+        "expected": {
+          "dtype": "int64",
+          "shape": [
+            1
+          ],
+          "data": [
+            0
+          ]
+        },
+        "assertions": [
+          "all_negative_infinity_first_index"
+        ]
+      },
+      {
+        "id": "positive_signed_zero_first_negative_zero",
+        "input": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            3
+          ],
+          "layout": "c_contiguous",
+          "data": [
+            [
+              "NEG_ZERO",
+              "POS_ZERO",
+              -1.0
+            ]
+          ]
+        },
+        "axis": 1,
+        "expected": {
+          "dtype": "int64",
+          "shape": [
+            1
+          ],
+          "data": [
+            0
+          ]
+        },
+        "assertions": [
+          "signed_zero_equal",
+          "first_occurrence_tie_break"
+        ]
+      },
+      {
+        "id": "positive_signed_zero_first_positive_zero",
+        "input": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            2
+          ],
+          "layout": "c_contiguous",
+          "data": [
+            [
+              "POS_ZERO",
+              "NEG_ZERO"
+            ]
+          ]
+        },
+        "axis": 1,
+        "expected": {
+          "dtype": "int64",
+          "shape": [
+            1
+          ],
+          "data": [
+            0
+          ]
+        },
+        "assertions": [
+          "signed_zero_equal",
+          "first_occurrence_tie_break"
+        ]
+      },
+      {
+        "id": "positive_all_equal_first_index",
+        "input": {
+          "dtype": "float32",
+          "shape": [
+            3
+          ],
+          "layout": "c_contiguous",
+          "data": [
+            2.5,
+            2.5,
+            2.5
+          ]
+        },
+        "axis": 0,
+        "expected": {
+          "dtype": "int64",
+          "shape": [],
+          "data": 0
+        },
+        "assertions": [
+          "first_occurrence_tie_break",
+          "rank_zero_output_tensor"
+        ]
+      },
+      {
+        "id": "observed_profile_1024x1024_axis1",
+        "input": {
+          "dtype": "float32",
+          "shape": [
+            1024,
+            1024
+          ],
+          "layout": "c_contiguous",
+          "generator": {
+            "kind": "deterministic_index_grid",
+            "index_variables": [
+              "i",
+              "j"
+            ],
+            "expression": "((i * 131 + j * 17) % 4096) * 0.0625 - 128.0",
+            "materialization_dtype": "float32"
+          }
+        },
+        "axis": 1,
+        "expected": {
+          "dtype": "int64",
+          "shape": [
+            1024
+          ],
+          "source": "numpy.argmax",
+          "compare": "exact"
+        },
+        "assertions": [
+          "observed_shape",
+          "observed_dtype",
+          "observed_axis",
+          "exact_values"
+        ]
+      }
+    ],
+    "negative": [
+      {
+        "id": "negative_float16_dtype",
+        "input": {
+          "dtype": "float16",
+          "shape": [
+            2,
+            2
+          ],
+          "layout": "c_contiguous",
+          "data": [
+            [
+              1.0,
+              2.0
+            ],
+            [
+              3.0,
+              4.0
+            ]
+          ]
+        },
+        "axis": 1,
+        "expected_error": {
+          "type": "TypeError",
+          "code": "ARGMAX_UNSUPPORTED_DTYPE"
+        }
+      },
+      {
+        "id": "negative_float64_dtype",
+        "input": {
+          "dtype": "float64",
+          "shape": [
+            2,
+            2
+          ],
+          "layout": "c_contiguous",
+          "data": [
+            [
+              1.0,
+              2.0
+            ],
+            [
+              3.0,
+              4.0
+            ]
+          ]
+        },
+        "axis": 1,
+        "expected_error": {
+          "type": "TypeError",
+          "code": "ARGMAX_UNSUPPORTED_DTYPE"
+        }
+      },
+      {
+        "id": "negative_int32_dtype",
+        "input": {
+          "dtype": "int32",
+          "shape": [
+            2,
+            2
+          ],
+          "layout": "c_contiguous",
+          "data": [
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              4
+            ]
+          ]
+        },
+        "axis": 1,
+        "expected_error": {
+          "type": "TypeError",
+          "code": "ARGMAX_UNSUPPORTED_DTYPE"
+        }
+      },
+      {
+        "id": "negative_bool_dtype",
+        "input": {
+          "dtype": "bool",
+          "shape": [
+            2,
+            2
+          ],
+          "layout": "c_contiguous",
+          "data": [
+            [
+              true,
+              false
+            ],
+            [
+              false,
+              true
+            ]
+          ]
+        },
+        "axis": 1,
+        "expected_error": {
+          "type": "TypeError",
+          "code": "ARGMAX_UNSUPPORTED_DTYPE"
+        }
+      },
+      {
+        "id": "negative_non_contiguous_transpose",
+        "input": {
+          "dtype": "float32",
+          "base_shape": [
+            2,
+            3
+          ],
+          "shape": [
+            3,
+            2
+          ],
+          "layout": "transpose_view",
+          "permutation": [
+            1,
+            0
+          ],
+          "base_data": [
+            [
+              1.0,
+              2.0,
+              3.0
+            ],
+            [
+              4.0,
+              5.0,
+              6.0
+            ]
+          ]
+        },
+        "axis": 1,
+        "expected_error": {
+          "type": "ValueError",
+          "code": "ARGMAX_NON_CONTIGUOUS_INPUT"
+        }
+      },
+      {
+        "id": "negative_rank_zero",
+        "input": {
+          "dtype": "float32",
+          "shape": [],
+          "layout": "c_contiguous",
+          "data": 1.0
+        },
+        "axis": 0,
+        "expected_error": {
+          "type": "ValueError",
+          "code": "ARGMAX_UNSUPPORTED_RANK"
+        }
+      },
+      {
+        "id": "negative_rank_nine",
+        "input": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ],
+          "layout": "c_contiguous",
+          "data": [
+            [
+              [
+                [
+                  [
+                    [
+                      [
+                        [
+                          [
+                            1.0
+                          ]
+                        ]
+                      ]
+                    ]
+                  ]
+                ]
+              ]
+            ]
+          ]
+        },
+        "axis": 0,
+        "expected_error": {
+          "type": "ValueError",
+          "code": "ARGMAX_UNSUPPORTED_RANK"
+        }
+      },
+      {
+        "id": "negative_empty_input",
+        "input": {
+          "dtype": "float32",
+          "shape": [
+            0,
+            4
+          ],
+          "layout": "c_contiguous",
+          "data": []
+        },
+        "axis": 0,
+        "expected_error": {
+          "type": "ValueError",
+          "code": "ARGMAX_EMPTY_INPUT"
+        }
+      },
+      {
+        "id": "negative_empty_reduction_axis",
+        "input": {
+          "dtype": "float32",
+          "shape": [
+            2,
+            0
+          ],
+          "layout": "c_contiguous",
+          "data": [
+            [],
+            []
+          ]
+        },
+        "axis": 1,
+        "expected_error": {
+          "type": "ValueError",
+          "code": "ARGMAX_EMPTY_INPUT"
+        }
+      },
+      {
+        "id": "negative_axis_too_large",
+        "input": {
+          "dtype": "float32",
+          "shape": [
+            2,
+            3
+          ],
+          "layout": "c_contiguous",
+          "data": [
+            [
+              1.0,
+              2.0,
+              3.0
+            ],
+            [
+              4.0,
+              5.0,
+              6.0
+            ]
+          ]
+        },
+        "axis": 2,
+        "expected_error": {
+          "type": "ValueError",
+          "code": "ARGMAX_AXIS_OUT_OF_RANGE"
+        }
+      },
+      {
+        "id": "negative_axis_too_small",
+        "input": {
+          "dtype": "float32",
+          "shape": [
+            2,
+            3
+          ],
+          "layout": "c_contiguous",
+          "data": [
+            [
+              1.0,
+              2.0,
+              3.0
+            ],
+            [
+              4.0,
+              5.0,
+              6.0
+            ]
+          ]
+        },
+        "axis": -3,
+        "expected_error": {
+          "type": "ValueError",
+          "code": "ARGMAX_AXIS_OUT_OF_RANGE"
+        }
+      },
+      {
+        "id": "negative_axis_float",
+        "input": {
+          "dtype": "float32",
+          "shape": [
+            2,
+            3
+          ],
+          "layout": "c_contiguous",
+          "data": [
+            [
+              1.0,
+              2.0,
+              3.0
+            ],
+            [
+              4.0,
+              5.0,
+              6.0
+            ]
+          ]
+        },
+        "axis": 1.0,
+        "expected_error": {
+          "type": "TypeError",
+          "code": "ARGMAX_INVALID_AXIS_TYPE"
+        }
+      },
+      {
+        "id": "negative_axis_string",
+        "input": {
+          "dtype": "float32",
+          "shape": [
+            2,
+            3
+          ],
+          "layout": "c_contiguous",
+          "data": [
+            [
+              1.0,
+              2.0,
+              3.0
+            ],
+            [
+              4.0,
+              5.0,
+              6.0
+            ]
+          ]
+        },
+        "axis": "1",
+        "expected_error": {
+          "type": "TypeError",
+          "code": "ARGMAX_INVALID_AXIS_TYPE"
+        }
+      },
+      {
+        "id": "negative_axis_none",
+        "input": {
+          "dtype": "float32",
+          "shape": [
+            2,
+            3
+          ],
+          "layout": "c_contiguous",
+          "data": [
+            [
+              1.0,
+              2.0,
+              3.0
+            ],
+            [
+              4.0,
+              5.0,
+              6.0
+            ]
+          ]
+        },
+        "axis": null,
+        "expected_error": {
+          "type": "TypeError",
+          "code": "ARGMAX_AXIS_NONE_UNSUPPORTED"
+        }
+      },
+      {
+        "id": "negative_missing_axis",
+        "input": {
+          "dtype": "float32",
+          "shape": [
+            2,
+            3
+          ],
+          "layout": "c_contiguous",
+          "data": [
+            [
+              1.0,
+              2.0,
+              3.0
+            ],
+            [
+              4.0,
+              5.0,
+              6.0
+            ]
+          ]
+        },
+        "axis": "MISSING",
+        "expected_error": {
+          "type": "TypeError",
+          "code": "ARGMAX_MISSING_AXIS"
+        }
+      },
+      {
+        "id": "negative_second_positional_axis",
+        "input": {
+          "dtype": "float32",
+          "shape": [
+            2,
+            3
+          ],
+          "layout": "c_contiguous",
+          "data": [
+            [
+              1.0,
+              2.0,
+              3.0
+            ],
+            [
+              4.0,
+              5.0,
+              6.0
+            ]
+          ]
+        },
+        "call": "asnumpy.argmax(a, 1)",
+        "expected_error": {
+          "type": "TypeError",
+          "code": "ARGMAX_POSITIONAL_AXIS_UNSUPPORTED"
+        }
+      },
+      {
+        "id": "negative_unsupported_out",
+        "input": {
+          "dtype": "float32",
+          "shape": [
+            2,
+            3
+          ],
+          "layout": "c_contiguous",
+          "data": [
+            [
+              1.0,
+              2.0,
+              3.0
+            ],
+            [
+              4.0,
+              5.0,
+              6.0
+            ]
+          ]
+        },
+        "call": "asnumpy.argmax(a, axis=1, out=out)",
+        "expected_error": {
+          "type": "TypeError",
+          "code": "ARGMAX_UNSUPPORTED_KEYWORD"
+        }
+      },
+      {
+        "id": "negative_unsupported_keepdims",
+        "input": {
+          "dtype": "float32",
+          "shape": [
+            2,
+            3
+          ],
+          "layout": "c_contiguous",
+          "data": [
+            [
+              1.0,
+              2.0,
+              3.0
+            ],
+            [
+              4.0,
+              5.0,
+              6.0
+            ]
+          ]
+        },
+        "call": "asnumpy.argmax(a, axis=1, keepdims=True)",
+        "expected_error": {
+          "type": "TypeError",
+          "code": "ARGMAX_UNSUPPORTED_KEYWORD"
+        }
+      },
+      {
+        "id": "negative_unsupported_dtype_keyword",
+        "input": {
+          "dtype": "float32",
+          "shape": [
+            2,
+            3
+          ],
+          "layout": "c_contiguous",
+          "data": [
+            [
+              1.0,
+              2.0,
+              3.0
+            ],
+            [
+              4.0,
+              5.0,
+              6.0
+            ]
+          ]
+        },
+        "call": "asnumpy.argmax(a, axis=1, dtype='int64')",
+        "expected_error": {
+          "type": "TypeError",
+          "code": "ARGMAX_UNSUPPORTED_KEYWORD"
+        }
+      },
+      {
+        "id": "negative_unsupported_where",
+        "input": {
+          "dtype": "float32",
+          "shape": [
+            2,
+            3
+          ],
+          "layout": "c_contiguous",
+          "data": [
+            [
+              1.0,
+              2.0,
+              3.0
+            ],
+            [
+              4.0,
+              5.0,
+              6.0
+            ]
+          ]
+        },
+        "call": "asnumpy.argmax(a, axis=1, where=where)",
+        "expected_error": {
+          "type": "TypeError",
+          "code": "ARGMAX_UNSUPPORTED_KEYWORD"
+        }
+      },
+      {
+        "id": "negative_shape_too_large",
+        "input": {
+          "dtype": "float32",
+          "shape": [
+            46341,
+            46341
+          ],
+          "layout": "c_contiguous",
+          "data": "not_materialized"
+        },
+        "axis": 1,
+        "expected_error": {
+          "type": "ValueError",
+          "code": "ARGMAX_SHAPE_TOO_LARGE"
+        }
+      }
+    ]
+  },
+  "numerical_contract": {
+    "output_comparison": "exact_integer_equality",
+    "rtol": 0.0,
+    "atol": 0.0,
+    "dtype_exact": true,
+    "shape_exact": true,
+    "tie_break": "first_occurrence",
+    "nan": "first NaN is treated as the maximum",
+    "pos_inf": "positive infinity is the maximum",
+    "neg_inf": "negative infinity is the minimum; all negative infinity returns index 0",
+    "signed_zero": "positive zero and negative zero compare equal; first occurrence wins",
+    "bool_results": "any boolean comparison result must be bool and exact",
+    "no_downcast_to_float32": true,
+    "special_value_decode": "test_adapter.special_tokens"
+  },
+  "runtime_guards": [
+    "public tests call asnumpy.argmax and not only asnumpy._C.argmax",
+    "input dtype must be exactly float32; no implicit cast is permitted",
+    "input must be C-contiguous",
+    "input rank must be in [1, 8]",
+    "input element count must be in [1, 2147483647]",
+    "axis must be an int64 keyword and must be within [-rank, rank-1] after normalization",
+    "axis=None, missing axis, and second positional axis are rejected explicitly",
+    "output must be int64 with the exact shape obtained by removing the normalized axis",
+    "aclnnArgmaxGetWorkspaceSize must return ACL_SUCCESS",
+    "workspace must be allocated only when workspace size is greater than zero and must be freed",
+    "aclnnArgmax must return ACL_SUCCESS",
+    "the stream must be synchronized before reading the result",
+    "no NumPy or host CPU fallback may produce the actual result",
+    "repeated execution with the same input must return identical indices",
+    "L0 op_api sources that use l0op symbols require CANN opapi to be linked into cust_opapi"
+  ],
+  "build_contract": {
+    "isolated_build": true,
+    "system_cann_untouched": true,
+    "shared_asnumpy_checkout_untouched": true,
+    "link_opapi_into_cust_opapi_if_l0op_symbols_used": true,
+    "target_only": {
+      "soc": "Ascend910B3",
+      "cann": "9.2.0-beta.2"
+    }
+  },
+  "qualification": {
+    "claim_level": "unverified_candidate_only",
+    "planner_self_certification": false,
+    "gates": {
+      "build": "pending",
+      "unit_and_boundary": "pending",
+      "numerical": "pending",
+      "native_execution": "pending",
+      "whole_program": "pending",
+      "performance": "pending",
+      "activation": "pending"
+    },
+    "note": "This artifact defines the adapter contract and tests only; no gate is claimed passed."
+  }
+}

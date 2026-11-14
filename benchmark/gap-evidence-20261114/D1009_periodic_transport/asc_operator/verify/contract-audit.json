@@ -1,0 +1,38 @@
+{
+  "schema": "numpilot.generated-asc-contract-audit.v1",
+  "draft": "benchmark/cases/D1_partial_low_kernel/D1009_periodic_transport/numpilot-work/asc_operator/custom-v2/gaps/roll-18cf7f900d51d230/draft",
+  "structs": {
+    "RollTilingData": [
+      [
+        "totalNum",
+        "rowLen",
+        "shiftOffset",
+        "rowCount",
+        "blockRows",
+        "ubFactor"
+      ],
+      [
+        "totalNum",
+        "rowLen",
+        "shiftOffset",
+        "rowCount",
+        "blockRows",
+        "ubFactor"
+      ]
+    ]
+  },
+  "kernel_entries": [
+    [
+      "op_kernel/roll_arch22.cpp",
+      "roll"
+    ]
+  ],
+  "tiling_key_params": [
+    "D_T_X"
+  ],
+  "errors": [],
+  "warnings": [
+    "kernel entry `op_kernel/roll_arch22.cpp` template params [] != ASCENDC_TPL_ARGS_DECL ['D_T_X'] (host uses a constant TilingKey)"
+  ],
+  "ok": true
+}

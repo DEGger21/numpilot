@@ -1,0 +1,61 @@
+{
+  "api_name": "diff",
+  "asnumpy_api": "asnumpy.diff",
+  "callsites": [
+    {
+      "call_expr": "numpy.diff(<arg0>, axis=<redacted>)",
+      "col_offset": 20,
+      "lineno": 15,
+      "qualified_api": "numpy.diff",
+      "reason": "API 不在静态覆盖集"
+    },
+    {
+      "call_expr": "numpy.diff(<arg0>, axis=<redacted>)",
+      "col_offset": 21,
+      "lineno": 16,
+      "qualified_api": "numpy.diff",
+      "reason": "API 不在静态覆盖集"
+    }
+  ],
+  "cann_version": "9.2.0-beta.2",
+  "dtype_rules": [
+    "runtime_profile_required"
+  ],
+  "gap_id": "diff-5c181afd5736f1ee",
+  "qualified_api": "numpy.diff",
+  "reference_cases": [],
+  "route": "ascendc_registry_candidate",
+  "route_decisions": [
+    {
+      "reason": "requires a semantic composition resolver",
+      "route": "asnumpy_composite",
+      "status": "not_evaluated"
+    },
+    {
+      "reason": "check a pinned CANN operator catalog before new kernel work",
+      "route": "cann_existing",
+      "status": "review_required"
+    },
+    {
+      "reason": "explicit draft generation is allowed; execution remains gated",
+      "route": "ascendc_registry",
+      "status": "candidate_for_draft"
+    }
+  ],
+  "schema_version": 1,
+  "semantic_source": "numpy.diff",
+  "shape_rules": [
+    "runtime_profile_required"
+  ],
+  "signature_variants": [
+    {
+      "keyword_args": [
+        "axis"
+      ],
+      "positional_args": 1
+    }
+  ],
+  "source_path": "benchmark/cases/D1_partial_low_kernel/D1004_two_track_velocity/numpilot-work/asc_operator/numpy_source.py",
+  "source_sha256": "8288101fd207e63795f16500acf6525cebd6118c07045e687170ee1911f78dc5",
+  "target_soc": "Ascend910B3"
+}

@@ -1,4 +1,6 @@
-# 含真实缺口算子的完整程序迁移性能清单（6 例；5 例完整迁移通过，1 例失败保留）
+# 含真实缺口算子的完整程序迁移性能清单（历史 6 例主表 + 后续签名/算子批次）
+
+> 说明：主表和“主表 6 例汇总”对应 2026-11-12 的 6 个真实缺口算子案例；2026-11-14 新增的 5 个签名缺口案例和 3 个真实 Ascend C 算子案例在文末单列，不混入主表统计。
 
 本表覆盖 2026-11-12 批次中的 **6 个完整 NumPy 程序 → 6 个完整 AsNumpy 程序**：
 每个 `program.py` 都包含 `build_inputs()` 与 `forward()`，迁移后的 `migrated.py`
@@ -64,7 +66,7 @@
 | `tril` | `numpy.tril(a, k=0)` | 14.5 min | 21.9 min | 36.4 min | 1.7 min | 2 | 13 |
 | `argpartition` | `numpy.argpartition(a, kth, axis=-1)` | 15.1 min | 17.0 min | 32.1 min | 1.7 min | 1 | 19 |
 
-## 汇总
+## 主表 6 例汇总（2026-11-12）
 
 | 指标 | 数值 |
 | --- | --- |
@@ -99,3 +101,71 @@
 - 最终可构建算子：`operators/<case>/final/{op_host,op_kernel,op_api,asnumpy_adapter}`
 - 生成的 AsNumpy 适配层：`operators/<case>/adapter/`
 - 证据：`evidence/<case>/{gap-spec,generation-preflight,admission,custom-opp-provenance,migrate-report,migrate.log,benchmark/*}`
+
+## 2026-11-14 benchmark 部分缺口补充批次（5 例，1024×1024 输入）
+
+本批从 150 例 benchmark 的 D/E/F/G 部分缺口用例中按“由易到难”先取 5 个签名缺口，
+输入统一放大到 1024×1024（1,048,576 个 float32 元素），通过配置模型生成 `forward`
+重写、NumPyPilot 交互式六智能体迁移、CPU/NPU 数值对拍和 benchmark 完成。单批最大并发 3。
+
+这些用例的缺口是 **NumPy 调用签名差异**，不是新增 Ascend C 算子；模型把缺口调用改写为
+AsNumpy 已覆盖的等价组合，原始程序仍是数值 oracle。
+
+| # | 源码 NumPy 程序（相对路径） | 迁移后 AsNumpy 程序（相对路径） | 数据规模 | 缺口 | 迁移耗时 | 完整端到端 | CPU / NPU (ms) | 加速比 | 模型 tokens |
+| ---: | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: |
+| 1 | `benchmark/cases/F_partial_consent/F001_add_out/numpilot-work/scale-1024/flat-v1/program_flat.py` | `benchmark/cases/F_partial_consent/F001_add_out/numpilot-work/scale-1024/interactive-v1/workflow/migration/migrated.py` | 1024×1024 float32；1,048,576 输入元素 | `np.add(out=)` | 11.2 s | 72.4 s | 4.312869 / 0.246286 | **17.51x** | 16,389 |
+| 2 | `benchmark/cases/F_partial_consent/F004_sum_initial/numpilot-work/scale-1024/flat-v1/program_flat.py` | `benchmark/cases/F_partial_consent/F004_sum_initial/numpilot-work/scale-1024/interactive-v1/workflow/migration/migrated.py` | 1024×1024 float32；1,048,576 输入元素，输出 1024 | `np.sum(initial=)` | 10.3 s | 69.2 s | 0.541932 / 0.566367 | 0.9569x | 22,391（另有一次空响应未记录） |
+| 3 | `benchmark/cases/F_partial_consent/F005_max_initial/numpilot-work/scale-1024/flat-v1/program_flat.py` | `benchmark/cases/F_partial_consent/F005_max_initial/numpilot-work/scale-1024/interactive-v1/workflow/migration/migrated.py` | 1024×1024 float32；1,048,576 输入元素，输出 1024 | `np.max(initial=)` | 11.3 s | 77.8 s | 0.675472 / 0.737642 | 0.9157x | 20,844 |
+| 4 | `benchmark/cases/F_partial_consent/F008_linspace_endpoint/numpilot-work/scale-1024/flat-v1/program_flat.py` | `benchmark/cases/F_partial_consent/F008_linspace_endpoint/numpilot-work/scale-1024/interactive-v1/workflow/migration/migrated.py` | 1D float32；1,048,576 输入元素 | `np.linspace(endpoint=)` | 10.1 s | 48.7 s | 8.714843 / 0.279281 | **31.20x** | 18,134 |
+| 5 | `benchmark/cases/F_partial_consent/F010_nan_to_num_inplace/numpilot-work/scale-1024/flat-v1/program_flat.py` | `benchmark/cases/F_partial_consent/F010_nan_to_num_inplace/numpilot-work/scale-1024/interactive-v1/workflow/migration/migrated.py` | 1024×1024 float32；1,048,576 输入元素 | `np.nan_to_num(copy=)` | 9.1 s | 67.0 s | 11.309616 / 0.193215 | **58.53x** | 19,378 |
+
+口径：
+
+- **完整端到端**：从交互会话开始到 CPU/NPU benchmark 完成的墙钟时间，包含源码解读、规划、
+  缺口计划、LLM 迁移、数值验证和 benchmark。
+- **模型 tokens**：缺口重写模型调用 + 交互式六角色模型调用中可读取的 `usage.total_tokens`
+  之和；包含已归档的非成功重写尝试；F004 另有一次空响应未落 usage。
+- 五组均 `workflow=passed`、`numerically_consistent=true`、`max_abs_diff=0.0`。
+- F004/F005 的输入是 1024×1024，但输出是 1024 元素归约结果，NPU 时间由 launch/归约开销主导，
+  因此加速比略低于 1；F001/F008/F010 在同等 1M 输入下体现正加速。
+- 成功产物保留在各用例的 `numpilot-work/scale-1024/interactive-v1`；
+  脱敏证据见 `benchmark/gap-evidence-20261114/README.md`。
+
+## 2026-11-14 真实 Ascend C 生成 + 构建 + benchmark 批次（3 例）
+
+从 D1 单缺口用例中选择 `spacing`、`diff`、`roll`，输入放大到 1024×1024（1,048,576 个
+float32 元素），走 `resolve-gaps → complete-gaps --provider llm` 的真实生成路线，再继续
+完成编译、私有 OPP 安装、NPU 原生对拍、AsNumpy 适配层构建、完整程序迁移和 CPU/NPU benchmark。
+三组最终状态为 `case_local_adapter_benchmarked_not_activated`：能力仅安装在用例私有目录，
+没有写入共享 AsNumpy 或系统 CANN，也没有全局激活。
+
+| 样例 | 缺口 API | 生成墙钟 | 生成 tokens | 编译 | NPU 原生对拍 | CPU / NPU (ms) | 加速比 | 完整端到端 |
+| --- | --- | ---: | ---: | --- | --- | ---: | ---: | ---: |
+| `D1002_ulp_budget` | `np.spacing` | 641 s | 664,991 | 通过 | 逐位一致 | 34.860681 / 4.032468 | **8.6450x** | 2,170 s |
+| `D1004_two_track_velocity` | `np.diff` | 955 s | 745,668 | 通过 | 非 NaN 位逐位一致，NaN 位置一致 | 27.339721 / 8.133022 | **3.3616x** | 3,102 s |
+| `D1009_periodic_transport` | `np.roll` | 890 s | 716,941 | 通过 | 逐位一致 | 26.669054 / 7.455630 | **3.5770x** | 3,112 s |
+
+口径：
+
+- **完整端到端**：从该样例开始算子生成到 CPU/NPU benchmark 完成的墙钟时间，包含生成、
+  编译/修复、部署、NPU 对拍、适配层构建、完整程序迁移和 benchmark。
+- **生成 tokens**：三组各 17 次 HTTP 200，可读 `usage.total_tokens` 合计 2,127,600；
+  适配层为确定性集成，不调用模型，tokens 为 0。
+- 三组完整程序均 `comparison.consistent=true`；`diff` 的 NaN payload 与 CPU 不同，
+  但 NaN 位置和非 NaN 位一致，按语义等价记录。
+- 生成的 Ascend C 源码、修复哈希、编译/部署/对拍/适配层/benchmark 证据见
+  `benchmark/gap-evidence-20261114/<case>/asc_operator/`，汇总见
+  `benchmark/gap-evidence-20261114/ASC_OPERATORS.md`。
+
+## 2026-11-14 真实 Ascend C 第二批（3 例）
+
+| 样例 | 缺口 API | 生成墙钟 | 生成 tokens | 编译 | NPU 原生对拍 | CPU / NPU (ms) | 加速比 | 完整端到端 |
+| --- | --- | ---: | ---: | --- | --- | ---: | ---: | ---: |
+| `D1003_rounding_envelope` | `np.nextafter` | 641 s | 677,560 | 通过 | 逐位一致 | 47.455408 / 4.736910 | **10.0182x** | 1,050 s |
+| `D1007_repeat_samples` | `np.repeat` | 914 s | 717,123 | 通过 | 逐位一致 | 49.392092 / 27.628917 | **1.7877x** | 1,355 s |
+| `D1012_class_selection` | `np.argmax` | 868 s | 711,065 | 通过 | 逐位一致 | 30.189417 / 5.230176 | **5.7722x** | 1,367 s |
+
+第二批合计 **2,105,748 生成 tokens**；三组均完成编译、私有 OPP 部署、NPU 原生对拍、AsNumpy 适配层和
+完整程序 CPU/NPU benchmark。`D1003`/`D1007` 的阻断项是源码标量二元操作数，不是缺口算子本身；
+benchmark 源已用等价的 `full_like` 数组操作数消解。证据见
+`benchmark/gap-evidence-20261114/<case>/asc_operator/`。

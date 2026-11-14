@@ -256,3 +256,22 @@ F 组当前主要覆盖关键字不被接受造成的签名差异。它们没有
 7. **扩充泛化与验证器测试。** 增加独立真实项目、多输入实例；若要验证验证器自身可靠性，再补充规范中的 L 组变异测试。
 
 这 150 份程序可以作为上述流程的源程序集合。正式对外报告迁移成功率之前，需要完成预期审核和真实目标环境验证。
+
+## 7. 覆盖分类视图（2026-11-14）
+
+在不修改 `cases/` 原始语料的前提下，仓库提供两个符号链接视图：
+
+- `benchmark/covered/`：71 个 API 全覆盖用例（`np.abs` 按文档化别名计入 `asnumpy.absolute`）；
+- `benchmark/gap/`：79 个含缺口或契约差异用例。
+
+逐例分类、缺口 API 和原因见 `benchmark/classification.json`。`J_out_of_subset` 即使 API
+表面覆盖也仍是静态拒绝用例，不会因为位于 `covered/` 而执行。原始不可变程序始终位于
+`benchmark/cases/<group>/<case>/program.py`。
+
+部分缺口迁移记录补充在
+[含真实缺口算子的完整程序迁移性能清单](../examples/gap_archive_20261112/BENCHMARK_TABLE.md)，
+包含端到端、CPU/NPU、加速比和模型 token。
+
+首批 5 个已完成的签名缺口样例证据见
+[`benchmark/gap-evidence-20261114/`](gap-evidence-20261114/README.md)：每个样例一个目录，
+含 NumPy 源码、模型消解后的源码、AsNumpy 迁移代码和 `reports/`。

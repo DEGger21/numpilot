@@ -1,0 +1,30 @@
+{
+  "case": "D1009_periodic_transport",
+  "changed": {
+    "op_host/CMakeLists.txt": [
+      "6507c8b0ae397f3077e45b4302293f281ad4bdab23a19d0ee0bc9c9d0bf390cf",
+      "7a51304648d109650261de3b5ef2e05e8a06dc7ba5da8ffa5261efbb80154cda"
+    ],
+    "op_host/arch22/roll_tiling.cpp": [
+      "2f4157c2ca8b17e51d69d563b3ce295c195e2e4f96943cff176f4290e2ca7cae",
+      "d17cb882f082319a370142659d5d1e5692b8affc9c6bafd3c74b5cebe0535967"
+    ],
+    "op_kernel/arch22/roll_tiling_data.h": [
+      "767c8b28aea9aa08037a59c6a492b635404acc1875b2b1d027aa1d0b2256964b",
+      "22d8b77ede47f7c7bbab307c32a4a0f33ffe33080f0725e42d0f19e270fd8410"
+    ],
+    "op_kernel/roll_arch22.cpp": [
+      "a5dced1b27d8ee5738ce274f1dd549a7acf15afac3d4643f10c804f150546053",
+      "79f2cbbe9ab5bd65cce730c37c8f3404f1d7c5f5b2d3d43ef9bd58d707ea5d68"
+    ]
+  },
+  "claim_boundary": "repairs are deterministic engineering changes, not model output",
+  "notes": [
+    "opapi-link: link CANN libopapi into cust_opapi",
+    "tiling-schema: host fills the rowLen/shiftOffset/rowCount/blockRows/ubFactor contract read by the kernel",
+    "nan-payload: pure permutation uses UB->UB DataCopy instead of Muls(x,1.0f)",
+    "compile-contract: use the kernel-local ubFactor_ and 32B alignment constant"
+  ],
+  "reason": "deterministic compile/deploy/semantic repair after real model generation",
+  "schema": "numpilot.generated-asc-repair.v1"
+}

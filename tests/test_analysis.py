@@ -675,3 +675,19 @@ def test_promoted_missing_api_produces_a_proven_array_downstream():
     )
     assert set(rejected.unsupported) == {"add", "concatenate"}
     assert not rejected.migratable
+
+
+def test_like_creation_without_dtype_inherits_prototype_dtype():
+    src = """
+import numpy as np
+def forward(x):
+    a = np.full_like(x, 1.0)
+    b = np.ones_like(x)
+    c = np.zeros_like(x)
+    d = np.empty_like(x)
+    return np.add(np.add(a, b), np.add(c, d))
+"""
+    result = AnalysisAgent().analyze(src)
+    ops = {op.name: op for op in result.op_uses}
+    for name in ("full_like", "ones_like", "zeros_like", "empty_like"):
+        assert ops[name].supported, ops[name].reason

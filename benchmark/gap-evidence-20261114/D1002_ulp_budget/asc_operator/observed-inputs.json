@@ -1,0 +1,75 @@
+{
+  "callsites": [
+    {
+      "col_offset": null,
+      "inputs": [
+        {
+          "c_contiguous": true,
+          "dtype": "float32",
+          "name": "arg[0]",
+          "rank": 2,
+          "shape": [
+            1024,
+            1024
+          ]
+        }
+      ],
+      "keyword_args": [],
+      "lineno": 15,
+      "output": {
+        "c_contiguous": true,
+        "dtype": "float32",
+        "rank": 2,
+        "shape": [
+          1024,
+          1024
+        ]
+      },
+      "positional_args": 1,
+      "qualified_api": "numpy.spacing",
+      "unprofiled_operands": []
+    },
+    {
+      "col_offset": null,
+      "inputs": [
+        {
+          "c_contiguous": true,
+          "dtype": "float32",
+          "name": "arg[0]",
+          "rank": 2,
+          "shape": [
+            1024,
+            1024
+          ]
+        }
+      ],
+      "keyword_args": [],
+      "lineno": 16,
+      "output": {
+        "c_contiguous": true,
+        "dtype": "float32",
+        "rank": 2,
+        "shape": [
+          1024,
+          1024
+        ]
+      },
+      "positional_args": 1,
+      "qualified_api": "numpy.spacing",
+      "unprofiled_operands": []
+    }
+  ],
+  "deterministic": true,
+  "executed": true,
+  "mode": "contract",
+  "notes": [
+    "two CPU executions agreed on every observed tensor profile"
+  ],
+  "schema": "numpilot.input-observation",
+  "schema_version": 1,
+  "source": {
+    "path": "benchmark/cases/D1_partial_low_kernel/D1002_ulp_budget/numpilot-work/asc_operator/numpy_source.py",
+    "sha256": "e5cfef1887ff4d44447eb3746e495f1c20903f888407afb6b818f0518267dc60"
+  },
+  "status": "observed"
+}

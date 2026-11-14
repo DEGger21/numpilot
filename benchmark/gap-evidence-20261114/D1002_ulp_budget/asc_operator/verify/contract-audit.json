@@ -1,0 +1,26 @@
+{
+  "schema": "numpilot.generated-asc-contract-audit.v1",
+  "draft": "benchmark/cases/D1_partial_low_kernel/D1002_ulp_budget/numpilot-work/asc_operator/custom-v2/gaps/spacing-f596b58e7bfad43e/draft",
+  "structs": {
+    "SpacingTilingData": [
+      [
+        "totalNum",
+        "blockFactor",
+        "ubFactor"
+      ]
+    ]
+  },
+  "kernel_entries": [
+    [
+      "op_kernel/spacing_arch22.cpp",
+      "spacing"
+    ]
+  ],
+  "tiling_key_params": [
+    "D_T_X",
+    "BUFFER_MODE"
+  ],
+  "errors": [],
+  "warnings": [],
+  "ok": true
+}

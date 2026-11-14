@@ -1,0 +1,36 @@
+{
+  "comparisons": {
+    "bounded": {
+      "consistent": true,
+      "dtype": "float32",
+      "max_abs_diff": 0.0,
+      "shape": [
+        1024,
+        1023
+      ]
+    },
+    "residual": {
+      "consistent": true,
+      "dtype": "float32",
+      "max_abs_diff": 0.0,
+      "shape": [
+        1024,
+        1023
+      ]
+    },
+    "rmse": {
+      "consistent": true,
+      "dtype": "float32",
+      "max_abs_diff": 5.960464477539063e-08,
+      "shape": [
+        1024
+      ]
+    }
+  },
+  "is_numpy_alias": false,
+  "ok": true,
+  "op": "diff",
+  "public_module": "asnumpy.custom_ops",
+  "public_name": "diff",
+  "schema": "numpilot.generated-case-route.v1"
+}

@@ -612,6 +612,11 @@ class _StaticAnalyzer:
                 and len(path) == 2
                 and self.env.get(path[0], _UNKNOWN).is_array
             ):
+                base_profile = self.env[path[0]]
+                if path[1] == "dtype":
+                    return _ValueProfile("metadata", base_profile.dtype, None)
+                if path[1] == "shape":
+                    return _ValueProfile("shape", "int64", base_profile.shape)
                 self.issues.append(
                     "unmodelled ndarray attribute .%s at line %d"
                     % (path[1], node.lineno)
@@ -994,7 +999,11 @@ class _StaticAnalyzer:
         call: ast.Call,
         arguments: List[_ValueProfile],
     ) -> Optional[str]:
-        keyword_dtype = _dtype_name(_keyword(call, "dtype"))
+        dtype_node = _keyword(call, "dtype")
+        keyword_dtype = _dtype_name(dtype_node)
+        if keyword_dtype in (None, "unknown") and isinstance(dtype_node, ast.Attribute):
+            if dtype_node.attr == "dtype" and isinstance(dtype_node.value, ast.Name):
+                keyword_dtype = self.env.get(dtype_node.value.id, _UNKNOWN).dtype
         if keyword_dtype is not None:
             return keyword_dtype
         positions = {
@@ -1018,7 +1027,16 @@ class _StaticAnalyzer:
         arguments: List[_ValueProfile],
     ) -> Optional[Tuple[int, ...]]:
         if leaf in {"full", "empty", "ones", "zeros"}:
-            return _static_shape(_bound_argument(call, 0, ("shape",)))
+            shape_node = _bound_argument(call, 0, ("shape",))
+            shape = _static_shape(shape_node)
+            if (
+                shape is None
+                and isinstance(shape_node, ast.Attribute)
+                and shape_node.attr == "shape"
+                and isinstance(shape_node.value, ast.Name)
+            ):
+                shape = self.env.get(shape_node.value.id, _UNKNOWN).shape
+            return shape
         if leaf in {"full_like", "empty_like", "ones_like", "zeros_like"}:
             return arguments[0].shape if arguments else None
         if leaf in {"eye", "identity"}:

@@ -78,3 +78,9 @@ python tools/bench_no_gap_archive.py \
 因此不作为加速比口径。原始计时数据仍保留在 `timings/` 供审计。71 个样例
 均已生成大规模性能变体，逐行加速比、数值边界与复现方式见
 [`examples/scaled_benchmark_20261112/BENCHMARK_TABLE.md`](../scaled_benchmark_20261112/BENCHMARK_TABLE.md)。
+
+## 2026-11-14 复核
+
+本批没有新增无缺口样例，71 例数据保持不变。仓库记录入口见
+[`BENCHMARK_TABLE.md`](BENCHMARK_TABLE.md)；当前规模性能表见
+[`examples/scaled_benchmark_20261112/BENCHMARK_TABLE.md`](../scaled_benchmark_20261112/BENCHMARK_TABLE.md)。

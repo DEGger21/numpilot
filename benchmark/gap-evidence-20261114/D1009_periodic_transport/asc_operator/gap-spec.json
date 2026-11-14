@@ -1,0 +1,54 @@
+{
+  "api_name": "roll",
+  "asnumpy_api": "asnumpy.roll",
+  "callsites": [
+    {
+      "call_expr": "numpy.roll(<arg0>, <arg1>, axis=<redacted>)",
+      "col_offset": 15,
+      "lineno": 9,
+      "qualified_api": "numpy.roll",
+      "reason": "API 不在静态覆盖集"
+    }
+  ],
+  "cann_version": "9.2.0-beta.2",
+  "dtype_rules": [
+    "runtime_profile_required"
+  ],
+  "gap_id": "roll-18cf7f900d51d230",
+  "qualified_api": "numpy.roll",
+  "reference_cases": [],
+  "route": "ascendc_registry_candidate",
+  "route_decisions": [
+    {
+      "reason": "requires a semantic composition resolver",
+      "route": "asnumpy_composite",
+      "status": "not_evaluated"
+    },
+    {
+      "reason": "check a pinned CANN operator catalog before new kernel work",
+      "route": "cann_existing",
+      "status": "review_required"
+    },
+    {
+      "reason": "explicit draft generation is allowed; execution remains gated",
+      "route": "ascendc_registry",
+      "status": "candidate_for_draft"
+    }
+  ],
+  "schema_version": 1,
+  "semantic_source": "numpy.roll",
+  "shape_rules": [
+    "runtime_profile_required"
+  ],
+  "signature_variants": [
+    {
+      "keyword_args": [
+        "axis"
+      ],
+      "positional_args": 2
+    }
+  ],
+  "source_path": "benchmark/cases/D1_partial_low_kernel/D1009_periodic_transport/numpilot-work/asc_operator/numpy_source.py",
+  "source_sha256": "60df6d65adc2b7b6326fe4f40abee1261edf9eea18ee7ef53597ad233a9cdb64",
+  "target_soc": "Ascend910B3"
+}

@@ -1,0 +1,6 @@
+status=deployed
+package=benchmark/cases/D1_partial_low_kernel/D1009_periodic_transport/numpilot-work/asc_operator/custom-v2/build-v4/project/build/custom_opp_ubuntu_aarch64.run
+start=2026-11-14T15:05:19+08:00
+end=2026-11-14T15:05:20+08:00
+elapsed_seconds=1
+rc=0

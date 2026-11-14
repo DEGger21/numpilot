@@ -1,0 +1,97 @@
+{
+  "schema": "numpilot.benchmark-case-perf",
+  "version": 1,
+  "original": "benchmark/cases/D1_partial_low_kernel/D1012_class_selection/numpilot-work/asc_operator/custom-v2/bench-v1/numpy_source.py",
+  "migrated": "benchmark/cases/D1_partial_low_kernel/D1012_class_selection/numpilot-work/asc_operator/custom-v2/bench-v1/migrated.py",
+  "core": 0,
+  "warmup": 3,
+  "samples": 20,
+  "cpu": {
+    "samples_ns": [
+      39860042,
+      30278052,
+      37387287,
+      30420552,
+      36623285,
+      30093752,
+      28515638,
+      30274072,
+      28588988,
+      38144568,
+      28579268,
+      38182278,
+      28552038,
+      38136908,
+      28517088,
+      30036171,
+      28563768,
+      30104762,
+      36574985,
+      30031811
+    ],
+    "median_ms": 30.189417,
+    "p10_ms": 28.517088,
+    "p90_ms": 38.182278
+  },
+  "npu": {
+    "samples_ns": [
+      5626291,
+      5240741,
+      5355251,
+      5157100,
+      5353401,
+      5457111,
+      5286671,
+      5371401,
+      5169081,
+      5143511,
+      17186515,
+      5129481,
+      5115000,
+      5177881,
+      5207710,
+      5175640,
+      5290081,
+      5214581,
+      5219610,
+      5293441
+    ],
+    "median_ms": 5.2301755,
+    "p10_ms": 5.129481,
+    "p90_ms": 5.626291
+  },
+  "comparison": {
+    "consistent": true,
+    "comparisons": {
+      "log_probabilities": {
+        "shape_equal": true,
+        "dtype_equal": true,
+        "max_abs_diff": 9.5367431640625e-07,
+        "consistent": true,
+        "n_elements": 1048576
+      },
+      "probabilities": {
+        "shape_equal": true,
+        "dtype_equal": true,
+        "max_abs_diff": 7.450580596923828e-09,
+        "consistent": true,
+        "n_elements": 1048576
+      },
+      "winner": {
+        "shape_equal": true,
+        "dtype_equal": true,
+        "max_abs_diff": 0.0,
+        "consistent": true,
+        "n_elements": 1024
+      },
+      "confidence": {
+        "shape_equal": true,
+        "dtype_equal": true,
+        "max_abs_diff": 7.450580596923828e-09,
+        "consistent": true,
+        "n_elements": 1024
+      }
+    }
+  },
+  "speedup": 5.772161373934775
+}

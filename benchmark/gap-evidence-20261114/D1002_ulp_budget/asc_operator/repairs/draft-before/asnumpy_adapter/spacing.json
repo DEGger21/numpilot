@@ -1,0 +1,375 @@
+{
+  "schema": "numpilot.asnumpy-adapter",
+  "schema_version": 1,
+  "stage": "test_adapter_02",
+  "status": "generated_unverified",
+  "claim_level": "unverified_candidate_only",
+  "gap_id": "spacing-f596b58e7bfad43e",
+  "gap_spec_sha256": "23eb03bc10f5d87b9800493f4b5948b1d6ef96bd51fa09fadd14ddf7015804c6",
+  "source_sha256": "e5cfef1887ff4d44447eb3746e495f1c20903f888407afb6b818f0518267dc60",
+  "target": {
+    "soc": "Ascend910B3",
+    "cann_version": "9.2.0-beta.2"
+  },
+  "api_name": "spacing",
+  "numpy_api": "numpy.spacing",
+  "asnumpy_api": "asnumpy.spacing",
+  "op_type": "Spacing",
+  "file_stem": "spacing",
+  "kind": "unary_elementwise",
+  "positional_args": 1,
+  "keyword_args": [],
+  "input_names": [
+    "x"
+  ],
+  "output_names": [
+    "y"
+  ],
+  "declared_dtype_rules": [
+    "runtime_profile_required"
+  ],
+  "declared_shape_rules": [
+    "runtime_profile_required"
+  ],
+  "declared_dtypes": [
+    "float32"
+  ],
+  "declared_shapes": [
+    [
+      1024,
+      1024
+    ]
+  ],
+  "return_structure": "single_tensor",
+  "required_bool_outputs": [],
+  "signature": {
+    "positional": [
+      {
+        "name": "x",
+        "index": 0,
+        "role": "input",
+        "required": true
+      }
+    ],
+    "keyword_args": [],
+    "rejects_all_keyword_args": true,
+    "call": "asnumpy.spacing(x)"
+  },
+  "inputs": [
+    {
+      "name": "x",
+      "index": 0,
+      "role": "input",
+      "dtype": "float32",
+      "dtype_rule": "runtime_profile_required",
+      "rank": 2,
+      "shape": [
+        1024,
+        1024
+      ],
+      "shape_rule": "runtime_profile_required",
+      "c_contiguous": true,
+      "layout": "c_contiguous",
+      "accepts_non_contiguous": false,
+      "broadcast": false,
+      "scalar": false,
+      "aliases": [
+        "input",
+        "arg[0]",
+        "source-left",
+        "source-right"
+      ]
+    }
+  ],
+  "outputs": [
+    {
+      "name": "y",
+      "index": 0,
+      "role": "output",
+      "dtype": "float32",
+      "dtype_rule": "runtime_profile_required",
+      "rank": 2,
+      "shape": [
+        1024,
+        1024
+      ],
+      "shape_rule": "same_as_x_for_admitted_profile",
+      "c_contiguous": true,
+      "layout": "c_contiguous",
+      "aliases": [
+        "output"
+      ]
+    }
+  ],
+  "name_mapping": {
+    "public_api": "asnumpy.spacing",
+    "python_wrapper": {
+      "symbol": "asnumpy.spacing",
+      "signature": "spacing(x)",
+      "returns": "single float32 tensor named y"
+    },
+    "pybind": {
+      "symbol": "spacing",
+      "binding_kind": "module_function",
+      "argument_order": [
+        "x"
+      ],
+      "return": "y"
+    },
+    "native": {
+      "op_type": "Spacing",
+      "native_entry": "Spacing",
+      "kernel_entry": "spacing",
+      "l0_api": "l0op::Spacing",
+      "infer_shape": "InferShape4Spacing",
+      "infer_datatype": "InferDataType4Spacing",
+      "tiling_function": "SpacingTiling"
+    },
+    "acl_l2": {
+      "header": "aclnn_spacing.h",
+      "source": "aclnn_spacing.cpp",
+      "get_workspace_size": "aclnnSpacingGetWorkspaceSize",
+      "execute": "aclnnSpacing",
+      "tensor_order": {
+        "inputs": [
+          "x"
+        ],
+        "outputs": [
+          "y"
+        ]
+      },
+      "two_stage_call": true,
+      "workspace_size_first": true,
+      "explicit_synchronization_required": true,
+      "explicit_error_check_required": true
+    },
+    "acl_l0": {
+      "header": "spacing.h",
+      "source": "spacing.cpp",
+      "api": "l0op::Spacing",
+      "kernel_launch_symbol": "spacing"
+    }
+  },
+  "order_contract": {
+    "python_arguments": [
+      "x"
+    ],
+    "host_inputs": [
+      "x"
+    ],
+    "host_outputs": [
+      "y"
+    ],
+    "infer_shape_inputs": [
+      "x"
+    ],
+    "infer_shape_outputs": [
+      "y"
+    ],
+    "tiling_inputs": [
+      "x"
+    ],
+    "tiling_outputs": [
+      "y"
+    ],
+    "kernel_arguments": [
+      "x",
+      "y",
+      "workspace",
+      "tiling"
+    ],
+    "acl_l2_tensor_order": [
+      "x",
+      "y"
+    ],
+    "dtype_order": [
+      "float32",
+      "float32"
+    ],
+    "shape_order_policy": "one_input_one_output_same_profile_shape"
+  },
+  "kernel_contract": {
+    "entry": "spacing",
+    "argument_order": [
+      "x",
+      "y",
+      "workspace",
+      "tiling"
+    ],
+    "required_stages": [
+      "Init",
+      "CopyIn",
+      "Compute",
+      "CopyOut"
+    ],
+    "workspace_argument_required": true,
+    "tiling_argument_required": true
+  },
+  "host_contract": {
+    "definition_symbol": "Spacing",
+    "shape_inference_symbol": "InferShape4Spacing",
+    "datatype_inference_symbol": "InferDataType4Spacing",
+    "tiling_registration": "SpacingTiling",
+    "tiling_data_symbol": "SpacingTilingData",
+    "tiling_key_symbol": "SpacingTilingKey",
+    "one_input_one_output": true
+  },
+  "support_scope": {
+    "status": "requested_unverified",
+    "qualification_scope": "observed_profile_only",
+    "input_dtype": "float32",
+    "output_dtype": "float32",
+    "rank": 2,
+    "shape": [
+      1024,
+      1024
+    ],
+    "layout": "c_contiguous",
+    "broadcast": false,
+    "empty_input": "reject",
+    "other_dtypes": "reject_without_implicit_cast",
+    "other_ranks": "reject",
+    "other_shapes": "reject",
+    "non_contiguous_inputs": "reject_without_copy_or_cast",
+    "python_scalars_and_lists": "reject",
+    "keyword_arguments": "reject",
+    "cpu_fallback": "forbidden",
+    "silent_cast": "forbidden",
+    "return_structure": "single_tensor"
+  },
+  "semantic_contract": {
+    "authority": "numpy.spacing",
+    "oracle_expression": "np.spacing(x)",
+    "output_dtype": "float32",
+    "shape_relationship": "y.shape == x.shape",
+    "elementwise": true,
+    "broadcasting": false,
+    "special_values": {
+      "nan_input_expected": "nan_output",
+      "positive_infinity_input_expected": "nan_output",
+      "negative_infinity_input_expected": "nan_output",
+      "positive_zero_input_expected": "smallest_positive_float32_subnormal",
+      "negative_zero_input_expected": "smallest_positive_float32_subnormal",
+      "signed_zero_policy": "distinguish -0.0 from +0.0 at the input boundary; do not normalize the input before dispatch",
+      "subnormal_policy": "support subnormal inputs and subnormal outputs exactly as the NumPy oracle",
+      "max_finite_policy": "defer_to_numpy_oracle",
+      "nan_output_comparison": "compare_nan_positions_not_payloads",
+      "infinity_output_comparison": "compare_infinity_sign_and_position"
+    },
+    "unsupported_numpy_features": {
+      "out_keyword": "reject",
+      "where_keyword": "reject",
+      "casting_keyword": "reject",
+      "order_keyword": "reject",
+      "dtype_keyword": "reject",
+      "subok_keyword": "reject"
+    }
+  },
+  "numerical_tolerance": {
+    "dtype": "float32",
+    "rtol": 0.0,
+    "atol": 0.0,
+    "allow_ulps": 0,
+    "comparison_mode": "bit_exact_candidate",
+    "nan_equal": true,
+    "inf_equal": true,
+    "signed_zero_equal": false,
+    "signbit_must_match": true,
+    "comparison_result_dtype": "bool",
+    "qualification_status": "pending_numerical_gate"
+  },
+  "rejection_policy": {
+    "unsupported_dtype": {
+      "exception": "TypeError",
+      "message": "asnumpy.spacing supports float32 inputs only in this unverified candidate"
+    },
+    "unsupported_shape_rank_or_layout": {
+      "exception": "ValueError",
+      "message": "asnumpy.spacing candidate supports only the observed C-contiguous float32 rank-2 shape [1024, 1024]"
+    },
+    "keyword_arguments": {
+      "exception": "TypeError",
+      "message": "asnumpy.spacing candidate accepts exactly one positional argument and no keyword arguments"
+    },
+    "empty_input": {
+      "exception": "ValueError",
+      "message": "empty inputs are outside the observed profile and are rejected"
+    },
+    "device_or_acl_error": {
+      "exception": "RuntimeError",
+      "message": "ACLNN or device failure is propagated explicitly; no CPU or NumPy fallback is allowed"
+    }
+  },
+  "adapter_test_contract": {
+    "public_entry_required": "asnumpy.spacing",
+    "public_tests_must_call_public_api": true,
+    "private_pybind_only_diagnostics": true,
+    "numpy_oracle_allowed_for_expected_values_only": true,
+    "operator_cpu_fallback_forbidden": true,
+    "saved_inputs_required": true,
+    "expected_and_actual_dtype_must_be_float32": true,
+    "test_cases": [
+      {
+        "id": "adapter_public_import_and_call",
+        "purpose": "verify that asnumpy.spacing exists and accepts exactly one positional argument",
+        "call": "asnumpy.spacing(x)",
+        "expected_shape": [
+          1024,
+          1024
+        ],
+        "expected_dtype": "float32"
+      },
+      {
+        "id": "adapter_positive_finite",
+        "purpose": "compare finite positive float32 values against numpy.spacing exactly"
+      },
+      {
+        "id": "adapter_negative_finite",
+        "purpose": "compare finite negative float32 values against numpy.spacing exactly"
+      },
+      {
+        "id": "adapter_binade_boundaries",
+        "purpose": "cover values immediately below, at, and immediately above powers of two to detect spacing transitions"
+      },
+      {
+        "id": "adapter_signed_zeros",
+        "purpose": "cover +0.0 and -0.0 and require the oracle-defined positive minimum subnormal output"
+      },
+      {
+        "id": "adapter_subnormals",
+        "purpose": "cover smallest subnormal, largest subnormal, and normal/subnormal boundaries"
+      },
+      {
+        "id": "adapter_nan_inf",
+        "purpose": "cover NaN, +Inf, and -Inf inputs and compare NaN output positions without rewriting special values"
+      },
+      {
+        "id": "adapter_repeated_call",
+        "purpose": "call asnumpy.spacing twice with the same input tensor and verify deterministic results and no input mutation"
+      },
+      {
+        "id": "adapter_reject_unsupported_dtype",
+        "purpose": "verify float16, bfloat16, float64, integer, boolean, and complex inputs are rejected without implicit cast"
+      },
+      {
+        "id": "adapter_reject_unsupported_shape",
+        "purpose": "verify scalar, 0-D, 1-D, empty, and rank-2 shapes other than [1024, 1024] are rejected"
+      },
+      {
+        "id": "adapter_reject_non_contiguous",
+        "purpose": "verify non-contiguous float32 arrays are rejected without a hidden contiguous copy"
+      },
+      {
+        "id": "adapter_reject_keywords",
+        "purpose": "verify out, where, casting, order, dtype, and subok keywords are rejected"
+      }
+    ]
+  },
+  "activation": {
+    "qualified": false,
+    "activation_allowed": false,
+    "reason": "generated candidate only; build, unit, numerical, native execution, whole-program, performance, and activation gates remain pending",
+    "performance_claim": false,
+    "no_success_claim": true
+  }
+}

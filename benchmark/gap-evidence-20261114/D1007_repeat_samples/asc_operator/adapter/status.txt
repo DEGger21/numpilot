@@ -1,0 +1,7 @@
+status=built
+vendor=benchmark/cases/D1_partial_low_kernel/D1007_repeat_samples/numpilot-work/asc_operator/custom-v2/deploy-v2/install/vendors/repeat_custom
+start=2026-11-14T16:04:15+08:00
+end=2026-11-14T16:04:15+08:00
+elapsed_seconds=149
+rc=0
+wheel=benchmark/cases/D1_partial_low_kernel/D1007_repeat_samples/numpilot-work/asc_operator/custom-v2/adapter-build-v1/wheelhouse/asnumpy-0.3.1-cp312-cp312-linux_aarch64.whl

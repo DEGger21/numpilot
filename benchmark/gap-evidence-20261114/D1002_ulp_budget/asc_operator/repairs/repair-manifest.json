@@ -1,0 +1,20 @@
+{
+  "case": "D1002_ulp_budget",
+  "changed": {
+    "op_host/CMakeLists.txt": [
+      "9af74a3d98769d1a3238903e2de8baea91a4128ce1a3d7df198b4b10c90e10bb",
+      "0f53be1d62392ccceae44941c76aceb749f14ca65fc68434b820817a659113bc"
+    ],
+    "op_kernel/arch22/spacing.h": [
+      "3a5baf43f2082532753f119e8d88bbfc00142e76c7e36e3c87b4ec3f16ac0af0",
+      "5a3df3fa254c9bbac957eb70d80922aa77c85a06397ab1b88b9bbf3e2125859b"
+    ]
+  },
+  "claim_boundary": "repairs are deterministic engineering changes, not model output",
+  "notes": [
+    "opapi-link: link CANN libopapi into cust_opapi",
+    "spacing-sign: np.spacing negative finite values must return negative spacing"
+  ],
+  "reason": "deterministic compile/deploy/semantic repair after real model generation",
+  "schema": "numpilot.generated-asc-repair.v1"
+}

@@ -1,0 +1,24 @@
+{
+  "axis": 1,
+  "elapsed_seconds": 0.9159710602834821,
+  "exact_equal": true,
+  "max_abs_diff": 0.0,
+  "mismatch_count": 0,
+  "mismatch_samples": [],
+  "nan_positions_equal": true,
+  "non_nan_bits_equal": true,
+  "numpy_oracle": "numpy.repeat",
+  "output_shape": [
+    1024,
+    3072
+  ],
+  "profile": "repeat",
+  "semantic_equal": true,
+  "shape": [
+    1024,
+    1024
+  ],
+  "shift": null,
+  "status": "pass",
+  "workspace_bytes": 512
+}

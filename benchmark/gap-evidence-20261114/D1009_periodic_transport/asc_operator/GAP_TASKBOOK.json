@@ -1,0 +1,321 @@
+{
+  "acceptance": {
+    "gates": [
+      {
+        "id": "build",
+        "owner": "deterministic_validator",
+        "requires": "isolated build/import and public API binding checks"
+      },
+      {
+        "id": "unit_and_boundary",
+        "owner": "deterministic_validator",
+        "requires": "NumPy oracle, admitted profiles, unsupported dtype/shape/kwargs, repeated input lifecycle"
+      },
+      {
+        "id": "numerical",
+        "owner": "deterministic_validator",
+        "requires": "saved original inputs, expected/actual outputs, explicit tolerances, NaN/Inf/signed-zero checks"
+      },
+      {
+        "id": "native_execution",
+        "owner": "deterministic_validator",
+        "requires": "same source/wheel/runtime identity, native call evidence and real NPU profiler; no host fallback"
+      },
+      {
+        "id": "whole_program",
+        "owner": "deterministic_validator",
+        "requires": "original program versus migrated program, actual callsite profiles and all runtime guards"
+      },
+      {
+        "id": "performance",
+        "owner": "deterministic_validator",
+        "requires": "separate performance receipt: one CPU core vs one NPU, timing scope, warmup, synchronization and raw samples; correctness alone is no speedup claim"
+      },
+      {
+        "id": "activation",
+        "owner": "deterministic_validator",
+        "requires": "all required qualification gates and capability rescan; generated code remains unverified until then"
+      }
+    ],
+    "oracle": {
+      "input_materialization": "observed-inputs.json records the concrete operands that reached the gap callsite while the original NumPy program ran on the CPU; the device region was not executed by AsNumpy and remains unverified",
+      "python": "import numpy as np\n\ndef numpy_oracle(*args, **kwargs):\n    return np.roll(*args, **kwargs)\n",
+      "reference_cases_ref": "#/gap_spec/reference_cases",
+      "semantic_source_ref": "#/gap_spec/semantic_source",
+      "status": "inputs_observed_cpu",
+      "whole_program_ref": "#/source"
+    },
+    "planner_self_certification": false,
+    "status": "pending",
+    "tolerance": {
+      "required": "record dtype-specific rtol/atol before numerical qualification; compare boolean outputs exactly and preserve oracle special values/signbit",
+      "status": "unknown"
+    }
+  },
+  "call_contract": {
+    "callsites": [
+      {
+        "arguments": {
+          "keywords": [
+            {
+              "expression": "1",
+              "name": "axis",
+              "status": "static_literal",
+              "value": 1
+            }
+          ],
+          "positional": [
+            {
+              "expression": "bounded",
+              "status": "unknown"
+            },
+            {
+              "expression": "1",
+              "status": "static_literal",
+              "value": 1
+            }
+          ],
+          "status": "static_syntax_only"
+        },
+        "col_offset": 15,
+        "lineno": 9
+      }
+    ],
+    "dtype_rules_ref": "#/gap_spec/dtype_rules",
+    "observation_status": "observed",
+    "observed_profiles": [
+      {
+        "callsite": {
+          "col_offset": null,
+          "lineno": 9
+        },
+        "operands": [
+          {
+            "c_contiguous": true,
+            "dtype": "float32",
+            "name": "arg[0]",
+            "rank": 2,
+            "shape": [
+              1024,
+              1024
+            ]
+          }
+        ],
+        "output": {
+          "c_contiguous": true,
+          "dtype": "float32",
+          "rank": 2,
+          "shape": [
+            1024,
+            1024
+          ]
+        },
+        "signature": {
+          "keyword_args": [
+            "axis"
+          ],
+          "positional_args": 2
+        },
+        "unprofiled_operands": []
+      }
+    ],
+    "shape_rules_ref": "#/gap_spec/shape_rules",
+    "signature_variants_ref": "#/gap_spec/signature_variants",
+    "tensor_facts": {
+      "axis": {
+        "evidence": null,
+        "status": "unknown"
+      },
+      "broadcast": {
+        "evidence": "observed-inputs.json#callsites",
+        "status": "observed",
+        "value": "no_broadcast_observed"
+      },
+      "input_dtype": {
+        "evidence": "observed-inputs.json#callsites",
+        "status": "observed",
+        "value": "float32"
+      },
+      "input_rank": {
+        "evidence": "observed-inputs.json#callsites",
+        "status": "observed",
+        "value": 2
+      },
+      "input_shape": {
+        "evidence": "observed-inputs.json#callsites",
+        "status": "observed",
+        "value": [
+          1024,
+          1024
+        ]
+      },
+      "layout": {
+        "evidence": "observed-inputs.json#callsites",
+        "status": "observed",
+        "value": "c_contiguous"
+      },
+      "output_dtype": {
+        "evidence": "observed-inputs.json#callsites",
+        "status": "observed",
+        "value": "float32"
+      },
+      "output_shape": {
+        "evidence": "observed-inputs.json#callsites",
+        "status": "observed",
+        "value": [
+          1024,
+          1024
+        ]
+      },
+      "return_structure": {
+        "evidence": "observed-inputs.json#callsites",
+        "status": "observed",
+        "value": "single_tensor"
+      }
+    }
+  },
+  "gap": {
+    "asnumpy_target_ref": "#/gap_spec/asnumpy_api",
+    "callsites_ref": "#/gap_spec/callsites",
+    "route_decisions_ref": "#/gap_spec/route_decisions",
+    "route_ref": "#/gap_spec/route",
+    "target_ref": "#/gap_spec/qualified_api"
+  },
+  "gap_spec": {
+    "api_name": "roll",
+    "asnumpy_api": "asnumpy.roll",
+    "callsites": [
+      {
+        "call_expr": "numpy.roll(<arg0>, <arg1>, axis=<redacted>)",
+        "col_offset": 15,
+        "lineno": 9,
+        "qualified_api": "numpy.roll",
+        "reason": "API 不在静态覆盖集"
+      }
+    ],
+    "cann_version": "9.2.0-beta.2",
+    "dtype_rules": [
+      "runtime_profile_required"
+    ],
+    "gap_id": "roll-18cf7f900d51d230",
+    "qualified_api": "numpy.roll",
+    "reference_cases": [],
+    "route": "ascendc_registry_candidate",
+    "route_decisions": [
+      {
+        "reason": "requires a semantic composition resolver",
+        "route": "asnumpy_composite",
+        "status": "not_evaluated"
+      },
+      {
+        "reason": "check a pinned CANN operator catalog before new kernel work",
+        "route": "cann_existing",
+        "status": "review_required"
+      },
+      {
+        "reason": "explicit draft generation is allowed; execution remains gated",
+        "route": "ascendc_registry",
+        "status": "candidate_for_draft"
+      }
+    ],
+    "schema_version": 1,
+    "semantic_source": "numpy.roll",
+    "shape_rules": [
+      "runtime_profile_required"
+    ],
+    "signature_variants": [
+      {
+        "keyword_args": [
+          "axis"
+        ],
+        "positional_args": 2
+      }
+    ],
+    "source_path": "benchmark/cases/D1_partial_low_kernel/D1009_periodic_transport/numpilot-work/asc_operator/numpy_source.py",
+    "source_sha256": "60df6d65adc2b7b6326fe4f40abee1261edf9eea18ee7ef53597ad233a9cdb64",
+    "target_soc": "Ascend910B3"
+  },
+  "gap_spec_sha256": "679afc738ace25a0627988afb7bf93f1adf7c060453838e7fe64a5e84f8066b9",
+  "generation": {
+    "allowed": true,
+    "blockers": [],
+    "claim_level": "unverified_candidate_only"
+  },
+  "integration": {
+    "cann_version": "9.2.0-beta.2",
+    "custom_layout": ".asc or op_host/op_kernel is acceptable when the required two-stage ACLNN interface is exposed",
+    "dependency_refs": [
+      "gap-spec.json",
+      "verified AsNumpy source manifest and adapter context plan",
+      "verified embedded CANNBot skill bundle",
+      "official operator resolution evidence"
+    ],
+    "forbidden": [
+      "implicit writes to system CANN or shared AsNumpy checkout",
+      "silent CPU/NumPy fallback",
+      "unverified package activation"
+    ],
+    "mapping_required": [
+      "public asnumpy API",
+      "Python wrapper",
+      "pybind symbol",
+      "native implementation",
+      "ACLNN GetWorkspaceSize and execute symbols"
+    ],
+    "source_boundary": "reviewed isolated copy of bundled AsNumpy source; Python public API, pybind, native implementation and tests must agree",
+    "strategy": "inspect pinned official CANN/ACLNN support first; custom Ascend C is a candidate when official reuse is not qualified",
+    "target_soc": "Ascend910B3"
+  },
+  "mode": "gap_spec_requirements",
+  "responsibility": {
+    "generation_actor": "configured model or external Codex/manual developer",
+    "generation_owner": "gap_filler",
+    "next_role": "gap_filler",
+    "on_failure": "retain taskbook and failed evidence; revise candidate, do not advertise completion",
+    "planner": "organize evidence, requested scope and unresolved requirements",
+    "verification_owner": "deterministic_validator"
+  },
+  "schema": "numpilot.gap-taskbook",
+  "schema_version": 1,
+  "semantics": {
+    "authority_ref": "#/gap_spec/semantic_source",
+    "checklist": [
+      "input and output dtype, dtype promotion, scalar materialization",
+      "shape, axis normalization, broadcasting, layout and return structure",
+      "NaN, positive/negative infinity, positive/negative zero and signbit",
+      "out/where/casting and dtype keywords: preserve semantics or reject explicitly",
+      "empty input, invalid axes/shapes, unsupported dtypes and exceptions"
+    ],
+    "do_not": [
+      "silently cast other inputs to float32",
+      "drop unsupported keyword arguments",
+      "replace a failed NumPy contract with a looser assertion"
+    ],
+    "status": "requires_oracle_validation"
+  },
+  "source": {
+    "content_checked": true,
+    "path": "benchmark/cases/D1_partial_low_kernel/D1009_periodic_transport/numpilot-work/asc_operator/numpy_source.py",
+    "sha256": "60df6d65adc2b7b6326fe4f40abee1261edf9eea18ee7ef53597ad233a9cdb64"
+  },
+  "status": "requirements_prepared_unverified",
+  "support_scope": {
+    "dtype_source": "observed_cpu_execution",
+    "input_dtype": "float32",
+    "other_input_dtypes": "reject_or_defer_without_implicit_cast",
+    "output_dtype": "NumPy oracle determines output; comparison results may be bool",
+    "qualification_scope": "only the tested dtype/shape/layout/signature profiles; no global API claim",
+    "shape_rules_ref": "#/gap_spec/shape_rules",
+    "signatures_ref": "#/gap_spec/signature_variants",
+    "status": "requested_unverified",
+    "unknown_shape_policy": "generator must declare a bounded support scope and rejection cases; qualification requires measured profiles",
+    "unsupported_signatures": "explicit_rejection_no_host_fallback"
+  },
+  "taskbook_id": "gap-taskbook-54fbbfffe53940dee5a2698c05d5a13b084f028814410e05d48dc6ad33b0b843",
+  "unresolved": [
+    "axis",
+    "oracle_inputs",
+    "numerical_tolerances",
+    "candidate_support_and_rejection_profiles"
+  ]
+}

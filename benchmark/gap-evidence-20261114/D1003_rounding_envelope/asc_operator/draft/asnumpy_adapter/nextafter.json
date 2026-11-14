@@ -1,0 +1,360 @@
+{
+  "schema_version": 1,
+  "manifest_kind": "asnumpy_operator_adapter",
+  "name": "nextafter",
+  "api_name": "nextafter",
+  "qualified_api": "numpy.nextafter",
+  "asnumpy_api": "asnumpy.nextafter",
+  "op_type": "Nextafter",
+  "file_stem": "nextafter",
+  "gap_id": "nextafter-28a589e4ee5b1a6d",
+  "generation_stage": "test_adapter_02",
+  "status": "unverified_candidate",
+  "claim_level": "unverified_candidate_only",
+  "qualification_status": "pending_deterministic_validation",
+  "target": {
+    "soc": "Ascend910B3",
+    "cann_version": "9.2.0-beta.2",
+    "dtype_rule_source": "runtime_profile_required",
+    "shape_rule_source": "runtime_profile_required"
+  },
+  "call_contract": {
+    "signature_variants": [
+      {
+        "positional_args": 2,
+        "keyword_args": []
+      }
+    ],
+    "parameter_order": [
+      "x1",
+      "x2"
+    ],
+    "output_order": [
+      "out"
+    ],
+    "input_count": 2,
+    "output_count": 1,
+    "return_structure": "single_tensor",
+    "required_boolean_outputs": false,
+    "comparison_boolean_results_are_exact": true
+  },
+  "name_mapping": {
+    "public_api": "asnumpy.nextafter",
+    "python_wrapper": "asnumpy.nextafter",
+    "pybind_module": "_asnumpy",
+    "pybind_function": "nextafter",
+    "pybind_callable": "_asnumpy.nextafter",
+    "native_l0_function": "nextafter",
+    "native_op_type": "Nextafter",
+    "kernel_entry": "nextafter",
+    "host_tiling": "NextafterTiling",
+    "tiling_data_struct": "NextafterTilingData",
+    "aclnn_l2_get_workspace_size": "aclnnNextafterGetWorkspaceSize",
+    "aclnn_l2_execute": "aclnnNextafter"
+  },
+  "operator_arguments": {
+    "kernel_order": [
+      "x1",
+      "x2",
+      "out",
+      "workspace",
+      "tiling"
+    ],
+    "inputs": [
+      {
+        "name": "x1",
+        "position": 0,
+        "dtype": "float32",
+        "direction": "input"
+      },
+      {
+        "name": "x2",
+        "position": 1,
+        "dtype": "float32",
+        "direction": "input"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "out",
+        "position": 0,
+        "dtype": "float32",
+        "direction": "output"
+      }
+    ]
+  },
+  "dtype_contract": {
+    "admitted_input_dtypes": [
+      "float32"
+    ],
+    "admitted_output_dtypes": [
+      "float32"
+    ],
+    "other_input_dtypes": "reject_without_implicit_cast",
+    "other_output_dtypes": "reject",
+    "cpu_fallback": false,
+    "device_execution_required": true
+  },
+  "shape_contract": {
+    "admitted_rank": 2,
+    "admitted_input_shapes": [
+      [
+        1024,
+        1024
+      ],
+      [
+        1024,
+        1024
+      ]
+    ],
+    "admitted_output_shape": [
+      1024,
+      1024
+    ],
+    "inputs_must_have_identical_shapes": true,
+    "broadcasting": "reject",
+    "layout": "c_contiguous_row_major",
+    "non_contiguous_inputs": "reject",
+    "empty_tensors": "reject",
+    "scalar_inputs": "reject",
+    "unknown_shapes": "reject_until_runtime_profile_is_explicitly_admitted"
+  },
+  "admitted_profiles": [
+    {
+      "profile_id": "callsite_line_26",
+      "callsite": {
+        "lineno": 26,
+        "col_offset": 12
+      },
+      "inputs": [
+        {
+          "name": "x1",
+          "dtype": "float32",
+          "rank": 2,
+          "shape": [
+            1024,
+            1024
+          ],
+          "c_contiguous": true
+        },
+        {
+          "name": "x2",
+          "dtype": "float32",
+          "rank": 2,
+          "shape": [
+            1024,
+            1024
+          ],
+          "c_contiguous": true
+        }
+      ],
+      "output": {
+        "name": "out",
+        "dtype": "float32",
+        "rank": 2,
+        "shape": [
+          1024,
+          1024
+        ],
+        "c_contiguous": true
+      }
+    },
+    {
+      "profile_id": "callsite_line_27",
+      "callsite": {
+        "lineno": 27,
+        "col_offset": 12
+      },
+      "inputs": [
+        {
+          "name": "x1",
+          "dtype": "float32",
+          "rank": 2,
+          "shape": [
+            1024,
+            1024
+          ],
+          "c_contiguous": true
+        },
+        {
+          "name": "x2",
+          "dtype": "float32",
+          "rank": 2,
+          "shape": [
+            1024,
+            1024
+          ],
+          "c_contiguous": true
+        }
+      ],
+      "output": {
+        "name": "out",
+        "dtype": "float32",
+        "rank": 2,
+        "shape": [
+          1024,
+          1024
+        ],
+        "c_contiguous": true
+      }
+    }
+  ],
+  "rejection_rules": [
+    {
+      "id": "unsupported_input_dtype",
+      "condition": "any input dtype is not float32",
+      "action": "raise an explicit unsupported-dtype error without casting"
+    },
+    {
+      "id": "shape_mismatch",
+      "condition": "x1.shape != x2.shape",
+      "action": "raise an explicit unsupported-shape error"
+    },
+    {
+      "id": "unsupported_rank",
+      "condition": "rank != 2",
+      "action": "raise an explicit unsupported-rank error"
+    },
+    {
+      "id": "unprofiled_shape",
+      "condition": "shape != [1024, 1024]",
+      "action": "raise an explicit unsupported-shape error"
+    },
+    {
+      "id": "non_contiguous_input",
+      "condition": "either input is not C-contiguous row-major",
+      "action": "raise an explicit unsupported-layout error"
+    },
+    {
+      "id": "broadcast_request",
+      "condition": "shapes differ but would be broadcast-compatible under NumPy",
+      "action": "reject explicitly; no broadcasting is admitted"
+    },
+    {
+      "id": "unsupported_keyword",
+      "condition": "any keyword argument is supplied, including out, where, casting, order, dtype, subok, signature, or extobj",
+      "action": "raise an explicit unsupported-keyword error"
+    },
+    {
+      "id": "scalar_input",
+      "condition": "either operand is a Python scalar or zero-dimensional value",
+      "action": "reject explicitly; scalar materialization is not admitted"
+    },
+    {
+      "id": "empty_input",
+      "condition": "either input has zero elements",
+      "action": "reject explicitly"
+    },
+    {
+      "id": "cpu_fallback_request",
+      "condition": "device execution cannot be performed",
+      "action": "return an explicit execution error; never fall back to NumPy on CPU"
+    }
+  ],
+  "oracle": {
+    "semantic_source": "numpy.nextafter",
+    "callable": "numpy.nextafter",
+    "signature": "numpy.nextafter(x1, x2)",
+    "parameter_order": [
+      "x1",
+      "x2"
+    ],
+    "output": "single float32 tensor with the same shape as the inputs"
+  },
+  "numerical_policy": {
+    "dtype": "float32",
+    "rtol": 0.0,
+    "atol": 0.0,
+    "tolerance_ulps": 0,
+    "finite_values": "bitwise_exact",
+    "positive_infinity": "exact",
+    "negative_infinity": "exact",
+    "nan_values": "both_nan_equal",
+    "signed_zero": "signbit_exact",
+    "signbit_preserved_for_zero_outputs": true,
+    "ulps": 0,
+    "comparison_notes": "nextafter produces an exactly representable adjacent float; finite and infinity results must match the NumPy oracle bit-for-bit, NaN positions compare as NaN-equal, and signed-zero sign bits must be preserved"
+  },
+  "test_adapter": {
+    "callable": "asnumpy.nextafter",
+    "oracle_callable": "numpy.nextafter",
+    "platform": "npu",
+    "cpu_fallback_allowed": false,
+    "synchronize_after_call": true,
+    "repeat_calls": 3,
+    "positive_case_ids": [
+      "random_float32_1024x1024",
+      "x1_equals_x2",
+      "positive_zero_to_positive_zero",
+      "negative_zero_to_positive_zero",
+      "positive_zero_to_negative_zero",
+      "negative_zero_to_negative_zero",
+      "adjacent_representable_values",
+      "subnormal_transition",
+      "max_finite_to_positive_infinity",
+      "positive_infinity_to_max_finite",
+      "negative_infinity_to_max_negative_finite",
+      "nan_propagation_x1",
+      "nan_propagation_x2",
+      "cross_zero_direction",
+      "signbit_only_zero_results"
+    ],
+    "negative_case_ids": [
+      "reject_float64_inputs",
+      "reject_int32_inputs",
+      "reject_bool_inputs",
+      "reject_mixed_dtype_inputs",
+      "reject_rank1_inputs",
+      "reject_rank3_inputs",
+      "reject_shape_mismatch",
+      "reject_broadcastable_mismatch",
+      "reject_unprofiled_equal_shape",
+      "reject_non_contiguous_inputs",
+      "reject_empty_inputs",
+      "reject_scalar_inputs",
+      "reject_out_keyword",
+      "reject_where_keyword",
+      "reject_casting_keyword",
+      "reject_dtype_keyword",
+      "reject_unknown_keyword"
+    ],
+    "input_fixture_requirements": {
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "float32",
+      "layout": "c_contiguous",
+      "special_values": [
+        "0.0",
+        "-0.0",
+        "smallest_positive_subnormal",
+        "largest_positive_subnormal",
+        "smallest_positive_normal",
+        "largest_negative_subnormal",
+        "smallest_negative_normal",
+        "max_finite_float32",
+        "negative_max_finite_float32",
+        "positive_infinity",
+        "negative_infinity",
+        "quiet_nan"
+      ]
+    }
+  },
+  "runtime_policy": {
+    "aclrt_stream_synchronization": "the caller must synchronize the ACL stream before consuming output and must propagate ACLNN or ACL runtime errors",
+    "workspace": "allocated and passed through the ACLNN two-stage API",
+    "host_fallback": "forbidden",
+    "implicit_conversion": "forbidden",
+    "activation_allowed": false
+  },
+  "gates": {
+    "build": "pending",
+    "unit_and_boundary": "pending",
+    "numerical": "pending",
+    "native_execution": "pending",
+    "whole_program": "pending",
+    "performance": "pending",
+    "activation": "pending"
+  }
+}

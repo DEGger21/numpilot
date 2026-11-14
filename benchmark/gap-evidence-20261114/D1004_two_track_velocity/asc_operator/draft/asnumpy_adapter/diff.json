@@ -1,0 +1,1003 @@
+{
+  "schema": "numpilot.asnumpy_adapter",
+  "schema_version": 1,
+  "generation_stage": "17/17 test_adapter_02",
+  "status": "unverified_candidate",
+  "qualification_status": "pending",
+  "activation": "forbidden_until_all_required_gates_pass",
+  "gap_id": "diff-5c181afd5736f1ee",
+  "taskbook_id": "gap-taskbook-f5a450716c1d019e15e383dc223aeee054bedbf1decb25abbfd501a3976a3c5",
+  "operator": {
+    "numpy_api": "numpy.diff",
+    "public_api": "asnumpy.diff",
+    "op_type": "Diff",
+    "stem": "diff",
+    "semantic_source": "numpy.diff",
+    "numpy_oracle": "np.diff",
+    "return_structure": "single_tensor",
+    "input_count": 1,
+    "output_count": 1,
+    "input_name": "x",
+    "output_name": "y"
+  },
+  "runtime": {
+    "target_soc": "Ascend910B3",
+    "cann_version": "9.2.0-beta.2",
+    "device_required": true,
+    "cpu_fallback": "forbidden",
+    "host_fallback": "forbidden",
+    "silent_cast": "forbidden",
+    "silent_dtype_promotion": "forbidden"
+  },
+  "adapter": {
+    "descriptor_path": "asnumpy_adapter/diff.json",
+    "public_entry": "asnumpy.diff",
+    "python_wrapper_module": "asnumpy_adapter",
+    "python_wrapper_symbol": "diff",
+    "python_wrapper_qualified": "asnumpy_adapter.diff",
+    "pybind_module": "asnumpy_adapter._diff",
+    "pybind_symbol": "diff",
+    "pybind_qualified": "asnumpy_adapter._diff.diff",
+    "native_operator_type": "Diff",
+    "native_kernel_entry": "diff"
+  },
+  "symbol_mapping": {
+    "public_python_api": "asnumpy.diff",
+    "python_wrapper": "asnumpy_adapter.diff",
+    "pybind_module": "asnumpy_adapter._diff",
+    "pybind_symbol": "diff",
+    "native_operator_type": "Diff",
+    "native_implementation": "op_kernel/diff.cpp",
+    "host_definition": "op_host/diff_def.cpp",
+    "host_infershape": "op_host/diff_infershape.cpp",
+    "host_tiling": "op_host/arch22/diff_tiling.cpp",
+    "aclnn_l2_header": "aclnn_diff.h",
+    "aclnn_l2_get_workspace_size": "aclnnDiffGetWorkspaceSize",
+    "aclnn_l2_execute": "aclnnDiff",
+    "aclnn_l0_header": "diff.h",
+    "aclnn_l0_symbol": "l0op::Diff",
+    "aclnn_l0_aicore_symbol": "DiffAiCore",
+    "kernel_entry": "diff"
+  },
+  "aclnn": {
+    "two_stage": true,
+    "get_workspace_size": "aclnnDiffGetWorkspaceSize",
+    "execute": "aclnnDiff",
+    "workspace_size_required": true,
+    "explicit_synchronization": true,
+    "error_handling": "check every acl/aclnn return code and the stream synchronization result; no fallback",
+    "l0_symbol": "l0op::Diff",
+    "aicore_symbol": "DiffAiCore"
+  },
+  "declared_gap_rules": {
+    "dtype_rules": [
+      "runtime_profile_required"
+    ],
+    "shape_rules": [
+      "runtime_profile_required"
+    ],
+    "note": "runtime_profile_required markers are unresolved facts, not dtypes or shapes; this adapter admits only the bounded profile below"
+  },
+  "signature": {
+    "call": "asnumpy.diff(x, axis=...)",
+    "positional_args": 1,
+    "keyword_args": [
+      "axis"
+    ],
+    "parameter_order": [
+      "x",
+      "axis"
+    ],
+    "axis_default": -1,
+    "axis_admitted_literals": [
+      1,
+      -1
+    ],
+    "axis_admitted_normalized": [
+      1
+    ],
+    "axis_omitted": "admitted via the NumPy default axis=-1, which normalizes to axis=1 for the admitted rank-2 profile",
+    "axis_rejected": {
+      "normalized_values": [
+        "0",
+        "negative values other than -1",
+        "positive values other than 1"
+      ],
+      "types": [
+        "None",
+        "tuple",
+        "list",
+        "float",
+        "bool"
+      ],
+      "message": "only axis=1 and axis=-1 are admitted for the observed rank-2 profile"
+    },
+    "extra_keywords": "reject",
+    "unsupported_keywords": [
+      "n",
+      "prepend",
+      "append",
+      "out",
+      "dtype",
+      "where",
+      "casting",
+      "order",
+      "subok"
+    ]
+  },
+  "support_scope": {
+    "status": "requested_unverified",
+    "qualification_scope": "only the tested dtype/shape/layout/signature profiles; no global numpy.diff claim",
+    "input_dtype": "float32",
+    "output_dtype": "float32",
+    "rank": 2,
+    "input_shape": [
+      1024,
+      1024
+    ],
+    "output_shape": [
+      1024,
+      1023
+    ],
+    "layout": "c_contiguous",
+    "axis_normalized": 1,
+    "admitted_profiles": [
+      {
+        "id": "observed_float32_1024x1024_axis_last",
+        "evidence": "gap_taskbook.call_contract.observed_profiles; gap_spec.callsites[].keywords.axis=1",
+        "input": {
+          "name": "x",
+          "dtype": "float32",
+          "shape": [
+            1024,
+            1024
+          ],
+          "rank": 2,
+          "layout": "c_contiguous"
+        },
+        "parameters": {
+          "axis_literals": [
+            1,
+            -1
+          ],
+          "axis_normalized": 1
+        },
+        "output": {
+          "name": "y",
+          "dtype": "float32",
+          "shape": [
+            1024,
+            1023
+          ],
+          "rank": 2,
+          "layout": "c_contiguous"
+        }
+      }
+    ],
+    "output_dtype_rule": "float32 for the admitted float32 input; no implicit cast or promotion",
+    "return_structure": "single_tensor",
+    "boolean_outputs": {
+      "diff_output_is_bool": false,
+      "comparison_masks_must_remain_bool": true,
+      "do_not_cast_comparison_masks_to_float32": true
+    },
+    "unknown_shape_policy": "reject explicitly; no host fallback and no hidden shape generalization"
+  },
+  "rejection_policy": {
+    "mode": "explicit_error",
+    "no_silent_cast": true,
+    "no_silent_promotion": true,
+    "no_cpu_fallback": true,
+    "no_host_fallback": true,
+    "reject_cases": [
+      {
+        "id": "input_dtype_not_float32",
+        "condition": "x.dtype != numpy.float32",
+        "error_type": "TypeError",
+        "message": "asnumpy.diff: only float32 input is admitted in this candidate"
+      },
+      {
+        "id": "input_shape_not_1024x1024",
+        "condition": "x.shape != (1024, 1024)",
+        "error_type": "ValueError",
+        "message": "asnumpy.diff: only shape (1024, 1024) is admitted in this candidate"
+      },
+      {
+        "id": "input_rank_not_2",
+        "condition": "x.ndim != 2",
+        "error_type": "ValueError",
+        "message": "asnumpy.diff: only rank-2 input is admitted in this candidate"
+      },
+      {
+        "id": "input_layout_not_c_contiguous",
+        "condition": "x is not C-contiguous",
+        "error_type": "ValueError",
+        "message": "asnumpy.diff: only C-contiguous input is admitted in this candidate"
+      },
+      {
+        "id": "axis_normalized_not_1",
+        "condition": "normalized axis != 1",
+        "error_type": "ValueError",
+        "message": "asnumpy.diff: only axis=1 or axis=-1 is admitted for the observed rank-2 profile"
+      },
+      {
+        "id": "axis_type_invalid",
+        "condition": "axis is not a non-bool integer-like scalar",
+        "error_type": "TypeError",
+        "message": "asnumpy.diff: axis must be an integer-like scalar with value 1 or -1"
+      },
+      {
+        "id": "extra_keyword",
+        "condition": "call supplies any keyword outside the admitted signature",
+        "error_type": "TypeError",
+        "message": "asnumpy.diff: unsupported keyword argument"
+      },
+      {
+        "id": "non_tensor_input",
+        "condition": "x is not an array/tensor object accepted by the adapter",
+        "error_type": "TypeError",
+        "message": "asnumpy.diff: x must be a float32 array/tensor"
+      },
+      {
+        "id": "empty_input",
+        "condition": "any dimension is zero",
+        "error_type": "ValueError",
+        "message": "asnumpy.diff: empty input is outside the admitted profile"
+      },
+      {
+        "id": "out_or_casting_request",
+        "condition": "out, dtype, where, casting, order, or subok is supplied",
+        "error_type": "TypeError",
+        "message": "asnumpy.diff: out/dtype/where/casting/order/subok are not supported"
+      },
+      {
+        "id": "higher_order_difference",
+        "condition": "n is supplied or n != 1",
+        "error_type": "TypeError",
+        "message": "asnumpy.diff: only first-order difference is admitted; n is not accepted"
+      }
+    ]
+  },
+  "semantics": {
+    "definition": "for normalized axis 1, output[i, j] = x[i, j + 1] - x[i, j]",
+    "order": 1,
+    "axis_normalization": "axis=-1 and axis=1 both normalize to 1 for rank 2; axis=0 and all other normalized axes are rejected",
+    "dtype": "float32 input produces float32 output; no promotion or cast",
+    "nan": "any NaN operand yields NaN; NaN values are compared with equal_nan=true",
+    "infinity": "IEEE-754 subtraction semantics; infinity combinations follow the NumPy oracle exactly",
+    "signed_zero": "IEEE-754 signed zero is preserved and signbit is compared",
+    "empty_input": "rejected because the shape is not the observed profile",
+    "broadcasting": "not applicable; exactly one input tensor and no broadcast",
+    "out_where_casting": "not supported; explicit rejection",
+    "return_structure": "single tensor",
+    "input_mutation": "input must not be modified"
+  },
+  "numerical_tolerance": {
+    "status": "recorded_pending_device_validation",
+    "float32": {
+      "rtol": 0.0,
+      "atol": 0.0,
+      "finite_comparison": "bitwise_equal",
+      "nan_equal": true,
+      "infinity_equal": true,
+      "signed_zero": "match_signbit",
+      "rationale": "the admitted kernel performs one IEEE-754 float32 subtraction per output element; no reduction, reordering, promotion, or fused operation is permitted"
+    },
+    "bool": {
+      "exact": true,
+      "note": "boolean comparison/qualification masks, if any, are compared exactly and never cast to float32"
+    }
+  },
+  "tests": {
+    "public_api_required": true,
+    "must_call": "asnumpy.diff",
+    "must_not_only_call_private_pybind": true,
+    "oracle": "numpy.diff",
+    "comparisons": {
+      "float32_bitwise_with_special_rules": {
+        "rtol": 0.0,
+        "atol": 0.0,
+        "finite": "bitwise_equal",
+        "nan_equal": true,
+        "infinity": "exact",
+        "signed_zero": "signbit_equal"
+      },
+      "float32_bitwise_with_nan_equal_inf_exact_signed_zero_signbit": {
+        "same_as": "float32_bitwise_with_special_rules"
+      }
+    },
+    "fixtures": {
+      "base_x": {
+        "dtype": "float32",
+        "shape": [
+          1024,
+          1024
+        ],
+        "layout": "c_contiguous",
+        "generator": "numpy.arange(1048576, dtype=numpy.float32).reshape(1024, 1024) / numpy.float32(1024.0)"
+      },
+      "special_x": {
+        "dtype": "float32",
+        "shape": [
+          1024,
+          1024
+        ],
+        "layout": "c_contiguous",
+        "generator": "numpy.zeros((1024, 1024), dtype=numpy.float32)",
+        "injections": [
+          {
+            "index": [
+              0,
+              0
+            ],
+            "value": "nan"
+          },
+          {
+            "index": [
+              0,
+              1
+            ],
+            "value": "inf"
+          },
+          {
+            "index": [
+              0,
+              2
+            ],
+            "value": "-inf"
+          },
+          {
+            "index": [
+              0,
+              3
+            ],
+            "value": "0.0"
+          },
+          {
+            "index": [
+              0,
+              4
+            ],
+            "value": "-0.0"
+          },
+          {
+            "index": [
+              0,
+              5
+            ],
+            "value": "float32_max"
+          },
+          {
+            "index": [
+              0,
+              6
+            ],
+            "value": "-float32_max"
+          },
+          {
+            "index": [
+              0,
+              7
+            ],
+            "value": "float32_tiny"
+          },
+          {
+            "index": [
+              0,
+              8
+            ],
+            "value": "-float32_tiny"
+          },
+          {
+            "index": [
+              0,
+              9
+            ],
+            "value": "float32_smallest_subnormal"
+          },
+          {
+            "index": [
+              0,
+              10
+            ],
+            "value": "-float32_smallest_subnormal"
+          },
+          {
+            "index": [
+              1,
+              0
+            ],
+            "value": "0.0"
+          },
+          {
+            "index": [
+              1,
+              1
+            ],
+            "value": "-0.0"
+          },
+          {
+            "index": [
+              2,
+              0
+            ],
+            "value": "-0.0"
+          },
+          {
+            "index": [
+              2,
+              1
+            ],
+            "value": "0.0"
+          }
+        ],
+        "value_constants": {
+          "float32_max": "numpy.finfo(numpy.float32).max",
+          "float32_tiny": "numpy.finfo(numpy.float32).tiny",
+          "float32_smallest_subnormal": "numpy.nextafter(numpy.float32(0), numpy.float32(1))"
+        }
+      }
+    },
+    "invalid_fixtures": {
+      "float16_x": {
+        "dtype": "float16",
+        "shape": [
+          1024,
+          1024
+        ],
+        "layout": "c_contiguous"
+      },
+      "float64_x": {
+        "dtype": "float64",
+        "shape": [
+          1024,
+          1024
+        ],
+        "layout": "c_contiguous"
+      },
+      "int32_x": {
+        "dtype": "int32",
+        "shape": [
+          1024,
+          1024
+        ],
+        "layout": "c_contiguous"
+      },
+      "bool_x": {
+        "dtype": "bool",
+        "shape": [
+          1024,
+          1024
+        ],
+        "layout": "c_contiguous"
+      },
+      "shape_1023x1024_x": {
+        "dtype": "float32",
+        "shape": [
+          1023,
+          1024
+        ],
+        "layout": "c_contiguous"
+      },
+      "shape_1024x1023_x": {
+        "dtype": "float32",
+        "shape": [
+          1024,
+          1023
+        ],
+        "layout": "c_contiguous"
+      },
+      "rank1_x": {
+        "dtype": "float32",
+        "shape": [
+          1024
+        ],
+        "layout": "c_contiguous"
+      },
+      "rank3_x": {
+        "dtype": "float32",
+        "shape": [
+          1,
+          1024,
+          1024
+        ],
+        "layout": "c_contiguous"
+      },
+      "non_c_contiguous_x": {
+        "dtype": "float32",
+        "shape": [
+          1024,
+          1024
+        ],
+        "layout": "non_c_contiguous"
+      },
+      "empty_x": {
+        "dtype": "float32",
+        "shape": [
+          0,
+          1024
+        ],
+        "layout": "c_contiguous"
+      }
+    },
+    "cases": [
+      {
+        "id": "public_api_binding",
+        "kind": "binding",
+        "assert": "asnumpy.diff is callable and is not the private pybind function asnumpy_adapter._diff.diff"
+      },
+      {
+        "id": "admitted_axis_1",
+        "kind": "positive",
+        "input_fixture": "base_x",
+        "call": {
+          "args": [
+            "x"
+          ],
+          "kwargs": {
+            "axis": 1
+          }
+        },
+        "expected": "numpy.diff(x, axis=1)",
+        "comparison": "float32_bitwise_with_special_rules"
+      },
+      {
+        "id": "admitted_axis_minus_1",
+        "kind": "positive",
+        "input_fixture": "base_x",
+        "call": {
+          "args": [
+            "x"
+          ],
+          "kwargs": {
+            "axis": -1
+          }
+        },
+        "expected": "numpy.diff(x, axis=-1)",
+        "comparison": "float32_bitwise_with_special_rules"
+      },
+      {
+        "id": "admitted_axis_default",
+        "kind": "positive",
+        "input_fixture": "base_x",
+        "call": {
+          "args": [
+            "x"
+          ],
+          "kwargs": {}
+        },
+        "expected": "numpy.diff(x)",
+        "comparison": "float32_bitwise_with_special_rules"
+      },
+      {
+        "id": "special_values_nan_inf_signed_zero",
+        "kind": "positive",
+        "input_fixture": "special_x",
+        "call": {
+          "args": [
+            "x"
+          ],
+          "kwargs": {
+            "axis": 1
+          }
+        },
+        "expected": "numpy.diff(x, axis=1)",
+        "comparison": "float32_bitwise_with_nan_equal_inf_exact_signed_zero_signbit"
+      },
+      {
+        "id": "repeated_input_lifecycle",
+        "kind": "positive_lifecycle",
+        "input_fixture": "base_x",
+        "call": {
+          "sequence": [
+            {
+              "args": [
+                "x"
+              ],
+              "kwargs": {
+                "axis": 1
+              }
+            },
+            {
+              "args": [
+                "x"
+              ],
+              "kwargs": {
+                "axis": 1
+              }
+            }
+          ]
+        },
+        "expected": "both results equal numpy.diff(x, axis=1); x is unchanged; results do not alias each other",
+        "comparison": "float32_bitwise_with_special_rules"
+      },
+      {
+        "id": "reject_axis_zero",
+        "kind": "negative",
+        "input_fixture": "base_x",
+        "call": {
+          "args": [
+            "x"
+          ],
+          "kwargs": {
+            "axis": 0
+          }
+        },
+        "expected_error": "ValueError"
+      },
+      {
+        "id": "reject_axis_none",
+        "kind": "negative",
+        "input_fixture": "base_x",
+        "call": {
+          "args": [
+            "x"
+          ],
+          "kwargs": {
+            "axis": null
+          }
+        },
+        "expected_error": "ValueError"
+      },
+      {
+        "id": "reject_axis_float",
+        "kind": "negative",
+        "input_fixture": "base_x",
+        "call": {
+          "args": [
+            "x"
+          ],
+          "kwargs": {
+            "axis": 1.0
+          }
+        },
+        "expected_error": "TypeError"
+      },
+      {
+        "id": "reject_dtype_float16",
+        "kind": "negative",
+        "input_fixture": "float16_x",
+        "call": {
+          "args": [
+            "x"
+          ],
+          "kwargs": {
+            "axis": 1
+          }
+        },
+        "expected_error": "TypeError"
+      },
+      {
+        "id": "reject_dtype_float64",
+        "kind": "negative",
+        "input_fixture": "float64_x",
+        "call": {
+          "args": [
+            "x"
+          ],
+          "kwargs": {
+            "axis": 1
+          }
+        },
+        "expected_error": "TypeError"
+      },
+      {
+        "id": "reject_dtype_int32",
+        "kind": "negative",
+        "input_fixture": "int32_x",
+        "call": {
+          "args": [
+            "x"
+          ],
+          "kwargs": {
+            "axis": 1
+          }
+        },
+        "expected_error": "TypeError"
+      },
+      {
+        "id": "reject_dtype_bool",
+        "kind": "negative",
+        "input_fixture": "bool_x",
+        "call": {
+          "args": [
+            "x"
+          ],
+          "kwargs": {
+            "axis": 1
+          }
+        },
+        "expected_error": "TypeError"
+      },
+      {
+        "id": "reject_shape_1023x1024",
+        "kind": "negative",
+        "input_fixture": "shape_1023x1024_x",
+        "call": {
+          "args": [
+            "x"
+          ],
+          "kwargs": {
+            "axis": 1
+          }
+        },
+        "expected_error": "ValueError"
+      },
+      {
+        "id": "reject_shape_1024x1023",
+        "kind": "negative",
+        "input_fixture": "shape_1024x1023_x",
+        "call": {
+          "args": [
+            "x"
+          ],
+          "kwargs": {
+            "axis": 1
+          }
+        },
+        "expected_error": "ValueError"
+      },
+      {
+        "id": "reject_rank1",
+        "kind": "negative",
+        "input_fixture": "rank1_x",
+        "call": {
+          "args": [
+            "x"
+          ],
+          "kwargs": {
+            "axis": 1
+          }
+        },
+        "expected_error": "ValueError"
+      },
+      {
+        "id": "reject_rank3",
+        "kind": "negative",
+        "input_fixture": "rank3_x",
+        "call": {
+          "args": [
+            "x"
+          ],
+          "kwargs": {
+            "axis": 1
+          }
+        },
+        "expected_error": "ValueError"
+      },
+      {
+        "id": "reject_non_c_contiguous",
+        "kind": "negative",
+        "input_fixture": "non_c_contiguous_x",
+        "call": {
+          "args": [
+            "x"
+          ],
+          "kwargs": {
+            "axis": 1
+          }
+        },
+        "expected_error": "ValueError"
+      },
+      {
+        "id": "reject_empty_input",
+        "kind": "negative",
+        "input_fixture": "empty_x",
+        "call": {
+          "args": [
+            "x"
+          ],
+          "kwargs": {
+            "axis": 1
+          }
+        },
+        "expected_error": "ValueError"
+      },
+      {
+        "id": "reject_non_tensor_input",
+        "kind": "negative",
+        "input_object": {
+          "type": "python_list",
+          "value": "[[0.0] * 1024 for _ in range(1024)]"
+        },
+        "call": {
+          "args": [
+            "x"
+          ],
+          "kwargs": {
+            "axis": 1
+          }
+        },
+        "expected_error": "TypeError"
+      },
+      {
+        "id": "reject_extra_keyword_n",
+        "kind": "negative",
+        "input_fixture": "base_x",
+        "call": {
+          "args": [
+            "x"
+          ],
+          "kwargs": {
+            "axis": 1,
+            "n": 1
+          }
+        },
+        "expected_error": "TypeError"
+      },
+      {
+        "id": "reject_extra_keyword_prepend",
+        "kind": "negative",
+        "input_fixture": "base_x",
+        "call": {
+          "args": [
+            "x"
+          ],
+          "kwargs": {
+            "axis": 1,
+            "prepend": "numpy.zeros((1024, 1), dtype=numpy.float32)"
+          }
+        },
+        "expected_error": "TypeError"
+      },
+      {
+        "id": "reject_extra_keyword_append",
+        "kind": "negative",
+        "input_fixture": "base_x",
+        "call": {
+          "args": [
+            "x"
+          ],
+          "kwargs": {
+            "axis": 1,
+            "append": "numpy.zeros((1024, 1), dtype=numpy.float32)"
+          }
+        },
+        "expected_error": "TypeError"
+      },
+      {
+        "id": "reject_extra_keyword_out",
+        "kind": "negative",
+        "input_fixture": "base_x",
+        "call": {
+          "args": [
+            "x"
+          ],
+          "kwargs": {
+            "axis": 1,
+            "out": "numpy.empty((1024, 1023), dtype=numpy.float32)"
+          }
+        },
+        "expected_error": "TypeError"
+      },
+      {
+        "id": "reject_extra_keyword_dtype",
+        "kind": "negative",
+        "input_fixture": "base_x",
+        "call": {
+          "args": [
+            "x"
+          ],
+          "kwargs": {
+            "axis": 1,
+            "dtype": "numpy.float32"
+          }
+        },
+        "expected_error": "TypeError"
+      },
+      {
+        "id": "reject_extra_keyword_where",
+        "kind": "negative",
+        "input_fixture": "base_x",
+        "call": {
+          "args": [
+            "x"
+          ],
+          "kwargs": {
+            "axis": 1,
+            "where": "numpy.ones((1024, 1023), dtype=numpy.bool_)"
+          }
+        },
+        "expected_error": "TypeError"
+      },
+      {
+        "id": "reject_extra_keyword_casting",
+        "kind": "negative",
+        "input_fixture": "base_x",
+        "call": {
+          "args": [
+            "x"
+          ],
+          "kwargs": {
+            "axis": 1,
+            "casting": "unsafe"
+          }
+        },
+        "expected_error": "TypeError"
+      }
+    ]
+  },
+  "gates": [
+    {
+      "id": "build",
+      "owner": "deterministic_validator",
+      "status": "pending",
+      "requires": "isolated build/import and public API binding checks"
+    },
+    {
+      "id": "unit_and_boundary",
+      "owner": "deterministic_validator",
+      "status": "pending",
+      "requires": "NumPy oracle, admitted profiles, unsupported dtype/shape/kwargs, repeated input lifecycle"
+    },
+    {
+      "id": "numerical",
+      "owner": "deterministic_validator",
+      "status": "pending",
+      "requires": "saved original inputs, expected/actual outputs, explicit tolerances, NaN/Inf/signed-zero checks"
+    },
+    {
+      "id": "native_execution",
+      "owner": "deterministic_validator",
+      "status": "pending",
+      "requires": "same source/wheel/runtime identity, native call evidence and real NPU profiler; no host fallback"
+    },
+    {
+      "id": "whole_program",
+      "owner": "deterministic_validator",
+      "status": "pending",
+      "requires": "original program versus migrated program, actual callsite profiles and all runtime guards"
+    },
+    {
+      "id": "performance",
+      "owner": "deterministic_validator",
+      "status": "pending",
+      "requires": "separate performance receipt: one CPU core vs one NPU, timing scope, warmup, synchronization and raw samples; correctness alone is no speedup claim"
+    },
+    {
+      "id": "activation",
+      "owner": "deterministic_validator",
+      "status": "pending",
+      "requires": "all required qualification gates and capability rescan; generated code remains unverified until then"
+    }
+  ],
+  "provenance": {
+    "gap_spec_sha256": "741d4dda0e429ce4dd735614a237821db8e2dbe58e6c18f040a3aa9f9ae4d5c7",
+    "source_path": "benchmark/cases/D1_partial_low_kernel/D1004_two_track_velocity/numpilot-work/asc_operator/numpy_source.py",
+    "source_sha256": "8288101fd207e63795f16500acf6525cebd6118c07045e687170ee1911f78dc5",
+    "cannbot": {
+      "repository": "https://gitcode.com/cann/cannbot-skills.git",
+      "commit": "39919e2c995e1cd9e193f11ac2e3fcb3cbd1d26c",
+      "skill": "ascendc-registry-invoke-template",
+      "bundle_sha256": "da0ee3d6a12561da0d630125d7f4ae8602848dbd4c6f1b3f7150b26a57ead79f"
+    },
+    "evidence_refs": [
+      "gap-spec.json",
+      "gap-taskbook",
+      "observed-inputs.json#callsites",
+      "verified AsNumpy source manifest and adapter context plan",
+      "verified embedded CANNBot skill bundle",
+      "official operator resolution evidence"
+    ]
+  },
+  "unresolved": {
+    "gap_spec_unresolved_retained": [
+      "axis",
+      "oracle_inputs",
+      "numerical_tolerances",
+      "candidate_support_and_rejection_profiles"
+    ],
+    "adapter_bounded_resolution": {
+      "axis": "1 and -1 normalize to 1 for the admitted rank-2 profile; all other axes are rejected",
+      "oracle_inputs": "the observed CPU inputs remain the materialization source; device execution is still gated",
+      "numerical_tolerances": "recorded above, but device numerical qualification remains pending",
+      "candidate_support_and_rejection_profiles": "defined above; qualification remains pending"
+    }
+  },
+  "notes": [
+    "This descriptor is an unverified draft and is not a qualification certificate.",
+    "No CPU or host fallback is permitted.",
+    "Do not install or activate the workspace until every required gate passes.",
+    "Boolean comparison outputs, if produced by test code, must remain bool and must not be cast to float32."
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "case": "D1003_rounding_envelope",
+  "changed": {
+    "op_kernel/nextafter_arch22.cpp": [
+      "9652debb548792fdb1ed6a4ebc874c04a8795563047892b09c264f4a0506357d",
+      "f6b8c886ddcfcff8459cc297639daf76392714fc6212c7799d89263812989d6a"
+    ]
+  },
+  "claim_boundary": "repairs are deterministic engineering changes, not model output",
+  "notes": [
+    "kernel-template: default template args for constant TilingKey"
+  ],
+  "reason": "deterministic compile/deploy/semantic repair after real model generation",
+  "schema": "numpilot.generated-asc-repair.v1"
+}

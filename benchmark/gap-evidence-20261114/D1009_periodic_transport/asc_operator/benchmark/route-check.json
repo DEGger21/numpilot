@@ -1,0 +1,35 @@
+{
+  "comparisons": {
+    "change": {
+      "consistent": true,
+      "dtype": "float32",
+      "max_abs_diff": 3.0517578125e-05,
+      "shape": [
+        1024
+      ]
+    },
+    "energy": {
+      "consistent": true,
+      "dtype": "float32",
+      "max_abs_diff": 0.0001220703125,
+      "shape": [
+        1024
+      ]
+    },
+    "out": {
+      "consistent": true,
+      "dtype": "float32",
+      "max_abs_diff": 0.0,
+      "shape": [
+        1024,
+        1024
+      ]
+    }
+  },
+  "is_numpy_alias": false,
+  "ok": true,
+  "op": "roll",
+  "public_module": "asnumpy.custom_ops",
+  "public_name": "roll",
+  "schema": "numpilot.generated-case-route.v1"
+}

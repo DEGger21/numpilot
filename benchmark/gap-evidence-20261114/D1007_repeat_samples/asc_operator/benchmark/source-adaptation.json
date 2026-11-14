@@ -1,0 +1,9 @@
+{
+  "schema": "numpilot.generated-case-source-adaptation.v1",
+  "reason": "AsNumpy binary bindings require array operands; scalar operands were expanded to full_like arrays without changing NumPy semantics.",
+  "changes": [
+    "np.maximum(center, 0.0)",
+    "np.minimum(center, 0.0)",
+    "np.multiply(negative, 0.1)"
+  ]
+}
